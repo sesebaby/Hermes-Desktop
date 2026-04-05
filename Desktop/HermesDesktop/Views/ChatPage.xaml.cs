@@ -216,39 +216,15 @@ public sealed partial class ChatPage : Page
 
         try
         {
-            // Create the assistant message bubble immediately (empty)
-            var assistantItem = AddMessage(
-                ResourceLoader.GetString("ChatAssistantLabel"), "",
-                HorizontalAlignment.Left,
-                _assistantBackgroundBrush, _assistantBorderBrush, _secondaryLabelBrush);
-            assistantItem.IsStreaming = true;
-            ShowThinking(false); // Hide thinking as soon as first content arrives
+            // Use the full Agent loop (with tools, permissions, soul context, memory)
+            // This calls Agent.ChatAsync which handles tool calling iteratively
+            var reply = await Task.Run(() => _chatService.SendAsync(prompt, CancellationToken.None));
+            ShowThinking(false);
 
-            // Stream tokens into the bubble
-            var hasContent = false;
-            await foreach (var token in _chatService.StreamAsync(prompt, CancellationToken.None))
-            {
-                if (!hasContent)
-                {
-                    hasContent = true;
-                    ShowThinking(false);
-                }
-                assistantItem.AppendToken(token);
-            }
-
-            assistantItem.IsStreaming = false;
-
-            if (!hasContent)
-            {
-                // Stream produced nothing — fall back to blocking send
-                Messages.Remove(assistantItem);
-                var reply = await Task.Run(() => _chatService.SendAsync(prompt, CancellationToken.None));
-                ShowThinking(false);
-                if (!string.IsNullOrWhiteSpace(reply.Response))
-                    AppendAssistantMessage(reply.Response);
-                else
-                    AppendSystemMessage("LLM returned an empty response.");
-            }
+            if (!string.IsNullOrWhiteSpace(reply.Response))
+                AppendAssistantMessage(reply.Response);
+            else
+                AppendSystemMessage("LLM returned an empty response.");
 
             // Scroll to the final message
             if (Messages.Count > 0)
