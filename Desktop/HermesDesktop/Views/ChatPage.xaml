@@ -32,12 +32,9 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Spacing="4">
-                <TextBlock Text="Hermes.C# - Your AI Teammate" FontSize="22" FontWeight="SemiBold" />
+                <TextBlock Text="Hermes Agent" FontSize="22" FontWeight="SemiBold" />
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <TextBlock x:Name="ConnectionStateText" Style="{StaticResource BodySecondaryTextStyle}" />
-                    <TextBlock x:Name="CurrentModelText" FontSize="13"
-                               Foreground="{StaticResource AppTextSecondaryBrush}"
-                               Text="" />
                 </StackPanel>
             </StackPanel>
 

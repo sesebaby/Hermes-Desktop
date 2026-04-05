@@ -64,10 +64,6 @@ public sealed partial class ChatPage : Page
         ConnectionStateText.Text = ResourceLoader.GetString("ChatStatusChecking");
         SessionIdLabel.Text = "New Session";
 
-        // Show current model in header
-        var modelName = HermesEnvironment.DefaultModel;
-        CurrentModelText.Text = string.IsNullOrWhiteSpace(modelName) ? "" : $"Model: {modelName}";
-
         // Wire session panel click → load session into chat
         SessionPanelView.SessionSelected += OnSessionSelected;
 
