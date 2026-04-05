@@ -24,6 +24,15 @@ public sealed class Agent : IAgent
     /// <summary>Safety limit to prevent infinite tool loops.</summary>
     public int MaxToolIterations { get; set; } = 25;
 
+    /// <summary>Fired when an activity entry is added or updated.</summary>
+    public event Action<ActivityEntry>? ActivityEntryAdded;
+
+    /// <summary>Log of all tool activity entries for the current agent lifetime.</summary>
+    public List<ActivityEntry> ActivityLog { get; } = new();
+
+    /// <summary>Clear the activity log (e.g. on new chat).</summary>
+    public void ClearActivityLog() => ActivityLog.Clear();
+
     /// <summary>
     /// Optional callback for interactive permission prompts.
     /// When PermissionBehavior.Ask is returned, this callback is invoked with (toolName, message).
@@ -188,6 +197,20 @@ public sealed class Agent : IAgent
 
                         if (decision.Behavior == PermissionBehavior.Deny)
                         {
+                            // Track denial in activity log
+                            var deniedEntry = new ActivityEntry
+                            {
+                                ToolName = toolCall.Name,
+                                ToolCallId = toolCall.Id,
+                                InputSummary = Truncate(toolCall.Arguments, 200),
+                                OutputSummary = $"Permission denied: {decision.DecisionReason ?? decision.Message ?? "Blocked"}",
+                                Status = ActivityStatus.Denied
+                            };
+                            ActivityLog.Add(deniedEntry);
+                            ActivityEntryAdded?.Invoke(deniedEntry);
+                            if (_transcripts is not null)
+                                await _transcripts.SaveActivityAsync(session.Id, deniedEntry, ct);
+
                             var denialMsg = new Message
                             {
                                 Role = "tool",
@@ -220,6 +243,20 @@ public sealed class Agent : IAgent
 
                             if (!allowed)
                             {
+                                // Track user-denied in activity log
+                                var userDeniedEntry = new ActivityEntry
+                                {
+                                    ToolName = toolCall.Name,
+                                    ToolCallId = toolCall.Id,
+                                    InputSummary = Truncate(toolCall.Arguments, 200),
+                                    OutputSummary = $"Permission denied by user: {permissionMessage}",
+                                    Status = ActivityStatus.Denied
+                                };
+                                ActivityLog.Add(userDeniedEntry);
+                                ActivityEntryAdded?.Invoke(userDeniedEntry);
+                                if (_transcripts is not null)
+                                    await _transcripts.SaveActivityAsync(session.Id, userDeniedEntry, ct);
+
                                 var askMsg = new Message
                                 {
                                     Role = "tool",
@@ -241,8 +278,36 @@ public sealed class Agent : IAgent
                     }
                 }
 
+                // ── Activity tracking: BEFORE execution ──
+                var activityEntry = new ActivityEntry
+                {
+                    ToolName = toolCall.Name,
+                    ToolCallId = toolCall.Id,
+                    InputSummary = Truncate(toolCall.Arguments, 200),
+                    Status = ActivityStatus.Running
+                };
+                ActivityLog.Add(activityEntry);
+                ActivityEntryAdded?.Invoke(activityEntry);
+
                 _logger.LogInformation("Executing tool {ToolName} (call {CallId})", toolCall.Name, toolCall.Id);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 var result = await ExecuteToolCallAsync(toolCall, ct);
+                sw.Stop();
+
+                // ── Activity tracking: AFTER execution ──
+                activityEntry.DurationMs = sw.ElapsedMilliseconds;
+                activityEntry.Status = result.Success ? ActivityStatus.Success : ActivityStatus.Failed;
+                activityEntry.OutputSummary = Truncate(result.Content, 200);
+
+                // Detect diff content
+                if (result.Content.Contains("--- a/") || result.Content.Contains("+++ b/"))
+                {
+                    activityEntry.DiffPreview = Truncate(result.Content, 2000);
+                }
+
+                ActivityEntryAdded?.Invoke(activityEntry);
+                if (_transcripts is not null)
+                    await _transcripts.SaveActivityAsync(session.Id, activityEntry, ct);
 
                 // ── Secret exfiltration scan ──
                 var resultContent = result.Content;
@@ -349,4 +414,9 @@ public sealed class Agent : IAgent
 
     private static string ToCamelCase(string name) =>
         string.IsNullOrEmpty(name) ? name : char.ToLowerInvariant(name[0]) + name[1..];
+
+    private static string Truncate(string value, int maxLength) =>
+        string.IsNullOrEmpty(value) ? "" :
+        value.Length <= maxLength ? value :
+        value[..maxLength] + "...";
 }

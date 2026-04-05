@@ -5,7 +5,9 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Hermes.Agent.Core;
 using Hermes.Agent.Skills;
+using Hermes.Agent.Transcript;
 using HermesDesktop.Models;
 using HermesDesktop.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +23,9 @@ public sealed partial class ChatPage : Page
     private static readonly ResourceLoader ResourceLoader = new();
 
     private readonly HermesChatService _chatService = App.Services.GetRequiredService<HermesChatService>();
+    private readonly Agent _agent = App.Services.GetRequiredService<Agent>();
+    private readonly TranscriptStore _transcriptStore = App.Services.GetRequiredService<TranscriptStore>();
+    private readonly SessionRecorder _sessionRecorder = new();
     private readonly Brush _assistantBackgroundBrush;
     private readonly Brush _assistantBorderBrush;
     private readonly Brush _userBackgroundBrush;
@@ -66,6 +71,49 @@ public sealed partial class ChatPage : Page
         // Wire session panel click → load session into chat
         SessionPanelView.SessionSelected += OnSessionSelected;
 
+        // Wire agent activity tracking → replay panel + screen capture
+        _agent.ActivityEntryAdded += async entry =>
+        {
+            ReplayPanelView.AddActivity(entry);
+
+            // Capture screenshot when recording and tool execution completes
+            if (_sessionRecorder.IsRecording && entry.Status != ActivityStatus.Running)
+            {
+                try
+                {
+                    // Must dispatch to UI thread for RenderTargetBitmap
+                    if (DispatcherQueue.HasThreadAccess)
+                    {
+                        var path = await _sessionRecorder.CaptureAsync(MainGrid, entry.ToolName);
+                        if (path is not null) entry.ScreenshotPath = path;
+                    }
+                    else
+                    {
+                        DispatcherQueue.TryEnqueue(async () =>
+                        {
+                            var path = await _sessionRecorder.CaptureAsync(MainGrid, entry.ToolName);
+                            if (path is not null) entry.ScreenshotPath = path;
+                        });
+                    }
+                }
+                catch { /* Screenshot capture is best-effort */ }
+            }
+        };
+
+        // Wire recording toggle
+        ReplayPanelView.RecordingToggled += isRecording =>
+        {
+            if (isRecording)
+            {
+                var sessionId = _chatService.CurrentSessionId ?? "unsaved";
+                _sessionRecorder.StartRecording(sessionId);
+            }
+            else
+            {
+                _sessionRecorder.StopRecording();
+            }
+        };
+
         AppendSystemMessage(string.Format(CultureInfo.CurrentCulture,
             ResourceLoader.GetString("ChatInitialAssistantMessage"),
             "Hermes.C# Workspace", "Qwen3.5"));
@@ -110,6 +158,18 @@ public sealed partial class ChatPage : Page
 
             SessionIdLabel.Text = $"Session: {sessionId}";
             ConnectionStateText.Text = ResourceLoader.GetString("StatusConnected");
+
+            // Load activity entries for replay panel
+            try
+            {
+                var activityEntries = await _transcriptStore.LoadActivityAsync(sessionId, CancellationToken.None);
+                ReplayPanelView.LoadSession(activityEntries);
+            }
+            catch
+            {
+                // Activity log is optional — don't fail the session load
+                ReplayPanelView.Clear();
+            }
         }
         catch (Exception ex)
         {
@@ -295,6 +355,9 @@ public sealed partial class ChatPage : Page
     private async void NewChat_Click(object sender, RoutedEventArgs e)
     {
         _chatService.ResetConversation();
+        _agent.ClearActivityLog();
+        ReplayPanelView.Clear();
+        _sessionRecorder.StopRecording();
         Messages.Clear();
         SessionIdLabel.Text = "New Session";
 
@@ -422,6 +485,7 @@ public sealed partial class ChatPage : Page
         MemoryPanelView.Visibility = Visibility.Collapsed;
         TaskPanelView.Visibility = Visibility.Collapsed;
         BuddyPanelView.Visibility = Visibility.Collapsed;
+        ReplayPanelView.Visibility = Visibility.Collapsed;
 
         var accent = GetBrush("AppAccentTextBrush");
         var muted = GetBrush("AppTextSecondaryBrush");
@@ -431,6 +495,7 @@ public sealed partial class ChatPage : Page
         TabMemory.Foreground = muted;
         TabTasks.Foreground = muted;
         TabBuddy.Foreground = muted;
+        TabReplay.Foreground = muted;
 
         switch (tag)
         {
@@ -440,6 +505,7 @@ public sealed partial class ChatPage : Page
             case "memory": MemoryPanelView.Visibility = Visibility.Visible; TabMemory.Foreground = accent; break;
             case "tasks": TaskPanelView.Visibility = Visibility.Visible; TabTasks.Foreground = accent; break;
             case "buddy": BuddyPanelView.Visibility = Visibility.Visible; TabBuddy.Foreground = accent; break;
+            case "replay": ReplayPanelView.Visibility = Visibility.Visible; TabReplay.Foreground = accent; break;
         }
     }
 

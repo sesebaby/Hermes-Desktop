@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using Hermes.Agent.Core;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 /// <summary>
 /// Transcript-first persistence layer.
@@ -154,15 +155,67 @@ public sealed class TranscriptStore
     {
         _cache.Clear();
     }
+
+    /// <summary>
+    /// Append an activity entry to the session's activity JSONL file.
+    /// </summary>
+    public async Task SaveActivityAsync(string sessionId, ActivityEntry entry, CancellationToken ct)
+    {
+        var activityPath = GetActivityPath(sessionId);
+        Directory.CreateDirectory(Path.GetDirectoryName(activityPath)!);
+
+        var json = JsonSerializer.Serialize(entry, ActivityJsonOptions);
+
+        await _writeLock.WaitAsync(ct);
+        try
+        {
+            await File.AppendAllTextAsync(activityPath, json + "\n", ct);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Load all activity entries for a session from its activity JSONL file.
+    /// </summary>
+    public async Task<List<ActivityEntry>> LoadActivityAsync(string sessionId, CancellationToken ct)
+    {
+        var activityPath = GetActivityPath(sessionId);
+        if (!File.Exists(activityPath))
+            return new List<ActivityEntry>();
+
+        var lines = await File.ReadAllLinesAsync(activityPath, ct);
+        var entries = new List<ActivityEntry>();
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            var entry = JsonSerializer.Deserialize<ActivityEntry>(line, ActivityJsonOptions);
+            if (entry is not null)
+                entries.Add(entry);
+        }
+        return entries;
+    }
     
-    private string GetTranscriptPath(string sessionId) => 
+    private string GetTranscriptPath(string sessionId) =>
         Path.Combine(_transcriptsDir, $"{sessionId}.jsonl");
+
+    private string GetActivityPath(string sessionId) =>
+        Path.Combine(_transcriptsDir, $"{sessionId}.activity.jsonl");
     
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false,
-        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    private static readonly JsonSerializerOptions ActivityJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false,
+        Converters = { new JsonStringEnumConverter() }
     };
 }
 

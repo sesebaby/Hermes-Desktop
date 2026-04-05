@@ -149,6 +149,8 @@
                                 Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="11" Padding="8,4" CornerRadius="6" MinWidth="0"/>
                         <Button x:Name="TabBuddy" Content="Buddy" Click="PanelTab_Click" Tag="buddy"
                                 Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="11" Padding="8,4" CornerRadius="6" MinWidth="0"/>
+                        <Button x:Name="TabReplay" Content="Replay" Click="PanelTab_Click" Tag="replay"
+                                Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="11" Padding="8,4" CornerRadius="6" MinWidth="0"/>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -161,6 +163,7 @@
                         <panels:MemoryPanel x:Name="MemoryPanelView" Visibility="Collapsed"/>
                         <panels:TaskPanel x:Name="TaskPanelView" Visibility="Collapsed"/>
                         <panels:BuddyPanel x:Name="BuddyPanelView" Visibility="Collapsed"/>
+                        <panels:ReplayPanel x:Name="ReplayPanelView" Visibility="Collapsed"/>
                     </Grid>
                 </Border>
 
