@@ -110,9 +110,7 @@ public sealed partial class ChatPage : Page
             }
         };
 
-        AppendSystemMessage(string.Format(CultureInfo.CurrentCulture,
-            ResourceLoader.GetString("ChatInitialAssistantMessage"),
-            "Hermes.C# Workspace", "Qwen3.5"));
+        AppendSystemMessage(ResourceLoader.GetString("ChatInitialAssistantMessage"));
 
         await RefreshConnectionStatusAsync();
     }
@@ -357,9 +355,7 @@ public sealed partial class ChatPage : Page
         Messages.Clear();
         SessionIdLabel.Text = "New Session";
 
-        AppendSystemMessage(string.Format(CultureInfo.CurrentCulture,
-            ResourceLoader.GetString("ChatInitialAssistantMessage"),
-            "Hermes.C# Workspace", "Qwen3.5"));
+        AppendSystemMessage(ResourceLoader.GetString("ChatInitialAssistantMessage"));
 
         await RefreshConnectionStatusAsync();
     }
