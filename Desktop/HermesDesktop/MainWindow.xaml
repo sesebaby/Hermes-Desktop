@@ -65,6 +65,14 @@
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem
+                    x:Name="AgentNavItem"
+                    x:Uid="AgentNavItem"
+                    Tag="agent">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="ContactInfo" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem
                     x:Name="IntegrationsNavItem"
                     x:Uid="IntegrationsNavItem"
                     Tag="integrations">

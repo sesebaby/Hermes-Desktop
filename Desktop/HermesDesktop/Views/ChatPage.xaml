@@ -145,8 +145,6 @@
                                 Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="11" Padding="8,4" CornerRadius="6" MinWidth="0"/>
                         <Button x:Name="TabMemory" Content="Memory" Click="PanelTab_Click" Tag="memory"
                                 Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="11" Padding="8,4" CornerRadius="6" MinWidth="0"/>
-                        <Button x:Name="TabAgent" Content="Agent" Click="PanelTab_Click" Tag="agent"
-                                Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="11" Padding="8,4" CornerRadius="6" MinWidth="0"/>
                         <Button x:Name="TabTasks" Content="Tasks" Click="PanelTab_Click" Tag="tasks"
                                 Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="11" Padding="8,4" CornerRadius="6" MinWidth="0"/>
                         <Button x:Name="TabBuddy" Content="Buddy" Click="PanelTab_Click" Tag="buddy"
@@ -163,7 +161,6 @@
                         <panels:FileBrowserPanel x:Name="FileBrowserPanelView" Visibility="Collapsed"/>
                         <panels:SkillsPanel x:Name="SkillsPanelView" Visibility="Collapsed"/>
                         <panels:MemoryPanel x:Name="MemoryPanelView" Visibility="Collapsed"/>
-                        <panels:AgentPanel x:Name="AgentPanelView" Visibility="Collapsed"/>
                         <panels:TaskPanel x:Name="TaskPanelView" Visibility="Collapsed"/>
                         <panels:BuddyPanel x:Name="BuddyPanelView" Visibility="Collapsed"/>
                         <panels:ReplayPanel x:Name="ReplayPanelView" Visibility="Collapsed"/>

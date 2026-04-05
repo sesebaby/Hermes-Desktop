@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
@@ -7,32 +6,29 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Hermes.Agent.Soul;
 
-using HermesDesktop.Views;
+namespace HermesDesktop.Views;
 
-namespace HermesDesktop.Views.Panels;
-
-public sealed partial class AgentPanel : UserControl
+public sealed partial class AgentPage : Page
 {
-    private SoulService? _soulService;
-    private SoulRegistry? _soulRegistry;
-    private AgentProfileManager? _profileManager;
+    private readonly SoulService _soulService = App.Services.GetRequiredService<SoulService>();
+    private readonly SoulRegistry _soulRegistry = App.Services.GetRequiredService<SoulRegistry>();
+    private readonly AgentProfileManager _profileManager = App.Services.GetRequiredService<AgentProfileManager>();
+
     private string _activeTab = "identity";
     private SoulTemplate? _selectedSoul;
 
-    public AgentPanel()
+    public AgentPage()
     {
         InitializeComponent();
-        Loaded += (_, _) =>
-        {
-            _soulService = App.Services?.GetService<SoulService>();
-            _soulRegistry = App.Services?.GetService<SoulRegistry>();
-            _profileManager = App.Services?.GetService<AgentProfileManager>();
-            Refresh();
-        };
+        Loaded += (_, _) => Refresh();
     }
 
-    public void Refresh()
+    private void Refresh()
     {
+        // Update active label
+        var activeName = _profileManager.GetActiveProfileName();
+        ActiveSoulLabel.Text = activeName ?? "Default";
+
         if (_activeTab == "identity") _ = RefreshIdentityAsync();
         else if (_activeTab == "souls") RefreshSouls();
         else if (_activeTab == "agents") RefreshAgents();
@@ -40,72 +36,70 @@ public sealed partial class AgentPanel : UserControl
 
     // ── Tab switching ──
 
-    private void SubTab_Click(object sender, RoutedEventArgs e)
+    private void Tab_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Button btn && btn.Tag is string tag)
-        {
-            _activeTab = tag;
-            var accent = Application.Current.Resources["AppAccentTextBrush"] as Brush;
-            var secondary = Application.Current.Resources["AppTextSecondaryBrush"] as Brush;
-            TabIdentity.Foreground = tag == "identity" ? accent : secondary;
-            TabSouls.Foreground = tag == "souls" ? accent : secondary;
-            TabAgents.Foreground = tag == "agents" ? accent : secondary;
+        if (sender is not Button btn || btn.Tag is not string tag) return;
+        _activeTab = tag;
 
-            IdentityContent.Visibility = tag == "identity" ? Visibility.Visible : Visibility.Collapsed;
-            SoulsContent.Visibility = tag == "souls" ? Visibility.Visible : Visibility.Collapsed;
-            AgentsContent.Visibility = tag == "agents" ? Visibility.Visible : Visibility.Collapsed;
+        var activeBg = Application.Current.Resources["AppAccentGradientBrush"] as Brush;
+        var inactiveBg = Application.Current.Resources["AppInsetBrush"] as Brush;
+        var activeFg = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 22, 17, 13));
+        var inactiveFg = Application.Current.Resources["AppTextSecondaryBrush"] as Brush;
 
-            Refresh();
-        }
+        TabIdentity.Background = tag == "identity" ? activeBg : inactiveBg;
+        TabIdentity.Foreground = tag == "identity" ? activeFg : inactiveFg;
+        TabSouls.Background = tag == "souls" ? activeBg : inactiveBg;
+        TabSouls.Foreground = tag == "souls" ? activeFg : inactiveFg;
+        TabAgents.Background = tag == "agents" ? activeBg : inactiveBg;
+        TabAgents.Foreground = tag == "agents" ? activeFg : inactiveFg;
+
+        IdentityContent.Visibility = tag == "identity" ? Visibility.Visible : Visibility.Collapsed;
+        SoulsContent.Visibility = tag == "souls" ? Visibility.Visible : Visibility.Collapsed;
+        AgentsContent.Visibility = tag == "agents" ? Visibility.Visible : Visibility.Collapsed;
+
+        Refresh();
     }
 
     // ── Identity Tab ──
 
     private async System.Threading.Tasks.Task RefreshIdentityAsync()
     {
-        if (_soulService is null) return;
         try
         {
             SoulEditor.Text = await _soulService.LoadFileAsync(SoulFileType.Soul);
             UserEditor.Text = await _soulService.LoadFileAsync(SoulFileType.User);
 
-            // Active profile
-            var activeName = _profileManager?.GetActiveProfileName();
-            ActiveSoulLabel.Text = activeName ?? "Default";
-
-            // Mistakes
             var mistakes = await _soulService.LoadMistakesAsync();
-            MistakesList.ItemsSource = mistakes.TakeLast(15).Reverse()
-                .Select(m => $"• {m.Lesson}").ToList();
+            var mistakeItems = mistakes.TakeLast(15).Reverse().Select(m => $"\u2022 {m.Lesson}").ToList();
+            MistakesList.ItemsSource = mistakeItems;
+            NoMistakes.Visibility = mistakeItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            MistakesList.Visibility = mistakeItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-            // Habits
             var habits = await _soulService.LoadHabitsAsync();
-            HabitsList.ItemsSource = habits.TakeLast(15).Reverse()
-                .Select(h => $"• {h.Habit}").ToList();
+            var habitItems = habits.TakeLast(15).Reverse().Select(h => $"\u2022 {h.Habit}").ToList();
+            HabitsList.ItemsSource = habitItems;
+            NoHabits.Visibility = habitItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            HabitsList.Visibility = habitItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"AgentPanel identity error: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"AgentPage identity error: {ex.Message}");
         }
     }
 
     private async void SaveSoul_Click(object sender, RoutedEventArgs e)
     {
-        if (_soulService is null) return;
         await _soulService.SaveFileAsync(SoulFileType.Soul, SoulEditor.Text);
     }
 
     private async void SaveUser_Click(object sender, RoutedEventArgs e)
     {
-        if (_soulService is null) return;
         await _soulService.SaveFileAsync(SoulFileType.User, UserEditor.Text);
     }
 
     private async void ResetSoul_Click(object sender, RoutedEventArgs e)
     {
-        if (_soulService is null) return;
-        // Apply the default soul template
-        var defaultSoul = _soulRegistry?.GetSoul("Hermes Default");
+        var defaultSoul = _soulRegistry.GetSoul("Hermes Default");
         if (defaultSoul is not null)
         {
             await _soulService.SaveFileAsync(SoulFileType.Soul, defaultSoul.Content);
@@ -117,7 +111,6 @@ public sealed partial class AgentPanel : UserControl
 
     private void RefreshSouls()
     {
-        if (_soulRegistry is null) return;
         var souls = _soulRegistry.ListSouls();
         SoulsList.ItemsSource = souls;
     }
@@ -127,10 +120,8 @@ public sealed partial class AgentPanel : UserControl
         if (SoulsList.SelectedItem is SoulTemplate soul)
         {
             _selectedSoul = soul;
-            SoulPreviewText.Text = soul.Content.Length > 800
-                ? soul.Content[..800] + "\n...(truncated)"
-                : soul.Content;
-            SoulPreviewBorder.Visibility = Visibility.Visible;
+            SoulPreviewTitle.Text = soul.Name;
+            SoulPreviewText.Text = soul.Content;
             ApplySoulBtn.IsEnabled = true;
             CustomizeSoulBtn.IsEnabled = true;
         }
@@ -138,29 +129,27 @@ public sealed partial class AgentPanel : UserControl
 
     private async void ApplySoul_Click(object sender, RoutedEventArgs e)
     {
-        if (_soulService is null || _selectedSoul is null) return;
+        if (_selectedSoul is null) return;
         await _soulService.SaveFileAsync(SoulFileType.Soul, _selectedSoul.Content);
         ActiveSoulLabel.Text = _selectedSoul.Name;
 
-        // Switch to identity tab to show the applied soul
+        // Switch to identity tab
         _activeTab = "identity";
-        SubTab_Click(TabIdentity, new RoutedEventArgs());
+        Tab_Click(TabIdentity, new RoutedEventArgs());
     }
 
     private void CustomizeSoul_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedSoul is null) return;
-        // Switch to identity tab with the soul content loaded for editing
         SoulEditor.Text = _selectedSoul.Content;
         _activeTab = "identity";
-        SubTab_Click(TabIdentity, new RoutedEventArgs());
+        Tab_Click(TabIdentity, new RoutedEventArgs());
     }
 
     // ── Agents Tab ──
 
     private void RefreshAgents()
     {
-        if (_profileManager is null) return;
         var profiles = _profileManager.ListProfiles();
         AgentsList.ItemsSource = profiles.Select(p => new AgentDisplayItem
         {
@@ -173,8 +162,6 @@ public sealed partial class AgentPanel : UserControl
 
     private async void NewAgent_Click(object sender, RoutedEventArgs e)
     {
-        if (_profileManager is null || _soulService is null) return;
-
         var dialog = new ContentDialog
         {
             Title = "New Agent",
@@ -183,13 +170,17 @@ public sealed partial class AgentPanel : UserControl
             XamlRoot = this.XamlRoot
         };
 
-        var panel = new StackPanel { Spacing = 8 };
-        var nameBox = new TextBox { PlaceholderText = "Agent name", Background = Application.Current.Resources["AppInsetBrush"] as Brush };
-        var descBox = new TextBox { PlaceholderText = "Short description", Background = Application.Current.Resources["AppInsetBrush"] as Brush };
-        panel.Children.Add(new TextBlock { Text = "Name", FontSize = 12 });
+        var panel = new StackPanel { Spacing = 10 };
+        var nameBox = new TextBox { PlaceholderText = "Agent name (e.g. Code Reviewer)",
+            Background = Application.Current.Resources["AppInsetBrush"] as Brush };
+        var descBox = new TextBox { PlaceholderText = "Short description",
+            Background = Application.Current.Resources["AppInsetBrush"] as Brush };
+        panel.Children.Add(new TextBlock { Text = "Name", FontSize = 13 });
         panel.Children.Add(nameBox);
-        panel.Children.Add(new TextBlock { Text = "Description", FontSize = 12 });
+        panel.Children.Add(new TextBlock { Text = "Description", FontSize = 13 });
         panel.Children.Add(descBox);
+        panel.Children.Add(new TextBlock { Text = "The current soul will be saved with this agent.",
+            FontSize = 11, Opacity = 0.6 });
         dialog.Content = panel;
 
         var result = await dialog.ShowAsync();
@@ -210,7 +201,7 @@ public sealed partial class AgentPanel : UserControl
 
     private async void ActivateAgent_Click(object sender, RoutedEventArgs e)
     {
-        if (_profileManager is null || sender is not Button btn || btn.Tag is not string name) return;
+        if (sender is not Button btn || btn.Tag is not string name) return;
         var profiles = _profileManager.ListProfiles();
         var profile = profiles.FirstOrDefault(p => p.Name == name);
         if (profile is not null)
@@ -223,8 +214,17 @@ public sealed partial class AgentPanel : UserControl
 
     private void DeleteAgent_Click(object sender, RoutedEventArgs e)
     {
-        if (_profileManager is null || sender is not Button btn || btn.Tag is not string name) return;
+        if (sender is not Button btn || btn.Tag is not string name) return;
         _profileManager.DeleteProfile(name);
         RefreshAgents();
     }
+}
+
+// Shared display model
+public sealed class AgentDisplayItem
+{
+    public string Name { get; set; } = "";
+    public string Description { get; set; } = "";
+    public bool IsActive { get; set; }
+    public Visibility ActiveVisibility => IsActive ? Visibility.Visible : Visibility.Collapsed;
 }

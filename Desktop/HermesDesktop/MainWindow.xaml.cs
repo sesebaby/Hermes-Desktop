@@ -13,6 +13,7 @@ public sealed partial class MainWindow : Window
     {
         ["dashboard"] = typeof(DashboardPage),
         ["chat"] = typeof(ChatPage),
+        ["agent"] = typeof(AgentPage),
         ["integrations"] = typeof(IntegrationsPage),
         ["settings"] = typeof(SettingsPage),
     };
