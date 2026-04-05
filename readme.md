@@ -6,9 +6,21 @@ A native Windows desktop AI agent built with WinUI 3 and .NET 10 — featuring a
 
 ## Screenshots
 
-| Chat | Integrations |
-|------|-------------|
-| ![Chat Interface](docs/screenshots/chat.png) | ![Integrations](docs/screenshots/integrations.png) |
+| Dashboard | Chat |
+|-----------|------|
+| ![Dashboard](docs/screenshots/Screenshot%202026-04-05%20123632.png) | ![Chat](docs/screenshots/Screenshot%202026-04-05%20123637.png) |
+
+| Agent | Skills |
+|-------|--------|
+| ![Agent](docs/screenshots/Screenshot%202026-04-05%20123642.png) | ![Skills](docs/screenshots/Screenshot%202026-04-05%20123700.png) |
+
+| Memory | Integrations |
+|--------|-------------|
+| ![Memory](docs/screenshots/Screenshot%202026-04-05%20123706.png) | ![Integrations](docs/screenshots/Screenshot%202026-04-05%20123711.png) |
+
+| Settings |
+|----------|
+| ![Settings](docs/screenshots/Screenshot%202026-04-05%20123716.png) |
 
 ## Features
 
