@@ -25,6 +25,7 @@ public sealed partial class ChatPage : Page
     private static readonly ResourceLoader ResourceLoader = new();
 
     private readonly HermesChatService _chatService = App.Services.GetRequiredService<HermesChatService>();
+    private readonly RuntimeStatusService _runtimeStatusService = App.Services.GetRequiredService<RuntimeStatusService>();
     private readonly Agent _agent = App.Services.GetRequiredService<Agent>();
     private readonly TranscriptStore _transcriptStore = App.Services.GetRequiredService<TranscriptStore>();
     private readonly SessionRecorder _sessionRecorder = new();
@@ -65,7 +66,7 @@ public sealed partial class ChatPage : Page
         if (_initialized) return;
         _initialized = true;
 
-        ConnectionStateText.Text = ResourceLoader.GetString("ChatStatusChecking");
+        ApplyConnectionStatusSnapshot(_runtimeStatusService.GetConfiguredSnapshot());
         SessionIdLabel.Text = "New Session";
         SetPermissionModeSelector(_chatService.CurrentPermissionMode);
 
@@ -159,7 +160,6 @@ public sealed partial class ChatPage : Page
             }
 
             SessionIdLabel.Text = $"Session: {sessionId}";
-            ConnectionStateText.Text = ResourceLoader.GetString("StatusConnected");
 
             // Load activity entries for replay panel
             try
@@ -245,12 +245,12 @@ public sealed partial class ChatPage : Page
             if (Messages.Count > 0)
                 MessagesList.ScrollIntoView(Messages[^1]);
 
-            ConnectionStateText.Text = "Connected";
+            ApplyConnectionState(RuntimeConnectionState.Connected);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ShowThinking(false);
-            ConnectionStateText.Text = "Error";
+            ApplyConnectionState(RuntimeConnectionState.Error);
             AppendSystemMessage($"Error: {ex.Message}");
         }
         catch (OperationCanceledException)
@@ -403,9 +403,27 @@ public sealed partial class ChatPage : Page
 
     private async Task RefreshConnectionStatusAsync()
     {
-        ConnectionStateText.Text = ResourceLoader.GetString("ChatStatusChecking");
-        var (isHealthy, _) = await Task.Run(() => _chatService.CheckHealthAsync(CancellationToken.None));
-        ConnectionStateText.Text = ResourceLoader.GetString(isHealthy ? "StatusConnected" : "StatusOffline");
+        ApplyConnectionStatusSnapshot(_runtimeStatusService.GetConfiguredSnapshot());
+        var snapshot = await _runtimeStatusService.RefreshAsync(CancellationToken.None);
+        ApplyConnectionStatusSnapshot(snapshot);
+    }
+
+    private void ApplyConnectionState(RuntimeConnectionState state)
+    {
+        var snapshot = _runtimeStatusService.GetConfiguredSnapshot() with { ConnectionState = state };
+        ApplyConnectionStatusSnapshot(snapshot);
+    }
+
+    private void ApplyConnectionStatusSnapshot(RuntimeStatusSnapshot snapshot)
+    {
+        var statusText = snapshot.ConnectionState switch
+        {
+            RuntimeConnectionState.Connected => ResourceLoader.GetString("StatusConnected"),
+            RuntimeConnectionState.Checking => ResourceLoader.GetString("ChatStatusChecking"),
+            _ => ResourceLoader.GetString("StatusOffline"),
+        };
+
+        ConnectionStateText.Text = $"{statusText} | {snapshot.DisplayProvider} | {snapshot.DisplayModel}";
     }
 
     // ── UI Helpers ──

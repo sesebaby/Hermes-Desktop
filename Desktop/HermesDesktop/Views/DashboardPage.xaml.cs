@@ -10,6 +10,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
+using Microsoft.Windows.ApplicationModel.Resources;
 
 namespace HermesDesktop.Views;
 
@@ -23,6 +24,9 @@ public sealed class SessionDisplayItem
 
 public sealed partial class DashboardPage : Page
 {
+    private static readonly ResourceLoader ResourceLoader = new();
+    private readonly RuntimeStatusService _runtimeStatusService = App.Services.GetRequiredService<RuntimeStatusService>();
+
     public DashboardPage()
     {
         InitializeComponent();
@@ -38,9 +42,8 @@ public sealed partial class DashboardPage : Page
     {
         LoadStats();
         LoadPlatformBadges();
-        LoadModelInfo();
         await LoadRecentSessionsAsync();
-        await CheckLlmStatusAsync();
+        await RefreshRuntimeStatusAsync();
     }
 
     // ── KPI Stats ──
@@ -119,14 +122,22 @@ public sealed partial class DashboardPage : Page
         parent.Children.Add(border);
     }
 
-    // ── Model Info ──
+    // ── Runtime Status ──
 
-    private void LoadModelInfo()
+    private async System.Threading.Tasks.Task RefreshRuntimeStatusAsync()
     {
-        ProviderText.Text = HermesEnvironment.DisplayModelProvider;
-        ModelNameText.Text = HermesEnvironment.DisplayDefaultModel;
-        EndpointText.Text = HermesEnvironment.DisplayModelBaseUrl;
-        LlmModelText.Text = HermesEnvironment.DisplayDefaultModel;
+        ApplyRuntimeStatusSnapshot(_runtimeStatusService.GetConfiguredSnapshot());
+        var snapshot = await _runtimeStatusService.RefreshAsync(CancellationToken.None);
+        ApplyRuntimeStatusSnapshot(snapshot);
+    }
+
+    private void ApplyRuntimeStatusSnapshot(RuntimeStatusSnapshot snapshot)
+    {
+        ProviderText.Text = snapshot.DisplayProvider;
+        ModelNameText.Text = snapshot.DisplayModel;
+        EndpointText.Text = snapshot.DisplayBaseUrl;
+        LlmModelText.Text = snapshot.DisplayModel;
+        SetLlmStatus(snapshot.ConnectionState);
     }
 
     // ── Recent Sessions ──
@@ -171,36 +182,22 @@ public sealed partial class DashboardPage : Page
         RecentSessionsList.Visibility = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    // ── LLM Health Check ──
-
-    private async System.Threading.Tasks.Task CheckLlmStatusAsync()
+    private void SetLlmStatus(RuntimeConnectionState state)
     {
-        try
+        var color = state switch
         {
-            var chatService = App.Services?.GetService<HermesChatService>();
-            if (chatService is null)
-            {
-                SetLlmStatus(false, "Not configured");
-                return;
-            }
+            RuntimeConnectionState.Connected => ColorHelper.FromArgb(255, 34, 197, 94),
+            RuntimeConnectionState.Checking => ColorHelper.FromArgb(255, 245, 158, 11),
+            _ => ColorHelper.FromArgb(255, 239, 68, 68),
+        };
 
-            var (isHealthy, detail) = await System.Threading.Tasks.Task.Run(
-                () => chatService.CheckHealthAsync(CancellationToken.None));
-
-            SetLlmStatus(isHealthy, isHealthy ? "Connected" : "Offline");
-        }
-        catch (Exception ex)
+        LlmStatusDot.Fill = new SolidColorBrush(color);
+        LlmStatusText.Text = state switch
         {
-            SetLlmStatus(false, $"Error: {ex.Message}");
-        }
-    }
-
-    private void SetLlmStatus(bool healthy, string text)
-    {
-        LlmStatusDot.Fill = new SolidColorBrush(healthy
-            ? ColorHelper.FromArgb(255, 34, 197, 94)
-            : ColorHelper.FromArgb(255, 239, 68, 68));
-        LlmStatusText.Text = text;
+            RuntimeConnectionState.Connected => ResourceLoader.GetString("StatusConnected"),
+            RuntimeConnectionState.Checking => ResourceLoader.GetString("ChatStatusChecking"),
+            _ => ResourceLoader.GetString("StatusOffline"),
+        };
     }
 
     // ── Test Connection ──
@@ -217,13 +214,13 @@ public sealed partial class DashboardPage : Page
             var result = await chatClient.CompleteAsync(messages, CancellationToken.None);
             TestConnectionResult.Text = $"Connected — {result.Trim()}";
             TestConnectionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 34, 197, 94));
-            SetLlmStatus(true, "Connected");
+            await RefreshRuntimeStatusAsync();
         }
         catch (Exception ex)
         {
             TestConnectionResult.Text = $"Failed: {ex.Message}";
             TestConnectionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68));
-            SetLlmStatus(false, "Offline");
+            await RefreshRuntimeStatusAsync();
         }
     }
 

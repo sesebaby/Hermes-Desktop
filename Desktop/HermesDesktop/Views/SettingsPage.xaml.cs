@@ -1,9 +1,13 @@
 using System;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Hermes.Agent.LLM;
 using HermesDesktop.Services;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.Windows.ApplicationModel.Resources;
 
 namespace HermesDesktop.Views;
@@ -11,6 +15,7 @@ namespace HermesDesktop.Views;
 public sealed partial class SettingsPage : Page
 {
     private static readonly ResourceLoader ResourceLoader = new();
+    private readonly RuntimeStatusService _runtimeStatusService = App.Services.GetRequiredService<RuntimeStatusService>();
 
     public SettingsPage()
     {
@@ -36,7 +41,7 @@ public sealed partial class SettingsPage : Page
 
     private bool _suppressModelComboEvent;
 
-    private void OnPageLoaded(object sender, RoutedEventArgs e)
+    private async void OnPageLoaded(object sender, RoutedEventArgs e)
     {
         // Pre-populate fields from current config
         var provider = HermesEnvironment.ModelProvider.ToLowerInvariant();
@@ -62,6 +67,7 @@ public sealed partial class SettingsPage : Page
 
         PopulateModelCombo(provider);
         SelectCurrentModel(HermesEnvironment.DefaultModel);
+        await RefreshRuntimeStatusAsync();
     }
 
     private void ProviderCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -145,19 +151,49 @@ public sealed partial class SettingsPage : Page
             if (string.IsNullOrEmpty(model))
             {
                 ModelSaveStatus.Text = "Model name is required.";
-                ModelSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOfflineBrush"];
+                ModelSaveStatus.Foreground = (Brush)Application.Current.Resources["ConnectionOfflineBrush"];
+                await RefreshRuntimeStatusAsync();
                 return;
             }
 
             await HermesEnvironment.SaveModelConfigAsync(providerTag, baseUrl, model, apiKey);
             ModelSaveStatus.Text = "Saved successfully. Restart to apply.";
-            ModelSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOnlineBrush"];
+            ModelSaveStatus.Foreground = (Brush)Application.Current.Resources["ConnectionOnlineBrush"];
+            await RefreshRuntimeStatusAsync();
         }
         catch (Exception ex)
         {
             ModelSaveStatus.Text = $"Error: {ex.Message}";
-            ModelSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOfflineBrush"];
+            ModelSaveStatus.Foreground = (Brush)Application.Current.Resources["ConnectionOfflineBrush"];
+            await RefreshRuntimeStatusAsync();
         }
+    }
+
+    private async Task RefreshRuntimeStatusAsync()
+    {
+        ApplyRuntimeStatusSnapshot(_runtimeStatusService.GetConfiguredSnapshot());
+        var snapshot = await _runtimeStatusService.RefreshAsync(CancellationToken.None);
+        ApplyRuntimeStatusSnapshot(snapshot);
+    }
+
+    private void ApplyRuntimeStatusSnapshot(RuntimeStatusSnapshot snapshot)
+    {
+        RuntimeProviderStatusText.Text = snapshot.Provider;
+        RuntimeModelStatusText.Text = snapshot.Model;
+
+        RuntimeConnectionStatusText.Text = snapshot.ConnectionState switch
+        {
+            RuntimeConnectionState.Connected => ResourceLoader.GetString("StatusConnected"),
+            RuntimeConnectionState.Checking => ResourceLoader.GetString("ChatStatusChecking"),
+            _ => ResourceLoader.GetString("StatusOffline"),
+        };
+
+        RuntimeConnectionStatusText.Foreground = snapshot.ConnectionState switch
+        {
+            RuntimeConnectionState.Connected => (Brush)Application.Current.Resources["ConnectionOnlineBrush"],
+            RuntimeConnectionState.Checking => (Brush)Application.Current.Resources["AppTextSecondaryBrush"],
+            _ => (Brush)Application.Current.Resources["ConnectionOfflineBrush"],
+        };
     }
 
     private void OpenHome_Click(object sender, RoutedEventArgs e)

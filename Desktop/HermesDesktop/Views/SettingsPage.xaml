@@ -101,6 +101,30 @@
                                 <TextBlock x:Name="ModelSaveStatus" VerticalAlignment="Center"
                                            Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="13"/>
                             </StackPanel>
+
+                            <StackPanel Spacing="6" Margin="0,6,0,0">
+                                <TextBlock Text="CURRENT RUNTIME STATUS" Style="{StaticResource LabelTextStyle}" />
+                                <Grid ColumnSpacing="12" RowSpacing="6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Provider" Style="{StaticResource LabelTextStyle}" />
+                                    <TextBlock x:Name="RuntimeProviderStatusText" Grid.Row="0" Grid.Column="1" />
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Model" Style="{StaticResource LabelTextStyle}" />
+                                    <TextBlock x:Name="RuntimeModelStatusText" Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" />
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Connection" Style="{StaticResource LabelTextStyle}" />
+                                    <TextBlock x:Name="RuntimeConnectionStatusText" Grid.Row="2" Grid.Column="1" />
+                                </Grid>
+                            </StackPanel>
                         </StackPanel>
                     </StackPanel>
                 </Border>
