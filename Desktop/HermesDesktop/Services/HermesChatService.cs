@@ -20,6 +20,7 @@ internal sealed class HermesChatService : IDisposable
     private readonly Agent _agent;
     private readonly IChatClient _chatClient;
     private readonly TranscriptStore _transcriptStore;
+    private readonly PermissionManager _permissionManager;
     private readonly ILogger<HermesChatService> _logger;
 
     private Session? _currentSession;
@@ -30,12 +31,15 @@ internal sealed class HermesChatService : IDisposable
         Agent agent,
         IChatClient chatClient,
         TranscriptStore transcriptStore,
+        PermissionManager permissionManager,
         ILogger<HermesChatService> logger)
     {
         _agent = agent;
         _chatClient = chatClient;
         _transcriptStore = transcriptStore;
+        _permissionManager = permissionManager;
         _logger = logger;
+        CurrentPermissionMode = _permissionManager.Mode;
     }
 
     public string? CurrentSessionId => _currentSession?.Id;
@@ -168,6 +172,7 @@ internal sealed class HermesChatService : IDisposable
 
     public void SetPermissionMode(PermissionMode mode)
     {
+        _permissionManager.Mode = mode;
         CurrentPermissionMode = mode;
     }
 

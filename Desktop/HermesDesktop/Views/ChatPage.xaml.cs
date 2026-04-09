@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Hermes.Agent.Core;
+using Hermes.Agent.Permissions;
 using Hermes.Agent.Skills;
 using Hermes.Agent.Soul;
 using Hermes.Agent.Transcript;
@@ -66,6 +67,7 @@ public sealed partial class ChatPage : Page
 
         ConnectionStateText.Text = ResourceLoader.GetString("ChatStatusChecking");
         SessionIdLabel.Text = "New Session";
+        SetPermissionModeSelector(_chatService.CurrentPermissionMode);
 
         // Wire session panel click → load session into chat
         SessionPanelView.SessionSelected += OnSessionSelected;
@@ -357,8 +359,45 @@ public sealed partial class ChatPage : Page
 
     private void PermissionModeSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        // No-op for now — permission mode tracked but not enforced in UI yet
+        if (PermissionModeSelector.SelectedItem is not ComboBoxItem { Tag: string tag })
+        {
+            return;
+        }
+
+        _chatService.SetPermissionMode(ParsePermissionMode(tag));
     }
+
+    private void SetPermissionModeSelector(PermissionMode mode)
+    {
+        var expectedTag = mode switch
+        {
+            PermissionMode.Plan => "Plan",
+            PermissionMode.Auto => "Auto",
+            PermissionMode.AcceptEdits => "AcceptEdits",
+            PermissionMode.BypassPermissions => "Bypass",
+            _ => "Default",
+        };
+
+        foreach (var item in PermissionModeSelector.Items.OfType<ComboBoxItem>())
+        {
+            if (item.Tag is string tag && string.Equals(tag, expectedTag, StringComparison.Ordinal))
+            {
+                PermissionModeSelector.SelectedItem = item;
+                return;
+            }
+        }
+
+        PermissionModeSelector.SelectedIndex = 0;
+    }
+
+    private static PermissionMode ParsePermissionMode(string tag) => tag switch
+    {
+        "Plan" => PermissionMode.Plan,
+        "Auto" => PermissionMode.Auto,
+        "AcceptEdits" => PermissionMode.AcceptEdits,
+        "Bypass" => PermissionMode.BypassPermissions,
+        _ => PermissionMode.Default,
+    };
 
     // ── Connection Check ──
 
