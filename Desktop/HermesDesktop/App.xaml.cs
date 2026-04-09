@@ -17,8 +17,11 @@ using Hermes.Agent.Analytics;
 using Hermes.Agent.Plugins;
 using Hermes.Agent.Soul;
 using Hermes.Agent.Tools;
+using Hermes.Agent.Gateway;
+using Hermes.Agent.Gateway.Platforms;
 using HermesDesktop.Services;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 
@@ -232,6 +235,13 @@ public partial class App : Application
             sp.GetRequiredService<IChatClient>(),
             coordinatorStateDir));
 
+        // Native C# gateway — no Python CLI required for Telegram/Discord
+        services.AddSingleton(sp =>
+        {
+            var gatewayConfig = BuildGatewayConfig();
+            return new GatewayService(gatewayConfig, sp.GetRequiredService<ILogger<GatewayService>>());
+        });
+
         // Skill invoker (for slash command support)
         services.AddSingleton(sp => new Hermes.Agent.Skills.SkillInvoker(
             sp.GetRequiredService<Hermes.Agent.Skills.SkillManager>(),
@@ -249,6 +259,9 @@ public partial class App : Application
 
         // Wire permission prompt callback to show a ContentDialog in the UI
         WirePermissionCallback(provider);
+
+        // Start native C# gateway if platform tokens are configured
+        StartNativeGateway(provider);
 
         return provider;
     }
@@ -345,8 +358,9 @@ public partial class App : Application
         var skillManager = services.GetRequiredService<SkillManager>();
         RegisterAndTrack(agent, toolRegistry, new SkillInvokeTool(skillManager));
 
-        // Send message tool (stub — gateway integration pending)
-        RegisterAndTrack(agent, toolRegistry, new SendMessageTool());
+        // Send message tool (wired to native C# gateway)
+        var gateway = services.GetRequiredService<GatewayService>();
+        RegisterAndTrack(agent, toolRegistry, new SendMessageTool(gateway));
 
         // Code sandbox tool
         RegisterAndTrack(agent, toolRegistry, new CodeSandboxTool());
@@ -374,6 +388,94 @@ public partial class App : Application
             File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: false);
         foreach (var dir in Directory.EnumerateDirectories(source))
             CopyDirectoryRecursive(dir, Path.Combine(destination, Path.GetFileName(dir)));
+    }
+
+    /// <summary>
+    /// Build gateway configuration from config.yaml platform tokens.
+    /// </summary>
+    private static GatewayConfig BuildGatewayConfig()
+    {
+        var config = new GatewayConfig();
+
+        var telegramToken = HermesEnvironment.ReadPlatformSetting("telegram", "token");
+        if (!string.IsNullOrWhiteSpace(telegramToken))
+        {
+            config.Platforms[Platform.Telegram] = new PlatformConfig
+            {
+                Enabled = true,
+                Token = telegramToken
+            };
+        }
+
+        var discordToken = HermesEnvironment.ReadPlatformSetting("discord", "token");
+        if (!string.IsNullOrWhiteSpace(discordToken))
+        {
+            config.Platforms[Platform.Discord] = new PlatformConfig
+            {
+                Enabled = true,
+                Token = discordToken
+            };
+        }
+
+        return config;
+    }
+
+    /// <summary>
+    /// Start the native C# gateway in the background if platform tokens are configured.
+    /// Wires the agent as the message handler so incoming Telegram/Discord messages
+    /// are processed by the Hermes agent.
+    /// </summary>
+    private static void StartNativeGateway(IServiceProvider services)
+    {
+        try
+        {
+            var gateway = services.GetRequiredService<GatewayService>();
+            var agent = services.GetRequiredService<Agent>();
+            var logger = services.GetRequiredService<ILogger<App>>();
+
+            // Wire agent as the message handler
+            gateway.SetAgentHandler(async (sessionId, userMessage, platform) =>
+            {
+                var session = new Session { Id = sessionId, Platform = platform };
+                return await agent.ChatAsync(userMessage, session, CancellationToken.None);
+            });
+
+            // Create adapters for configured platforms
+            var adapters = new List<IPlatformAdapter>();
+
+            var tgToken = HermesEnvironment.ReadPlatformSetting("telegram", "token");
+            if (!string.IsNullOrWhiteSpace(tgToken))
+                adapters.Add(new TelegramAdapter(tgToken));
+
+            var dcToken = HermesEnvironment.ReadPlatformSetting("discord", "token");
+            if (!string.IsNullOrWhiteSpace(dcToken))
+                adapters.Add(new DiscordAdapter(dcToken));
+
+            if (adapters.Count > 0)
+            {
+                logger.LogInformation("Starting native gateway with {Count} platform(s)", adapters.Count);
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await gateway.StartAsync(adapters, CancellationToken.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Gateway start failed: {ex.Message}");
+                        logger.LogError(ex, "Native gateway start failed");
+                    }
+                });
+            }
+            else
+            {
+                logger.LogDebug("No platform tokens configured — native gateway not started");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Gateway initialization error: {ex.Message}");
+        }
     }
 
     /// <summary>

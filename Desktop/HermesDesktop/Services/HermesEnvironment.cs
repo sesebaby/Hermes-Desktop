@@ -154,6 +154,49 @@ internal static class HermesEnvironment
         TelegramConfigured || DiscordConfigured || SlackConfigured ||
         WhatsAppConfigured || MatrixConfigured || WebhookConfigured;
 
+    /// <summary>Whether native C# adapters are available (Telegram, Discord).</summary>
+    internal static bool CanUseNativeGateway => true;
+
+    /// <summary>Platforms that have native C# adapters and don't need the Python gateway.</summary>
+    internal static readonly HashSet<string> NativePlatforms = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "telegram", "discord"
+    };
+
+    /// <summary>Check whether the native C# gateway is currently running (via DI singleton).</summary>
+    internal static bool IsNativeGatewayRunning()
+    {
+        try
+        {
+            var gateway = HermesDesktop.App.Services?.GetService(
+                typeof(Hermes.Agent.Gateway.GatewayService)) as Hermes.Agent.Gateway.GatewayService;
+            return gateway?.IsRunning == true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Get the native gateway's connected adapter status for display.</summary>
+    internal static Dictionary<string, bool> GetNativeAdapterStatus()
+    {
+        var status = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var gateway = HermesDesktop.App.Services?.GetService(
+                typeof(Hermes.Agent.Gateway.GatewayService)) as Hermes.Agent.Gateway.GatewayService;
+            if (gateway is null) return status;
+
+            foreach (var (platform, adapter) in gateway.Adapters)
+            {
+                status[platform.ToString()] = adapter.IsConnected;
+            }
+        }
+        catch { }
+        return status;
+    }
+
     /// <summary>Path to the gateway PID file.</summary>
     internal static string GatewayPidPath => Path.Combine(HermesHomePath, "gateway.pid");
 

@@ -1,5 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.Threading;
+using Hermes.Agent.Gateway;
+using Hermes.Agent.Gateway.Platforms;
 using HermesDesktop.Services;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -26,6 +31,7 @@ public sealed partial class IntegrationsPage : Page
 
     private void RefreshAll()
     {
+        RefreshNativeGatewayStatus();
         RefreshGatewayStatus();
         RefreshTelegramDisplay();
         RefreshDiscordDisplay();
@@ -36,7 +42,148 @@ public sealed partial class IntegrationsPage : Page
     }
 
     // =========================================================================
-    // Gateway Status
+    // Native Gateway (C#) Status
+    // =========================================================================
+
+    private void RefreshNativeGatewayStatus()
+    {
+        bool running = HermesEnvironment.IsNativeGatewayRunning();
+
+        NativeGatewayStatusText.Text = running ? "Running" : "Stopped";
+        NativeGatewayIndicator.Fill = running
+            ? (Brush)Application.Current.Resources["ConnectionOnlineBrush"]
+            : (Brush)Application.Current.Resources["ConnectionOfflineBrush"];
+
+        var adapterStatus = HermesEnvironment.GetNativeAdapterStatus();
+        if (running && adapterStatus.Count > 0)
+        {
+            var parts = new List<string>();
+            foreach (var (platform, connected) in adapterStatus)
+                parts.Add($"{platform}: {(connected ? "Connected" : "Disconnected")}");
+            NativeGatewayStateText.Text = string.Join(" | ", parts);
+        }
+        else
+        {
+            var tgToken = HermesEnvironment.ReadPlatformSetting("telegram", "token");
+            var dcToken = HermesEnvironment.ReadPlatformSetting("discord", "token");
+            bool hasNativeTokens = !string.IsNullOrWhiteSpace(tgToken) || !string.IsNullOrWhiteSpace(dcToken);
+
+            NativeGatewayStateText.Text = hasNativeTokens
+                ? "Native gateway is not running. Click Start to launch it."
+                : "No Telegram or Discord tokens configured. Save a token below to get started.";
+        }
+
+        NativeGatewayToggleButton.Content = running ? "Stop Native Gateway" : "Start Native Gateway";
+
+        // Build per-adapter status indicators
+        AdapterStatusPanel.Children.Clear();
+        foreach (var platform in new[] { "Telegram", "Discord" })
+        {
+            var indicator = new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
+            if (adapterStatus.TryGetValue(platform, out var connected) && connected)
+                indicator.Fill = (Brush)Application.Current.Resources["ConnectionOnlineBrush"];
+            else
+                indicator.Fill = (Brush)Application.Current.Resources["ConnectionOfflineBrush"];
+
+            var label = new TextBlock
+            {
+                Text = platform,
+                FontSize = 12,
+                Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"],
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(4, 0, 12, 0)
+            };
+
+            AdapterStatusPanel.Children.Add(indicator);
+            AdapterStatusPanel.Children.Add(label);
+        }
+    }
+
+    private async void NativeGatewayToggle_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var gateway = App.Services.GetRequiredService<GatewayService>();
+
+            if (gateway.IsRunning)
+            {
+                await gateway.StopAsync();
+            }
+            else
+            {
+                StartNativeGatewayFromUI(gateway);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Native gateway toggle error: {ex.Message}");
+        }
+
+        DispatcherQueue.TryEnqueue(async () =>
+        {
+            await System.Threading.Tasks.Task.Delay(1500);
+            RefreshNativeGatewayStatus();
+        });
+    }
+
+    private async void RestartNativeGateway_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var gateway = App.Services.GetRequiredService<GatewayService>();
+
+            if (gateway.IsRunning)
+                await gateway.StopAsync();
+
+            // Brief pause to let connections close
+            await System.Threading.Tasks.Task.Delay(500);
+
+            StartNativeGatewayFromUI(gateway);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Native gateway restart error: {ex.Message}");
+        }
+
+        DispatcherQueue.TryEnqueue(async () =>
+        {
+            await System.Threading.Tasks.Task.Delay(2000);
+            RefreshNativeGatewayStatus();
+        });
+    }
+
+    private static void StartNativeGatewayFromUI(GatewayService gateway)
+    {
+        // Wire agent handler if not already set
+        var agent = App.Services.GetRequiredService<Hermes.Agent.Core.Agent>();
+        gateway.SetAgentHandler(async (sessionId, userMessage, platform) =>
+        {
+            var session = new Hermes.Agent.Core.Session { Id = sessionId, Platform = platform };
+            return await agent.ChatAsync(userMessage, session, CancellationToken.None);
+        });
+
+        var adapters = new List<IPlatformAdapter>();
+
+        var tgToken = HermesEnvironment.ReadPlatformSetting("telegram", "token");
+        if (!string.IsNullOrWhiteSpace(tgToken))
+            adapters.Add(new TelegramAdapter(tgToken));
+
+        var dcToken = HermesEnvironment.ReadPlatformSetting("discord", "token");
+        if (!string.IsNullOrWhiteSpace(dcToken))
+            adapters.Add(new DiscordAdapter(dcToken));
+
+        if (adapters.Count > 0)
+        {
+            _ = System.Threading.Tasks.Task.Run(async () =>
+            {
+                try { await gateway.StartAsync(adapters, CancellationToken.None); }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Gateway start failed: {ex.Message}"); }
+            });
+        }
+    }
+
+    // =========================================================================
+    // Python Gateway Status (advanced platforms)
     // =========================================================================
 
     private void RefreshGatewayStatus()

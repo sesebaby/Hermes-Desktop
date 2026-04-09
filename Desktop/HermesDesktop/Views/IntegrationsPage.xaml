@@ -27,24 +27,55 @@
                 </StackPanel>
             </Border>
 
-            <!-- Gateway requirement notice -->
+            <!-- Gateway info notice -->
             <Border Background="#1A1500" CornerRadius="8" Padding="16,12" BorderBrush="#3A3000" BorderThickness="1">
                 <StackPanel Spacing="6">
-                    <TextBlock Text="&#xE946; Messaging platforms require the Hermes Agent CLI gateway"
+                    <TextBlock Text="&#xE946; Native C# gateway for Telegram and Discord"
                                FontFamily="{ThemeResource SymbolThemeFontFamily}"
                                FontSize="13" Foreground="{StaticResource AppAccentTextBrush}" />
-                    <TextBlock Text="The desktop app configures and manages the gateway, but messaging (Telegram, Discord, Slack, etc.) runs as a separate Python service. Install hermes-agent to enable platform integrations."
+                    <TextBlock Text="Telegram and Discord run natively in the desktop app — no Python required. For advanced platforms (Slack, WhatsApp, Matrix), install hermes-agent for the Python gateway."
                                FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap" />
-                    <HyperlinkButton Content="Install hermes-agent (pip install hermes-agent)"
+                    <HyperlinkButton Content="Install hermes-agent for additional platforms (pip install hermes-agent)"
                                      NavigateUri="https://github.com/NousResearch/hermes-agent"
                                      FontSize="12" Padding="0" />
                 </StackPanel>
             </Border>
 
-            <!-- Gateway Status -->
+            <!-- Native Gateway Status -->
             <Border Style="{StaticResource SurfaceCardStyle}">
                 <StackPanel Spacing="12">
-                    <TextBlock Text="Gateway Status" Style="{StaticResource SectionTitleTextStyle}" />
+                    <TextBlock Text="Native Gateway (C#)" Style="{StaticResource SectionTitleTextStyle}" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Ellipse x:Name="NativeGatewayIndicator" Width="12" Height="12"
+                                 VerticalAlignment="Center" />
+                        <TextBlock x:Name="NativeGatewayStatusText" VerticalAlignment="Center"
+                                   Style="{StaticResource MetricValueTextStyle}" />
+                    </StackPanel>
+                    <TextBlock x:Name="NativeGatewayStateText" FontSize="13"
+                               Foreground="{StaticResource AppTextSecondaryBrush}" />
+                    <!-- Per-adapter connection status -->
+                    <StackPanel x:Name="AdapterStatusPanel" Orientation="Horizontal" Spacing="16" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button x:Name="NativeGatewayToggleButton" Click="NativeGatewayToggle_Click"
+                                Background="{StaticResource AppAccentGradientBrush}"
+                                BorderBrush="{StaticResource AppAccentDarkBrush}"
+                                Foreground="#16110D" Padding="16,8" />
+                        <Button Content="Restart Gateway" Click="RestartNativeGateway_Click"
+                                Background="{StaticResource AppInsetBrush}"
+                                BorderBrush="{StaticResource AppStrokeBrush}"
+                                Foreground="White" Padding="16,8" />
+                        <Button x:Name="GatewayRefreshButton" Content="Refresh" Click="GatewayRefresh_Click"
+                                Background="{StaticResource AppInsetBrush}"
+                                BorderBrush="{StaticResource AppStrokeBrush}"
+                                Foreground="White" Padding="16,8" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Python Gateway Status (advanced platforms) -->
+            <Border Style="{StaticResource SurfaceCardStyle}">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Python Gateway (Slack, WhatsApp, Matrix)" Style="{StaticResource SectionTitleTextStyle}" />
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Ellipse x:Name="GatewayIndicator" Width="12" Height="12"
                                  VerticalAlignment="Center" />
@@ -55,10 +86,6 @@
                                Foreground="{StaticResource AppTextSecondaryBrush}" />
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Button x:Name="GatewayToggleButton" Click="GatewayToggle_Click"
-                                Background="{StaticResource AppAccentGradientBrush}"
-                                BorderBrush="{StaticResource AppAccentDarkBrush}"
-                                Foreground="#16110D" Padding="16,8" />
-                        <Button x:Name="GatewayRefreshButton" Content="Refresh" Click="GatewayRefresh_Click"
                                 Background="{StaticResource AppInsetBrush}"
                                 BorderBrush="{StaticResource AppStrokeBrush}"
                                 Foreground="White" Padding="16,8" />
@@ -87,7 +114,7 @@
                 <StackPanel Spacing="4">
                     <TextBlock Text="Integration Status" FontSize="14" FontWeight="SemiBold"
                                Foreground="{StaticResource AppAccentTextBrush}"/>
-                    <TextBlock Text="Token configuration is saved locally. Platform connections require the Hermes Gateway (hermes-agent Python backend) to be installed and running. Currently, only token storage is functional — actual messaging bridges are not yet ported to C#."
+                    <TextBlock Text="Telegram and Discord use native C# adapters — they work without the Python CLI. Slack, WhatsApp, and Matrix still require the hermes-agent Python gateway. Token configuration is saved locally to config.yaml."
                                FontSize="12" TextWrapping="Wrap"
                                Foreground="{StaticResource AppTextSecondaryBrush}"/>
                 </StackPanel>
@@ -107,8 +134,8 @@
                             <TextBlock
                                 x:Uid="IntegrationsTelegramTitle"
                                 Style="{StaticResource SectionTitleTextStyle}" />
-                            <Border Background="#3A2A00" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock Text="Config Only" FontSize="9" Foreground="{StaticResource AppAccentTextBrush}"/>
+                            <Border Background="#1A3A1A" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                                <TextBlock Text="Native C#" FontSize="9" Foreground="#6ABF6A"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="TelegramStatusText"
@@ -144,8 +171,8 @@
                             <TextBlock
                                 x:Uid="IntegrationsDiscordTitle"
                                 Style="{StaticResource SectionTitleTextStyle}" />
-                            <Border Background="#3A2A00" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock Text="Config Only" FontSize="9" Foreground="{StaticResource AppAccentTextBrush}"/>
+                            <Border Background="#1A3A1A" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                                <TextBlock Text="Native C#" FontSize="9" Foreground="#6ABF6A"/>
                             </Border>
                         </StackPanel>
                         <TextBlock x:Name="DiscordStatusText"
