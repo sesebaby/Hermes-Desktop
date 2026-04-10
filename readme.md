@@ -154,21 +154,30 @@ With `TokenBudget` (8000 max, 6-turn window), `SessionState` tracking, and `Comp
 
 ### Build and Run
 
-```bash
-git clone https://github.com/RedWoodOG/Hermes-Desktop.git
-cd Hermes-Desktop
-dotnet build Desktop/HermesDesktop/HermesDesktop.csproj
-```
-
-Register and launch:
+Recommended local dev path:
 
 ```powershell
-cd Desktop\HermesDesktop\bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64
-Add-AppxPackage -Register AppxManifest.xml
+git clone https://github.com/RedWoodOG/Hermes-Desktop.git
+cd Hermes-Desktop
+powershell -ExecutionPolicy Bypass -File .\Desktop\HermesDesktop\run-dev.ps1
+```
+
+Manual fallback:
+
+```powershell
+dotnet build Desktop/HermesDesktop/HermesDesktop.csproj -c Debug -p:Platform=x64
+Add-AppxPackage -Register .\Desktop\HermesDesktop\bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64\AppxManifest.xml -ForceApplicationShutdown -ForceUpdateFromAnyVersion
 Start-Process "shell:AppsFolder\EDC29F63-281C-4D34-8723-155C8122DEA2_1z32rh13vfry6!App"
 ```
 
 The active Windows desktop project is `Desktop/HermesDesktop/HermesDesktop.csproj`.
+
+If the app does not show a window after launch:
+
+- re-run `.\Desktop\HermesDesktop\run-dev.ps1` so the package path and launch checks happen in one step
+- check `%LOCALAPPDATA%\hermes\hermes-cs\logs\desktop-startup.log` for startup exceptions
+- check `C:\ProgramData\Microsoft\Windows\WER\ReportArchive` for Windows crash reports
+- temporarily close overlay/injection tools such as RTSS / MSI Afterburner and retry
 
 ### Configuration
 
@@ -180,6 +189,14 @@ model:
   default: claude-sonnet-4-6
   base_url: https://api.anthropic.com
   api_key: sk-ant-your-key-here
+  temperature: "0.7"
+  max_tokens: "4096"
+
+# OpenAI-compatible endpoint with OAuth proxy token (uncomment to use):
+#   auth_mode: oauth_proxy_command
+#   auth_header: Authorization
+#   auth_scheme: Bearer
+#   auth_token_command: oauth-proxy-helper print-access-token
 
 # Keys for runtime model swapping (optional)
 provider_keys:
@@ -187,6 +204,13 @@ provider_keys:
   openai: sk-proj-your-key
   qwen: sk-your-qwen-key
   ollama_url: http://127.0.0.1:11434/v1
+
+platforms:
+  telegram:
+    token: ""
+  discord:
+    token: ""
+    require_mention: true
 ```
 
 ## Project Structure
