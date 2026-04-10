@@ -22,6 +22,81 @@
                 </StackPanel>
             </Border>
 
+            <!-- ═══ A2. User Profile ═══ -->
+            <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                <Expander.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon Glyph="&#xE77B;" FontFamily="Segoe MDL2 Assets" FontSize="18"/>
+                        <TextBlock Text="User Profile" Style="{StaticResource SectionTitleTextStyle}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Expander.Header>
+                <Expander.Content>
+                    <StackPanel Spacing="12" Padding="4,12,4,4">
+                        <TextBlock Text="This information helps the agent personalize responses and remember who you are across sessions. Stored in USER.md."
+                                   FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+
+                        <!-- Display Name -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="YOUR NAME" Style="{StaticResource LabelTextStyle}"/>
+                            <TextBox x:Name="UserNameBox" PlaceholderText="How should the agent address you?"
+                                     Background="{StaticResource AppInsetBrush}"
+                                     BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White"/>
+                        </StackPanel>
+
+                        <!-- Role / Expertise -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="ROLE / EXPERTISE" Style="{StaticResource LabelTextStyle}"/>
+                            <TextBox x:Name="UserRoleBox" PlaceholderText="e.g. Windows developer, data scientist, student..."
+                                     Background="{StaticResource AppInsetBrush}"
+                                     BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White"/>
+                        </StackPanel>
+
+                        <!-- Working Style -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="WORKING STYLE" Style="{StaticResource LabelTextStyle}"/>
+                            <TextBox x:Name="UserStyleBox" PlaceholderText="e.g. Prefers concise responses, likes code over explanations..."
+                                     Background="{StaticResource AppInsetBrush}" AcceptsReturn="True"
+                                     TextWrapping="Wrap" MinHeight="60"
+                                     BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White"/>
+                        </StackPanel>
+
+                        <!-- Project Directory -->
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="DEFAULT PROJECT DIRECTORY" Style="{StaticResource LabelTextStyle}"/>
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="UserProjectDirBox" PlaceholderText="e.g. C:\Projects or ~/code"
+                                         Background="{StaticResource AppInsetBrush}"
+                                         BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White"/>
+                                <Button Grid.Column="1" Content="Browse" Click="BrowseProjectDir_Click"
+                                        Background="{StaticResource AppInsetBrush}"
+                                        BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White" Padding="12,6"/>
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- USER.md file path display -->
+                        <TextBlock x:Name="UserProfilePathLabel" FontSize="11"
+                                   Foreground="{StaticResource AppTextSecondaryBrush}"/>
+
+                        <!-- Save + Edit raw -->
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button x:Name="SaveUserProfileBtn" Content="Save Profile" Click="SaveUserProfile_Click"
+                                    Background="{StaticResource AppAccentGradientBrush}"
+                                    BorderBrush="{StaticResource AppAccentDarkBrush}"
+                                    Foreground="#16110D" Padding="20,8"/>
+                            <Button Content="Edit USER.md" Click="EditUserMd_Click"
+                                    Background="{StaticResource AppInsetBrush}"
+                                    BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White" Padding="12,6"/>
+                            <TextBlock x:Name="UserProfileSaveStatus" VerticalAlignment="Center"
+                                       Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="13"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Expander.Content>
+            </Expander>
+
             <!-- ═══ B. Model Configuration ═══ -->
             <Expander IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
                 <Expander.Header>

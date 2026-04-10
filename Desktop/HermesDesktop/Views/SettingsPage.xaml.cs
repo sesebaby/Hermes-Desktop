@@ -41,6 +41,7 @@ public sealed partial class SettingsPage : Page
     // ═══════════════════════════════════════════
     private void OnPageLoaded(object sender, RoutedEventArgs e)
     {
+        LoadUserProfile();
         LoadModelSettings();
         LoadAgentSettings();
         LoadGatewayStatus();
@@ -49,6 +50,125 @@ public sealed partial class SettingsPage : Page
         LoadDisplaySettings();
         LoadExecutionSettings();
         LoadPluginSettings();
+    }
+
+    // ── User Profile ──
+
+    private void LoadUserProfile()
+    {
+        var userMdPath = Path.Combine(HermesEnvironment.HermesHomePath, "USER.md");
+        UserProfilePathLabel.Text = $"Stored at: {userMdPath}";
+
+        if (!File.Exists(userMdPath)) return;
+
+        try
+        {
+            var content = File.ReadAllText(userMdPath);
+
+            // Parse simple fields from the markdown structure
+            UserNameBox.Text = ExtractSection(content, "Who They Are", "Technical Expertise")?.Trim() ?? "";
+            UserRoleBox.Text = ExtractSection(content, "Technical Expertise", "How They Work")?.Trim() ?? "";
+            UserStyleBox.Text = ExtractSection(content, "How They Work", "What I've Learned")?.Trim() ?? "";
+
+            // Project directory from config
+            UserProjectDirBox.Text = HermesEnvironment.AgentWorkingDirectory;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to load user profile: {ex.Message}");
+        }
+    }
+
+    private static string? ExtractSection(string md, string startHeader, string? endHeader)
+    {
+        var startMarker = $"## {startHeader}";
+        var startIdx = md.IndexOf(startMarker, StringComparison.OrdinalIgnoreCase);
+        if (startIdx < 0) return null;
+
+        startIdx = md.IndexOf('\n', startIdx);
+        if (startIdx < 0) return null;
+        startIdx++; // skip the newline
+
+        int endIdx;
+        if (endHeader is not null)
+        {
+            var endMarker = $"## {endHeader}";
+            endIdx = md.IndexOf(endMarker, startIdx, StringComparison.OrdinalIgnoreCase);
+            if (endIdx < 0) endIdx = md.Length;
+        }
+        else
+        {
+            endIdx = md.Length;
+        }
+
+        return md[startIdx..endIdx].Trim();
+    }
+
+    private async void SaveUserProfile_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var userMdPath = Path.Combine(HermesEnvironment.HermesHomePath, "USER.md");
+            var name = UserNameBox.Text.Trim();
+            var role = UserRoleBox.Text.Trim();
+            var style = UserStyleBox.Text.Trim();
+            var projectDir = UserProjectDirBox.Text.Trim();
+
+            var content = $@"# User Profile
+
+This file is a living document about the human I work with. It helps me provide continuity across sessions and personalized assistance.
+
+## Who They Are
+{(string.IsNullOrEmpty(name) ? "Not configured yet." : name)}
+
+## Technical Expertise
+{(string.IsNullOrEmpty(role) ? "Not specified." : role)}
+
+## How They Work
+{(string.IsNullOrEmpty(style) ? "No preferences specified." : style)}
+
+## What I've Learned
+(This section is updated automatically by the agent as it learns about you.)
+";
+
+            await File.WriteAllTextAsync(userMdPath, content);
+
+            // Save project directory to environment if changed
+            if (!string.IsNullOrEmpty(projectDir) && Directory.Exists(projectDir))
+            {
+                Environment.SetEnvironmentVariable("HERMES_DESKTOP_WORKSPACE", projectDir, EnvironmentVariableTarget.User);
+            }
+
+            UserProfileSaveStatus.Text = "Profile saved.";
+            UserProfileSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOnlineBrush"];
+        }
+        catch (Exception ex)
+        {
+            UserProfileSaveStatus.Text = $"Error: {ex.Message}";
+            UserProfileSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOfflineBrush"];
+        }
+    }
+
+    private void EditUserMd_Click(object sender, RoutedEventArgs e)
+    {
+        var userMdPath = Path.Combine(HermesEnvironment.HermesHomePath, "USER.md");
+        if (File.Exists(userMdPath))
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(userMdPath) { UseShellExecute = true };
+            System.Diagnostics.Process.Start(psi);
+        }
+    }
+
+    private void BrowseProjectDir_Click(object sender, RoutedEventArgs e)
+    {
+        // Open folder picker — WinUI 3 doesn't have a simple folder picker inline,
+        // so we'll use the environment variable approach and let users type/paste the path
+        var current = UserProjectDirBox.Text;
+        if (!string.IsNullOrEmpty(current) && Directory.Exists(current))
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(current) { UseShellExecute = true };
+            System.Diagnostics.Process.Start(psi);
+        }
     }
 
     // ── Model ──
