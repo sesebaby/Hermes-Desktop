@@ -8,18 +8,19 @@
 
 **A native Windows agentic framework** built with WinUI 3 and .NET 10 — featuring runtime model swapping, 27+ tools with parallel execution, production hardening, a persistent soul identity system, 94 skills, and a wiki-based knowledge base.
 
-**Current version: v2.0.0** | [Changelog](#changelog) | [Discussion](https://github.com/RedWoodOG/Hermes-Desktop/discussions/10)
+**Current version: v2.2.0** | [Changelog](#changelog) | [Discussion](https://github.com/RedWoodOG/Hermes-Desktop/discussions/10)
 
 ## What This Is
 
 Hermes Desktop is a **Windows-native agent runtime and control plane** — not a port of the upstream Hermes TUI or gateway. It focuses on:
 
 - **In-process agent runtime** with tool calling, permissions, and context management
-- **Native Windows UX** that upstream Hermes doesn't provide (soul browser, skills library, activity replay, visual settings)
+- **Native Windows UX** that upstream Hermes doesn't provide (soul browser, skills library, activity replay, visual settings, user profile)
 - **Runtime model swapping** between providers mid-conversation without restart
+- **Native Telegram and Discord** — messaging works without the Python CLI (v2.1.0)
 - **Production hardening** (compression cooldown, provider fallback, atomic persistence, secret scanning)
 
-The Python gateway remains a sidecar — the desktop app configures and manages it but doesn't try to become it.
+Slack, WhatsApp, Matrix, and other platforms are supported via the Python gateway sidecar — the desktop app can configure and launch it from the Integrations page.
 
 ## Screenshots
 
@@ -117,7 +118,7 @@ Markdown-based capabilities with YAML frontmatter across 28 categories:
 | **Memory** | Memory browser with type badges, project rules (AGENTS.md) editor |
 | **Buddy** | Companion with deterministic ASCII art, stats, personality |
 | **Integrations** | 6 messaging platform token configs + gateway start/stop |
-| **Settings** | 8 collapsible sections: Model, Agent, Gateway, Memory, Display, Execution, Plugins, Paths |
+| **Settings** | 9 collapsible sections: User Profile, Model, Agent, Gateway, Memory, Display, Execution, Plugins, Paths |
 
 ### Wiki Knowledge Base (v1.9.0)
 
@@ -223,7 +224,11 @@ Hermes.CS/
 
 | Version | Date | Changes |
 |---------|------|---------|
-| **v2.0.0** | 2026-04-09 | Runtime model swapping (Claude/OpenAI/Ollama/Qwen mid-conversation) |
+| **v2.2.0** | 2026-04-10 | User Profile section in Settings (name, role, working style, project dir) |
+| v2.1.1 | 2026-04-10 | Fix skills discovery (dynamic repo root), model dropdown (shows user config first), memory paths |
+| v2.1.0 | 2026-04-10 | Native C# gateway — Telegram and Discord work without Python CLI |
+| v2.0.1 | 2026-04-09 | Fix dark text theme, first-run skill copy, gateway requirement notice |
+| v2.0.0 | 2026-04-09 | Runtime model swapping (Claude/OpenAI/Ollama/Qwen mid-conversation) |
 | v1.9.1 | 2026-04-09 | Agent tool loop test (207 pass), Chat UX (tool count, session copy) |
 | v1.9.0 | 2026-04-09 | Wiki Phase 1: core data layer with SQLite FTS5 search |
 | v1.8.0 | 2026-04-09 | Production hardening: compression cooldown, provider fallback, atomic writes, deterministic IDs |
