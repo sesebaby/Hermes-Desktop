@@ -56,6 +56,7 @@ public sealed class ShellSecurityAnalyzer
     {
         _validators = new List<IShellValidator>
         {
+            new TokenizedCommandValidator(),
             new MetacharacterValidator(),
             new InjectionValidator(),
             new RedirectionValidator(),

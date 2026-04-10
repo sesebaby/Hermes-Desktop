@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
+using Hermes.Agent.Permissions;
 using Hermes.Agent.Skills;
 using Hermes.Agent.Soul;
 using Hermes.Agent.Transcript;
@@ -26,6 +27,7 @@ public sealed partial class ChatPage : Page
     private static readonly ResourceLoader ResourceLoader = new();
 
     private readonly HermesChatService _chatService = App.Services.GetRequiredService<HermesChatService>();
+    private readonly RuntimeStatusService _runtimeStatusService = App.Services.GetRequiredService<RuntimeStatusService>();
     private readonly Agent _agent = App.Services.GetRequiredService<Agent>();
     private readonly TranscriptStore _transcriptStore = App.Services.GetRequiredService<TranscriptStore>();
     private readonly SessionRecorder _sessionRecorder = new();
@@ -71,9 +73,10 @@ public sealed partial class ChatPage : Page
         if (_initialized) return;
         _initialized = true;
 
-        ConnectionStateText.Text = ResourceLoader.GetString("ChatStatusChecking");
+        ApplyConnectionStatusSnapshot(_runtimeStatusService.GetConfiguredSnapshot());
         SessionIdLabel.Text = "New Session";
         UpdateSessionFooterCopyButton();
+        SetPermissionModeUi(_chatService.CurrentPermissionMode, applyToService: false);
 
         // Wire session panel click → load session into chat
         SessionPanelView.SessionSelected += OnSessionSelected;
@@ -189,7 +192,7 @@ public sealed partial class ChatPage : Page
         _suppressModelSwitch = false;
     }
 
-    private void ModelSwitchCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void ModelSwitchCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_suppressModelSwitch || ModelSwitchCombo.SelectedItem is not ComboBoxItem item)
             return;
@@ -215,8 +218,7 @@ public sealed partial class ChatPage : Page
 
         _clientFactory.SwitchProvider(newConfig);
 
-        // Update status bar
-        ConnectionStateText.Text = $"Switched to {item.Content}";
+        await RefreshConnectionStatusAsync();
         AppendSystemMessage($"Model switched to **{item.Content}** ({provider}/{model})");
     }
 
@@ -258,7 +260,7 @@ public sealed partial class ChatPage : Page
             ScrollToBottom();
             SessionIdLabel.Text = $"Session: {sessionId}";
             UpdateSessionFooterCopyButton();
-            ConnectionStateText.Text = ResourceLoader.GetString("StatusConnected");
+            ApplyConnectionState(RuntimeConnectionState.Connected);
 
             // Load activity entries for replay panel
             try
@@ -408,12 +410,12 @@ public sealed partial class ChatPage : Page
             // Scroll to the final message
             ScrollToBottom();
 
-            ConnectionStateText.Text = "Connected";
+            ApplyConnectionState(RuntimeConnectionState.Connected);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             ShowThinking(false);
-            ConnectionStateText.Text = "Error";
+            ApplyConnectionState(RuntimeConnectionState.Error);
             AppendSystemMessage($"Error: {ex.Message}");
         }
         catch (OperationCanceledException)
@@ -544,33 +546,62 @@ public sealed partial class ChatPage : Page
             if (mode == _permissionMode)
                 item.Icon = new FontIcon { Glyph = "\uE73E" }; // checkmark
             var captured = mode;
-            item.Click += (_, _) =>
-            {
-                _permissionMode = captured;
-                PermissionModeLabel.Text = $"{captured} mode";
-                _chatService.SetPermissionMode(captured switch
-                {
-                    "Plan" => Hermes.Agent.Permissions.PermissionMode.Plan,
-                    "Auto" => Hermes.Agent.Permissions.PermissionMode.Auto,
-                    "Accept Edits" => Hermes.Agent.Permissions.PermissionMode.AcceptEdits,
-                    "Bypass" => Hermes.Agent.Permissions.PermissionMode.BypassPermissions,
-                    _ => Hermes.Agent.Permissions.PermissionMode.Default
-                });
-            };
+            item.Click += (_, _) => SetPermissionModeUi(ParsePermissionModeText(captured));
             flyout.Items.Add(item);
         }
         flyout.ShowAt((FrameworkElement)sender);
     }
 
+    private void SetPermissionModeUi(PermissionMode mode, bool applyToService = true)
+    {
+        _permissionMode = mode switch
+        {
+            PermissionMode.Plan => "Plan",
+            PermissionMode.Auto => "Auto",
+            PermissionMode.AcceptEdits => "Accept Edits",
+            PermissionMode.BypassPermissions => "Bypass",
+            _ => "Default",
+        };
+
+        PermissionModeLabel.Text = $"{_permissionMode} mode";
+        if (applyToService)
+            _chatService.SetPermissionMode(mode);
+    }
+
+    private static PermissionMode ParsePermissionModeText(string mode) => mode switch
+    {
+        "Plan" => PermissionMode.Plan,
+        "Auto" => PermissionMode.Auto,
+        "Accept Edits" => PermissionMode.AcceptEdits,
+        "Bypass" => PermissionMode.BypassPermissions,
+        _ => PermissionMode.Default,
+    };
+
     // ── Connection Check ──
 
     private async Task RefreshConnectionStatusAsync()
     {
-        ConnectionStateText.Text = ResourceLoader.GetString("ChatStatusChecking");
-        var (isHealthy, _) = await Task.Run(() => _chatService.CheckHealthAsync(CancellationToken.None));
-        var line = ResourceLoader.GetString(isHealthy ? "StatusConnected" : "StatusOffline");
-        var toolCount = _agent.Tools.Count;
-        ConnectionStateText.Text = toolCount > 0 ? $"{line} · {toolCount} tools" : line;
+        ApplyConnectionStatusSnapshot(_runtimeStatusService.GetConfiguredSnapshot());
+        var snapshot = await _runtimeStatusService.RefreshAsync(CancellationToken.None);
+        ApplyConnectionStatusSnapshot(snapshot);
+    }
+
+    private void ApplyConnectionState(RuntimeConnectionState state)
+    {
+        var snapshot = _runtimeStatusService.GetConfiguredSnapshot() with { ConnectionState = state };
+        ApplyConnectionStatusSnapshot(snapshot);
+    }
+
+    private void ApplyConnectionStatusSnapshot(RuntimeStatusSnapshot snapshot)
+    {
+        var statusText = snapshot.ConnectionState switch
+        {
+            RuntimeConnectionState.Connected => ResourceLoader.GetString("StatusConnected"),
+            RuntimeConnectionState.Checking => ResourceLoader.GetString("ChatStatusChecking"),
+            _ => ResourceLoader.GetString("StatusOffline"),
+        };
+
+        ConnectionStateText.Text = $"{statusText} | {snapshot.DisplayProvider} | {snapshot.DisplayModel}";
     }
 
     private void UpdateSessionFooterCopyButton()

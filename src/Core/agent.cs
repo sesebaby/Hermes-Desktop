@@ -189,77 +189,21 @@ public sealed class Agent : IAgent
                 _logger.LogWarning(ex, "Plugin system prompt blocks failed");
             }
         }
-        // Fallback: direct memory injection when no plugin manager
-        else if (_memories is not null)
+        else
         {
-            try
-            {
-                var recentTools = _tools.Keys.Take(10).ToList();
-                var relevantMemories = await _memories.LoadRelevantMemoriesAsync(message, recentTools, ct);
-                if (relevantMemories.Count > 0)
-                {
-                    var memoryBlock = string.Join("\n---\n",
-                        relevantMemories.Select(m => $"[{m.Type}] {m.Filename}:\n{m.Content}"));
-                    session.Messages.Insert(0, new Message
-                    {
-                        Role = "system",
-                        Content = $"[Relevant Memories]\n{memoryBlock}"
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to load memories, continuing without them");
-            }
+            await AgentContextAssembler.InjectMemoriesAsync(
+                session, message, _tools.Keys, _memories, _logger, ct);
         }
 
         // ── Add user message ──
-        var userMessage = new Message { Role = "user", Content = message };
-        session.AddMessage(userMessage);
-        if (_transcripts is not null)
-            await _transcripts.SaveMessageAsync(session.Id, userMessage, ct);
+        await AgentSessionWriter.AppendUserMessageAsync(session, message, _transcripts, ct);
 
         _logger.LogInformation("Processing message for session {SessionId}", session.Id);
 
-        // ── Soul injection (fallback path — when ContextManager is null) ──
-        // If ContextManager is available, it handles soul injection via PromptBuilder.
-        // If not, inject soul context directly as the first system message.
-        if (_contextManager is null && _soulService is not null)
-        {
-            try
-            {
-                var soulContext = await _soulService.AssembleSoulContextAsync();
-                if (!string.IsNullOrWhiteSpace(soulContext))
-                {
-                    // Insert soul as first message (before memories)
-                    session.Messages.Insert(0, new Message
-                    {
-                        Role = "system",
-                        Content = soulContext
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to load soul context, continuing without it");
-            }
-        }
+        await AgentContextAssembler.InjectSoulFallbackAsync(session, _contextManager, _soulService, _logger);
 
-        // ── Context manager integration ──
-        // If ContextManager is available, use it to build optimized context instead of raw session.Messages
-        List<Message>? preparedContext = null;
-        if (_contextManager is not null)
-        {
-            try
-            {
-                preparedContext = await _contextManager.PrepareContextAsync(
-                    session.Id, message, retrievedContext: null, ct);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "ContextManager failed, falling back to raw session messages");
-            }
-        }
+        var preparedContext = await AgentContextAssembler.PrepareOptimizedContextAsync(
+            session.Id, message, _contextManager, _logger, ct);
 
         if (_tools.Count == 0)
         {
@@ -277,10 +221,7 @@ public sealed class Agent : IAgent
                 activeClient = ActivateFallback(ex);
                 response = await activeClient.CompleteAsync(messagesToSend, ct);
             }
-            var assistantMsg = new Message { Role = "assistant", Content = response };
-            session.AddMessage(assistantMsg);
-            if (_transcripts is not null)
-                await _transcripts.SaveMessageAsync(session.Id, assistantMsg, ct);
+            await AgentSessionWriter.AppendAssistantMessageAsync(session, response, _transcripts, ct);
             if (_contextManager is not null)
                 await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
 
@@ -324,10 +265,7 @@ public sealed class Agent : IAgent
             {
                 // LLM is done — return final text
                 var finalContent = response.Content ?? "";
-                var finalMsg = new Message { Role = "assistant", Content = finalContent };
-                session.AddMessage(finalMsg);
-                if (_transcripts is not null)
-                    await _transcripts.SaveMessageAsync(session.Id, finalMsg, ct);
+                await AgentSessionWriter.AppendAssistantMessageAsync(session, finalContent, _transcripts, ct);
                 if (_contextManager is not null)
                     await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
                 return finalContent;
@@ -337,15 +275,8 @@ public sealed class Agent : IAgent
             var normalizedToolCalls = NormalizeToolCallIds(response.ToolCalls!, iterations);
 
             // Record the assistant message with its tool call requests
-            var assistantToolMsg = new Message
-            {
-                Role = "assistant",
-                Content = response.Content ?? "",
-                ToolCalls = normalizedToolCalls
-            };
-            session.AddMessage(assistantToolMsg);
-            if (_transcripts is not null)
-                await _transcripts.SaveMessageAsync(session.Id, assistantToolMsg, ct);
+            await AgentSessionWriter.AppendAssistantToolRequestMessageAsync(
+                session, response.Content ?? "", normalizedToolCalls, _transcripts, ct);
 
             // Execute tool calls — parallel when safe, sequential otherwise
             var toolCallsList = normalizedToolCalls;
@@ -558,10 +489,7 @@ public sealed class Agent : IAgent
 
         _logger.LogWarning("Hit max tool iterations ({Max}) for session {SessionId}", MaxToolIterations, session.Id);
         var fallback = "I've reached the maximum number of tool call iterations. Here's what I've accomplished so far based on the conversation above.";
-        var fallbackMsg = new Message { Role = "assistant", Content = fallback };
-        session.AddMessage(fallbackMsg);
-        if (_transcripts is not null)
-            await _transcripts.SaveMessageAsync(session.Id, fallbackMsg, ct);
+        await AgentSessionWriter.AppendAssistantMessageAsync(session, fallback, _transcripts, ct);
         return fallback;
     }
 

@@ -741,7 +741,6 @@ public class SkillsSearchFilterTests
     public void Filter_MatchingName_ReturnsMatchingSkills()
     {
         var skills = MakeSkills();
-        // "code" matches both name "code-review" and description "… code problems" on debug — use a name-unique substring
         var result = FilterSkills(skills, "review").ToList();
 
         Assert.AreEqual(1, result.Count);

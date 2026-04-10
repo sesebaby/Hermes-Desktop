@@ -282,6 +282,7 @@ public partial class App : Application
 
         // Chat service (pure C# — no sidecar)
         services.AddSingleton<HermesChatService>();
+        services.AddSingleton<RuntimeStatusService>();
 
         var provider = services.BuildServiceProvider();
 
