@@ -19,6 +19,12 @@ public sealed class PermissionManager
         _context = context;
         _logger = logger;
     }
+
+    public PermissionMode Mode
+    {
+        get => _context.Mode;
+        set => _context.Mode = value;
+    }
     
     /// <summary>
     /// Check permissions for a tool call.

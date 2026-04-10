@@ -741,7 +741,7 @@ public class SkillsSearchFilterTests
     public void Filter_MatchingName_ReturnsMatchingSkills()
     {
         var skills = MakeSkills();
-        var result = FilterSkills(skills, "code").ToList();
+        var result = FilterSkills(skills, "review").ToList();
 
         Assert.AreEqual(1, result.Count);
         Assert.AreEqual("code-review", result[0].Name);

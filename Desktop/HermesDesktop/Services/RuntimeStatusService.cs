@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Hermes.Agent.LLM;
 
 namespace HermesDesktop.Services;
 
@@ -28,10 +29,12 @@ internal sealed record RuntimeStatusSnapshot(
 internal sealed class RuntimeStatusService
 {
     private readonly HermesChatService _chatService;
+    private readonly LlmConfig _llmConfig;
 
-    public RuntimeStatusService(HermesChatService chatService)
+    public RuntimeStatusService(HermesChatService chatService, LlmConfig llmConfig)
     {
         _chatService = chatService;
+        _llmConfig = llmConfig;
     }
 
     public RuntimeStatusSnapshot GetConfiguredSnapshot()
@@ -62,17 +65,23 @@ internal sealed class RuntimeStatusService
         }
     }
 
-    private static RuntimeStatusSnapshot CreateSnapshot(RuntimeConnectionState state, string detail)
+    private RuntimeStatusSnapshot CreateSnapshot(RuntimeConnectionState state, string detail)
     {
-        var provider = NormalizeProvider(HermesEnvironment.ModelProvider);
+        var provider = NormalizeProvider(_llmConfig.Provider);
+        var model = string.IsNullOrWhiteSpace(_llmConfig.Model)
+            ? HermesEnvironment.DefaultModel
+            : _llmConfig.Model;
+        var baseUrl = string.IsNullOrWhiteSpace(_llmConfig.BaseUrl)
+            ? HermesEnvironment.ModelBaseUrl
+            : _llmConfig.BaseUrl;
 
         return new RuntimeStatusSnapshot(
             Provider: provider,
-            Model: HermesEnvironment.DefaultModel,
-            BaseUrl: HermesEnvironment.ModelBaseUrl,
-            DisplayProvider: NormalizeProvider(HermesEnvironment.DisplayModelProvider),
-            DisplayModel: HermesEnvironment.DisplayDefaultModel,
-            DisplayBaseUrl: HermesEnvironment.DisplayModelBaseUrl,
+            Model: model,
+            BaseUrl: baseUrl,
+            DisplayProvider: HermesEnvironment.PrivacyModeEnabled ? "configured" : provider,
+            DisplayModel: HermesEnvironment.PrivacyModeEnabled ? "configured local model" : model,
+            DisplayBaseUrl: HermesEnvironment.PrivacyModeEnabled ? "Configured local endpoint" : baseUrl,
             ConnectionState: state,
             ConnectionDetail: detail);
     }

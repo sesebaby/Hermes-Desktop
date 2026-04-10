@@ -173,29 +173,25 @@ Add-AppxPackage -Register AppxManifest.xml
 Create `%LOCALAPPDATA%\hermes\config.yaml`:
 
 ```yaml
-llm:
+model:
   provider: openai
-  model: minimax-m2.7:cloud
-  baseUrl: http://localhost:11434/v1
-  apiKey: ""
+  default: minimax-m2.7:cloud
+  base_url: http://localhost:11434/v1
+  api_key: ""
+
+platforms:
+  telegram:
+    token: ""
+    enabled: true
+  discord:
+    token: ""
+    enabled: true
 
 # Or use a cloud provider
-# llm:
+# model:
 #   provider: anthropic
-#   model: claude-sonnet-4-20250514
-#   apiKey: sk-your-key-here
-
-messaging:
-  telegram:
-    botToken: ""
-  discord:
-    botToken: ""
-
-security:
-  ssrf:
-    enabled: true
-  secretScanning:
-    enabled: true
+#   default: claude-sonnet-4-20250514
+#   api_key: sk-your-key-here
 ```
 
 ## Project Structure
