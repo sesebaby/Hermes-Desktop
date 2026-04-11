@@ -588,6 +588,12 @@
   <data name="DashDreamerSignalInitial.Text" xml:space="preserve">
     <value>Top signal: —</value>
   </data>
+  <data name="DashDreamerLocalDigestInitial.Text" xml:space="preserve">
+    <value>Local digest: —</value>
+  </data>
+  <data name="DashDreamerPostcardInitial.Text" xml:space="preserve">
+    <value>Last postcard: —</value>
+  </data>
   <data name="DashPlatformsCardTitle.Text" xml:space="preserve">
     <value>Platforms &amp; Services</value>
   </data>
@@ -686,6 +692,15 @@
   </data>
   <data name="DashboardDreamerStartupIssueFormat" xml:space="preserve">
     <value>Startup issue: {0}</value>
+  </data>
+  <data name="DashboardDreamerLocalDigestEmpty" xml:space="preserve">
+    <value>Local digest: —</value>
+  </data>
+  <data name="DashboardDreamerLocalDigestFormat" xml:space="preserve">
+    <value>Local digest: {0}</value>
+  </data>
+  <data name="DashboardDreamerPostcardEmpty" xml:space="preserve">
+    <value>Last postcard: —</value>
   </data>
   <data name="DashboardTimeAgoNow" xml:space="preserve">
     <value>now</value>
@@ -1084,7 +1099,7 @@
     <value>Dreamer</value>
   </data>
   <data name="SettingsDreamerIntro.Text" xml:space="preserve">
-    <value>Background free-association on a local model (Ollama). Off by default. Room: %LOCALAPPDATA%\hermes\dreamer\</value>
+    <value>Background free-association on a local model (Ollama). Off by default. Room: %LOCALAPPDATA%\hermes\dreamer\ — scheduled digests save under feedback\digests\ and can also post to Discord.</value>
   </data>
   <data name="SettingsDreamerEnabledLabel.Text" xml:space="preserve">
     <value>ENABLE DREAMER</value>
@@ -1103,6 +1118,18 @@
   </data>
   <data name="SettingsDreamerWalkBaseUrlBox.PlaceholderText" xml:space="preserve">
     <value>http://127.0.0.1:11434/v1</value>
+  </data>
+  <data name="SettingsDreamerDigestTimesLabel.Text" xml:space="preserve">
+    <value>DIGEST TIMES (LOCAL + DISCORD)</value>
+  </data>
+  <data name="SettingsDreamerDigestTimesBox.PlaceholderText" xml:space="preserve">
+    <value>08:00,12:00,20:00</value>
+  </data>
+  <data name="SettingsDreamerTriggerThresholdLabel.Text" xml:space="preserve">
+    <value>SIGNAL SCORE TO TRIGGER BUILD</value>
+  </data>
+  <data name="SettingsDreamerMinWalksLabel.Text" xml:space="preserve">
+    <value>MIN WALKS BEFORE BUILD</value>
   </data>
   <data name="SettingsDreamerDiscordChannelLabel.Text" xml:space="preserve">
     <value>DISCORD CHANNEL ID (postcards)</value>

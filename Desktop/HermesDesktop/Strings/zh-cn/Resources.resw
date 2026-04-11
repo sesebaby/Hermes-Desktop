@@ -588,6 +588,12 @@
   <data name="DashDreamerSignalInitial.Text" xml:space="preserve">
     <value>主要信号：—</value>
   </data>
+  <data name="DashDreamerLocalDigestInitial.Text" xml:space="preserve">
+    <value>本地摘要：—</value>
+  </data>
+  <data name="DashDreamerPostcardInitial.Text" xml:space="preserve">
+    <value>最近明信片：—</value>
+  </data>
   <data name="DashPlatformsCardTitle.Text" xml:space="preserve">
     <value>平台与服务</value>
   </data>
@@ -686,6 +692,15 @@
   </data>
   <data name="DashboardDreamerStartupIssueFormat" xml:space="preserve">
     <value>启动问题：{0}</value>
+  </data>
+  <data name="DashboardDreamerLocalDigestEmpty" xml:space="preserve">
+    <value>本地摘要：—</value>
+  </data>
+  <data name="DashboardDreamerLocalDigestFormat" xml:space="preserve">
+    <value>本地摘要：{0}</value>
+  </data>
+  <data name="DashboardDreamerPostcardEmpty" xml:space="preserve">
+    <value>最近明信片：—</value>
   </data>
   <data name="DashboardTimeAgoNow" xml:space="preserve">
     <value>刚刚</value>
@@ -1084,7 +1099,7 @@
     <value>Dreamer</value>
   </data>
   <data name="SettingsDreamerIntro.Text" xml:space="preserve">
-    <value>在本地模型（Ollama）上进行背景自由联想。默认关闭。目录：%LOCALAPPDATA%\hermes\dreamer\</value>
+    <value>在本地模型（Ollama）上进行背景自由联想。默认关闭。目录：%LOCALAPPDATA%\hermes\dreamer\ — 定时摘要写入 feedback\digests\，也可同步发到 Discord。</value>
   </data>
   <data name="SettingsDreamerEnabledLabel.Text" xml:space="preserve">
     <value>启用 Dreamer</value>
@@ -1103,6 +1118,18 @@
   </data>
   <data name="SettingsDreamerWalkBaseUrlBox.PlaceholderText" xml:space="preserve">
     <value>http://127.0.0.1:11434/v1</value>
+  </data>
+  <data name="SettingsDreamerDigestTimesLabel.Text" xml:space="preserve">
+    <value>摘要时间（本地与 Discord）</value>
+  </data>
+  <data name="SettingsDreamerDigestTimesBox.PlaceholderText" xml:space="preserve">
+    <value>08:00,12:00,20:00</value>
+  </data>
+  <data name="SettingsDreamerTriggerThresholdLabel.Text" xml:space="preserve">
+    <value>触发构建的信号分数阈值</value>
+  </data>
+  <data name="SettingsDreamerMinWalksLabel.Text" xml:space="preserve">
+    <value>触发前最少游走次数</value>
   </data>
   <data name="SettingsDreamerDiscordChannelLabel.Text" xml:space="preserve">
     <value>Discord 频道 ID（明信片）</value>

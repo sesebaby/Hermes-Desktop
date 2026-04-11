@@ -80,7 +80,11 @@
                                Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"
                                AutomationProperties.Name="{Binding Text, ElementName=DreamerSignalText}"
                                AutomationProperties.LiveSetting="Polite"/>
-                    <TextBlock x:Name="DreamerPostcardText" Text="" FontSize="12"
+                    <TextBlock x:Name="DreamerLocalDigestText" x:Uid="DashDreamerLocalDigestInitial" FontSize="13"
+                               Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"
+                               AutomationProperties.Name="{Binding Text, ElementName=DreamerLocalDigestText}"
+                               AutomationProperties.LiveSetting="Polite"/>
+                    <TextBlock x:Name="DreamerPostcardText" x:Uid="DashDreamerPostcardInitial" FontSize="12"
                                Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap" MaxHeight="80"
                                AutomationProperties.Name="{Binding Text, ElementName=DreamerPostcardText}"
                                AutomationProperties.LiveSetting="Polite"/>

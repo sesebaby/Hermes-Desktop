@@ -92,9 +92,12 @@ public sealed partial class DashboardPage : Page
         DreamerSignalText.Text = string.IsNullOrEmpty(s.TopSignalSlug)
             ? ResourceLoader.GetString("DashboardDreamerTopSignalEmpty")
             : string.Format(culture, ResourceLoader.GetString("DashboardDreamerTopSignalFormat"), s.TopSignalSlug, s.TopSignalScore);
+        DreamerLocalDigestText.Text = string.IsNullOrWhiteSpace(s.LastLocalDigestHint)
+            ? ResourceLoader.GetString("DashboardDreamerLocalDigestEmpty")
+            : string.Format(culture, ResourceLoader.GetString("DashboardDreamerLocalDigestFormat"), s.LastLocalDigestHint);
         DreamerPostcardText.Text = string.IsNullOrWhiteSpace(s.LastPostcardPreview)
-            ? ""
-            : s.LastPostcardPreview;
+            ? ResourceLoader.GetString("DashboardDreamerPostcardEmpty")
+            : s.LastPostcardPreview.Trim();
         var alertBrush = (Brush?)Application.Current.Resources["ConnectionOfflineBrush"];
         var secondaryBrush = (Brush?)Application.Current.Resources["AppTextSecondaryBrush"];
         if (!string.IsNullOrWhiteSpace(s.StartupFailureMessage))

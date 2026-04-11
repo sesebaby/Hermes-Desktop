@@ -823,6 +823,25 @@ This file is a living document about the human I work with. It helps me provide 
     }
 
     // ── Dreamer ──
+    private static string NormalizeDreamerDigestTimesForSave(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return "";
+
+        var validated = new List<string>();
+        foreach (var part in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var timeParts = part.Split(':', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (timeParts.Length == 2 &&
+                int.TryParse(timeParts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var h) &&
+                int.TryParse(timeParts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var m) &&
+                h >= 0 && h <= 23 && m >= 0 && m <= 59)
+                validated.Add(part);
+        }
+
+        return string.Join(",", validated);
+    }
+
     private void LoadDreamerSettings()
     {
         var cfgPath = Path.Combine(HermesEnvironment.HermesHomePath, "config.yaml");
@@ -831,6 +850,9 @@ This file is a living document about the human I work with. It helps me provide 
         DreamerWalkIntervalBox.Value = c.WalkIntervalMinutes;
         DreamerWalkModelBox.Text = c.WalkModel;
         DreamerWalkBaseUrlBox.Text = c.WalkBaseUrl;
+        DreamerDigestTimesBox.Text = string.Join(", ", c.DigestTimes);
+        DreamerTriggerThresholdBox.Value = c.TriggerThreshold;
+        DreamerMinWalksToTriggerBox.Value = c.MinWalksToTrigger;
         DreamerDiscordChannelBox.Text = c.DiscordChannelId;
     }
 
@@ -841,7 +863,7 @@ This file is a living document about the human I work with. It helps me provide 
             var cfgPath = Path.Combine(HermesEnvironment.HermesHomePath, "config.yaml");
             var cur = DreamerConfig.Load(cfgPath);
             var rss = string.Join(",", cur.RssFeeds);
-            var digest = string.Join(",", cur.DigestTimes);
+            var digest = NormalizeDreamerDigestTimesForSave(DreamerDigestTimesBox.Text);
             var dict = new Dictionary<string, string>
             {
                 ["enabled"] = DreamerEnabledToggle.IsOn ? "true" : "false",
@@ -855,8 +877,8 @@ This file is a living document about the human I work with. It helps me provide 
                 ["walk_interval_minutes"] = ((int)DreamerWalkIntervalBox.Value).ToString(CultureInfo.InvariantCulture),
                 ["digest_times"] = digest,
                 ["discord_channel_id"] = DreamerDiscordChannelBox.Text.Trim(),
-                ["trigger_threshold"] = cur.TriggerThreshold.ToString(CultureInfo.InvariantCulture),
-                ["min_walks_to_trigger"] = cur.MinWalksToTrigger.ToString(CultureInfo.InvariantCulture),
+                ["trigger_threshold"] = DreamerTriggerThresholdBox.Value.ToString(CultureInfo.InvariantCulture),
+                ["min_walks_to_trigger"] = ((int)DreamerMinWalksToTriggerBox.Value).ToString(CultureInfo.InvariantCulture),
                 ["autonomy"] = cur.Autonomy,
                 ["input_transcripts"] = cur.InputTranscripts ? "true" : "false",
                 ["input_inbox"] = cur.InputInbox ? "true" : "false",

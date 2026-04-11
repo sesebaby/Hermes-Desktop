@@ -708,6 +708,28 @@
                                      AutomationProperties.LabeledBy="{Binding ElementName=DreamerWalkBaseUrlLabel}"/>
                         </StackPanel>
                         <StackPanel Spacing="4">
+                            <TextBlock x:Name="DreamerDigestTimesLabel" x:Uid="SettingsDreamerDigestTimesLabel" Style="{StaticResource LabelTextStyle}"/>
+                            <TextBox x:Name="DreamerDigestTimesBox" x:Uid="SettingsDreamerDigestTimesBox"
+                                     Background="{StaticResource AppInsetBrush}"
+                                     BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White"
+                                     AutomationProperties.LabeledBy="{Binding ElementName=DreamerDigestTimesLabel}"/>
+                        </StackPanel>
+                        <StackPanel Spacing="4">
+                            <TextBlock x:Name="DreamerTriggerThresholdLabel" x:Uid="SettingsDreamerTriggerThresholdLabel" Style="{StaticResource LabelTextStyle}"/>
+                            <NumberBox x:Name="DreamerTriggerThresholdBox" Minimum="0.5" Maximum="50" SmallChange="0.5" LargeChange="1"
+                                       SpinButtonPlacementMode="Inline"
+                                       Background="{StaticResource AppInsetBrush}"
+                                       BorderBrush="{StaticResource AppStrokeBrush}"
+                                       AutomationProperties.LabeledBy="{Binding ElementName=DreamerTriggerThresholdLabel}"/>
+                        </StackPanel>
+                        <StackPanel Spacing="4">
+                            <TextBlock x:Name="DreamerMinWalksLabel" x:Uid="SettingsDreamerMinWalksLabel" Style="{StaticResource LabelTextStyle}"/>
+                            <NumberBox x:Name="DreamerMinWalksToTriggerBox" Minimum="1" Maximum="50" SpinButtonPlacementMode="Inline"
+                                       Background="{StaticResource AppInsetBrush}"
+                                       BorderBrush="{StaticResource AppStrokeBrush}"
+                                       AutomationProperties.LabeledBy="{Binding ElementName=DreamerMinWalksLabel}"/>
+                        </StackPanel>
+                        <StackPanel Spacing="4">
                             <TextBlock x:Name="DreamerDiscordChannelLabel" x:Uid="SettingsDreamerDiscordChannelLabel" Style="{StaticResource LabelTextStyle}"/>
                             <TextBox x:Name="DreamerDiscordChannelBox" x:Uid="SettingsDreamerDiscordChannelBox"
                                      Background="{StaticResource AppInsetBrush}"
