@@ -78,10 +78,6 @@ function Test-IsAllowedMatch {
         return $true
     }
 
-    if ($Match.Contains('$')) {
-        return $true
-    }
-
     if ($Match -match '^[xX]+$') {
         return $true
     }
@@ -90,19 +86,11 @@ function Test-IsAllowedMatch {
         return $true
     }
 
-    if ($Match -match '^[A-Za-z_-]*token[A-Za-z0-9_-]*$') {
-        return $true
-    }
-
-    if ($Match.Contains(',')) {
+    if ($Match -match '^(?i)(access_token|refresh_token|id_token|token_type)$') {
         return $true
     }
 
     if ($Match -match '[<>\[\]\(\)\{\}\\]') {
-        return $true
-    }
-
-    if ($Match -match '(?i)^sk-[a-z0-9-]+$') {
         return $true
     }
 
@@ -304,7 +292,7 @@ foreach ($candidate in $candidateLines) {
 if ($secretHits.Count -gt 0) {
     $formattedHits = $secretHits |
         Select-Object -First 20 |
-        ForEach-Object { " - $($_.File):$($_.Line) [$($_.Rule)] $($_.Match)" }
+        ForEach-Object { " - $($_.File):$($_.Line) [$($_.Rule)]" }
 
     $message = "Secret-like content detected:`n" + ($formattedHits -join "`n")
     if ($secretHits.Count -gt 20) {

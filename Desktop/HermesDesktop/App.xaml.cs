@@ -39,7 +39,12 @@ public partial class App : Application
     private static DreamerHttpClients? _dreamerHttpClients;
 
     /// <summary>Global service provider for DI — accessed by pages via App.Services.</summary>
-    public static IServiceProvider Services { get; private set; } = EmptyServiceProvider.Instance;
+    /// <remarks>
+    /// Starts as <see cref="UninitializedAppServiceProvider"/> so <see cref="TryGetAppLogger"/> can call
+    /// <see cref="IServiceProvider.GetService"/> without throwing before <see cref="OnLaunched"/> builds the real provider.
+    /// <see cref="Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetRequiredService"/> throws if invoked before services are registered.
+    /// </remarks>
+    public static IServiceProvider Services { get; private set; } = UninitializedAppServiceProvider.Instance;
 
     public App()
     {
@@ -81,7 +86,7 @@ public partial class App : Application
 
     private static ILogger<App>? TryGetAppLogger()
     {
-        if (ReferenceEquals(Services, EmptyServiceProvider.Instance))
+        if (ReferenceEquals(Services, UninitializedAppServiceProvider.Instance))
             return null;
 
         try
@@ -905,11 +910,12 @@ public partial class App : Application
         }
     }
 
-    private sealed class EmptyServiceProvider : IServiceProvider
+    /// <summary>Sentinel <see cref="IServiceProvider"/> used only until DI is built in <see cref="OnLaunched"/>.</summary>
+    private sealed class UninitializedAppServiceProvider : IServiceProvider
     {
-        public static readonly EmptyServiceProvider Instance = new();
+        public static readonly UninitializedAppServiceProvider Instance = new();
 
-        private EmptyServiceProvider()
+        private UninitializedAppServiceProvider()
         {
         }
 

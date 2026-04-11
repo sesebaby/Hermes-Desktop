@@ -100,29 +100,20 @@ public sealed class OpenAiClient : IChatClient
         using var request = await CreateRequestAsync($"{_config.BaseUrl}/chat/completions", json, ct);
 
         HttpResponseMessage? response = null;
-        string? connectionError = null;
         try
         {
             response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             response.EnsureSuccessStatusCode();
         }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException)
         {
             response?.Dispose();
-            response = null;
-            connectionError = $"\n[Connection error: {ex.Message}]";
+            throw;
         }
         catch (TaskCanceledException) when (!ct.IsCancellationRequested)
         {
             response?.Dispose();
-            response = null;
-            connectionError = "\n[Request timed out - the LLM server may be overloaded or unreachable]";
-        }
-
-        if (connectionError is not null)
-        {
-            yield return connectionError;
-            yield break;
+            throw new TimeoutException("Request timed out - the LLM server may be overloaded or unreachable.");
         }
 
         var httpResponse = response!;
@@ -132,8 +123,7 @@ public sealed class OpenAiClient : IChatClient
             if (body is null)
             {
                 Debug.WriteLine("OpenAiClient.StreamTextAsync: response.Content is null.");
-                yield return "\n[Empty response body from server]";
-                yield break;
+                throw new InvalidOperationException("Empty response body from server.");
             }
 
             using var stream = await body.ReadAsStreamAsync(ct);
@@ -142,21 +132,13 @@ public sealed class OpenAiClient : IChatClient
             while (!ct.IsCancellationRequested)
             {
                 string? line;
-                string? readError = null;
                 try
                 {
                     line = await reader.ReadLineAsync(ct);
                 }
-                catch (IOException)
+                catch (IOException ex)
                 {
-                    readError = "\n[Connection lost during streaming]";
-                    line = null;
-                }
-
-                if (readError is not null)
-                {
-                    yield return readError;
-                    yield break;
+                    throw new IOException("Connection lost during streaming.", ex);
                 }
 
                 if (line is null) break;

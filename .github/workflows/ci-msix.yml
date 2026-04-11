@@ -29,17 +29,22 @@ jobs:
       - name: Generate test signing certificate (PowerShell)
         shell: pwsh
         run: |
-          $pwd = ConvertTo-SecureString -String "testpassword" -Force -AsPlainText
+          $bytes = New-Object byte[] 32
+          [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+          $plainPwd = [Convert]::ToBase64String($bytes)
+          Write-Output "::add-mask::$plainPwd"
+          $pwd = ConvertTo-SecureString -String $plainPwd -AsPlainText -Force
           $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=LocalTest" -KeyExportPolicy Exportable -CertStoreLocation Cert:\CurrentUser\My -NotAfter (Get-Date).AddYears(2)
-          $pfxPath = "$env:GITHUB_WORKSPACE\tempCert.pfx"
+          $pfxPath = Join-Path $env:GITHUB_WORKSPACE 'tempCert.pfx'
           Export-PfxCertificate -Cert "Cert:\CurrentUser\My\$($cert.Thumbprint)" -FilePath $pfxPath -Password $pwd
-          echo "thumbprint=$($cert.Thumbprint)" >> $env:GITHUB_ENV
-          echo "pfxPath=$pfxPath" >> $env:GITHUB_ENV
+          Add-Content -Path $env:GITHUB_ENV -Value "MSIX_PFX_PASSWORD=$plainPwd"
+          Add-Content -Path $env:GITHUB_ENV -Value "thumbprint=$($cert.Thumbprint)"
+          Add-Content -Path $env:GITHUB_ENV -Value "pfxPath=$pfxPath"
 
       - name: Publish packaging project to create MSIX
         shell: pwsh
         run: |
-          msbuild Desktop\HermesDesktop.Package\HermesDesktop.Package.csproj /t:Restore;Publish /p:Configuration=Release /p:Platform=x64 /p:PackageCertificateThumbprint=${{ env.thumbprint }} /p:PackageCertificateKeyFile=${{ env.pfxPath }} /p:PackageCertificatePassword=testpassword
+          msbuild Desktop\HermesDesktop.Package\HermesDesktop.Package.csproj /t:Restore;Publish /p:Configuration=Release /p:Platform=x64 /p:PackageCertificateThumbprint=$env:thumbprint /p:PackageCertificateKeyFile=$env:pfxPath /p:PackageCertificatePassword="$($env:MSIX_PFX_PASSWORD)"
 
       - name: Upload packaged artifacts
         uses: actions/upload-artifact@v4
