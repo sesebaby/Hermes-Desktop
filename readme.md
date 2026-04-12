@@ -8,7 +8,7 @@
 
 **A native Windows agentic framework** built with WinUI 3 and .NET 10 — featuring runtime model swapping, 27+ tools with parallel execution, production hardening, a persistent soul identity system, 94 skills, and a wiki-based knowledge base.
 
-**Current version: v2.2.1** | [Changelog](#changelog) | [Discussion](https://github.com/RedWoodOG/Hermes-Desktop/discussions/10)
+**Current version: v2.3.0** | [Changelog](#changelog) | [Download (Portable)](https://github.com/RedWoodOG/Hermes-Desktop/releases/latest) | [Discussion](https://github.com/RedWoodOG/Hermes-Desktop/discussions/10)
 
 ## What This Is
 
@@ -146,13 +146,46 @@ With `TokenBudget` (8000 max, 6-turn window), `SessionState` tracking, and `Comp
 
 ## Quick Start
 
-### Prerequisites
+### Download & Run (no build required)
+
+> **Recommended while MSIX signing issues are being resolved upstream.**
+
+1. Go to [**Releases**](https://github.com/RedWoodOG/Hermes-Desktop/releases/latest)
+2. Download `HermesDesktop-portable-x64.zip`
+3. Extract anywhere
+4. Double-click `HermesDesktop.exe`
+
+That's it. The portable build is **fully self-contained** — no .NET SDK, no MSIX registration, no Windows App Runtime installer. Works on any Windows 10 (1809+) or Windows 11 machine.
+
+On first launch, Hermes creates `%LOCALAPPDATA%\hermes` with your config, memory, transcripts, and logs. Add your API key to `%LOCALAPPDATA%\hermes\config.yaml` and you're live.
+
+### Why portable instead of MSIX?
+
+The Windows App SDK has open bugs affecting MSIX signing and registration ([WindowsAppSDK#4244](https://github.com/microsoft/WindowsAppSDK/issues/4244) and related). Rather than block users on Microsoft's fix timeline, we ship a portable build that sidesteps the entire MSIX toolchain. The app is identical — same WinUI 3 UI, same agent, same tools. You just don't get auto-update or a Start Menu entry (make your own shortcut).
+
+Once the MSIX pipeline is stable again, we'll resume publishing signed `.msix` packages alongside the portable zip.
+
+---
+
+### Build from Source
+
+#### Prerequisites
 
 - Windows 10 (1809+) or Windows 11
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - [Windows App SDK 1.7](https://learn.microsoft.com/windows/apps/windows-app-sdk/)
 
-### Fresh Install (recommended)
+#### Dev Mode (fast loop — unpackaged, no MSIX)
+
+```powershell
+git clone https://github.com/RedWoodOG/Hermes-Desktop.git
+cd Hermes-Desktop
+dotnet run --project Desktop/HermesDesktop/HermesDesktop.csproj -c Debug -p:Platform=x64 --launch-profile "HermesDesktop (Dev)"
+```
+
+The **HermesDesktop (Dev)** launch profile sets `HERMES_DESKTOP_SHOW_LOCAL_DETAILS=1` so paths and endpoints show in the UI. In Visual Studio / Cursor, pick that profile and press F5.
+
+#### Packaged Dev Loop (MSIX registration)
 
 ```powershell
 git clone https://github.com/RedWoodOG/Hermes-Desktop.git
@@ -208,6 +241,15 @@ cd Desktop\HermesDesktop\bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64
 Add-AppxPackage -Register AppxManifest.xml
 Start-Process "shell:AppsFolder\EDC29F63-281C-4D34-8723-155C8122DEA2_1z32rh13vfry6!App"
 ```
+
+### Build Portable Release (for distribution)
+
+```powershell
+.\scripts\publish-portable.ps1 -Zip
+# → Desktop\HermesDesktop\bin\HermesDesktop-portable-x64.zip
+```
+
+The zip is fully self-contained — ship it to anyone on Windows 10+. No SDK, no MSIX, no runtime installer. For ARM64: `.\scripts\publish-portable.ps1 -Platform ARM64 -Zip`.
 
 ### Troubleshooting
 
@@ -294,7 +336,8 @@ HermesDesktop/
 
 | Version | Date | Changes |
 |---------|------|---------|
-| **v2.2.1** | 2026-04-10 | Fix startup crash on fresh clone, safe file ops, one-click installer, clean uninstall instructions |
+| **v2.3.0** | 2026-04-12 | **Portable release** — self-contained zip, no MSIX/SDK required; compiled memory stack (wiki knowledge base, configurable via `config.yaml`); `publish-portable.ps1` script; Dev launch profile for unpackaged `dotnet run` |
+| v2.2.1 | 2026-04-10 | Fix startup crash on fresh clone, safe file ops, one-click installer, clean uninstall instructions |
 | v2.2.0 | 2026-04-10 | User Profile section in Settings (name, role, working style, project dir) |
 | v2.1.1 | 2026-04-10 | Fix skills discovery (dynamic repo root), model dropdown (shows user config first), memory paths |
 | v2.1.0 | 2026-04-10 | Native C# gateway — Telegram and Discord work without Python CLI |
