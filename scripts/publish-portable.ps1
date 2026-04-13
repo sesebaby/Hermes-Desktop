@@ -67,7 +67,7 @@ Write-Host ""
 Write-Host "=== Build gate (dotnet build -c $Configuration) ===" -ForegroundColor Cyan
 dotnet build $csproj -c $Configuration -p:Platform=$Platform
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Build failed — fix the errors above before publishing."
+    Write-Error "Build failed - fix the errors above before publishing."
 }
 
 # --- 2. Publish (self-contained, trimming OFF to avoid WinUI runtime crashes) ---
@@ -95,7 +95,7 @@ if ($Configuration -eq "Release") {
 }
 
 Write-Host ""
-Write-Host "Publishing Hermes Desktop — portable, $rid, $Configuration ..." -ForegroundColor Cyan
+Write-Host "Publishing Hermes Desktop - portable, $rid, $Configuration ..." -ForegroundColor Cyan
 Write-Host "Output: $OutputDir" -ForegroundColor DarkGray
 Write-Host ""
 
@@ -139,5 +139,5 @@ if ($Zip) {
     Write-Host ""
 }
 
-Write-Host "Users can run HermesDesktop.exe directly — no .NET SDK, no MSIX, no Windows App Runtime install needed." -ForegroundColor Cyan
-Write-Host "First run creates %LOCALAPPDATA%\hermes with config, memory, and logs." -ForegroundColor DarkGray
+Write-Host "Users can run HermesDesktop.exe directly - no .NET SDK, no MSIX, no Windows App Runtime install needed." -ForegroundColor Cyan
+Write-Host 'First run creates %LOCALAPPDATA%\hermes with config, memory, and logs.' -ForegroundColor DarkGray
