@@ -1,4 +1,4 @@
-# Hermes Desktop
+# Hermes Desktop Updated
 
 <p align="center">
   <img src="docs/logo.png" alt="Hermes Desktop Logo" width="128" />
