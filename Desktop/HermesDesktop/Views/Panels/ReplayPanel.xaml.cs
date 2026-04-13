@@ -82,23 +82,38 @@ public sealed partial class ReplayPanel : UserControl
         }
         else
         {
-            Activities.Add(new ActivityDisplayItem(entry));
+            // Newest activity is inserted at index 0 so the most recent tool call
+            // sits at the top of the panel without the user having to scroll. This
+            // matches conventional dev tool log ordering (terminal scrollback,
+            // browser devtools network panel, etc.). PlaybackAsync below iterates
+            // the collection in chronological order via OrderBy(Timestamp) so the
+            // replay still plays oldest → newest regardless of display order.
+            Activities.Insert(0, new ActivityDisplayItem(entry));
         }
         UpdateEmptyState();
 
-        // Auto-scroll to latest
+        // Auto-scroll to the newest entry, which is now at index 0 (top).
         if (Activities.Count > 0)
-            ActivityList.ScrollIntoView(Activities[^1]);
+            ActivityList.ScrollIntoView(Activities[0]);
     }
 
     /// <summary>
-    /// Load a full session's activity entries.
+    /// Load a full session's activity entries. Entries are inserted in
+    /// descending-timestamp order so the most recent tool call ends up at index
+    /// 0 (top of the panel), matching live-add ordering. Sequence is the stable
+    /// secondary key — DateTime.UtcNow has ~16ms tick resolution on Windows so
+    /// two parallel tool entries can collide on Timestamp; without the
+    /// secondary sort the order between them would be implementation-defined.
     /// </summary>
     public void LoadSession(List<ActivityEntry> entries)
     {
         Activities.Clear();
-        foreach (var entry in entries)
+        foreach (var entry in entries
+            .OrderByDescending(e => e.Timestamp)
+            .ThenByDescending(e => e.Sequence))
+        {
             Activities.Add(new ActivityDisplayItem(entry));
+        }
         UpdateEmptyState();
     }
 
@@ -167,7 +182,18 @@ public sealed partial class ReplayPanel : UserControl
 
     private async Task PlaybackAsync(CancellationToken ct)
     {
-        foreach (var item in Activities)
+        // Display order is newest-first, but playback should always run
+        // chronologically (oldest → newest) so the user watches the agent's
+        // work unfold in the same order it actually happened. Sequence is the
+        // stable secondary key because DateTime.UtcNow has ~16ms tick
+        // resolution on Windows — two parallel tool entries created in the
+        // same tick would otherwise play in non-deterministic order. Snapshot
+        // to a local list so an Activities mutation mid-playback can't desync.
+        var ordered = Activities
+            .OrderBy(a => a.Timestamp)
+            .ThenBy(a => a.Sequence)
+            .ToList();
+        foreach (var item in ordered)
         {
             ct.ThrowIfCancellationRequested();
 
