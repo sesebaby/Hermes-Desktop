@@ -40,7 +40,7 @@ jobs:
       - name: Verify coverage output exists
         shell: bash
         run: |
-          coverage_files="$(rg --files -g "**/coverage.cobertura.xml" TestResults || true)"
+          coverage_files="$(find TestResults -name coverage.cobertura.xml -type f 2>/dev/null || true)"
           if [ -z "$coverage_files" ]; then
             echo "Expected coverage.cobertura.xml but none was generated."
             exit 1
