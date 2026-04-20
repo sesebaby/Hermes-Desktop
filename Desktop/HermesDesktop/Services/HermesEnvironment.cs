@@ -736,6 +736,19 @@ internal static class HermesEnvironment
     /// <summary>Read a value from the integrations section of config.yaml.</summary>
     internal static string? ReadIntegrationSetting(string key) => ReadConfigSetting("integrations", key);
 
+    // ── Web search ──
+    internal static string WebSearchProvider =>
+        ReadConfigSetting("search", "provider") ?? "duckduckgo";
+
+    internal static string? WebSearchGoogleApiKey =>
+        ReadConfigSetting("search", "google_api_key");
+
+    internal static string? WebSearchGoogleEngineId =>
+        ReadConfigSetting("search", "google_engine_id");
+
+    internal static string? WebSearchBingApiKey =>
+        ReadConfigSetting("search", "bing_api_key");
+
     /// <summary>Read a value from any top-level section of config.yaml (section.key).</summary>
     internal static string? ReadConfigSetting(string section, string key)
     {

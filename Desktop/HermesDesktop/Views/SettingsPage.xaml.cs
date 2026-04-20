@@ -61,6 +61,7 @@ public sealed partial class SettingsPage : Page
         LoadExecutionSettings();
         LoadPluginSettings();
         LoadDreamerSettings();
+        LoadSearchSettings();
         await RefreshRuntimeStatusAsync();
     }
 
@@ -777,6 +778,54 @@ This file is a living document about the human I work with. It helps me provide 
         {
             PluginSaveStatus.Text = string.Format(CultureInfo.CurrentCulture, ResourceLoader.GetString("SettingsErrorFormat"), ex.Message);
             PluginSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOfflineBrush"];
+        }
+    }
+
+    // ── Web Search ──
+    private void LoadSearchSettings()
+    {
+        SelectComboByTag(SearchProviderCombo, HermesEnvironment.WebSearchProvider, fallbackIndex: 0);
+        SearchGoogleApiKeyBox.Password = HermesEnvironment.WebSearchGoogleApiKey ?? "";
+        SearchGoogleEngineIdBox.Text = HermesEnvironment.WebSearchGoogleEngineId ?? "";
+        SearchBingApiKeyBox.Password = HermesEnvironment.WebSearchBingApiKey ?? "";
+        UpdateSearchFieldState((SearchProviderCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString());
+    }
+
+    private void SearchProvider_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        UpdateSearchFieldState((SearchProviderCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString());
+    }
+
+    private void UpdateSearchFieldState(string? provider)
+    {
+        var p = (provider ?? "duckduckgo").ToLowerInvariant();
+        SearchGoogleApiKeyBox.IsEnabled = p == "google";
+        SearchGoogleEngineIdBox.IsEnabled = p == "google";
+        SearchBingApiKeyBox.IsEnabled = p == "bing";
+    }
+
+    private async void SaveSearchConfig_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var provider = (SearchProviderCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "duckduckgo";
+            var settings = new Dictionary<string, string>
+            {
+                ["provider"] = provider,
+                ["google_api_key"] = SearchGoogleApiKeyBox.Password.Trim(),
+                ["google_engine_id"] = SearchGoogleEngineIdBox.Text.Trim(),
+                ["bing_api_key"] = SearchBingApiKeyBox.Password.Trim(),
+            };
+
+            await HermesEnvironment.SaveConfigSectionAsync("search", settings);
+
+            SearchSaveStatus.Text = ResourceLoader.GetString("SettingsSaveSuccessRestart");
+            SearchSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOnlineBrush"];
+        }
+        catch (Exception ex)
+        {
+            SearchSaveStatus.Text = string.Format(CultureInfo.CurrentCulture, ResourceLoader.GetString("SettingsErrorFormat"), ex.Message);
+            SearchSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOfflineBrush"];
         }
     }
 
