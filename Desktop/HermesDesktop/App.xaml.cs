@@ -701,7 +701,14 @@ public partial class App : Application
         // Web tools
         RegisterAndTrack(agent, toolRegistry, new WebFetchTool(httpClient));
         RegisterAndTrack(agent, toolRegistry, new WebSearchTool(
-            new WebSearchConfig { Provider = "duckduckgo" }, httpClient));
+            new WebSearchConfig
+            {
+                Provider = HermesEnvironment.WebSearchProvider,
+                GoogleApiKey = HermesEnvironment.WebSearchGoogleApiKey,
+                GoogleSearchEngineId = HermesEnvironment.WebSearchGoogleEngineId,
+                BingApiKey = HermesEnvironment.WebSearchBingApiKey,
+            },
+            httpClient));
 
         // Task management
         RegisterAndTrack(agent, toolRegistry, new TodoWriteTool());
