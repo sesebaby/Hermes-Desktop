@@ -737,26 +737,13 @@ internal static class HermesEnvironment
     internal static string? ReadIntegrationSetting(string key) => ReadConfigSetting("integrations", key);
 
     // ── Web search ──
-    private static readonly HashSet<string> SupportedWebSearchProviders = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "duckduckgo", "google", "bing"
-    };
-
     /// <summary>
-    /// Normalizes the persisted provider to one of {duckduckgo, google, bing}.
-    /// Unknown or mis-typed values fall back to DuckDuckGo so WebSearchTool
-    /// doesn't throw NotSupportedException on every call after a bad edit.
+    /// Provider the WebSearchTool should use. Normalization lives next to the
+    /// tool itself (<see cref="Hermes.Agent.Tools.WebSearchConfig.NormalizeProvider"/>)
+    /// so the list of supported providers stays in one place.
     /// </summary>
-    internal static string WebSearchProvider
-    {
-        get
-        {
-            var raw = ReadConfigSetting("search", "provider");
-            if (string.IsNullOrWhiteSpace(raw)) return "duckduckgo";
-            var normalized = raw.Trim().ToLowerInvariant();
-            return SupportedWebSearchProviders.Contains(normalized) ? normalized : "duckduckgo";
-        }
-    }
+    internal static string WebSearchProvider =>
+        Hermes.Agent.Tools.WebSearchConfig.NormalizeProvider(ReadConfigSetting("search", "provider"));
 
     internal static string? WebSearchGoogleApiKey =>
         ReadConfigSetting("search", "google_api_key");
