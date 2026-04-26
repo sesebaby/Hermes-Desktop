@@ -1,0 +1,22 @@
+{
+  "artifactPath": "src/Superpowers.Launcher/bin/Debug/net10.0-windows/Superpowers.Launcher.exe",
+  "buildRevision": "02dfe22c48a7a8c472f83d92dedc7a6dd50874bd",
+  "startupWindowTitle": "Superpowers Launcher",
+  "startupScreenshot": "D:\\GitHubPro\\AllGameInAI\\docs\\superpowers\\governance\\evidence\\assets\\2026-03-28-launcher\\launcher-home-startup.png",
+  "startupBounds": {
+    "left": 2160,
+    "top": 56,
+    "width": 1440,
+    "height": 920
+  },
+  "interactionButton": "查看配置",
+  "interactionResultText": "星露谷物语配置",
+  "interactionScreenshot": "D:\\GitHubPro\\AllGameInAI\\docs\\superpowers\\governance\\evidence\\assets\\2026-03-28-launcher\\launcher-stardew-config-after-click.png",
+  "interactionBounds": {
+    "left": 2160,
+    "top": 56,
+    "width": 1440,
+    "height": 920
+  },
+  "recordedAt": "2026-03-28T17:40:41"
+}

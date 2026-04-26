@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- Offer Food Interaction Definition -->
+  <InteractionDef>
+    <defName>OfferFood</defName>
+    <label>offer food</label>
+    <workerClass>RimTalkExpandActions.SocialDining.InteractionWorker_OfferFood</workerClass>
+    <socialFightBaseChance>0.0</socialFightBaseChance>
+    <initiatorThought>OfferedFood</initiatorThought>
+    <recipientThought>ReceivedFoodOffer</recipientThought>
+    <initiatorXpGainSkill>Social</initiatorXpGainSkill>
+    <initiatorXpGainAmount>15</initiatorXpGainAmount>
+    
+    <!-- Log entry when interaction triggers -->
+    <logRulesInitiator>
+      <rulesStrings>
+        <li>logentry(p=0.1)->[initiator_nameShortIndef] offered food to [recipient_nameShortDef].</li>
+      </rulesStrings>
+    </logRulesInitiator>
+  </InteractionDef>
+</Defs>

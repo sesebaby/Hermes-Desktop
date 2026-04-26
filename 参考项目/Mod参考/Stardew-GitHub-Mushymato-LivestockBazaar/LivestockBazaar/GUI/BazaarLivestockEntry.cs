@@ -1,0 +1,494 @@
+using LivestockBazaar.Integration;
+using LivestockBazaar.Model;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using PropertyChanged.SourceGenerator;
+using StardewValley;
+using StardewValley.GameData;
+using StardewValley.GameData.Buildings;
+using StardewValley.GameData.FarmAnimals;
+using StardewValley.Internal;
+using StardewValley.ItemTypeDefinitions;
+using StardewValley.TokenizableStrings;
+
+namespace LivestockBazaar.GUI;
+
+public sealed partial record BazaarLivestockPurchaseEntry(LivestockData Ls)
+{
+    public readonly string LivestockName = TokenParser.ParseText(Ls.Data.DisplayName);
+    public string? LivestockDesc = TokenParser.ParseText(Ls.Data.ShopDescription);
+    public string LivestockDaysDesc = BazaarLivestockEntry.GetLivestockDaysDesc(Ls.Data);
+
+    public readonly SDUISprite SpriteIcon = Ls.SpriteIcon;
+
+    [Notify]
+    private float iconOpacity = 0.4f;
+
+    // skin
+    [Notify]
+    private int skinId = Ls.SkinData.Any() ? 0 : -2;
+    public LivestockSkinData? Skin => skinId < 0 ? null : Ls.SkinData[skinId];
+    public Texture2D SpriteSheet => Skin?.SpriteSheet ?? Ls.SpriteSheet;
+
+    public void PrevSkin()
+    {
+        if (skinId != -2)
+        {
+            SkinId -= 1;
+            if (skinId == -2)
+                SkinId = Ls.SkinData.Count - 1;
+        }
+    }
+
+    public void NextSkin()
+    {
+        if (skinId != -2)
+        {
+            SkinId += 1;
+            if (skinId == Ls.SkinData.Count)
+                SkinId = -1;
+        }
+    }
+}
+
+public sealed partial record BazaarLivestockEntry(ITopLevelBazaarContext Main, string? ShopName, LivestockData Ls)
+{
+    // icon
+    public readonly SDUISprite ShopIcon = Ls.ShopIcon;
+    public Color ShopIconTint => HasRequiredBuilding ? Color.White : Color.Black * 0.4f;
+
+    // currency
+    private readonly BaseCurrency currency = Ls.GetTradeCurrency(ShopName);
+    public bool CurrencyIsMoney => currency is MoneyCurrency;
+    public ParsedItemData TradeItem => currency.TradeItem;
+    public int TradePrice = Ls.GetTradePrice(ShopName);
+    public string TradePriceFmt => TradePrice > 99999 ? $"{TradePrice / 1000f}k" : TradePrice.ToString();
+    public bool HasEnoughTradeItems => currency.HasEnough(TradePrice);
+    public int TotalCurrency => currency.GetTotal();
+    public float ShopIconOpacity => HasEnoughTradeItems && Main.HasSpaceForLivestock(this) ? 1f : 0.5f;
+    public bool ShowCurrentlyOwnedCount => CurrentlyOwnedCount > 0;
+    public int CurrentlyOwnedCount => Main.GetCurrentlyOwnedCount(this);
+
+    public string ShopScreenRead
+    {
+        get
+        {
+            if (!HasRequiredBuilding)
+            {
+                return I18n.GUI_ScreenRead_ShopCantBuy(LivestockName, RequiredBuildingText);
+            }
+            if (!HasEnoughTradeItems)
+            {
+                return I18n.GUI_ScreenRead_ShopCantBuy(
+                    LivestockName,
+                    I18n.GUI_ScreenRead_ShopPrice(TradePrice, TradeItem.DisplayName)
+                );
+            }
+            return I18n.GUI_ScreenRead_Shop(
+                LivestockName,
+                TradePrice,
+                TradeItem.DisplayName,
+                PurchaseLivestockDaysDesc,
+                PurchaseLivestockDesc
+            );
+        }
+    }
+
+    public string PurchaseScreenRead =>
+        string.Concat(I18n.GUI_PurchaseButton(), " ", I18n.GUI_ScreenRead_ShopPrice(TradePrice, TradeItem.DisplayName));
+
+    public bool HasThisType(string type) => Ls.Key == type || AltPurchase.Any((alt) => alt.Ls.Key == type);
+
+    // has required animal building
+    public string House => Ls.Data.House;
+    private BuildingData? requiredBuildingData = null;
+    public BuildingData? RequiredBuildingData
+    {
+        get
+        {
+            if (Ls.Data.RequiredBuilding == null)
+                return null;
+            if (requiredBuildingData != null)
+                return requiredBuildingData;
+            if (Game1.buildingData.TryGetValue(Ls.Data.RequiredBuilding, out requiredBuildingData))
+                return requiredBuildingData;
+            return null;
+        }
+    }
+    public string RequiredBuilding => Ls.Data.RequiredBuilding;
+    private bool? hasRequiredBuilding = null;
+    public bool HasRequiredBuilding
+    {
+        get
+        {
+            if (Ls.Data.RequiredBuilding == null)
+                return true;
+            hasRequiredBuilding ??= Main.HasRequiredBuilding(this);
+            return hasRequiredBuilding ?? false;
+        }
+    }
+    public string? RequiredBuildingText =>
+        Wheels.ParseTextOrDefault(
+            Ls.Data.ShopMissingBuildingDescription,
+            Wheels.ParseTextOrDefault(RequiredBuildingData?.Name ?? Ls.Data.RequiredBuilding ?? "???")
+        );
+    public SDUISprite? RequiredBuildingSprite =>
+        RequiredBuildingData != null
+            ? new SDUISprite(
+                Game1.content.Load<Texture2D>(RequiredBuildingData.Texture),
+                RequiredBuildingData.SourceRect
+            )
+            : null;
+    public bool CanBuy => HasEnoughTradeItems && HasRequiredBuilding;
+
+    // hover color, controlled by main context
+    [Notify]
+    private Color backgroundTint = Color.White;
+
+    // infobox anim
+    public const int FRAME_PER_ROW = 4;
+    public const int ROW_MAX = 4;
+    public const int ROW_REPEAT_MAX = 2;
+
+    public readonly string LivestockName = Wheels.ParseTextOrDefault(
+        Ls.Data.ShopDisplayName ?? Ls.Data.DisplayName,
+        "???"
+    );
+
+    private const int MAX_PRODUCE_DISPLAY = 35;
+
+    private static List<ParsedItemData>? GetEACItemQueryOverrides(
+        ItemQueryContext itemQueryContext,
+        string key,
+        string itemId,
+        ref int cnt,
+        ref HashSet<string> seenProduce
+    )
+    {
+        if (
+            ModEntry.EAC?.GetItemQueryOverrides(key, itemId) is List<GenericSpawnItemDataWithCondition> overrideList
+            && overrideList.Any()
+        )
+        {
+            List<ParsedItemData> overrideItems = [];
+            foreach (GenericSpawnItemDataWithCondition gsidwc in overrideList)
+            {
+                foreach (
+                    var result in ItemQueryResolver.TryResolve(
+                        gsidwc,
+                        itemQueryContext,
+                        ItemQuerySearchMode.AllOfTypeItem
+                    )
+                )
+                {
+                    if (
+                        result.Item is Item item
+                        && !seenProduce.Contains(item.ItemId)
+                        && ItemRegistry.GetData(item.QualifiedItemId) is ParsedItemData itemData1
+                    )
+                    {
+                        cnt++;
+                        overrideItems.Add(itemData1);
+                        seenProduce.Add(item.QualifiedItemId);
+                        if (cnt >= MAX_PRODUCE_DISPLAY)
+                            return overrideItems;
+                    }
+                }
+            }
+            return overrideItems;
+        }
+        return null;
+    }
+
+    public IEnumerable<ParsedItemData> LivestockProduce
+    {
+        get
+        {
+            LivestockData ls = selectedPurchase == null ? Ls : selectedPurchase.Ls;
+            IEnumerable<FarmAnimalProduce>? prodIter = ls.Data.ProduceItemIds;
+            if (prodIter == null)
+            {
+                prodIter = ls.Data.DeluxeProduceItemIds;
+                if (prodIter == null)
+                    yield break;
+            }
+            else
+                prodIter = prodIter.Concat(ls.Data.DeluxeProduceItemIds);
+
+            HashSet<string> seenProduce = [];
+            int cnt = 0;
+            ItemQueryContext itemQueryContext = new();
+
+            foreach (FarmAnimalProduce prod in prodIter)
+            {
+                if (string.IsNullOrEmpty(prod.ItemId))
+                    continue;
+
+                if (
+                    GetEACItemQueryOverrides(itemQueryContext, ls.Key, prod.ItemId, ref cnt, ref seenProduce)
+                    is List<ParsedItemData> eacIqOverrides1
+                )
+                {
+                    foreach (ParsedItemData itemData1 in eacIqOverrides1)
+                        yield return itemData1;
+                    if (cnt >= MAX_PRODUCE_DISPLAY)
+                        yield break;
+                    continue;
+                }
+                else
+                {
+                    string qualifiedItemId2 = ItemRegistry.type_object + prod.ItemId;
+                    if (
+                        !seenProduce.Contains(qualifiedItemId2)
+                        && ItemRegistry.GetData(qualifiedItemId2) is ParsedItemData itemData2
+                    )
+                    {
+                        cnt++;
+                        yield return itemData2;
+                        seenProduce.Add(qualifiedItemId2);
+                        if (cnt >= MAX_PRODUCE_DISPLAY)
+                            yield break;
+                    }
+                }
+            }
+
+            if (ModEntry.EAC?.GetExtraDrops(ls.Key) is Dictionary<string, List<string>> extraDrops)
+            {
+                foreach (string itemId in extraDrops.Values.SelectMany(id => id))
+                {
+                    if (
+                        GetEACItemQueryOverrides(itemQueryContext, ls.Key, itemId, ref cnt, ref seenProduce)
+                        is List<ParsedItemData> eacIqOverrides2
+                    )
+                    {
+                        foreach (ParsedItemData itemData1 in eacIqOverrides2)
+                            yield return itemData1;
+                        if (cnt >= MAX_PRODUCE_DISPLAY)
+                            yield break;
+                    }
+                    else
+                    {
+                        string qualifiedItemId1 = ItemRegistry.type_object + itemId;
+                        if (
+                            !seenProduce.Contains(qualifiedItemId1)
+                            && ItemRegistry.GetData(qualifiedItemId1) is ParsedItemData itemData3
+                        )
+                        {
+                            cnt++;
+                            yield return itemData3;
+                            seenProduce.Add(qualifiedItemId1);
+                            if (cnt >= MAX_PRODUCE_DISPLAY)
+                                yield break;
+                        }
+                    }
+                }
+            }
+
+            LivestockProduceLayout = cnt < 8 ? $"content[..{cnt * 36}] content" : "content[..256] content";
+        }
+    }
+
+    [Notify]
+    private string livestockProduceLayout = "content[..256] content";
+
+    [Notify]
+    private int animRow = 0;
+
+    [Notify]
+    private int animFrame = 0;
+    private int rowRepeat = 0;
+    public SpriteEffects AnimFlip =>
+        Ls.Data.UseFlippedRightForLeft && AnimRow == 3 ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
+
+    public void ResetAnim()
+    {
+        AnimRow = 0;
+        AnimFrame = 0;
+        rowRepeat = 0;
+    }
+
+    [Notify]
+    private Texture2D animSpriteSheet = Ls.SpriteSheet;
+    private int spriteWidth = Ls.Data.SpriteWidth;
+    private int spriteHeight = Ls.Data.SpriteHeight;
+
+    public SDUISprite AnimSprite
+    {
+        get
+        {
+            int realFrame = AnimRow * FRAME_PER_ROW + AnimFrame;
+            if (Ls.Data.UseFlippedRightForLeft && AnimRow == 3)
+                realFrame -= 8;
+            return new(
+                AnimSpriteSheet,
+                new(
+                    realFrame * spriteWidth % AnimSpriteSheet.Width,
+                    realFrame * spriteWidth / AnimSpriteSheet.Width * spriteHeight,
+                    spriteWidth,
+                    spriteHeight
+                ),
+                SDUIEdges.NONE,
+                new(Scale: 4)
+            );
+        }
+    }
+
+    public void NextFrame()
+    {
+        AnimFrame++;
+        if (AnimFrame == 4)
+        {
+            AnimFrame = 0;
+            rowRepeat++;
+            if (rowRepeat == ROW_REPEAT_MAX)
+            {
+                rowRepeat = 0;
+                AnimRow++;
+                if (AnimRow == ROW_MAX)
+                    AnimRow = 0;
+            }
+        }
+    }
+
+    // alt purchase
+    public bool HasAltPurchase => AltPurchase.Any();
+
+    [Notify]
+    private int skinId = -2;
+    public bool HasSkin => SkinId != -2;
+    public float RandSkinOpacity => SkinId == -1 ? 1f : 0f;
+    public Color AnimTint => SkinId == -1 ? Color.Black * 0.4f : Color.White;
+    private IReadOnlyList<BazaarLivestockPurchaseEntry>? altPurchase = null;
+    public IReadOnlyList<BazaarLivestockPurchaseEntry> AltPurchase
+    {
+        get
+        {
+            if (altPurchase == null)
+            {
+                altPurchase = Ls.AltPurchase.Select((ls) => new BazaarLivestockPurchaseEntry(ls)).ToList();
+                if (altPurchase.Any())
+                    HandleSelectedPurchase(altPurchase[0]);
+                else
+                    HandleSelectedPurchase(new BazaarLivestockPurchaseEntry(Ls));
+            }
+            return altPurchase;
+        }
+    }
+
+    [Notify]
+    public float purchaseOpacity = 1f;
+    private BazaarLivestockPurchaseEntry? selectedPurchase;
+
+    private readonly string baseLivestockName = Wheels.ParseTextOrDefault(
+        Ls.Data.ShopDisplayName ?? Ls.Data.DisplayName,
+        "???"
+    );
+
+    [Notify]
+    private string purchaseLivestockName = Wheels.ParseTextOrDefault(
+        Ls.Data.ShopDisplayName ?? Ls.Data.DisplayName,
+        "???"
+    );
+
+    private readonly string baseLivestockDesc = Wheels.ParseTextOrDefault(
+        Ls.Data.ShopDescription,
+        "??? ???? ?? ????? ?"
+    );
+
+    [Notify]
+    private string purchaseLivestockDesc = Wheels.ParseTextOrDefault(Ls.Data.ShopDescription, "??? ???? ?? ????? ?");
+
+    private string baseLivestockDaysDesc = GetLivestockDaysDesc(Ls.Data);
+
+    [Notify]
+    private string purchaseLivestockDaysDesc = GetLivestockDaysDesc(Ls.Data);
+
+    public void HandleSelectedPurchase(BazaarLivestockPurchaseEntry purchase)
+    {
+        selectedPurchase?.IconOpacity = 0.4f;
+        selectedPurchase = purchase;
+        selectedPurchase.IconOpacity = 1f;
+        SkinId = selectedPurchase.SkinId;
+        spriteWidth = selectedPurchase.Ls.Data.SpriteWidth;
+        spriteHeight = selectedPurchase.Ls.Data.SpriteHeight;
+        AnimSpriteSheet = selectedPurchase.SpriteSheet;
+        PurchaseLivestockName = selectedPurchase.LivestockName ?? baseLivestockName;
+        PurchaseLivestockDesc = selectedPurchase.LivestockDesc ?? baseLivestockDesc;
+        PurchaseLivestockDaysDesc = selectedPurchase.LivestockDaysDesc ?? baseLivestockDaysDesc;
+        OnPropertyChanged(new(nameof(LivestockProduce)));
+    }
+
+    public static string GetDaysDesc(int days, Func<string> singleDesc, Func<object?, string> multiDesc)
+    {
+        return days == 1 ? singleDesc() : multiDesc(days);
+    }
+
+    public static string GetLivestockDaysDesc(FarmAnimalData baseData)
+    {
+        return string.Concat(
+            GetDaysDesc(baseData.DaysToMature, I18n.GUI_DaysToMature_Single_Desc, I18n.GUI_DaysToMature_Desc),
+            '\n',
+            GetDaysDesc(baseData.DaysToProduce, I18n.GUI_DaysToProduce_Single_Desc, I18n.GUI_DaysToProduce_Desc)
+        );
+    }
+
+    public void PrevSkin()
+    {
+        if (selectedPurchase != null)
+        {
+            selectedPurchase.PrevSkin();
+            SkinId = selectedPurchase.SkinId;
+            AnimSpriteSheet = selectedPurchase.SpriteSheet;
+        }
+    }
+
+    public void NextSkin()
+    {
+        if (selectedPurchase != null)
+        {
+            selectedPurchase.NextSkin();
+            SkinId = selectedPurchase.SkinId;
+            AnimSpriteSheet = selectedPurchase.SpriteSheet;
+        }
+    }
+
+    // buy animal
+    [Notify]
+    private string buyName = Dialogue.randomName();
+
+    public FarmAnimal MakeTransiantFarmAnimal() =>
+        new(Ls.Key, Game1.Multiplayer.getNewID(), Game1.player.UniqueMultiplayerID) { Name = "???" };
+
+    internal static void PlayAnimalSound(FarmAnimal animal, string defaultCue)
+    {
+        Game1.playSound(animal.GetSoundId() ?? defaultCue, 1200 + Game1.random.Next(-200, 201));
+    }
+
+    public FarmAnimal? BuyNewFarmAnimal()
+    {
+        if (selectedPurchase == null)
+        {
+            return null;
+        }
+        currency.Deduct(TradePrice);
+        OnPropertyChanged(new(nameof(TotalCurrency)));
+        LivestockData ls = selectedPurchase.Ls;
+        FarmAnimal animal = new(ls.Key, Game1.Multiplayer.getNewID(), Game1.player.UniqueMultiplayerID)
+        {
+            Name = BuyName,
+            displayName = BuyName,
+        };
+        if (selectedPurchase.SkinId > -1)
+        {
+            if (selectedPurchase.Skin == null)
+                animal.skinID.Value = null;
+            else
+                animal.skinID.Value = selectedPurchase.Skin.Skin.Id;
+        }
+        PlayAnimalSound(animal, "purchase");
+        RandomizeBuyName();
+        return animal;
+    }
+
+    public void RandomizeBuyName() => BuyName = Dialogue.randomName();
+}

@@ -1,0 +1,21 @@
+{
+	"required": true,
+	"package": "com.owlmaddie.mixin.client",
+	"compatibilityLevel": "JAVA_17",
+	"client": [
+		"EntityRendererMixin",
+		"MixinPlayerCustomTexture",
+		"MixinPlayerSkinTexture"
+	],
+	"env": {
+		"client.MixinPlayerCustomTexture": {
+			"minVersion": "1.20"
+		},
+		"client.MixinPlayerSkinTexture": {
+			"minVersion": "1.20"
+		}
+	},
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

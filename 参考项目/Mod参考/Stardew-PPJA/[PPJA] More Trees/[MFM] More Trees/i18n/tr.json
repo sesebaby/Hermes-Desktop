@@ -1,0 +1,31 @@
+{
+  // Text
+
+  "camphor.text": "Merhaba canım,^^  George ve ben yaşlandıkça, sağlığımıza daha fazla dikkat etmek zorunda kaldık. Bu eklemlere ve cilde mucizeler yapan kafuru buldum.^Çiftliğinde bu fidanı yetiştirmek için yerin var mı yok mu bilmiyorum ama ilgilenebilirsin diye düşündüm.^^  -Evelyn",
+  "breadfruit.text": "Sevgili @,^^ Bunu Willy'den aldım, güneye balık tutmaya gittiğinde bulmuş. Şuan mevsiminde olmadığını biliyorum ama eğer kışın ekersen baharda meyvesini toplayacağın bir ekmek meyvesi ağacın olacak.^^  -Elliott",
+  // "cassia.text": "Merhaba, @.^^ Bir çeşit veteran derneği bana yaptıklarım için bunu hediye etti. Sembolik bir hediye olduğunu ve hediyenin de güzel olduğunu biliyorum ancak kabul etmeliyim ki bunu ekebileceğimi düşünmüyorum.^Bu şeyin öldüğünü görmek de istemem doğrusu.Bunu ekip büyütebilir misin?^^  -Kent",
+  "eucalyptus.text": "Hey @,^^ Hiç çiftliğinde koala olsaydı nasıl olurdu diye düşündün mü?^Bende öyle, ta ki babamla ben yakın zaman önce araştırma yapan kadar. Görünüşe göre koalalar Yıldızçiyi Vadisi'nde yaşayamaz ancak tek yemek kaynakları yaşayabilir!^İlgilendiysen burada araştırmamızdan geri kalan bir okaliptus fidanı var.^^  -Maru",
+  "fig.text": "Sevgili @,^^ Şuanda incir ağaçlarının doğal gelişimleri üzerince çalışma yapıyorum. Hipotezimse bu fidanın çok büyük meyveler vereceği, ancak öğrenmenin tek bir yolu var!^Eğer onu ekebilirsen belli bir sıklıkta gelip bilgi toplamak amacıyla inceleyeceğim. Bütün dutlar senin olabilir!^^ -Demetrius",
+  "grapefruit.text": "@,^^ Her sabah bir protein takviyesiyle greyfurt yerim. Bu dengeli kahvaltıyı denemeli!^^Bir makalede yerel büyüyen greyfurt daha iyi ve taze olurmuş buna göre... Bilmiyorum, Şuanda bir çeşit greyfurt manyağıyım. Sence sağlayıcım olabilir misin?^^  -Alex",
+  "melaleuca.text": "Sevgili @,^^ Bazı çevreciler ekmem için bu fidanı gönderdi. Belki adımı bir listeden buldular; sanırım çiftliğimde ağaç yetiştirmediğimi bilmiyorlar. İlgilenir miydin?^Bu ağaçların çok güzel olduğunu duydum.^^  -Marnie",
+  "persimmon.text": "Selam.^^ Bunu buldum. Tamam mı, dürtük?^^ Senin olabilir, dürtük.^^  -şapka faresi",
+  "pomelo.text": "Hey @!^^ Biz Zuzu Şehri'nde yaşarken annem hep pomelo alırdı, ama burada Vincent bir tane bile yiyemedi.^Benim fikrimse senin bunu yetiştirmen ve hepimizin bu ağaçtan gelecek meyvenin tadını çıkarabilmemiz.Belki Vincent ağaca da çıkabilir! Eminim ki bu onun için çok özel olacak.^^  -Sam",
+  "vanilla.text": "Selamlar,^^  Umarım bu fidanı kullanabilirsin. Vanilya içinde birçok büyüsel özellik barındırıyor ve dünya etrafındaki büyücüler bunu asırlarca iksirler ve büyüler için kullandı.^Dondurmanın içinde lezzetli olması da apayrı bir tesadüf.^^ -M. Rasmodius, Wizard",
+  "fragrantwisteria.text": "Hey @,^^ Bunu nasıl anlatabilirim? Bu ağaçlar gerçekten büyülü kokuyor.^Bunu göndermek benim için biraz sıradışı biliyorum ama bana güven -- bunu beğeneceksin.^^  -Abigail",
+  "ylangylang.text": "Hey @,^^ Okuduğuma göre bu ağacın çiçekleri cilde iyi geliyormuş. Artısı çiçek açtığında çom güzel oluyor. Bekli bir tane ekmek istersin?^^ -Abigail",
+
+  // Titles
+
+  "camphor.title": "Kafur Fidanı",
+  "breadfruit.title": "Ekmek Meyvesi Fidanı",
+  // "cassia.title": "Çin Tarçını Fidanı",
+  "eucalyptus.title": "Okaliptus Fidanı",
+  "fig.title": "İncir Fidanı",
+  "grapefruit.title": "Greyfurt Fidanı",
+  "melaleuca.title": "Hint Defnesi Fidanı",
+  "persimmon.title": "Trabzon Hurması Fidanı",
+  "pomelo.title": "Pomelo Fidanı",
+  "vanilla.title": "Vanilya Fidanı",
+  "fragrantwisteria.title": "Kokulu Visterya Fidanı",
+  "ylangylang.title": "Ylang Ylang Fidanı"
+}

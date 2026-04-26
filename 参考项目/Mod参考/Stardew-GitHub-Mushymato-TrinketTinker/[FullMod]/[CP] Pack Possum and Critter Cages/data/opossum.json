@@ -1,0 +1,178 @@
+{
+  "$schema": "https://smapi.io/schemas/content-patcher.json",
+  "Changes": [
+    {
+      "LogName": "Opossum: Trinkets",
+      "Action": "EditData",
+      "Target": "Data/Trinkets",
+      "Entries": {
+        "{{ModId}}_Opossum": {
+          "Id": "{{ModId}}_Opossum",
+          "DisplayName": "[LocalizedText {{ModId}}/i18n:Opossum.DisplayName]",
+          "Description": "[LocalizedText {{ModId}}/i18n:Opossum.Description]",
+          "Texture": "{{ModId}}/opossum-icon",
+          "SheetIndex": 0,
+          "DropsNaturally": false,
+          "CanBeReforged": false
+        },
+      }
+    },
+    {
+      "LogName": "Opossum: Tinker",
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/Tinker",
+      "Entries": {
+        "{{ModId}}_Opossum": {
+          "Variants": [
+            {
+              "Texture": "{{ModId}}/opossum",
+              "TextureExtra": "{{ModId}}/opossum-2",
+              "Width": 32,
+              "Height": 32,
+              "ShadowScale": 0,
+              "HatEquip": {
+                "AdjustOnFrame": {
+                  // D
+                  "0": "0,-8",
+                  "1": "0,-4",
+                  "2": "0,-8",
+                  "3": "0,-4",
+                  // R
+                  "4": "0,0",
+                  "5": "0,4",
+                  "6": "0,0",
+                  "7": "0,4",
+                  // U
+                  "8": "0,-8",
+                  "9": "0,-4",
+                  "10": "0,-8",
+                  "11": "0,-4",
+                  // L
+                  "12": "0,0",
+                  "13": "0,4",
+                  "14": "0,0",
+                  "15": "0,4"
+                },
+                "AdjustOnFrameExtra": {
+                  // idle/idle.3
+                  "0": "0,0 f1",
+                  "1": "0,-4 f1",
+                  "2": "0,-4 f1",
+                  "3": "0,0 f2",
+                  "4": "0,-4 f2",
+                  "5": "0,-4 f2"
+                },
+                "Source": "Given"
+              }
+            },
+          ],
+          "Chatter": {
+            "Tutorial": {
+              "Lines": [
+                "[LocalizedText {{ModId}}/i18n:Opossum.Chatter.0.0]#$b#[LocalizedText {{ModId}}/i18n:Opossum.Chatter.0.1]#$b#[LocalizedText {{ModId}}/i18n:Opossum.Chatter.0.2]#$b#[LocalizedText {{ModId}}/i18n:Opossum.Chatter.0.3]"
+              ],
+              "Condition": "TRUE"
+            },
+            "General_Any": {
+              "Lines": [
+                "{{ModId}}/i18n:Opossum.Chatter.1",
+                "{{ModId}}/i18n:Opossum.Chatter.2",
+                "{{ModId}}/i18n:Opossum.Chatter.3",
+                "{{ModId}}/i18n:Opossum.Chatter.4"
+              ],
+              "Condition": "TRUE"
+            }
+          },
+          "Motion": {
+            "MotionClass": "Lerp",
+            "DirectionMode": "DRUL",
+            "FrameLength": 4,
+            "Collision": "Line",
+            "AnimClips": {
+              "Idle.4": {
+                "FrameStart": 3,
+                "FrameLength": 3,
+                "Interval": 200,
+                "LoopMode": "PingPong",
+                "UseExtra": true
+              },
+              "Idle.3": {
+                "FrameStart": 3,
+                "FrameLength": 3,
+                "Interval": 200,
+                "LoopMode": "PingPong",
+                "UseExtra": true
+              },
+              "Idle": {
+                "FrameStart": 0,
+                "FrameLength": 3,
+                "Interval": 200,
+                "LoopMode": "PingPong",
+                "UseExtra": true
+              },
+            },
+            "Anchors": [
+              {
+                "Mode": "Forage",
+                "Range": 400
+              },
+              {
+                "Mode": "Shakeable",
+                "Range": 400
+              },
+            ]
+          },
+          "Abilities": [
+            [
+              {
+                "AbilityClass": "HarvestShakeable",
+                "Proc": "Timer",
+                "ProcTimer": 500,
+                "ProcSound": "harvest",
+                "Args": {
+                  "Range": 1,
+                  "HarvestTo": "TinkerInventory"
+                },
+              },
+              {
+                "AbilityClass": "HarvestForage",
+                "Proc": "Timer",
+                "ProcTimer": 500,
+                "ProcSound": "harvest",
+                "Args": {
+                  "Range": 1,
+                  "HarvestTo": "TinkerInventory"
+                },
+              },
+              {
+                "AbilityClass": "Chatter",
+                "Proc": "Interact",
+                "Args": {
+                  "ChatterPrefix": "General_"
+                }
+              },
+              {
+                "AbilityClass": "Chatter",
+                "Condition": "!PLAYER_HAS_MAIL Current {{ModId}}_Opossum_hired",
+                "Proc": "Always",
+                "Args": {
+                  "ChatterPrefix": "Tutorial"
+                }
+              },
+              {
+                "AbilityClass": "Action",
+                "Proc": "Always",
+                "Args": {
+                  "Action": "mushymato.TrinketTinker_PutHatOnCompanion This (H)55"
+                }
+              },
+            ]
+          ],
+          "Inventory": {
+            "Capacity": 36
+          }
+        },
+      }
+    }
+  ]
+}

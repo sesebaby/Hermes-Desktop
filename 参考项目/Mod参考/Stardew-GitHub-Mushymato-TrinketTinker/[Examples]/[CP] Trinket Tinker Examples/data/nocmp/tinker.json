@@ -1,0 +1,59 @@
+{
+  "Changes": [
+    // Edit mushymato.TrinketTinker
+    {
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/Tinker",
+      "Entries": {
+        "{{ModId}}_NoCompanion": {
+          "AbilityUnlockConditions": [
+            // level 1 is always unlocked
+            // level 2 is unconditionally unlocked
+            null,
+            // level 3 unlocked if player has gold ore in inventory
+            "PLAYER_HAS_ITEM Current (O)384",
+            // level 4 is also unconditionally unlocked once 3 is unlocked
+          ],
+          "Abilities": [
+            [
+              {
+                "AbilityClass": "Buff",
+                "Proc": "Warped",
+                "Args": {
+                  "BuffId": 22
+                }
+              },
+            ],
+            [
+              {
+                "AbilityClass": "Buff",
+                "Proc": "Warped",
+                "Args": {
+                  "BuffId": 22
+                }
+              },
+            ],
+            [
+              {
+                "AbilityClass": "Buff",
+                "Proc": "Warped",
+                "Args": {
+                  "BuffId": 22
+                }
+              },
+            ],
+            [
+              {
+                "AbilityClass": "Buff",
+                "Proc": "Warped",
+                "Args": {
+                  "BuffId": 22
+                }
+              },
+            ],
+          ]
+        },
+      }
+    }
+  ]
+}

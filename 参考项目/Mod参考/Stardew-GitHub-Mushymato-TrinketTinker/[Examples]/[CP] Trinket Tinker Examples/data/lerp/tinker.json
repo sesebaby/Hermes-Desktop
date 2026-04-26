@@ -1,0 +1,318 @@
+{
+  "Changes": [
+    // Edit mushymato.TrinketTinker/TAS
+    {
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/TAS",
+      "Entries": {
+        // this structure is identical to the TemporarySprites field in Data/Machine
+        "{{ModId}}_KegTAS": {
+          "Id": "Default",
+          "Condition": null,
+          "Texture": "TileSheets\\animations",
+          "SourceRect": {
+            "X": 256,
+            "Y": 1856,
+            "Width": 64,
+            "Height": 128
+          },
+          "Interval": 80.0,
+          "Frames": 6,
+          "Loops": 999999,
+          "PositionOffset": "0, -32",
+          "Flicker": false,
+          "Flip": false,
+          "SortOffset": 0.0,
+          "AlphaFade": 0.005,
+          "Scale": 0.25,
+          "ScaleChange": 0.0,
+          "Rotation": 0.0,
+          "RotationChange": 0.0,
+          "Color": "#bfbf00bf"
+        }
+      }
+    },
+    // Edit mushymato.TrinketTinker/Tinker
+    {
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/Tinker",
+      "Entries": {
+        "{{ModId}}_LerpR": {
+          "MinLevel": 1,
+          "MaxLevel": 2,
+          "Variants": [
+            {
+              "Texture": "Mods/{{ModId}}/rotation",
+              "Width": 16,
+              "Height": 16,
+            },
+          ],
+          // Bounce motion: follows player, bounces around
+          "Motion": {
+            "MotionClass": "Bounce",
+            "AlwaysMoving": true,
+            "DirectionMode": "R",
+            "LoopMode": "PingPong",
+            "FrameLength": 4,
+            "Interval": 200,
+            "SpeechBubbles": {
+              "fairy_heal_text": {
+                // the horror
+                "Text": "Do you believe in fairies?",
+                // "ScrollType": 1,
+                // "JunimoText": true
+                "Color": "Prismatic",
+                "RandomSpeech": [
+                  {
+                    "Text": "DO YOU!?",
+                    "Color": "Red",
+                    "Shake": 1
+                  }
+                ]
+              }
+            }
+          },
+          "Abilities": [
+            // level 1: heal 0.1~.5% of max hp and stamina while walking outside
+            [
+              {
+                "Condition": "LOCATION_IS_OUTDOORS Target",
+                "Proc": "Footstep",
+                "ProcSound": "fairy_heal",
+                "ProcSpeechBubble": "fairy_heal_text",
+                "AbilityClass": "Health",
+                "Args": {
+                  "Min": 0.001,
+                  "Max": 0.005
+                }
+              },
+              {
+                "Condition": "LOCATION_IS_OUTDOORS Target",
+                "Proc": "Footstep",
+                "AbilityClass": "Stamina",
+                "Args": {
+                  "Min": 0.001,
+                  "Max": 0.005
+                }
+              }
+            ],
+            // level 2: heal 1~2% of max hp while walking outside
+            [
+              {
+                // Heal the player a little as they walk outdoors
+                "Condition": "LOCATION_IS_OUTDOORS Target",
+                "Proc": "Footstep",
+                "ProcSound": "fairy_heal",
+                "AbilityClass": "Health",
+                "Args": {
+                  "Min": 0.01,
+                  "Max": 0.02
+                }
+              },
+              {
+                // Heal the player a little as they walk outdoors
+                "Condition": "LOCATION_IS_OUTDOORS Target",
+                "Proc": "Footstep",
+                "AbilityClass": "Stamina",
+                "Args": {
+                  "Min": 0.01,
+                  "Max": 0.02
+                }
+              }
+            ]
+          ]
+        },
+        // ID must match trinket
+        "{{ModId}}_LerpRotate": {
+          "Variants": [
+            {
+              "Texture": "Mods/{{ModId}}/rotation",
+              "Width": 16,
+              "Height": 16,
+              "LightSource": {
+                "Radius": 10,
+                "Texture": "Mods/{{ModId}}/rotation-bw",
+                "Color": "#00ff00"
+              }
+            },
+          ],
+          // Hover motion: follows player, bobs up and down
+          "Motion":
+          // Rotate towards player
+          {
+            "MotionClass": "Hover",
+            "AlwaysMoving": true,
+            "DirectionRotate": true,
+            "Anchors": [
+              {
+                "Mode": "Monster",
+                "Range": 1280
+              }
+            ],
+            "FrameLength": 4,
+            "Interval": 200,
+          },
+          "Abilities": [
+            // level 0
+            [
+              {
+                "AbilityClass": "Buff",
+                "Proc": "DamageMonster",
+                "Args": {
+                  "BuffId": 22
+                }
+              },
+              // every 5s, damage a monster within 128 pixels of the companion
+              {
+                "AbilityClass": "Hitscan",
+                "Proc": "Timer",
+                "ProcTimer": 5000,
+                "Args": {
+                  "Min": 5,
+                  "Max": 10,
+                  "Range": 128
+                },
+              }
+            ],
+            // level 1
+            [
+              {
+                "AbilityClass": "Hitscan",
+                "Proc": "Timer",
+                "ProcTimer": 5000,
+                "Args": {
+                  "Min": 25,
+                  "Max": 50,
+                  "Range": 128
+                }
+              },
+              {
+                "AbilityClass": "Buff",
+                "Proc": "DamageMonster",
+                "Args": {
+                  "BuffId": 22
+                }
+              }
+            ],
+            // level 2
+            [
+              {
+                "AbilityClass": "Hitscan",
+                "Proc": "Timer",
+                "ProcTimer": 5000,
+                "Args": {
+                  "Min": 50,
+                  "Max": 100,
+                  "Range": 128
+                },
+              },
+              {
+                "AbilityClass": "Buff",
+                "Proc": "DamageMonster",
+                "Args": {
+                  "BuffId": 22
+                }
+              }
+            ]
+          ]
+        },
+        // ID must match trinket
+        "{{ModId}}_LerpDRU": {
+          "Variants": [
+            {
+              "Texture": "Mods/{{ModId}}/drul",
+              "Width": 16,
+              "Height": 32
+            },
+          ],
+          "Motion": {
+            "MotionClass": "Lerp",
+            "DirectionMode": "DRU",
+            "FrameLength": 4,
+            "Interval": 100,
+          },
+          "Abilities": [
+            // level 0
+            [
+              {
+                "AbilityClass": "RaiseTrigger",
+                "Proc": "Footstep",
+              }
+            ]
+          ]
+        },
+        // ID must match trinket
+        "{{ModId}}_LerpDRUL": {
+          "Variants": [
+            {
+              "Texture": "Mods/{{ModId}}/drul",
+              "Width": 8,
+              "Height": 8
+            },
+          ],
+          "Motion": {
+            "MotionClass": "Lerp",
+            "DirectionMode": "DRUL",
+            // "Anchors": [
+            //   {
+            //     "Mode": "Monster",
+            //     "Range": 1280
+            //   }
+            // ],
+            "FrameLength": 4,
+            "Interval": 100,
+            "Args": {
+              "Max": 1280
+            },
+            "AnimClips": {
+              "Idle": {
+                "FrameStart": 28,
+                "FrameLength": 31,
+                "RandomWeight": 1,
+                "Interval": 150,
+                "RandomClips": [
+                  {
+                    "FrameStart": 18,
+                    "FrameLength": 2,
+                    "RandomWeight": 1,
+                    "Interval": 500
+                  }
+                ]
+              }
+            }
+          },
+          "Abilities": [
+            // level 0
+            [
+              {
+                // when damaging a monster with a bomb, heal 100% of the damage
+                "AbilityClass": "Health",
+                "Proc": "DamageMonster",
+                "IsBomb": true,
+                "Args": {
+                  "Min": 1,
+                }
+              },
+              // every 5s, damage a monster within 128 pixels of the companion, explodes
+              {
+                "AbilityClass": "Hitscan",
+                "Proc": "Timer",
+                "ProcTimer": 5000,
+                "Args": {
+                  "Min": 5,
+                  "Max": 10,
+                  "Range": 128,
+                  "ExplodeRadius": 4
+                },
+                "ProcTAS": [
+                  // this structure is identical to the TemporarySprites field in Data/Machine
+                  "{{ModId}}_KegTAS"
+                ]
+              }
+            ]
+          ]
+        },
+      }
+    }
+  ]
+}

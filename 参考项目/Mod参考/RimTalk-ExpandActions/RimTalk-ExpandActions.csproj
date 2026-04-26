@@ -1,0 +1,129 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <AssemblyName>RimTalk-ExpandActions</AssemblyName>
+    <RootNamespace>RimTalkExpandActions</RootNamespace>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <OutputPath>Bin\$(Configuration)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    
+    <!-- RimWorld Mod 部署目录 -->
+    <RimWorldModsPath>D:\steam\steamapps\common\RimWorld\Mods\</RimWorldModsPath>
+    <ModDeployPath>$(RimWorldModsPath)RimTalk-ExpandActions\</ModDeployPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 更新到 RimWorld 1.6 引用 -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>..\..\rim mod\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>..\..\rim mod\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>..\..\rim mod\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>..\..\rim mod\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule">
+      <HintPath>..\..\rim mod\Managed\UnityEngine.UnityWebRequestModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <PackageReference Include="Lib.Harmony" Version="2.3.3" PrivateAssets="all" ExcludeAssets="runtime" />
+    
+    <!-- 系统引用 -->
+    <Reference Include="System.Net.Http" />
+
+    <!-- 引用 RimTalk Core (从本地开发目录引用) -->
+    <Reference Include="RimTalk">
+      <HintPath>C:\Users\Administrator\Desktop\rim mod\RimTalk-main\1.6\Assemblies\RimTalk.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+
+    <!-- 引用 RimTalk-ExpandMemory - 使用游戏目录的实际 DLL -->
+    <Reference Include="RimTalkMemoryPatch">
+      <HintPath>D:\steam\steamapps\common\RimWorld\Mods\RimTalk-ExpandMemory\1.6\Assemblies\RimTalkMemoryPatch.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="obj\**" />
+    <Compile Remove="Bin\**" />
+    <Compile Remove="Docs\**" />
+    <Compile Remove="Source\RimTalkExpandActionsSettingsUI.cs" />
+    <None Include="Docs\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Source\Examples\" />
+  </ItemGroup>
+
+  <!-- 自动部署完整 Mod 到 RimWorld Mods 目录 -->
+  <Target Name="DeployToModFolder" AfterTargets="Build">
+    <PropertyGroup>
+      <ModRoot>$(ProjectDir)</ModRoot>
+      <Assemblies16Dir>$(ModRoot)1.6\Assemblies\</Assemblies16Dir>
+    </PropertyGroup>
+    
+    <Message Text="================================================" Importance="high" />
+    <Message Text="正在部署 RimTalk-ExpandActions Mod..." Importance="high" />
+    <Message Text="目标目录: $(ModDeployPath)" Importance="high" />
+    <Message Text="================================================" Importance="high" />
+    
+    <!-- 1. 复制 DLL 到本地 1.6/Assemblies 目录 -->
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(Assemblies16Dir)" SkipUnchangedFiles="false" />
+    <Message Text="✓ 已复制 DLL 到本地 1.6/Assemblies/" Importance="high" />
+    
+    <!-- 2. 复制 About 文件夹 -->
+    <ItemGroup>
+      <AboutFiles Include="$(ModRoot)About\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(AboutFiles)" DestinationFolder="$(ModDeployPath)About\%(RecursiveDir)" SkipUnchangedFiles="false" />
+    <Message Text="✓ 已复制 About 文件夹" Importance="high" />
+    
+    <!-- 3. 复制 LoadFolders.xml -->
+    <Copy SourceFiles="$(ModRoot)LoadFolders.xml" DestinationFolder="$(ModDeployPath)" SkipUnchangedFiles="false" Condition="Exists('$(ModRoot)LoadFolders.xml')" />
+    <Message Text="✓ 已复制 LoadFolders.xml" Importance="high" />
+    
+    <!-- 4. 复制 Defs 文件夹 -->
+    <ItemGroup>
+      <DefsFiles Include="$(ModRoot)Defs\**\*.xml" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DefsFiles)" DestinationFolder="$(ModDeployPath)Defs\%(RecursiveDir)" SkipUnchangedFiles="false" />
+    <Message Text="✓ 已复制 Defs 文件夹" Importance="high" />
+    
+    <!-- 5. 复制 1.6 文件夹（包括 Assemblies） -->
+    <ItemGroup>
+      <Version16Files Include="$(ModRoot)1.6\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(Version16Files)" DestinationFolder="$(ModDeployPath)1.6\%(RecursiveDir)" SkipUnchangedFiles="false" />
+    <Message Text="✓ 已复制 1.6 文件夹" Importance="high" />
+    
+    <!-- 6. 复制 Languages 文件夹（如果存在） -->
+    <ItemGroup>
+      <LanguageFiles Include="$(ModRoot)Languages\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(LanguageFiles)" DestinationFolder="$(ModDeployPath)Languages\%(RecursiveDir)" SkipUnchangedFiles="false" Condition="'@(LanguageFiles)' != ''" />
+    <Message Text="✓ 已复制 Languages 文件夹" Importance="high" Condition="'@(LanguageFiles)' != ''" />
+    
+    <!-- 7. 复制 Textures 文件夹（如果存在） -->
+    <ItemGroup>
+      <TextureFiles Include="$(ModRoot)Textures\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(TextureFiles)" DestinationFolder="$(ModDeployPath)Textures\%(RecursiveDir)" SkipUnchangedFiles="false" Condition="'@(TextureFiles)' != ''" />
+    <Message Text="✓ 已复制 Textures 文件夹" Importance="high" Condition="'@(TextureFiles)' != ''" />
+    
+    <Message Text="================================================" Importance="high" />
+    <Message Text="✓ Mod 部署完成！" Importance="high" />
+    <Message Text="位置: $(ModDeployPath)" Importance="high" />
+    <Message Text="================================================" Importance="high" />
+  </Target>
+</Project>

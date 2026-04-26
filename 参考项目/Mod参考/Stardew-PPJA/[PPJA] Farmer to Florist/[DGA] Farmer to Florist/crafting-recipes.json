@@ -1,0 +1,1613 @@
+[
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Autumnal Tea"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Jasmine"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "408"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Camellia"
+      }
+    ],
+    "ID": "Converted_Autumnal Tea_Recipe"
+  },
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Boiled Greens"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Daisy"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Chrysanthemum"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "278"
+      }
+    ],
+    "ID": "Converted_Boiled Greens_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Bouquet of Devotion"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Lilac"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Lotus"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Lavender"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Violet"
+      }
+    ],
+    "ID": "Converted_Bouquet of Devotion_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Bouquet of Exuberance"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Hibiscus"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "591"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "376"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Herbal Peony"
+      }
+    ],
+    "ID": "Converted_Bouquet of Exuberance_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Bouquet of Hope"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Chrysanthemum"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Magnolia"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "18"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "421"
+      }
+    ],
+    "ID": "Converted_Bouquet of Hope_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Bouquet of Longing"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Clematis"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Wisteria"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Iris"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "418"
+      }
+    ],
+    "ID": "Converted_Bouquet of Longing_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Bouquet of Passion"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/English Rose"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Carnation"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Freesia"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "402"
+      }
+    ],
+    "ID": "Converted_Bouquet of Passion_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Bouquet of Purity"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Lily"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Jasmine"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Daisy"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Allium"
+      }
+    ],
+    "ID": "Converted_Bouquet of Purity_Recipe"
+  },
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Estival Tea"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Hibiscus"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "635"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Camellia"
+      }
+    ],
+    "ID": "Converted_Estival Tea_Recipe"
+  },
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Flower Soda"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Herbal Peony"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Freesia"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "635"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "245"
+      }
+    ],
+    "ID": "Converted_Flower Soda_Recipe"
+  },
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Herb-Crusted Fish"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "-4"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "246"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Lavender"
+      }
+    ],
+    "ID": "Converted_Herb-Crusted Fish_Recipe"
+  },
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Hibernal Tea"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "412"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "418"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Camellia"
+      }
+    ],
+    "ID": "Converted_Hibernal Tea_Recipe"
+  },
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Latte"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "395"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "-6"
+      }
+    ],
+    "ID": "Converted_Latte_Recipe"
+  },
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Lilac Scones"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Lilac"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "245"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "246"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "-6"
+      }
+    ],
+    "ID": "Converted_Lilac Scones_Recipe"
+  },
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Lotus Mochi"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "423"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "245"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Lotus"
+      }
+    ],
+    "ID": "Converted_Lotus Mochi_Recipe"
+  },
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Rose Nougat"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "245"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "340"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "-5"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/English Rose"
+      }
+    ],
+    "ID": "Converted_Rose Nougat_Recipe"
+  },
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Souffle"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Violet"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "245"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "246"
+      }
+    ],
+    "ID": "Converted_Souffle_Recipe"
+  },
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Stuffed Petals"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "591"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Lavender"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "426"
+      }
+    ],
+    "ID": "Converted_Stuffed Petals_Recipe"
+  },
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Tea"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Camellia"
+      }
+    ],
+    "ID": "Converted_Tea_Recipe"
+  },
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Tiramisu"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "395"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "245"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "246"
+      }
+    ],
+    "ID": "Converted_Tiramisu_Recipe"
+  },
+  {
+    "IsCooking": true,
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Vernal Tea"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Magnolia"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "340"
+      },
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Camellia"
+      }
+    ],
+    "ID": "Converted_Vernal Tea_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Dryer"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "709",
+        "Quantity": 30
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "771",
+        "Quantity": 20
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "334"
+      }
+    ],
+    "ID": "Converted_Dryer_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Florist's Table"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "709",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "428"
+      }
+    ],
+    "ID": "Converted_Florist's Table_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Perfumery"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "766",
+        "Quantity": 40
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "709",
+        "Quantity": 20
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "335"
+      }
+    ],
+    "ID": "Converted_Perfumery_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Allium"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Allium"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Allium_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Blue Jazz"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "597"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Blue Jazz_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Camellia"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Camellia"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Camellia_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Carnation"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Carnation"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Carnation_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Chrysanthemum"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Chrysanthemum"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Chrysanthemum_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Clematis"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Clematis"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Clematis_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Crocus"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "418"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Crocus_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Daffodil"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "18"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Daffodil_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Dahlia"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Dahlia"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Dahlia_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Daisy"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Daisy"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Daisy_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Dandelion"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "22"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Dandelion_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Delphinium"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Delphinium"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Delphinium_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted English Rose"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/English Rose"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted English Rose_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Fairy Rose"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "595"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Fairy Rose_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Freesia"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Freesia"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Freesia_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Geranium"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Geranium"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Geranium_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Hibiscus"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Hibiscus"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Hibiscus_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Hyacinth"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Hyacinth"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Hyacinth_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Hydrangea"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Hydrangea"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Hydrangea_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Iris"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Iris"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Iris_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Jasmine"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Jasmine"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Jasmine_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Lavender"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Lavender"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Lavender_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Lilac"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Lilac"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Lilac_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Lily"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Lily"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Lily_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Lotus"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Lotus"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Lotus_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Magnolia"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Magnolia"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Magnolia_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Peony"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Herbal Peony"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Peony_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Petunia"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Petunia"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Petunia_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Poppy"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "376"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Poppy_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Summer Spangle"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "593"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Summer Spangle_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Sunflower"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "421"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Sunflower_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Sweet Pea"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "402"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Sweet Pea_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Tulip"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "591"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Tulip_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Violet"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Violet"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Violet_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Potted Wisteria"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Value": "kildarien.farmertoflorist.DGA/Wisteria"
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "388",
+        "Quantity": 10
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "330",
+        "Quantity": 10
+      }
+    ],
+    "ID": "Converted_Potted Wisteria_Recipe"
+  },
+  {
+    "SkillUnlockLevel": -1,
+    "Result": [
+      {
+        "Weight": 1.0,
+        "Value": {
+          "Value": "kildarien.farmertoflorist.DGA/Soap Maker"
+        }
+      }
+    ],
+    "Ingredients": [
+      {
+        "Type": "VanillaObject",
+        "Value": "709",
+        "Quantity": 20
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "382",
+        "Quantity": 5
+      },
+      {
+        "Type": "VanillaObject",
+        "Value": "336"
+      }
+    ],
+    "ID": "Converted_Soap Maker_Recipe"
+  }
+]

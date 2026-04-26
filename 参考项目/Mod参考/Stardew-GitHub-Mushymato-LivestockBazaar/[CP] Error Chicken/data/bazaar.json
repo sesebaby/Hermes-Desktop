@@ -1,0 +1,85 @@
+{
+  "Changes": [
+    {
+      "Action": "EditData",
+      "Target": "mushymato.LivestockBazaar/Shops",
+      "Entries": {
+        "{{ModId}}_Valgrind": {
+          // "ShopId": "{{ModId}}_Valgrind",
+          "ShopId": "QiGemShop"
+        },
+        "{{ModId}}_Shane": {
+          "ShopId": "{{ModId}}_Shane",
+          "OpenFlag": "Stat",
+          "OpenKey": "Book_Grass"
+        }
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Data/Shops",
+      "Entries": {
+        "{{ModId}}_Shane": {
+          "Currency": 0,
+          "StackSizeVisibility": null,
+          "OpenSound": null,
+          "PurchaseSound": null,
+          "PurchaseRepeatSound": null,
+          "ApplyProfitMargins": null,
+          "PriceModifiers": null,
+          "PriceModifierMode": "Stack",
+          "Owners": [
+            {
+              "Id": "Shane",
+              "Name": "Shane",
+              "Condition": null,
+              "Portrait": null,
+              "Dialogues": [
+                {
+                  "Id": "Default",
+                  "Dialogue": "Hello."
+                }
+              ],
+              "RandomizeDialogueOnOpen": false,
+              "ClosedMessage": null
+            }
+          ],
+          "VisualTheme": null,
+          "SalableItemTags": [],
+          "Items": [],
+          "CustomFields": null,
+        },
+        "{{ModId}}_Valgrind": {
+          "Currency": 0,
+          "StackSizeVisibility": null,
+          "OpenSound": null,
+          "PurchaseSound": null,
+          "PurchaseRepeatSound": null,
+          "ApplyProfitMargins": null,
+          "PriceModifiers": null,
+          "PriceModifierMode": "Stack",
+          "Owners": [
+            {
+              "Id": "Default",
+              "Name": "mushymato.LivestockBazaar/AwayButOpen",
+              "Condition": null,
+              "Portrait": "Portraits/Gil",
+              "Dialogues": [
+                {
+                  "Id": "Default",
+                  "Dialogue": "Lorem ipsum odor amet, consectetuer adipiscing elit. Mi leo morbi aliquam torquent ornare tempor dictum. Ullamcorper per vestibulum ullamcorper purus taciti diam diam. Praesent fames proin amet natoque ultrices diam. Volutpat cubilia accumsan rhoncus suscipit purus rutrum. Fringilla lobortis cubilia sem; platea tempus libero sapien aliquet. Natoque aliquet convallis facilisi euismod sapien per mus. Laoreet nostra lacus ridiculus libero ex.\n\nMorbi dis consequat ut turpis; eu arcu praesent porta. Nullam curae molestie natoque erat fusce molestie leo hac. Rhoncus sagittis arcu netus fusce dis, urna ac. Fusce commodo velit justo volutpat ornare mus mi. Est nulla fringilla purus facilisis mus dolor. Class morbi mauris ad phasellus condimentum venenatis suspendisse. Lacus leo vestibulum mauris commodo tincidunt platea id. Potenti elit tellus curae montes viverra torquent tincidunt finibus egestas."
+                }
+              ],
+              "RandomizeDialogueOnOpen": false,
+              "ClosedMessage": null
+            }
+          ],
+          "VisualTheme": null,
+          "SalableItemTags": [],
+          "Items": [],
+          "CustomFields": null,
+        }
+      }
+    },
+  ]
+}

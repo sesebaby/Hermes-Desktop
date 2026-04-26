@@ -1,0 +1,81 @@
+namespace TrinketTinker.Models;
+
+/// <summary>Tinker inventory definition</summary>
+public sealed class TinkerInventoryData
+{
+    /// <summary>Inventory size</summary>
+    public int Capacity = 9;
+
+    /// <summary>Game state query condition, if false the inventory cannot be opened</summary>
+    public string? OpenCondition = null;
+
+    /// <summary>Item must have these context tags (OR), can use "tag1 tag2" for AND</summary>
+    public List<string>? RequiredTags = null;
+
+    /// <summary>Game state query condition, if false the item cannot be put inside</summary>
+    public string? RequiredItemCondition = null;
+}
+
+public sealed class ChatterLinesData
+{
+    /// <summary>Game state query condition</summary>
+    public string? Condition { get; set; } = null;
+
+    /// <summary>Precedence of this chatter line, lower is earlier</summary>
+    public int Precedence { get; set; } = 0;
+
+    /// <summary>Setting priority means setting a negative precedence</summary>
+    public int Priority
+    {
+        set => Precedence = -value;
+    }
+
+    /// <summary>Ordered dialogue lines, one will be picked at random. Supports translation keys.</summary>
+    public List<string>? Lines { get; set; } = null;
+
+    /// <summary>Response dialogue lines, used for $q and other cross dialogue key things. Supports translation keys.</summary>
+    public Dictionary<string, string>? Responses { get; set; } = null;
+}
+
+/// <summary>Top level data class for Tinker.</summary>
+public sealed class TinkerData
+{
+    /// <summary>If this is false, does not actually do anything on equip</summary>
+    public string? EnableCondition { get; set; } = null;
+
+    /// <summary>Show this message when the trinket is not allowed</summary>
+    public string? EnableFailMessage { get; set; } = null;
+
+    /// <summary>Trinket stat minimum level, this added to the internal level value that is based on size of <see cref="Abilities"/></summary>
+    public int MinLevel { get; set; } = 1;
+
+    /// <summary>Sound to play when hired.</summary>
+    public string? HiredSound { get; set; } = null;
+
+    /// <summary>Motion of the companion</summary>
+    public MotionData? Motion { get; set; } = null;
+
+    /// <summary>List of variants</summary>
+    public List<VariantData> Variants { get; set; } = [];
+
+    /// <summary>Shared base data for variants</summary>
+    public VariantData? VariantsBase { get; set; } = null;
+
+    /// <summary>List of list of abilities for each level</summary>
+    public List<List<AbilityData>> Abilities { get; set; } = [];
+
+    /// <summary>Abilities that are shared and active for all levels</summary>
+    public List<AbilityData>? AbilitiesShared { get; set; } = null;
+
+    /// <summary>GSQ conditions for locking variants.</summary>
+    public List<string?> VariantUnlockConditions { get; set; } = [];
+
+    /// <summary>GSQ conditions for locking abilities.</summary>
+    public List<string?> AbilityUnlockConditions { get; set; } = [];
+
+    /// <summary>Definition for inventory, tied to level</summary>
+    public TinkerInventoryData? Inventory { get; set; } = null;
+
+    /// <summary>Data for <see cref="Effects.Abilities.ChatterAbility"/></summary>
+    public Dictionary<string, ChatterLinesData>? Chatter { get; set; } = null;
+}

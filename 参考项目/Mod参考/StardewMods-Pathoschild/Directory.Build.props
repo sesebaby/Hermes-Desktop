@@ -1,0 +1,15 @@
+<Project>
+  <!-- common build settings -->
+  <PropertyGroup>
+    <Authors>Pathoschild</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/Pathoschild/StardewMods</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <TargetFramework>net6.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <ModZipPath>$(MSBuildThisFileDirectory)/_releases</ModZipPath>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,126 @@
+{
+	"Changes": [
+		{
+			"Action": "EditData",
+			"Target": "Data/Machines",
+			"TargetField": [
+				"(BC)19",
+				"OutputRules"
+			],
+			"Entries": {
+				"Cornucopia_PeanutOil": {
+					"Id": "Cornucopia_PeanutOil",
+					"Triggers": [
+						{
+							"RequiredItemId": "(O)Cornucopia_Peanut"
+						}
+					],
+					"OutputItem": [
+						{
+							"ItemId": "(O)247"
+						}
+					],
+					"MinutesUntilReady": 120
+				},
+				"Cornucopia_OliveOil": {
+					"Id": "Cornucopia_OliveOil",
+					"Triggers": [
+						{
+							"RequiredItemId": "(O)Cornucopia_Olive",
+							"RequiredCount": 4
+						}
+					],
+					"OutputItem": [
+						{
+							"ItemId": "(O)Cornucopia_OliveOil"
+						}
+					],
+					"MinutesUntilReady": 960,
+					"InvalidCountMessage": "{{i18n: OilmakerInvalidCount_Olives}}"
+				},
+				"Cornucopia_SesameOil": {
+					"Id": "Cornucopia_SesameOil",
+					"Triggers": [
+						{
+							"RequiredItemId": "(O)Cornucopia_SesameSeeds",
+						}
+					],
+					"OutputItem": [
+						{
+							"ItemId": "(O)Cornucopia_SesameOil"
+						}
+					],
+					"MinutesUntilReady": 960,
+				}
+			}
+		},
+		{
+			"Action": "EditData",
+			"Target": "Data/Machines",
+			"When": {
+				"Enable Extended Crops Pack": true
+			},
+			"TargetField": [
+				"(BC)19",
+				"OutputRules"
+			],
+			"Entries": {
+				"Cornucopia_CanolaFlowerOil": {
+					"Id": "Cornucopia_CanolaFlowerOil",
+					"Triggers": [
+						{
+							"RequiredItemId": "(O)Cornucopia_CanolaFlower"
+						}
+					],
+					"OutputItem": [
+						{
+							"ItemId": "(O)247"
+						}
+					],
+					"MinutesUntilReady": 60
+				},
+				"Cornucopia_SeedsOil": {
+					"Id": "Cornucopia_SeedsOil",
+					"Triggers": [
+						{
+							"RequiredItemId": "(O)Cornucopia_CanolaFlowerSeeds"
+						}
+					],
+					"OutputItem": [
+						{
+							"ItemId": "(O)247"
+						}
+					],
+					"MinutesUntilReady": 3200
+				}
+			}
+		},
+		{
+			"Action": "EditData",
+			"Target": "Data/Machines",
+			"When": {
+				"Enable Extended Trees Pack": true
+			},
+			"TargetField": [
+				"(BC)19",
+				"OutputRules"
+			],
+			"Entries": {
+				"Cornucopia_PalmOil": {
+					"Id": "Cornucopia_PalmOil",
+					"Triggers": [
+						{
+							"RequiredItemId": "(O)Cornucopia_PalmNut"
+						}
+					],
+					"OutputItem": [
+						{
+							"ItemId": "(O)Cornucopia_PalmOil"
+						}
+					],
+					"MinutesUntilReady": 960
+				},
+			}
+		},
+	]
+}

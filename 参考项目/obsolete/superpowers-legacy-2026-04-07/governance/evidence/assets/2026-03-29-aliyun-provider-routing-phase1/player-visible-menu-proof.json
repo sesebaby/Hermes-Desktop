@@ -1,0 +1,26 @@
+{
+  "populated": true,
+  "CurrentState": 2,
+  "StatusText": "Morning, Abigail. Looks like Mother Nature isn\u0027t happy today, huh? Glad to run into you in the chaos. Everything okay with the house setup?",
+  "Transcript": [
+    {
+      "SpeakerLabel": "NPC",
+      "Body": "Morning, Abigail. Looks like Mother Nature isn\u0027t happy today, huh? Glad to run into you in the chaos. Everything okay with the house setup?",
+      "DeliveryState": "committed",
+      "SemanticLayer": "dialogue"
+    }
+  ],
+  "ReplayMetadata": {
+    "CanonicalRecordId": "npc.abigail:pd-live-ui-20260329-001",
+    "ReplayState": "committed",
+    "ReplayEligible": true,
+    "RecoveryEntryRef": "\u6E38\u620F -\u003E \u5E2E\u52A9\u4E0E\u4FEE\u590D"
+  },
+  "ComposerState": {
+    "DraftText": "",
+    "CanSend": true,
+    "ShowRetry": false,
+    "StatusLabel": "committed"
+  },
+  "timestamp": "2026-03-29T21:02:52.9990523+08:00"
+}

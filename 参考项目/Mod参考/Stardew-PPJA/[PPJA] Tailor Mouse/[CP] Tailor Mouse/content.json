@@ -1,0 +1,43 @@
+{
+    "Format": "1.18.0",
+    "DynamicTokens": [
+    {
+        "Name": "TailorMouse-Style",
+        "Value": ""
+    },
+    {
+        "Name": "TailorMouse-Style",
+        "Value": "_FlowerValley",
+        "When":
+        {
+            "HasMod": "kaya.floralvalley"
+        }
+    },
+],
+    "Changes": [
+    {
+        "LogName": "Tailor Mouse Sheets",
+        "Action": "Load",
+        "Target": "spring_tailormouse, Maps/spring_tailormouse, summer_tailormouse, Maps/summer_tailormouse, fall_tailormouse, Maps/fall_tailormouse, winter_tailormouse, Maps/winter_tailormouse",
+        "FromFile": "assets/Tilesheets/{{TargetWithoutPath}}{{TailorMouse-Style}}.png",
+    },
+    {
+        "LogName": "Tailor Mouse Map Patch",
+        "Action": "EditMap",
+        "Target": "Maps/Forest",
+        "FromFile": "assets/Maps/clothingstand{{TailorMouse-Style}}.tbin",
+        "ToArea":
+        {
+            "X": 46,
+            "Y": 66,
+            "Width": 4,
+            "Height": 5
+        },
+        "When":
+        {
+            "HasReadLetter": "tailormouseletter",
+            "HasMod |contains=TMXVMarket": false
+        }
+    },
+    ]
+}

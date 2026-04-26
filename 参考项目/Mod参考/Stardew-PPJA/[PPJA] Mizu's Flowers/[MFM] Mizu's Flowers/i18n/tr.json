@@ -1,0 +1,23 @@
+{
+  // Text
+  "chamomile.text": "Sevgili @,^^ İşte burada arkadaki küçük bahçemden bir miktar tohum. Muhtemelen sende zaten vardır ama bunlardan çok güzel çay yapılır.^^ -Caroline",
+  "fairyduster.text": "Selam tatlım!^^Mağazama teslimat yapan eski bir dostum var, ve sanırım o aşık olmuş.^Hiç çiçeği yoktu, onun yerine bana bu tohumları kamyonundan çıkarıp verdi. Ne kadar hoş!^Ayrıca onları ekmeyecektim, ama belki sen ekersin? ;)^^ -Sandy",
+  "honeysuckle.text": "Günaydın @,^^ Marnie geçen hafta gelip bana bu tohumları verdi. Bence bunlar senin işine benden daha fazla yarayacak. Sonraki ilkbahar benim için yetiştirmeye daha fazla aldığından emin ol.^^  -Leah",
+  "herballavender.text": "Günaydın @,^^ Küçük kasabamız için yaptığın her şey için teşekkürler. Lütfen bunu teşekkürümün bir göstergesi olarak kabul et. Umarım çiftlikte bunu ekmek için güzel, güneşli bir yer bulursun.^^  -Penny",
+  "fragrantlilac.text": "Sevgili @,^^ Diğer gece sana bu tohum poşetini verdiğim bir rüya gördüm. Onları ektin ve sonra bildiğim tek şey, leylaklarla dolu bir alanda duruyordum. Beyazdan mora, mordan beyaza renk değiştirip durdular.^Ne anlama geldiğini de bilmiyorum, belki sen biliyorsundur?^^  -Emily",
+  "passionflower.text": "Günaydın @,^^ Belki cevher değiller, ama kullanışlı olabiliyorlar. Şansın olduğunda dükkanıma ziyarete gel.^^  -Clint",
+  "pitcherplant.text": "Hey @,^^  Bu havalı etçil bitkinin tohumlarını alabildim. Babam eve çok fazla sinek çekip kendi deneylerini mahvedebileceği konusunda endişeli.^Bence onu sen bir tane yetiştirip getirirsen ikna edebilirim.^Bu gerçekten büyük bir iyilik olur, teşekkürler!^^  -Maru",
+  "rafflesia.text": "Sevgili,^^ Eski bir meslektaşım bana bu egzotik tohumu gönderdi. Bu şaşırtıcı görünümlü bitki dünyanın en büyük çiçeklerinden biri, ve bende ne kadar büyüyebileceğini merak ediyorum.^Ancak çiçek açıp emit olduğunda aromaya karşı dikkatli ol. Söylemişken... Robin bunları evde ekmemi yasakladı.^^  -Demetrius ",
+  "rose.text": "@,^^  Bunları benim için ekebileceğini düşünür müsün? Bunlar benim en sevdiğim çünkü neredeyse benim kadar güzeller. ^^ -Haley",
+
+  // Titles
+  "chamomile.title": "Papatya Tohumu",
+  "fairyduster.title": "Peri Silgi Tohumu",
+  "honeysuckle.title": "Hanımeli Yetiştirici",
+  "herballavender.title": "Lavanta Tohumu",
+  "fragrantlilac.title": "Kokulu Leylak Tohumu",
+  "passionflower.title": "Çarkıfelek Tohumu",
+  "pitcherplant.title": "Etobur Bitki Tohumu",
+  "rafflesia.title": "Raflesya Tohumu",
+  "rose.title": "Gül Yetiştirici"
+}

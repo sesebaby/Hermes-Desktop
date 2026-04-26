@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <HasTranslations>true</HasTranslations>
+  </PropertyGroup>
+  <Import Project="$(SolutionDir)common.targets" />
+
+  <PropertyGroup>
+    <UniqueId>spacechase0.$(AssemblyName)</UniqueId>
+    <Version>1.1.2</Version>
+    <TargetFramework>net6.0</TargetFramework>
+  </PropertyGroup>
+</Project>

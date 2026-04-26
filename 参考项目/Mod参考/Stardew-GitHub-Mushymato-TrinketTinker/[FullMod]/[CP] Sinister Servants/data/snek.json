@@ -1,0 +1,104 @@
+{
+  "$schema": "https://smapi.io/schemas/content-patcher.json",
+  "Changes": [
+    {
+      "LogName": "Snek: Sprites",
+      "Action": "Load",
+      "Target": "Mods/{{ModId}}/snek_1, Mods/{{ModId}}/snek_2, Mods/{{ModId}}/snek_t",
+      "FromFile": "assets/{{TargetWithoutPath}}.png"
+    },
+    {
+      "LogName": "Snek: Trinkets",
+      "Action": "EditData",
+      "Target": "Data/Trinkets",
+      "Entries": {
+        "{{ModId}}_Snek": {
+          "Id": "{{ModId}}_Snek",
+          "DisplayName": "{{i18n:Snek.DisplayName}}",
+          "Description": "{{i18n:Snek.Description}}",
+          "Texture": "Mods/{{ModId}}/snek_t",
+          "SheetIndex": 0,
+          "DropsNaturally": false,
+          "CanBeReforged": true
+        },
+      }
+    },
+    {
+      "LogName": "Snek: Tinker",
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/Tinker",
+      "Entries": {
+        "{{ModId}}_Snek": {
+          "MinLevel": 7,
+          "Variants": [
+            {
+              "Texture": "Mods/{{ModId}}/snek_1",
+              "Width": 8,
+              "Height": 8,
+              "TrinketSpriteIndex": 0,
+            },
+            {
+              "Texture": "Mods/{{ModId}}/snek_2",
+              "Width": 8,
+              "Height": 8,
+              "TrinketSpriteIndex": 1,
+            },
+          ],
+          "VariantsBase": {
+            "Width": 16,
+            "Height": 16,
+            "HatEquip": {
+              "AdjustDefault": "0,0 f0 r1.57",
+              "Source": "Given",
+              "ScaleModifier": 0.8
+            }
+          },
+          "Motion": {
+            "MotionClass": "Serpent",
+            "DirectionMode": "Single",
+            "DirectionRotate": true,
+            "FrameLength": 3,
+            "Interval": 400,
+            "AlwaysMoving": true,
+            "Anchors": [
+              {
+                "Mode": "Monster",
+                "Range": 1280
+              }
+            ],
+            "Args": {
+              "Max": 2048,
+              "Jitter": 128,
+              "Rate": 600,
+              "SegmentCount": 12,
+              "Sparcity": 3.5
+            }
+          },
+          "Abilities": [
+            [
+              {
+                "AbilityClass": "Hitscan",
+                "Description": "{{i18n:Snek.AbilityDescription.1}}",
+                "Proc": "Timer",
+                "ProcTimer": 3000,
+                "Args": {
+                  "Min": 77,
+                  "ExplodeRadius": 7
+                },
+              },
+              {
+                "AbilityClass": "Health",
+                "Proc": "Sync",
+                "Args": {
+                  "ValueMode": "Number",
+                  "Min": -7,
+                  "Max": -7,
+                },
+              }
+            ]
+          ]
+        },
+      }
+    }
+  ]
+}

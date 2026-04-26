@@ -1,0 +1,157 @@
+{
+  "$schema": "https://smapi.io/schemas/content-patcher.json",
+  "Changes": [
+    {
+      "LogName": "DustSpirit: Sprites",
+      "Action": "Load",
+      "Target": "Mods/{{ModId}}/dustspirit_t",
+      "FromFile": "assets/{{TargetWithoutPath}}.png"
+    },
+    {
+      "LogName": "DustSpirit: Trinkets",
+      "Action": "EditData",
+      "Target": "Data/Trinkets",
+      "Entries": {
+        "{{ModId}}_DustSpirit": {
+          "Id": "{{ModId}}_DustSpirit",
+          "DisplayName": "{{i18n:DustSpirit.DisplayName}}",
+          "Description": "{{i18n:DustSpirit.Description}}",
+          "Texture": "Mods/{{ModId}}/dustspirit_t",
+          "SheetIndex": 0,
+          "DropsNaturally": false,
+          "CanBeReforged": true
+        },
+      }
+    },
+    {
+      "LogName": "DustSpirit: Buff",
+      "Action": "EditData",
+      "Target": "Data/Buffs",
+      "Entries": {
+        "{{ModId}}_DustSpirit_Buff_Lv1": {
+          "DisplayName": "{{i18n:DustSpirit.DisplayName}}",
+          "Duration": 10000,
+          "IconTexture": "Mods/{{ModId}}/dustspirit_t",
+          "IconSpriteIndex": 1,
+          "Effects": {
+            "Attack": 20.0,
+          },
+        },
+        "{{ModId}}_DustSpirit_Buff_Lv2": {
+          "DisplayName": "{{i18n:DustSpirit.DisplayName}}",
+          "Duration": 2000,
+          "IconTexture": "Mods/{{ModId}}/dustspirit_t",
+          "IconSpriteIndex": 1,
+          "Effects": {
+            "Attack": 5.0,
+          },
+        }
+      }
+    },
+    {
+      "LogName": "DustSpirit: Tinker",
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/Tinker",
+      "Entries": {
+        "{{ModId}}_DustSpirit": {
+          "VariantsBase": {
+            "Texture": "Characters/Monsters/Dust Spirit",
+            "TextureSourceRect": {
+              "X": 0,
+              "Y": 8,
+              "Width": 64,
+              "Height": 1,
+            },
+            "Width": 16,
+            "Height": 16,
+            "HatEquip": {
+              "AdjustDefault": "0,-14 f0",
+              "ModifyScale": 0.8,
+              "Source": "Given"
+            }
+          },
+          "Motion": {
+            "MotionClass": "Bounce",
+            "DirectionMode": "R",
+            "Flip": "FlipHorizontally",
+            "FrameLength": 4,
+            "RepeatCount": 2,
+            "RepeatInterval": 500,
+            "AlwaysMoving": true,
+            "Args": {
+              "Squash": 2,
+              "Jitter": 64,
+              "MoveSync": false,
+              "NoOverlap": false
+            }
+          },
+          "Abilities": [
+            // level 1
+            [
+              {
+                "AbilityClass": "HarvestStone",
+                "Description": "{{i18n:DustSpirit.AbilityDescription.1}}",
+                "Proc": "Timer",
+                "ProcTimer": 10000,
+                "ProcSound": "dustMeep",
+                "Args": {
+                  "Range": 1,
+                  "HarvestTo": "Debris"
+                },
+              },
+              {
+                "AbilityClass": "Buff",
+                "Proc": "Sync",
+                "Args": {
+                  "BuffId": "{{ModId}}_DustSpirit_Buff_Lv1"
+                }
+              },
+              {
+                "AbilityClass": "HarvestShakeable",
+                "Proc": "Timer",
+                "ProcTimer": 1000,
+                "ProcSound": "dustMeep",
+                "Args": {
+                  "Range": 1,
+                  "HarvestTo": "Debris"
+                },
+              }
+            ],
+            // level 2
+            [
+              {
+                "AbilityClass": "HarvestStone",
+                "Description": "{{i18n:DustSpirit.AbilityDescription.2}}",
+                "Proc": "Timer",
+                "ProcTimer": 1000,
+                "ProcSound": "dustMeep",
+                "Args": {
+                  "Range": 1,
+                  "HarvestTo": "Debris"
+                },
+              },
+              {
+                "AbilityClass": "Buff",
+                "Proc": "Sync",
+                "Args": {
+                  "BuffId": "{{ModId}}_DustSpirit_Buff_Lv2"
+                }
+              },
+              {
+                "AbilityClass": "HarvestShakeable",
+                "Proc": "Timer",
+                "ProcTimer": 1000,
+                "ProcSound": "dustMeep",
+                "ProcSpeechBubble": "Exclaim",
+                "Args": {
+                  "Range": 1,
+                  "HarvestTo": "Debris"
+                },
+              }
+            ],
+          ]
+        },
+      }
+    }
+  ]
+}

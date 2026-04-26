@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <EnableHarmony>true</EnableHarmony>
+  </PropertyGroup>
+  <Import Project="$(SolutionDir)common.targets" />
+
+  <PropertyGroup>
+    <Name>Yarn Events</Name>
+    <UniqueId>spacechase0.$(AssemblyName)</UniqueId>
+    <Description>...</Description>
+    <Version>1.0.0</Version>
+    <UpdateKeys>Nexus:</UpdateKeys>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="YarnSpinner" Version="3.1.0" />
+    <PackageReference Include="YarnSpinner.Compiler" Version="3.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <SMAPIDependency Include="Pathoschild.ContentPatcher" Version="2.1.0" Required="true" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://smapi.io/schemas/content-patcher.json",
+  "Format": "2.6.0",
+  "Changes": [
+    {
+      "Action": "Include",
+      "FromFile": "data/chicken.json, data/mapedit.json, data/bazaar.json, data/interact.json, data/petshop.json"
+    }
+  ]
+}

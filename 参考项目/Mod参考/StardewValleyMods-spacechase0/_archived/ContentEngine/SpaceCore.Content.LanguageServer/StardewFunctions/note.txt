@@ -1,0 +1,3 @@
+This folder contains non-Stardew versions of the Stardew functions.
+
+Basically, they'll work the best they can without access to the game. Just used for parsing validation, really.

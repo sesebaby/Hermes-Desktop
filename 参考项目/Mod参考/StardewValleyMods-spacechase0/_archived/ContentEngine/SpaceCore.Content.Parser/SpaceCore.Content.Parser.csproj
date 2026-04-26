@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+	  <Name>SpaceCore Content Parser</Name>
+	  <Author>kittycatcasey</Author>
+	  <Version>1.1.1</Version>
+    <TargetFramework>net6.0</TargetFramework>
+	  <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

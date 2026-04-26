@@ -1,0 +1,71 @@
+{
+  "$schema": "https://smapi.io/schemas/content-patcher.json",
+  "Changes": [
+    {
+      "Action": "EditData",
+      "Target": "mushymato.LivestockBazaar/Shops",
+      "Entries": {
+        "IslandTrade": {
+          "ShopId": "IslandTrade",
+          "ShopDialogSupplies": "[LocalizedText Strings\\WorldMap:GingerIsland_North_Trader]"
+        }
+      }
+    },
+    // Sewer Chimkins
+    {
+      "Action": "EditMap",
+      "Target": "Maps/Sewer",
+      "PatchMode": "Overlay",
+      "FromFile": "assets/SewerChickens_Void.tmx",
+      "ToArea": {
+        "X": 32,
+        "Y": 16,
+        "Width": 1,
+        "Height": 2
+      },
+      "When": {
+        "query: {{IsCommunityCenterComplete}} AND {{IsJojaMartComplete}}": false,
+        "VoidChicken": true
+      },
+      "Priority": "Late"
+    },
+    {
+      "Action": "EditMap",
+      "Target": "Maps/Sewer",
+      "PatchMode": "Overlay",
+      "FromFile": "assets/SewerChickens_VoidGold.tmx",
+      "ToArea": {
+        "X": 32,
+        "Y": 16,
+        "Width": 1,
+        "Height": 2
+      },
+      "When": {
+        "query: {{IsCommunityCenterComplete}} OR {{IsJojaMartComplete}}": true,
+        "GoldenChicken": true
+      },
+      "Priority": "Late"
+    },
+    // Island Trader
+    {
+      "Action": "EditMap",
+      "Target": "Maps/Island_FieldOffice",
+      "MapTiles": [
+        {
+          "Layer": "Buildings",
+          "Position": {
+            "X": 7,
+            "Y": 5
+          },
+          "SetProperties": {
+            "Action": "mushymato.LivestockBazaar_Shop {{ModId}}_FieldOffice"
+          }
+        }
+      ],
+      "When": {
+        "Ostrich": true
+      },
+      "Priority": "Late"
+    },
+  ]
+}

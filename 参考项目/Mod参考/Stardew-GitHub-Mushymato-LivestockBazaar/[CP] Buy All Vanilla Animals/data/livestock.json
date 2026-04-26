@@ -1,0 +1,88 @@
+{
+  "Changes": [
+    {
+      "Action": "EditData",
+      "Target": "Data/FarmAnimals",
+      "Fields": {
+        "Void Chicken": {
+          "PurchasePrice": 2500,
+          "ShopMissingBuildingDescription": "[LocalizedText Strings\\StringsFromCSFiles:Utility.cs.5940]",
+          "UnlockCondition": "PLAYER_VISITED_LOCATION Current Sewer",
+          "RequiredBuilding": "Big Coop",
+          "ShopTexture": "Animals/Void Chicken",
+          "ShopDescription": "{{i18n:ShopDescription.VoidChicken |Egg=[LocalizedText Strings\\Objects:VoidEgg_Name]}}\\n[LocalizedText Strings\\StringsFromCSFiles:PurchaseAnimalsMenu.cs.11335]",
+          "ShopSourceRect": {
+            "X": 0,
+            "Y": 0,
+            "Width": 16,
+            "Height": 16
+          },
+          "CustomFields": {
+            "mushymato.LivestockBazaar/BuyFrom.Marnie": "{{query: {{AvailableFromMarnie}} AND {{VoidChicken}}}}",
+            "mushymato.LivestockBazaar/BuyFrom.{{ModId}}_SewerChickens": "{{VoidChicken}}",
+            "mushymato.LivestockBazaar/TradeItemId.{{ModId}}_SewerChickens": "(O)769",
+            "mushymato.LivestockBazaar/TradeItemAmount.{{ModId}}_SewerChickens": 50,
+          }
+        },
+        "Golden Chicken": {
+          "PurchasePrice": 8000,
+          "UnlockCondition": "ANY \"IS_COMMUNITY_CENTER_COMPLETE\" \"IS_JOJA_MART_COMPLETE\"",
+          "ShopTexture": "Animals/Golden Chicken",
+          "ShopDescription": "{{i18n:ShopDescription.GoldenChicken |Egg=[LocalizedText Strings\\Objects:GoldenEgg_Name]}}\\n[LocalizedText Strings\\StringsFromCSFiles:PurchaseAnimalsMenu.cs.11335]",
+          "ShopSourceRect": {
+            "X": 0,
+            "Y": 0,
+            "Width": 16,
+            "Height": 16
+          },
+          "ShopMissingBuildingDescription": "[LocalizedText Strings\\StringsFromCSFiles:Utility.cs.5947]",
+          "RequiredBuilding": "Deluxe Coop",
+          "CustomFields": {
+            "mushymato.LivestockBazaar/BuyFrom.Marnie": "{{query: {{AvailableFromMarnie}} AND {{GoldenChicken}}}}",
+            "mushymato.LivestockBazaar/BuyFrom.{{ModId}}_SewerChickens": "{{GoldenChicken}}",
+            "mushymato.LivestockBazaar/TradeItemId.{{ModId}}_SewerChickens": "(O)768",
+            "mushymato.LivestockBazaar/TradeItemAmount.{{ModId}}_SewerChickens": 100,
+          }
+        },
+        "Dinosaur": {
+          "PurchasePrice": 3500,
+          "UnlockCondition": "MINE_LOWEST_LEVEL_REACHED 120",
+          "ShopTexture": "Animals/Dinosaur",
+          "ShopDescription": "{{i18n:ShopDescription.Dinosaur |Egg=[LocalizedText Strings\\Objects:DinosaurEgg_Name]}}\\n[LocalizedText Strings\\StringsFromCSFiles:PurchaseAnimalsMenu.cs.11335]",
+          "ShopSourceRect": {
+            "X": 0,
+            "Y": 16,
+            "Width": 16,
+            "Height": 16
+          },
+          "ShopMissingBuildingDescription": "[LocalizedText Strings\\StringsFromCSFiles:Utility.cs.5940]",
+          "RequiredBuilding": "Big Coop",
+          "CustomFields": {
+            "mushymato.LivestockBazaar/BuyFrom.Marnie": "{{Dinosaur}}",
+          }
+        },
+        "Ostrich": {
+          "PurchasePrice": 6000,
+          "UnlockCondition": "PLAYER_VISITED_LOCATION Any Caldera",
+          "RequiredBuilding": "Deluxe Barn",
+          "CustomFields": {
+            "mushymato.LivestockBazaar/BuyFrom.Marnie": "{{query: {{AvailableFromMarnie}} AND {{Ostrich}}}}",
+            "mushymato.LivestockBazaar/BuyFrom.{{ModId}}_FieldOffice": "{{Ostrich}}",
+            "mushymato.LivestockBazaar/TradeItemId.{{ModId}}_FieldOffice": "(O)848",
+            "mushymato.LivestockBazaar/TradeItemAmount.{{ModId}}_FieldOffice": 30,
+          }
+        }
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "Strings/FarmAnimals",
+      "TargetLocale": "zh-CN",
+      "Entries": {
+        // fix 无力的鸡 from vanilla :u
+        "DisplayType_Chicken_Void": "虚空的鸡"
+      },
+      "Priority": "Early"
+    }
+  ]
+}

@@ -1,0 +1,194 @@
+[
+	{
+		"Id": "ppja.icedchristmastreerecipe",
+		"GroupID": "ChristmasSweets.RandomCookieRecipe",
+		"Title": "icedchristmastreerecipe.title",
+		"Text": "icedchristmastree.text",
+		"Recipe": "Converted_Iced Christmas Tree Recipe",
+		"Date": "1 winter Y1",
+		"Seasons": ["winter"],
+		"Repeatable": false,
+		"LetterBG": "christmassweetsletterbg.png",
+		"FriendshipConditions":
+		[
+			{ "NpcName": "Evelyn", "FriendshipLevel": 4 }
+		],
+		"RandomChance": 0.10,
+	},
+	{
+		"Id": "ppja.icedecoratedchristmastree",
+		"GroupID": "ChristmasSweets.RandomCookieRecipe",
+		"Title": "icedecoratedchristmastree.title",
+		"Text": "iceddecoratedchristmastree.text",
+		"Recipe": "Converted_Iced Decorated Christmas Tree Recipe",
+		"Date": "1 winter Y1",
+		"Seasons": ["winter"],
+		"Repeatable": false,
+		"LetterBG": "christmassweetsletterbg.png",
+		"FriendshipConditions":
+		[
+			{ "NpcName": "Evelyn", "FriendshipLevel": 4 }
+		],
+		"RandomChance": 0.10,
+	},
+	{
+		"Id": "ppja.icedgreenchristmastree",
+		"GroupID": "ChristmasSweets.RandomCookieRecipe",
+		"Title": "icedgreenchristmastree.title",
+		"Text": "icedgreenchristmastree.text",
+		"Recipe": "Converted_Iced Green Christmas Tree Recipe",
+		"Date": "1 winter Y1",
+		"Seasons": ["winter"],
+		"Repeatable": false,
+		"LetterBG": "christmassweetsletterbg.png",
+		"FriendshipConditions":
+		[
+			{ "NpcName": "Evelyn", "FriendshipLevel": 4 }
+		],
+		"RandomChance": 0.10,
+	},
+	{
+		"Id": "ppja.jamfilledcookie",
+		"GroupID": "ChristmasSweets.RandomCookieRecipe",
+		"Title": "jamfilledcookie.title",
+		"Text": "jamfilledcookie.text",
+		"Recipe": "Converted_Jam-Filled Cookie Recipe",
+		"Date": "1 winter Y1",
+		"Seasons": ["winter"],
+		"Repeatable": false,
+		"LetterBG": "christmassweetsletterbg.png",
+		"FriendshipConditions":
+		[
+			{ "NpcName": "Evelyn", "FriendshipLevel": 4 }
+		],
+		"RandomChance": 0.10,
+	},
+	{
+		"Id": "ppja.mittencookie",
+		"GroupID": "ChristmasSweets.RandomCookieRecipe",
+		"Title": "mittencookie.title",
+		"Text": "mittencookie.text",
+		"Recipe": "Converted_Mitten Cookie Recipe",
+		"Date": "1 winter Y1",
+		"Seasons": ["winter"],
+		"Repeatable": false,
+		"LetterBG": "christmassweetsletterbg.png",
+		"FriendshipConditions":
+		[
+			{ "NpcName": "Evelyn", "FriendshipLevel": 4 }
+		],
+		"RandomChance": 0.10,
+	},
+	{
+		"Id": "ppja.pufferchickcookie",
+		"GroupID": "ChristmasSweets.RandomCookieRecipe",
+		"Title": "pufferchickcookie.title",
+		"Text": "pufferchickcookie.text",
+		"Recipe": "Converted_Pufferchick Cookie Recipe",
+		"Date": "1 winter Y1",
+		"Seasons": ["winter"],
+		"Repeatable": false,
+		"LetterBG": "christmassweetsletterbg.png",
+		"FriendshipConditions":
+		[
+			{ "NpcName": "Evelyn", "FriendshipLevel": 4 }
+		],
+		"RandomChance": 0.10,
+	},
+	{
+		"Id": "ppja.snowmancookie",
+		"GroupID": "ChristmasSweets.RandomCookieRecipe",
+		"Title": "snowmancookie.title",
+		"Text": "snowmancookie.text",
+		"Recipe": "Converted_Snowman Cookie Recipe",
+		"Date": "1 winter Y1",
+		"Seasons": ["winter"],
+		"Repeatable": false,
+		"LetterBG": "christmassweetsletterbg.png",
+		"FriendshipConditions":
+		[
+			{ "NpcName": "Evelyn", "FriendshipLevel": 4 }
+		],
+		"RandomChance": 0.10,
+	},
+	{
+		"Id": "ppja.holydecoratedcookie",
+		"GroupID": "ChristmasSweets.RandomCookieRecipe",
+		"Title": "holydecoratedcookie.title",
+		"Text": "hollydecoratedcookie.text",
+		"Recipe": "Converted_Holly Decorated Cookie Recipe",
+		"Date": "1 winter Y1",
+		"Seasons": ["winter"],
+		"Repeatable": false,
+		"LetterBG": "christmassweetsletterbg.png",
+		"FriendshipConditions":
+		[
+			{ "NpcName": "Evelyn", "FriendshipLevel": 4 }
+		],
+		"RandomChance": 0.10,
+	},
+	{
+		"Id": "ppja.snowmanscenerycookie",
+		"GroupID": "ChristmasSweets.RandomCookieRecipe",
+		"Title": "snowmanscenerycookie.title",
+		"Text": "snowmanscenerycookie.text",
+		"Recipe": "Converted_Snowman Scenery Cookie Recipe",
+		"Date": "1 winter Y1",
+		"Seasons": ["winter"],
+		"Repeatable": false,
+		"LetterBG": "christmassweetsletterbg.png",
+		"FriendshipConditions":
+		[
+			{ "NpcName": "Evelyn", "FriendshipLevel": 4 }
+		],
+		"RandomChance": 0.10,
+	},
+	{
+		"Id": "ppja.stardrop",
+		"GroupID": "ChristmasSweets.RandomCookieRecipe",
+		"Title": "stardropcookie.title",
+		"Text": "stardropcookie.text",
+		"Recipe": "Converted_Stardrop Cookie Recipe",
+		"Date": "1 winter Y1",
+		"Seasons": ["winter"],
+		"Repeatable": false,
+		"LetterBG": "christmassweetsletterbg.png",
+		"FriendshipConditions":
+		[
+			{ "NpcName": "Evelyn", "FriendshipLevel": 4 }
+		],
+		"RandomChance": 0.10,
+	},
+	{
+		"Id": "ppja.stockingcookie",
+		"GroupID": "ChristmasSweets.RandomCookieRecipe",
+		"Title": "stockingcookie.title",
+		"Text": "stockingcookie.text",
+		"Recipe": "Converted_Stocking Cookie Recipe",
+		"Date": "1 winter Y1",
+		"Seasons": ["winter"],
+		"Repeatable": false,
+		"LetterBG": "christmassweetsletterbg.png",
+		"FriendshipConditions":
+		[
+			{ "NpcName": "Evelyn", "FriendshipLevel": 4 }
+		],
+		"RandomChance": 0.10,
+	},
+	{
+		"Id": "ppja.christmaschocolatecandiecookies",
+		"GroupID": "ChristmasSweets.RandomCookieRecipe",
+		"Title": "christmaschocolatecandiecookies.title",
+		"Text": "christmaschocolatecandiecookies.text",
+		"Recipe": "Converted_Christmas Chocolate Candie Cookies Recipe",
+		"Date": "1 winter Y1",
+		"Seasons": ["winter"],
+		"Repeatable": false,
+		"LetterBG": "christmassweetsletterbg.png",
+		"FriendshipConditions":
+		[
+			{ "NpcName": "Evelyn", "FriendshipLevel": 4 }
+		],
+		"RandomChance": 0.10,
+	},
+]

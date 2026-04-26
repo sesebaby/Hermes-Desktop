@@ -1,0 +1,286 @@
+{
+  "$schema": "https://smapi.io/schemas/content-patcher.json",
+  "Changes": [
+    {
+      "Action": "Load",
+      "Target": "{{ModId}}/sord",
+      "FromFile": "assets/sord.png",
+    },
+    {
+      "LogName": "Abigail: Trinkets",
+      "Action": "EditData",
+      "Target": "Data/Trinkets",
+      "Entries": {
+        "{{ModId}}_Abigail": {
+          "Id": "{{ModId}}_Abigail",
+          "DisplayName": "[LocalizedText Strings\\Weapons:AbbysPlanchette_Name]",
+          "Description": "[LocalizedText Strings\\Weapons:AbbysPlanchette_Description]",
+          "Texture": "TileSheets/weapons",
+          "SheetIndex": 40,
+          "DropsNaturally": false,
+          "CanBeReforged": false,
+          // "CustomFields": {
+          //   "mushymato.TrinketTinker/DirectEquipOnly": "T"
+          // }
+        },
+      }
+    },
+    {
+      "LogName": "Abigail: Tinker",
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/Tinker",
+      "Entries": {
+        "{{ModId}}_Abigail": {
+          "EnableCondition": "mushymato.TrinketTinker_ENABLED_TRINKET_COUNT Target All <1",
+          "Variants": [
+            {
+              "NPC": "Abigail",
+              "Texture": "Characters/Abigail",
+              "TextureExtra": "{{ModId}}/sord",
+              "Width": 16,
+              "Height": 32,
+              // "TextureSourceRect": {
+              //   "X": 16, // offset X
+              //   "Y": 32, // offset Y
+              //   "Width": 48, // new width, used to determine frame numbers
+              //   "Height": 1, // unused
+              // },
+              "AltVariants": {
+                // "BIG": {
+                //   "TextureScale": 16
+                // },
+                "WINTER": {
+                  "Texture": "Characters/Abigail_Winter",
+                  // "Condition": "SEASON Winter",
+                  "Condition": "mushymato.TrinketTinker_IS_TINKER Target",
+                  "Priority": 1
+                },
+                "beach": {
+                  "Texture": "Characters/Abigail_Beach",
+                  "Condition": "PLAYER_LOCATION_NAME Current Beach IslandSouth",
+                  "Priority": 2
+                }
+              }
+            }
+          ],
+          "Motion": {
+            "MotionClass": "Lerp",
+            "AlwaysMoving": false,
+            "DirectionMode": "DRUL",
+            "FrameLength": 4,
+            "Interval": 175,
+            // "Anchors": [
+            //   {
+            //     "Mode": "Monster",
+            //     "Range": 640,
+            //     "StopRange": 320,
+            //   }
+            // ],
+            "AnimClips": {
+              // down
+              "abbyAttack.1": {
+                // FrameStart not used for determining where the frame since FrameOverrides takes over completely, but helpful to set for draw debug mode
+                "FrameStart": 1,
+                "FrameLength": 1,
+                "UseExtra": true,
+                "PauseMovement": true,
+                "FrameOverrides": [
+                  {
+                    "SourceRect": {
+                      "X": 0,
+                      "Y": 0,
+                      "Width": 32,
+                      "Height": 64
+                    },
+                    "Origin": "8,16",
+                    "Interval": 1000
+                  }
+                ]
+              },
+              // right
+              "abbyAttack.2": {
+                "FrameStart": 2,
+                "FrameLength": 1,
+                "UseExtra": true,
+                "PauseMovement": true,
+                "FrameOverrides": [
+                  {
+                    "SourceRect": {
+                      "X": 32,
+                      "Y": 0,
+                      "Width": 64,
+                      "Height": 32
+                    },
+                    "Origin": "8,16",
+                    "Interval": 1000
+                  }
+                ]
+              },
+              // up
+              "abbyAttack.3": {
+                "FrameStart": 3,
+                "FrameLength": 1,
+                "UseExtra": true,
+                "PauseMovement": true,
+                "FrameOverrides": [
+                  {
+                    "SourceRect": {
+                      "X": 96,
+                      "Y": 0,
+                      "Width": 32,
+                      "Height": 64
+                    },
+                    "Origin": "8,16",
+                    "Interval": 1000
+                  }
+                ]
+              },
+              // left
+              "abbyAttack.4": {
+                "FrameStart": 4,
+                "FrameLength": 1,
+                "UseExtra": true,
+                "PauseMovement": true,
+                "FrameOverrides": [
+                  {
+                    "SourceRect": {
+                      "X": 32,
+                      "Y": 32,
+                      "Width": 64,
+                      "Height": 32
+                    },
+                    "Origin": "8,16",
+                    "Interval": 1000
+                  }
+                ]
+              },
+              "abbyAttack": {
+                "FrameStart": 16,
+                "FrameLength": 4,
+                "Interval": 350,
+                "PauseMovement": true,
+                "RandomClips": [
+                  {
+                    "FrameStart": 0,
+                    "FrameLength": 4,
+                    "Interval": 700,
+                    "PauseMovement": true,
+                  }
+                ]
+              },
+              "Idle": {
+                "Nop": true,
+                // stay at Nop for 4 frames
+                "FrameLength": 4,
+                "Condition": "mushymato.TrinketTinker_IN_ALT_VARIANT Target WINTER",
+                "RandomClips": [
+                  {
+                    "FrameStart": 24,
+                    "FrameLength": 4,
+                    "Loop": true,
+                    "Condition": "mushymato.TrinketTinker_IN_ALT_VARIANT Target WINTER",
+                  },
+                  {
+                    "FrameStart": 28,
+                    "FrameLength": 2,
+                    "Condition": "mushymato.TrinketTinker_IN_ALT_VARIANT Target WINTER",
+                  }
+                ]
+              }
+            },
+            "SpeechBubbles": {
+              "Homf": {
+                "Text": "Homf",
+                "RandomSpeech": [
+                  {
+                    "Text": "Munch"
+                  },
+                  {
+                    "Text": "Chomp"
+                  }
+                ]
+              },
+              "Hiya": {
+                "Text": "Hiya!",
+                "RandomSpeech": [
+                  {
+                    "Text": "Ho!",
+                    "Condition": "WEATHER Here Rain",
+                  }
+                ]
+              },
+              "What": {
+                "Text": "What do you want?"
+              }
+            },
+            "Args": {
+              "Velocity": -1
+            }
+          },
+          "Abilities": [
+            [
+              {
+                "AbilityClass": "BroadcastAction",
+                "Proc": "Always",
+                "Args": {
+                  "Action": "SetNpcInvisible Abigail 1",
+                  "ActionEnd": "SetNpcVisible Abigail",
+                  "PlayerKey": "Host"
+                },
+              },
+              {
+                "AbilityClass": "Nop",
+                "Proc": "Interact",
+                "ProcTimer": 10000,
+                "ProcSpeechBubble": "What",
+              },
+              {
+                "AbilityClass": "HarvestStone",
+                "Proc": "Timer",
+                "ProcTimer": 2000,
+                "ProcSpeechBubble": "Homf",
+                "ProcSound": "dustMeep",
+                "Args": {
+                  "Range": 1,
+                  "HarvestTo": "None"
+                },
+              },
+              {
+                "Proc": "Timer",
+                "ProcTimer": 1000,
+                "ProcSpeechBubble": "Hiya",
+                "ProcSound": {
+                  "CueName": "flute",
+                  "Pitch": [
+                    0,
+                    400,
+                    800,
+                    1200,
+                    1600,
+                    2400
+                  ]
+                },
+                "ProcOneshotAnim": "abbyAttack",
+                "AbilityClass": "Projectile",
+                "Args": {
+                  "Min": 5,
+                  "Max": 10,
+                  "Knockback": 2,
+                  "Range": 320,
+                  "Texture": "Maps/springobjects",
+                  "SpriteIndex": 788,
+                  "Height": 64,
+                  "Acceleration": 2,
+                  "MinVelocity": 2,
+                  "MaxVelocity": 24,
+                  // "Homing": true,
+                  "FacingDirectionOnly": true
+                }
+              },
+            ]
+          ]
+        },
+      }
+    },
+  ]
+}

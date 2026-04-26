@@ -1,0 +1,100 @@
+{
+	"Changes": [
+		{
+			"Action": "EditData",
+			"Target": "Data/WildTrees",
+			"When": {
+				"Enable Extended Trees Pack": true
+			},
+			"Entries": {
+				"Cornucopia_SapodillaSeed": {
+					"Textures": [
+						{
+							"Texture": "Cornucopia.MoreCrops/treesapodilla_spring",
+							"Condition": "LOCATION_SEASON Here spring, !LOCATION_IS_INDOORS Here"
+						},
+						{
+							"Texture": "Cornucopia.MoreCrops/treesapodilla_summer",
+							"Condition": "ANY \"LOCATION_SEASON Here summer\" \"LOCATION_IS_INDOORS Here\""
+						},
+						{
+							"Texture": "Cornucopia.MoreCrops/treesapodilla_fall",
+							"Condition": "LOCATION_SEASON Here fall, !LOCATION_IS_INDOORS Here"
+						},
+						{
+							"Texture": "Cornucopia.MoreCrops/treesapodilla_winter",
+							"Condition": "LOCATION_SEASON Here winter, !LOCATION_IS_INDOORS Here"
+						}
+					],
+					"SeedItemId": "(O)Cornucopia_SapodillaSeed",
+					"DebrisColor": 100004,
+					"IsLeafyInWinter": true,
+					"UseAlternateSpriteWhenNotShaken": true,
+					"ShakeItems": [
+						{
+							"ItemId": "(O)Cornucopia_Sapodilla",
+							"MinStack": 1,
+							"MaxStack": 1,
+							"Condition": "ANY \"LOCATION_SEASON Here summer\" \"LOCATION_IS_INDOORS Here\"",
+							"Chance": 1
+						}
+					],
+					"TapItems": [
+						{
+							"ItemId": "(O)Cornucopia_ChicleRubber",
+							"DaysUntilReady": 5
+						}
+					],
+					"CustomFields": {
+						"UIInfoSuite.ExtendedData/DisplayName": "{{i18n:Sapodilla_name}}"
+					}
+				},
+				"Cornucopia_DatePalmSeed": {
+					"Textures": [
+						{
+							"Texture": "Cornucopia.MoreCrops/treedate_empty",
+							"Condition": "LOCATION_SEASON Town spring summer winter, !LOCATION_IS_INDOORS Here"
+						},
+						{
+							"Texture": "Cornucopia.MoreCrops/treedate_fall",
+							"Condition": "ANY \"LOCATION_SEASON Town fall\" \"LOCATION_IS_INDOORS Here\""
+						}
+					],
+					"SeedItemId": "(O)Cornucopia_DatePalmSeed",
+					"DebrisColor": 100004,
+					"IsLeafyInWinter": true,
+					"UseAlternateSpriteWhenSeedReady": true,
+					"SeedOnShakeChance": 0.35,
+					"SeedSpreadChance": 0,
+					"SeedOnChopChance": 1,
+					"AllowWoodpeckers": false,
+					"SeedDropItems": [
+						{
+							"ItemId": "(O)Cornucopia_Date",
+							"MinStack": 1,
+							"MaxStack": 1,
+							"Condition": "ANY \"LOCATION_SEASON Town fall\" \"LOCATION_IS_INDOORS Here\"",
+							"Chance": 1
+						},
+						{
+							"ItemId": "(O)Cornucopia_PalmNut",
+							"MinStack": 1,
+							"MaxStack": 1,
+							"Condition": "LOCATION_SEASON Town spring summer winter, !LOCATION_IS_INDOORS Here",
+							"Chance": 1
+						}
+					],
+					"TapItems": [
+						{
+							"ItemId": "(O)245",
+							"DaysUntilReady": 10
+						}
+					],
+					"CustomFields": {
+						"UIInfoSuite.ExtendedData/DisplayName": "{{i18n:Date_name}}"
+					}
+				}
+			}
+		}
+	]
+}

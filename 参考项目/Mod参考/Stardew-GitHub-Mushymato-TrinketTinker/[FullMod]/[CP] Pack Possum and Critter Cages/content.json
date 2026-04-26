@@ -1,0 +1,98 @@
+{
+  "$schema": "https://smapi.io/schemas/content-patcher.json",
+  "Format": "2.7.0",
+  "ConfigSchema": {
+    "EarlyTrinketSlot": {
+      "AllowValues": "true, false",
+      "Default": "false"
+    }
+  },
+  "Changes": [
+    {
+      "LogName": "Sprites",
+      "Action": "Load",
+      "Target": "{{ModId}}/trinketbox, {{ModId}}/opossum, {{ModId}}/opossum-2, {{ModId}}/opossum-icon",
+      "FromFile": "assets/{{TargetWithoutPath}}.png"
+    },
+    // Boxes
+    {
+      // Iridium
+      "Action": "Include",
+      "FromFile": "data/box.json",
+      "LocalTokens": {
+        "L@Capacity": 2,
+        "L@SheetIndex": 0,
+      }
+    },
+    {
+      // Radioactive
+      "Action": "Include",
+      "FromFile": "data/box.json",
+      "LocalTokens": {
+        "L@Capacity": 4,
+        "L@SheetIndex": 1,
+      }
+    },
+    {
+      // Prismatic
+      "Action": "Include",
+      "FromFile": "data/box.json",
+      "LocalTokens": {
+        "L@Capacity": 6,
+        "L@SheetIndex": 2,
+      }
+    },
+    // Pack Possum
+    {
+      "Action": "Include",
+      "FromFile": "data/opossum.json",
+    },
+    {
+      "Action": "Include",
+      "FromFile": "data/opossum-hire.json",
+      "LocalTokens": {
+        "L@Vendor": "AdventureShop",
+      }
+    },
+    {
+      "Action": "Include",
+      "FromFile": "data/opossum-hire.json",
+      "LocalTokens": {
+        "L@Vendor": "Dwarf",
+      }
+    },
+    {
+      "Action": "Include",
+      "FromFile": "data/opossum-hire.json",
+      "LocalTokens": {
+        "L@Vendor": "VolcanoShop",
+      }
+    },
+    // trinket slot cheat
+    {
+      "Action": "Include",
+      "FromFile": "data/early-trinket-slot.json"
+    },
+    // shop
+    {
+      "Action": "Include",
+      "FromFile": "data/shop.json"
+    },
+    // i18n stuff
+    {
+      "Action": "Load",
+      "Target": "{{ModId}}/i18n",
+      "FromFile": "i18n/default.json",
+      "Priority": "Low"
+    },
+    {
+      "Action": "Load",
+      "Target": "{{ModId}}/i18n",
+      "FromFile": "i18n/{{Language}}.json",
+      "Priority": "Medium",
+      "When": {
+        "HasFile: {{FromFile}}": true
+      }
+    }
+  ]
+}

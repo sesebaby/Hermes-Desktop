@@ -1,0 +1,26 @@
+{
+	"required": true,
+	"package": "com.owlmaddie.mixin",
+	"compatibilityLevel": "JAVA_17",
+	"mixins": [
+		"MixinMobEntity",
+		"MixinMobEntityAccessor",
+		"MixinLivingEntity",
+		"MixinBucketable",
+		"MixinEntityChatData",
+		"MixinSquidEntity",
+		"MixinCreakingHeartBlockEntity",
+		"MixinWitherEntity",
+		"MixinVexEntity",
+		"MixinWanderingTrader",
+		"MixinVillagerEntity",
+		"MixinAbstractVillagerEntity",
+		"MixinPiglinEntity",
+		"MixinPillagerEntity",
+		"MixinAllayEntity",
+		"MixinOnChat"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

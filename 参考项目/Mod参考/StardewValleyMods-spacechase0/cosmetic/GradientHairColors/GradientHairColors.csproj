@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <HasTranslations>true</HasTranslations>
+  </PropertyGroup>
+  <Import Project="$(SolutionDir)common.targets" />
+
+  <PropertyGroup>
+    <Name>Gradient Hair Colors</Name>
+    <UniqueId>spacechase0.$(AssemblyName)</UniqueId>
+    <Version>1.1.1</Version>
+    <UpdateKeys>Nexus:12744</UpdateKeys>
+  </PropertyGroup>
+
+  <!-- TODO: whenever I update this: doesn't it require Fashion Sense? Why isn't that here? -->
+</Project>

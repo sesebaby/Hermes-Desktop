@@ -1,0 +1,62 @@
+{
+  "name": "spacecore-content-tools",
+  "publisher": "kittycatcasey",
+  "displayName": "SpaceCore Content Tools",
+  "description": "",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./out/extension",
+  "contributes": {
+		"configuration": {
+			"type": "object",
+			"title": "SpaceCore Content Tools configuration",
+			"properties": {
+				"spacecoreContentLanguageServer.trace.server": {
+					"scope": "window",
+					"type": "string",
+					"enum": [
+						"off",
+						"messages",
+						"verbose"
+					],
+					"default": "off",
+					"description": "Traces the communication between VS Code and the language server."
+				}
+			}
+		},
+    "languages": [{
+      "id": "spacecorecontent",
+      "aliases": ["SpaceCore Content", "spacecorecontent"],
+      "extensions": [".spacecore"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "spacecorecontent",
+      "scopeName": "source.spacecore",
+      "path": "./syntaxes/spacecorecontent.tmLanguage.json"
+    }]
+  },
+  "scripts": {
+    "vscode:prepublish": "tsc -p ./",
+    "compile": "tsc -watch -p ./",
+    "update-vscode": "node ./node_modules/vscode/bin/install",
+    "postinstall": "node ./node_modules/vscode/bin/install"
+  },
+  "devDependencies": {
+		"@types/mocha": "^10.0.6",
+		"@types/node": "^18.14.6",
+		"@typescript-eslint/eslint-plugin": "^7.1.0",
+		"@typescript-eslint/parser": "^7.1.0",
+		"@types/vscode": "^1.92.0",
+		"eslint": "^8.57.0",
+		"typescript": "^5.3.3"
+  },
+  "dependencies": {
+		"vscode-languageclient": "^9.0.1"
+  }
+}

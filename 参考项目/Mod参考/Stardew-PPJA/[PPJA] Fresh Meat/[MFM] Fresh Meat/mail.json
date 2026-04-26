@@ -1,0 +1,33 @@
+[
+	{
+		"Id": "ppja.grilledskewerrecipe",
+		"GroupID": "FreshMeat.CookingRecipe",
+		"Title": "grilledskewer.title",
+		"Text": "grilledskewer.text",
+		"Recipe": "Converted_Grilled Skewer Recipe",
+		"LetterBG": "CloudLetterBackground.png",
+		"Date": "1 spring Y2",
+		"Repeatable": false,
+		"FriendshipConditions":
+		[
+			{ "NpcName": "Gus", "FriendshipLevel": 3 }
+		],
+		/*"SkillConditions": 
+		[
+			{ "SkillName": "Farming", "SkillLevel": 1 }
+		]*/
+	},
+	{
+		"Id": "ppja.spaghettiandmeatballsrecipe",
+		"GroupID": "FreshMeat.CookingRecipe",
+		"Title": "spaghettiandmeatballs.title",
+		"Text": "spaghettiandmeatballs.text",
+		"Recipe": "Converted_Spaghetti and Meatballs Recipe",
+		"LetterBG": "CloudLetterBackground.png",
+		"Repeatable": false,
+		"FriendshipConditions":
+		[
+			{ "NpcName": "Lewis", "FriendshipLevel": 4 }
+		],
+	},
+]

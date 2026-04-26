@@ -1,0 +1,149 @@
+{
+  "$schema": "https://smapi.io/schemas/content-patcher.json",
+  "Changes": [
+    {
+      "LogName": "Skull: Sprites",
+      "Action": "Load",
+      "Target": "Mods/{{ModId}}/skull_t, Mods/{{ModId}}/skull_1, Mods/{{ModId}}/skull_2",
+      "FromFile": "assets/{{TargetWithoutPath}}.png"
+    },
+    {
+      "LogName": "Skull: Trinkets",
+      "Action": "EditData",
+      "Target": "Data/Trinkets",
+      "Entries": {
+        "{{ModId}}_Skull": {
+          "Id": "{{ModId}}_Skull",
+          "DisplayName": "{{i18n:Skull.DisplayName}}",
+          "Description": "{{i18n:Skull.Description}}",
+          "Texture": "Mods/{{ModId}}/skull_t",
+          "SheetIndex": 0,
+          "DropsNaturally": false,
+          "CanBeReforged": true
+        },
+      }
+    },
+    {
+      "LogName": "Skull: Tinker",
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/Tinker",
+      "Entries": {
+        "{{ModId}}_Skull": {
+          "MinLevel": 2,
+          "Variants": [
+            {
+              "Texture": "Mods/{{ModId}}/skull_1",
+              "TrinketSpriteIndex": 0,
+              "TrinketNameArguments": [
+                "{{i18n:Skull.DisplayName.Arg.0}}",
+              ],
+            },
+            {
+              "Texture": "Mods/{{ModId}}/skull_2",
+              "TrinketSpriteIndex": 1,
+              "TrinketNameArguments": [
+                "{{i18n:Skull.DisplayName.Arg.1}}",
+              ],
+            },
+          ],
+          "VariantsBase": {
+            "Width": 16,
+            "Height": 16,
+            "HatEquip": {
+              "AdjustOnDirection": {
+                "1": "-1.5,-16",
+                "2": "0,-12",
+                "3": "-1.5,-16",
+                "4": "0,-12",
+              },
+              "Source": "Owner"
+            }
+          },
+          "Motion": {
+            "MotionClass": "Orbit",
+            "AlwaysMoving": true,
+            "DirectionMode": "DRUL",
+            "FrameLength": 2,
+          },
+          "Abilities": [
+            // level 2
+            [
+              {
+                "AbilityClass": "Hitscan",
+                "Description": "{{i18n:Skull.AbilityDescription.1}}",
+                "Proc": "Timer",
+                "ProcTimer": 1000,
+                "ProcTAS": [
+                  "{{ModId}}_SkullHit"
+                ],
+                "Args": {
+                  "Min": 20,
+                  "Max": 30,
+                  "Knockback": 2.4,
+                  "Range": 192
+                },
+              }
+            ],
+            // level 3
+            [
+              {
+                "AbilityClass": "Hitscan",
+                "Description": "{{i18n:Skull.AbilityDescription.2}}",
+                "Proc": "Timer",
+                "ProcTimer": 1000,
+                "ProcTAS": [
+                  "{{ModId}}_SkullHit"
+                ],
+                "Args": {
+                  "Min": 30,
+                  "Max": 40,
+                  "Knockback": 2.4,
+                  "Range": 192
+                },
+              },
+            ],
+            // level 4
+            [
+              {
+                "AbilityClass": "Hitscan",
+                "Description": "{{i18n:Skull.AbilityDescription.3}}",
+                "Proc": "Timer",
+                "ProcTimer": 1000,
+                "ProcTAS": [
+                  "{{ModId}}_SkullHit"
+                ],
+                "Args": {
+                  "Min": 40,
+                  "Max": 50,
+                  "Knockback": 2.4,
+                  "Range": 192
+                },
+              },
+            ]
+          ]
+        },
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/TAS",
+      "Entries": {
+        "{{ModId}}_SkullHit": {
+          "Id": "{{ModId}}_SkullHit",
+          "Texture": "TileSheets/Projectiles",
+          "SourceRect": {
+            "X": 64,
+            "Y": 0,
+            "Width": 16,
+            "Height": 16
+          },
+          "Interval": 20,
+          "Frames": 1,
+          "Loops": 20,
+          "AlphaFade": 0.01,
+          "RotationChange": 0.2,
+        }
+      }
+    },
+  ]
+}

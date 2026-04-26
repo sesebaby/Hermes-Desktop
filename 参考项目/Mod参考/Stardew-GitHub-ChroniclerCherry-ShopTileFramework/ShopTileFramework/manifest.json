@@ -1,0 +1,16 @@
+﻿{
+    "Name": "Shop Tile Framework",
+    "Author": "Cherry",
+    "Version": "%ProjectVersion%",
+    "Description": "Define new shops as custom tile properties",
+    "UniqueID": "Cherry.ShopTileFramework",
+    "EntryDll": "ShopTileFramework.dll",
+    "MinimumApiVersion": "4.1.10",
+    "UpdateKeys": [ "Nexus:5005" ],
+    "Dependencies": [
+        {
+            "UniqueID": "Cherry.ExpandedPreconditionsUtility",
+            "MinimumVersion": "1.0.0"
+        }
+    ]
+}

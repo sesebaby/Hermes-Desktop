@@ -1,0 +1,17 @@
+﻿{
+    "Name": "[MFM] Fruits and Veggies",
+    "Author": "Project Populate Json Assets",
+    "Version": "1.0.0",
+    "Description": "Allows recipes to be mailed to the player.",
+    "UniqueID": "ppja.FruitsandVeggiesforMFM.dga",
+    "MinimumApiVersion": "3.7.0",
+    "Dependencies": [
+    {
+        "UniqueID": "ppja.fruitsandveggies.dga",
+        "IsRequired": true
+    }, ],
+    "ContentPackFor":
+    {
+        "UniqueID": "DIGUS.MailFrameworkMod"
+    },
+}

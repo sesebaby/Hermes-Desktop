@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <EnableHarmony>true</EnableHarmony>
+    <RequireSpaceCore>true</RequireSpaceCore>
+  </PropertyGroup>
+  <Import Project="$(SolutionDir)harmony.targets" />
+
+  <PropertyGroup>
+    <Name>Json Assets</Name>
+    <UniqueId>spacechase0.$(AssemblyName)</UniqueId>
+    <Description>Lets content packs add custom content to the game.</Description>
+    <Version>1.11.11</Version>
+    <UpdateKeys>Nexus:1720</UpdateKeys>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <SMAPIDependency Include="Pathoschild.ContentPatcher" Required="false" />
+    <SMAPIDependency Include="Cherry.ExpandedPreconditionsUtility" Required="false" />
+  </ItemGroup>
+</Project>

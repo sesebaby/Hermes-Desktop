@@ -1,0 +1,25 @@
+{
+    // Text
+
+    "chamomile.text": "Cher @,^^ Voici quelques graines de mon petit jardin derrière la maison. Peut-être en cultives-tu même déjà, elles sont excellentes en tisane. ^^  -Caroline",
+    "fairyduster.text": "Salut mon coeur!^^Y’a un bonhomme qui fais les livraisons à mon magasin, et je crois qu’il a eu un coup de foudre quand on s’est rencontrés.^Il n’avait pas de fleurs avec lui, mais il m’a donné ces graines qu’il avait avec lui dans son camion. C’était tellement chou!^En tous les cas, je ne peux pas les planter ici, mais peut être que chez toi ça marcherais, sait-on jamais! ;) ^^  -Sandy",
+    "honeysuckle.text": "Bonjour @,^^ Marnie est arrêtée en passant l’autre jour pour me porter ces graines. Je pense que tu vas mieux réussir que moi à les faire pousser. N’oublie pas de m’apporter un bouquet des fleurs que tu récolteras pour moi! ^^  -Leah",
+    "herballavender.text": "Bonjour @,^^ Merci pour tout ce que tu as fait pour notre petite  ville. Accepte ceci en gage de ma gratitude. J’espère que tu trouveras un beau coin ensoleillé sur ta ferme où les planter. ^^  -Penny",
+    "fragrantlilac.text": "Cher @,^^ J,ai rêvé l’autre jour que je te remettais ce sachet de graines. Tu les plantais tout autour, et tout d’un coup, me voilà au milieu de tout un champ de lilas. Ils changeaient doucement de couleur, passant du blanc au mauve en alternance.^Je ne sais pas trop ce que ce rêve veux dire, mais peut être que ça te donneras des idées! ^^  -Emily",
+    "passionflower.text": "Bonjour @,^^Ce n’est peut être pas du minerais, mais ça peut quand même être utile. Viens me rendre visite au magasin quand tu auras le temps. ^^  -Clint",
+    "pitcherplant.text": "Hé @,^^  Je suis parvenue à mettre la main sur des graines de cette plante carnivore super cool, mais mon père a peur qu’elles attirent trop de mouches et que ça ruine ses expériences.^Je pense que je pourrai peut être le convaincre si tu arrive à en faire pousser et que je lui montre les fleurs.^Ça me ferais vraiment plaisir si tu peux me rendre ce service, merci! ^^  -Maru",
+    "rafflesia.text": "Cher @,^^  Un ancien collègue m’a envoyé ces graines exotiques. C’et l’une des plus grosses fleurs du monde avec une apparence tout à fait surprenante, et je suis bien intéressé de voir quelle taille elles peuvent atteindre.^Prend garde tout de même à leur odeur quand elles fleurissent… laisse-moi juste te dire que Robin a strictement défendu que je les plante chez nous. ^^ -Demetrius",
+    "rose.text": "@,^^  Crois-tu que tu réussirais à faire pousser quelques unes de ces fleurs pour moi? Ce sont mes favorites parce qu’elles sont presque aussi belles que moi. ^^ -Haley",
+
+    // Titles
+
+    "chamomile.title": "Graines de camomille",
+    "fairyduster.title": "Graines de calliandre",
+    "honeysuckle.title": "Boutures de chèvrefeuille",
+    "herballavender.title": "Graines de lavande",
+    "fragrantlilac.title": "Graines de lilas",
+    "passionflower.title": "Graines de passiflore",
+    "pitcherplant.title": "Graines de saracénie",
+    "rafflesia.title": "Graines de rafflésia",
+    "rose.title": "Graines de roses"
+}

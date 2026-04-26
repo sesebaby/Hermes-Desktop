@@ -1,0 +1,43 @@
+{
+  "Changes": [
+    {
+      "Action": "EditData",
+      "Target": "Data/Machines",
+      "TargetField": [
+        "(BC)mushymato.TrinketTinker_TrinketColorizer",
+        "OutputRules"
+      ],
+      "Entries": {
+        // increment the variant
+        "{{ModId}}_StatiColorMask_Output": {
+          "Id": "{{ModId}}_StatiColorMask_Output",
+          "Triggers": [
+            {
+              "Id": "{{ModId}}_StatiColorMask_Output_01_ItemPlacedInMachine",
+              "Trigger": "ItemPlacedInMachine",
+              "RequiredItemId": "(TR){{ModId}}_StatiColorMask",
+              "RequiredCount": 1,
+              "Condition": "mushymato.TrinketTinker_IS_TINKER Input ? <=M"
+            }
+          ],
+          "OutputItem": [
+            {
+              "Id": "{{ModId}}_StatiColorMask_Output",
+              "OutputMethod": "TrinketTinker.Extras.TrinketColorizer, TrinketTinker:OutputTrinketColorizer",
+              "CustomData": {
+                "mushymato.TrinketTinker/Variant+": 1
+              }
+            }
+          ],
+          "MinutesUntilReady": 10
+        }
+      },
+      "MoveEntries": [
+        {
+          "Id": "{{ModId}}_StatiColorMask_Output",
+          "BeforeID": "mushymato.TrinketTinker_Default"
+        }
+      ]
+    }
+  ]
+}

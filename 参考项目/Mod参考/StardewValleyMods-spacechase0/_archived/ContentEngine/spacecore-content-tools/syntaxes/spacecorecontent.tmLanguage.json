@@ -1,0 +1,157 @@
+﻿{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "SpaceCore Content",
+    "filestypes": "spacecore",
+	"scopeName": "source.spacecore",
+	"patterns": [
+		{
+			"include": "#comments"
+		},
+		{
+			"include": "#element"
+		}
+	],
+	"repository": {
+		"element": {
+			"name": "meta.element",
+			"patterns": [
+				{
+					"include": "#comments"
+				},
+				{
+					"include": "#funccall"
+				},
+				{
+					"include": "#block"
+				},
+				{
+					"include": "#array"
+				},
+				{
+					"include": "#strings"
+				}
+			]
+		},
+		"block-element": {
+			"name": "meta.block-element",
+			"begin": "((\\\\.|[^\\[\\]\\{\\}\\(\\)\\;\\:\\~\\'\\\"\\\\\\s])(\\\\.|[^\\[\\]\\{\\}\\(\\)\\;\\:\\~\\'\\\"\\\\])*):",
+			"beginCaptures": {
+				"1": {
+					"name": "entity.name.tag"
+				}
+			},
+			"end": ";|}",
+			"patterns": [
+				{
+					"include": "#element"
+				}
+			]
+		},
+		"block": {
+			"name": "meta.block",
+			"begin": "\\{",
+			"beginCaptures": { "1": { "name": "startblock" } },
+			"end": "\\}",
+			"endCaptures": { "1": { "name": "endblock" } },
+			"patterns": [
+				{
+					"include": "#comments"
+				},
+				{
+					"include": "#block-element"
+				}
+			]
+		},
+		"array-element": {
+			"name": "meta.array-element",
+			"begin": "",
+			"end": ";|]",
+			"patterns": [
+				{
+					"include": "#element"
+				}
+			]
+		},
+		"array": {
+			"name": "meta.array",
+			"begin": "(\\[)",
+			"beginCaptures": { "1": { "name": "startarray" } },
+			"end": "(\\])",
+			"endCaptures": { "1": { "name": "endarray" } },
+			"patterns": [
+				{
+					"include": "#comments"
+				},
+				{
+					"include": "#array-element"
+				}
+			]
+		},
+		"funccall": {
+			"name": "funccall",
+			"begin": "([^\\[\\]\\{\\}\\(\\)\\;\\:\\~\\'\\\"\\\\\\s]+)\\(()",
+			"beginCaptures": {
+				"1": { "name": "entity.name.function" },
+				"2": { "name": "startparen" }
+			},
+			"end": "(\\))",
+			"endCaptures": { "1": { "name": "endparen" } },
+			"patterns": [
+				{
+					"include": "#element"
+				}
+			]
+		},
+		"strings": {
+			"name": "string.spacecorecontent",
+			"patterns": [
+				{
+					"include": "#raw-strings"
+				},
+				{
+					"include": "#escape"
+				},
+				{
+					"include": "#quoted-strings"
+				}
+			]
+		},
+		"raw-strings": {
+			"name": "string.raw.spacecorecontent",
+			"match": "[^\\[\\]\\{\\}\\(\\)\\;\\:\\~\\'\\\"\\\\\\s]",
+			"patterns": [
+				{
+					"include": "#escape"
+				}
+			]
+		},
+		"quoted-strings": {
+			"name": "string.quoted.spacecorecontent",
+			"begin": "((?!\\\\)(\"|'))",
+			"end": "\\2",
+			"patterns": [
+				{
+					"include": "#escape"
+				}
+			]
+		},
+		"comments": {
+			"name": "comment.spacecorecontent",
+			"patterns": [
+				{
+					"name": "comment.line.spacecorecontent",
+					"match": "//.*$\n?"
+				},
+				{
+					"name": "comment.block.spacecorecontent",
+					"begin": "/\\*",
+					"end": "\\*/"
+				}
+			]
+		},
+		"escape": {
+			"name": "constant.character.escape.spacecorecontent",
+			"match": "\\\\."
+		}
+	}
+}

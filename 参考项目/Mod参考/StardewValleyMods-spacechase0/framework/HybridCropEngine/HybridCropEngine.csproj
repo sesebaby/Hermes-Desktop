@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <HasTranslations>true</HasTranslations>
+  </PropertyGroup>
+  <Import Project="$(SolutionDir)common.targets" />
+
+  <PropertyGroup>
+    <Name>Hybrid Crop Engine</Name>
+    <UniqueId>spacechase0.$(AssemblyName)</UniqueId>
+    <Description>Lets content packs add hybrid crops, which have a chance of appearing between two fully-grown parent crops.</Description>
+    <Version>1.1.5</Version>
+    <UpdateKeys>Nexus:6577</UpdateKeys>
+  </PropertyGroup>
+</Project>

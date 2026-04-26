@@ -1,0 +1,36 @@
+{
+  "$schema": "https://smapi.io/schemas/content-patcher.json",
+  "Format": "2.8.0",
+  "Changes": [
+    // trinkets
+    {
+      "Action": "Include",
+      "FromFile": "data/skull.json"
+    },
+    {
+      "Action": "Include",
+      "FromFile": "data/bat.json"
+    },
+    {
+      "Action": "Include",
+      "FromFile": "data/stick.json"
+    },
+    {
+      "Action": "Include",
+      "FromFile": "data/dustspirit.json"
+    },
+    {
+      "Action": "Include",
+      "FromFile": "data/spider.json"
+    },
+    {
+      "Action": "Include",
+      "FromFile": "data/snek.json"
+    },
+    // shop
+    {
+      "Action": "Include",
+      "FromFile": "data/angry_roger_shop.json"
+    },
+  ]
+}

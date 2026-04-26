@@ -1,0 +1,6 @@
+﻿{
+    "cat-multiplier.name": "Cat Multiplier",
+    "cat-multiplier.description": "Multiply how many cats appear in an event.",
+    "meow-chance.name": "Meow Chance",
+    "meow-chance.description": "Chance for a cat to meow each frame, 1 in X. (Higher numbers are rarer.)"
+}

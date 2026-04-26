@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <HasTranslations>true</HasTranslations>
+  </PropertyGroup>
+  <Import Project="$(SolutionDir)common.targets" />
+
+  <PropertyGroup>
+    <Name>Experience Bars</Name>
+    <UniqueId>spacechase0.$(AssemblyName)</UniqueId>
+    <Description>Shows experience bars in the top-left corner.</Description>
+    <Version>1.4.6</Version>
+    <UpdateKeys>Nexus:509</UpdateKeys>
+  </PropertyGroup>
+</Project>

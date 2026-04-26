@@ -1,0 +1,11 @@
+{
+    "Changes": [
+        {
+			"Action": "EditData",
+			"Target": "Data/Fish",
+			"Entries": {
+				"Cornucopia_SeaSalt": "Cornucopia_SeaSalt/trap/0.6/682 .45/ocean/1/3"
+			},
+		},
+	]
+}

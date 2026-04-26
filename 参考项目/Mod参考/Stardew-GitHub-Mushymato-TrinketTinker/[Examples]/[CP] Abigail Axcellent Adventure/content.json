@@ -1,0 +1,51 @@
+{
+  "$schema": "https://smapi.io/schemas/content-patcher.json",
+  "Format": "2.5.1",
+  "ConfigSchema": {
+    "KrobusEatsRocks": {
+      "AllowValues": "true, false",
+      "Default": "true"
+    },
+    "TreeHuggers": {
+      "AllowValues": "true, false",
+      "Default": "true"
+    }
+  },
+  "Changes": [
+    {
+      "Action": "Include",
+      "FromFile": "data/abigail.json"
+    },
+    {
+      "Action": "Include",
+      "FromFile": "data/krobus.json"
+    },
+    {
+      "Action": "Include",
+      "FromFile": "data/leah.json"
+    },
+    {
+      "Action": "Include",
+      "FromFile": "data/robin_demetrius.json"
+    },
+    // Give abby the "shake tree drop wood" ability when TreeHuggers=True
+    {
+      "Action": "Include",
+      "FromFile": "data/reusable.json",
+      "LocalTokens": {
+        "L@TinkerTarget": "{{ModId}}_Abigail",
+      },
+      "When": {
+        "TreeHuggers": true
+      }
+    },
+    // Give krobus the "shake tree drop wood" ability always
+    {
+      "Action": "Include",
+      "FromFile": "data/reusable.json",
+      "LocalTokens": {
+        "L@TinkerTarget": "{{ModId}}_Krobus",
+      }
+    }
+  ]
+}

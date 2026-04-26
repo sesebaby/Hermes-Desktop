@@ -1,0 +1,25 @@
+{
+	"Changes": [
+		{
+			"Action": "EditData",
+			"Target": "Data/Mail",
+			"Entries": {
+				"Cornucopia.MoreFlowers_HaleyRoyalJelly": "{{i18n:Mail_HaleyRoyalJelly}}[#]{{i18n:RoyalJelly_name}}"
+			}
+		},
+		{
+			"Action": "EditData",
+			"Target": "Data/TriggerActions",
+			"Entries": {
+				"Cornucopia.MoreFlowers_HaleyRoyalJelly_SendMail": {
+					"Id": "Cornucopia.MoreFlowers_HaleyRoyalJelly_SendMail",
+					"Trigger": "DayEnding",
+					"HostOnly": false,
+					"MarkActionApplied": true,
+					"Condition": "DATE_RANGE summer 3 1 summer 28",
+					"Action": "AddMail Current Cornucopia.MoreFlowers_HaleyRoyalJelly tomorrow"
+				}
+			}
+		}
+	]
+}

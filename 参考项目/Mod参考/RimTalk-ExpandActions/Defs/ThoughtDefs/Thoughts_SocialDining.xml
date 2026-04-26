@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- Social Dining Memory Thought -->
+  <ThoughtDef>
+    <defName>AteWithColonist</defName>
+    <thoughtClass>Thought_Memory</thoughtClass>
+    <durationDays>0.5</durationDays>
+    <stackLimit>3</stackLimit>
+    <stackedEffectMultiplier>0.75</stackedEffectMultiplier>
+    <stages>
+      <li>
+        <label>shared a meal</label>
+        <description>I ate with others. It felt nice.</description>
+        <baseMoodEffect>3</baseMoodEffect>
+      </li>
+    </stages>
+  </ThoughtDef>
+
+  <!-- Offered Food Thought (Initiator) -->
+  <ThoughtDef>
+    <defName>OfferedFood</defName>
+    <thoughtClass>Thought_Memory</thoughtClass>
+    <durationDays>0.25</durationDays>
+    <stackLimit>1</stackLimit>
+    <stages>
+      <li>
+        <label>offered food</label>
+        <description>I shared food with someone. It felt generous.</description>
+        <baseMoodEffect>2</baseMoodEffect>
+      </li>
+    </stages>
+  </ThoughtDef>
+
+  <!-- Received Food Offer Thought (Recipient) -->
+  <ThoughtDef>
+    <defName>ReceivedFoodOffer</defName>
+    <thoughtClass>Thought_Memory</thoughtClass>
+    <durationDays>0.5</durationDays>
+    <stackLimit>1</stackLimit>
+    <stages>
+      <li>
+        <label>received food offer</label>
+        <description>Someone offered me food. I felt cared for.</description>
+        <baseMoodEffect>3</baseMoodEffect>
+      </li>
+    </stages>
+  </ThoughtDef>
+</Defs>

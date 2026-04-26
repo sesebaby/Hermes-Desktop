@@ -1,0 +1,64 @@
+{
+  "Format": "2.3.0",
+  "Changes": [
+    // Sprite Sheets
+    {
+      "Action": "Load",
+      "Target": "Mods/{{ModId}}/drul, Mods/{{ModId}}/rotation, Mods/{{ModId}}/rotation-bw, Mods/{{ModId}}/projectile, Mods/{{ModId}}/rl-repeat-2",
+      "FromFile": "sprites/{{TargetWithoutPath}}.png"
+    },
+    // Examples involving companion directions with follow motions
+    {
+      "Action": "Include",
+      "FromFile": "data/lerp/trinket.json, data/lerp/tinker.json, data/lerp/triggeraction.json"
+    },
+    // Examples involving companion directions with static motions
+    {
+      "Action": "Include",
+      "FromFile": "data/static/trinket.json, data/static/tinker.json"
+    },
+    // Examples that create a trinket and use abilities, but not companions
+    {
+      "Action": "Include",
+      "FromFile": "data/nocmp/trinket.json, data/nocmp/tinker.json"
+    },
+    // Snek
+    {
+      "Action": "Include",
+      "FromFile": "data/lerp/snek.json"
+    },
+    {
+      "Action": "Include",
+      "FromFile": "data/lerp/serp.json"
+    },
+    // Projectile
+    {
+      "Action": "Include",
+      "FromFile": "data/misc/projectile.json"
+    },
+    // Clips only
+    {
+      "Action": "Include",
+      "FromFile": "data/misc/clipsonly.json"
+    },
+    // Custom upgrade path
+    {
+      "Action": "Include",
+      "FromFile": "data/misc/upgrade.json"
+    },
+    // disable trinkets in Backwoods
+    {
+      "Action": "EditData",
+      "Target": "Data/Locations",
+      "TargetField": [
+        "Backwoods"
+      ],
+      "Entries": {
+        "CustomFields": {
+          "mushymato.TrinketTinker/disableAbilities": true,
+          "mushymato.TrinketTinker/disableCompanions": true
+        }
+      }
+    }
+  ]
+}

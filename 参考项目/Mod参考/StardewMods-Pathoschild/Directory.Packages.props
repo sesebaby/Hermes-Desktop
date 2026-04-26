@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="FluentAssertions" Version="8.8.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageVersion Include="NUnit" Version="4.4.0" />
+    <PackageVersion Include="Pathoschild.Stardew.ModBuildConfig" Version="4.4.0" />
+    <PackageVersion Include="Pathoschild.Stardew.ModTranslationClassBuilder" Version="2.2.1" />
+  </ItemGroup>
+</Project>

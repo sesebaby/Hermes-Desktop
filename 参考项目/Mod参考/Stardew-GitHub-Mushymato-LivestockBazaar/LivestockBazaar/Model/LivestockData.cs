@@ -1,0 +1,235 @@
+using System.Text;
+using LivestockBazaar.Integration;
+using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using StardewValley;
+using StardewValley.GameData.FarmAnimals;
+
+namespace LivestockBazaar.Model;
+
+public sealed record LivestockSkinData(FarmAnimalSkin Skin)
+{
+    public readonly Texture2D? SpriteSheet = Game1.content.DoesAssetExist<Texture2D>(Skin.Texture)
+        ? Game1.content.Load<Texture2D>(Skin.Texture)
+        : null;
+}
+
+public sealed record LivestockData
+{
+    public const string BUY_FROM = "BuyFrom";
+    public const string TRADE_ITEM_ID = "TradeItemId";
+    public const string TRADE_ITEM_AMOUNT = "TradeItemAmount";
+    public const string TRADE_ITEM_MULT = "TradeItemMult";
+
+    public readonly string Key;
+    public readonly FarmAnimalData Data;
+
+    public readonly Texture2D SpriteSheet;
+    public readonly SDUISprite SpriteIcon;
+    public readonly SDUISprite ShopIcon;
+
+    public readonly IList<LivestockData> AltPurchase = [];
+    public readonly IList<LivestockSkinData?> SkinData = [];
+
+    public LivestockData(string key, FarmAnimalData data)
+    {
+        Key = key;
+        Data = data;
+
+        SpriteSheet = Game1.content.Load<Texture2D>(Data.Texture);
+        SpriteIcon = new(SpriteSheet, new(0, 0, Data.SpriteWidth, Data.SpriteHeight));
+        if (Game1.content.DoesAssetExist<Texture2D>(Data.ShopTexture))
+        {
+            Texture2D texture = Game1.content.Load<Texture2D>(Data.ShopTexture);
+            Rectangle rectangle = Data.ShopSourceRect;
+            if (rectangle.Equals(Rectangle.Empty))
+            {
+                rectangle = texture.Bounds;
+            }
+            ShopIcon = new(texture, rectangle);
+        }
+        else
+        {
+            ShopIcon = SpriteIcon;
+        }
+
+        if (data.Skins != null && data.Skins.Any())
+        {
+            SkinData.Add(null);
+            foreach (FarmAnimalSkin skin in data.Skins)
+                if (Game1.content.DoesAssetExist<Texture2D>(skin.Texture))
+                    SkinData.Add(new(skin));
+        }
+    }
+
+    /// <summary>
+    /// Check if the animal can be bought from a particular shop.
+    /// Marnie can always sell an animal, unless explictly banned.
+    /// </summary>
+    /// <param name="data"></param>
+    /// <param name="shopName"></param>
+    /// <returns></returns>
+    public bool CanBuyFrom(string shopName)
+    {
+        if (Data.PurchasePrice < 0 || !GameStateQuery.CheckConditions(Data.UnlockCondition))
+            return false;
+        if (
+            Data.CustomFields is not Dictionary<string, string> customFields
+            || !customFields.TryGetValue(
+                string.Concat(ModEntry.ModId, "/", BUY_FROM, ".", shopName),
+                out string? buyFrom
+            )
+        )
+            return shopName == Wheels.MARNIE;
+        if (!bool.Parse(buyFrom))
+            return false;
+        return (
+            !customFields.TryGetValue(
+                string.Concat(ModEntry.ModId, "/", BUY_FROM, ".", shopName, ".Condition"),
+                out string? buyFromCond
+            ) || GameStateQuery.CheckConditions(buyFromCond)
+        );
+    }
+
+    /// <summary>
+    /// Get the trade item, if it's not gold coin
+    /// </summary>
+    /// <param name="data"></param>
+    /// <returns></returns>
+    public BaseCurrency GetTradeCurrency(string? shopName = Wheels.MARNIE)
+    {
+        if (shopName != null && Data.CustomFields is Dictionary<string, string> customFields)
+        {
+            if (
+                (
+                    customFields.TryGetValue(
+                        string.Concat(ModEntry.ModId, "/", TRADE_ITEM_ID, ".", shopName),
+                        out string? tradeItemId
+                    ) || customFields.TryGetValue(string.Concat(ModEntry.ModId, TRADE_ITEM_ID), out tradeItemId)
+                ) && CurrencyFactory.Get(tradeItemId) is BaseCurrency currency
+            )
+                return currency;
+        }
+        return CurrencyFactory.Get("(O)GoldCoin")!;
+    }
+
+    /// <summary>
+    /// Get the trade item amount, and apply a multiplier.
+    /// If TradeItemAmount is not specified, use default multiplier of 2x.
+    /// </summary>
+    /// <param name="data"></param>
+    /// <returns></returns>
+    public int GetTradePrice(string? shopName = Wheels.MARNIE)
+    {
+        int price = Math.Max(Data.PurchasePrice, 1);
+        float mult = 2f;
+        if (shopName != null && Data.CustomFields is Dictionary<string, string> customFields)
+        {
+            if (
+                customFields.TryGetValue(
+                    string.Concat(ModEntry.ModId, "/", TRADE_ITEM_AMOUNT, ".", shopName),
+                    out string? tradeItemPrice
+                ) || customFields.TryGetValue(string.Concat(ModEntry.ModId, "/", TRADE_ITEM_AMOUNT), out tradeItemPrice)
+            )
+            {
+                price = int.Parse(tradeItemPrice);
+                mult = 1f;
+            }
+            if (
+                customFields.TryGetValue(
+                    string.Concat(ModEntry.ModId, "/", TRADE_ITEM_MULT, ".", shopName),
+                    out string? tradeItemMultiplier
+                )
+                || customFields.TryGetValue(
+                    string.Concat(ModEntry.ModId, "/", TRADE_ITEM_MULT),
+                    out tradeItemMultiplier
+                )
+            )
+            {
+                mult = float.Parse(tradeItemMultiplier);
+            }
+        }
+        return (int)(price * mult);
+    }
+
+    public static bool IsValid(string key, FarmAnimalData data, out bool needValidAltPurchase)
+    {
+        needValidAltPurchase = false;
+        if (data == null)
+            return false;
+        bool isValid = true;
+        List<(string, string)> issues = [];
+        if (string.IsNullOrEmpty(data.Texture) || !Game1.content.DoesAssetExist<Texture2D>(data.Texture))
+        {
+            if (data.AlternatePurchaseTypes?.Any() ?? false)
+            {
+                needValidAltPurchase = true;
+                return false;
+            }
+            else
+            {
+                issues.Add(new("Texture", data.Texture));
+                isValid = false;
+            }
+        }
+        if (!string.IsNullOrEmpty(data.BabyTexture) && !Game1.content.DoesAssetExist<Texture2D>(data.BabyTexture))
+        {
+            issues.Add(new("BabyTexture", data.BabyTexture));
+        }
+        // TODO: fix scenario where the base animal is invalid but all of it's alt purchase types are
+        if (data.Skins != null)
+        {
+            foreach (FarmAnimalSkin skin in data.Skins)
+            {
+                if (!string.IsNullOrEmpty(skin.Texture) && !Game1.content.DoesAssetExist<Texture2D>(skin.Texture))
+                {
+                    issues.Add(new($"Skin['{skin.Id}'].Texture", skin.Texture));
+                }
+                if (
+                    !string.IsNullOrEmpty(skin.BabyTexture)
+                    && !Game1.content.DoesAssetExist<Texture2D>(skin.BabyTexture)
+                )
+                {
+                    issues.Add(new($"Skin['{skin.Id}'].BabyTexture", skin.BabyTexture));
+                }
+            }
+        }
+        if (issues.Any())
+        {
+            StringBuilder sb = new($"Cannot load these textures for for farm animal '");
+            sb.Append(key);
+            sb.Append("':\n");
+            foreach ((string note, string tex) in issues)
+            {
+                sb.Append($"\t{note}: '{tex}'\n");
+            }
+            sb.Append(
+                "These issues result in invalid farm animals or skins, please report this to the mod which added the farm animal rather than livestock bazaar."
+            );
+            ModEntry.Log(sb.ToString(), StardewModdingAPI.LogLevel.Warn);
+        }
+        return isValid;
+    }
+
+    public void PopulateAltPurchase(Dictionary<string, LivestockData> LsData)
+    {
+        AltPurchase.Clear();
+        if (Data.AlternatePurchaseTypes == null || !Data.AlternatePurchaseTypes.Any())
+            return;
+        foreach (AlternatePurchaseAnimals altPurchase in Data.AlternatePurchaseTypes)
+        {
+            if (!Wheels.GSQCheckNoRandom(altPurchase.Condition))
+                continue;
+            foreach (string animalId in altPurchase.AnimalIds)
+            {
+                if (LsData.TryGetValue(animalId, out LivestockData? altPurchaseData))
+                {
+                    if (animalId == Key)
+                        AltPurchase.Insert(0, altPurchaseData);
+                    else
+                        AltPurchase.Add(altPurchaseData);
+                }
+            }
+        }
+    }
+}

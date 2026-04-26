@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import
+    Project="$(MSBuildUserExtensionsPath)/sdv.props"
+    Condition="Exists('$(MSBuildUserExtensionsPath)/sdv.props')"
+  />
+
+  <ItemGroup>
+    <None Remove="i18n/default.json" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>default</LangVersion>
+    <ModZipPath>$(MSBuildThisFileDirectory)/../_releases</ModZipPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Name>TrinketTinker</Name>
+    <Authors>mushymato</Authors>
+    <Description>Trinket &amp; Companion framework.</Description>
+    <UniqueId>mushymato.TrinketTinker</UniqueId>
+    <UpdateKeys>Nexus:29073;GitHub:Mushymato/TrinketTinker</UpdateKeys>
+    <Version>1.7.3</Version>
+    <BaseManifest>new</BaseManifest>
+    <MinimumApiVersion_Behavior>Update</MinimumApiVersion_Behavior>
+    <MinimumGameVersion_Behavior>UpdateFull</MinimumGameVersion_Behavior>
+    <Dependencies_VersionBehavior>UpdateFull</Dependencies_VersionBehavior>
+  </PropertyGroup>
+
+  <Import Project="../ExtendedTAS/ExtendedTAS.projitems" Label="Shared" />
+
+  <ItemGroup>
+    <PackageReference Include="Leclair.Stardew.ModManifestBuilder" Version="2.4.1" />
+    <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.4.0" />
+    <PackageReference Include="Pathoschild.Stardew.ModTranslationClassBuilder" Version="2.2.0">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <Reference Include="Newtonsoft.Json" Private="False">
+      <HintPath>$(GamePath)/smapi-internal/Newtonsoft.Json.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

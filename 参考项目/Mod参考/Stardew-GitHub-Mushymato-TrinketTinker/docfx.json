@@ -1,0 +1,62 @@
+{
+  "metadata": [
+    {
+      "src": [
+        {
+          "src": ".",
+          "files": [
+            "TrinketTinker/TrinketTinker.csproj"
+          ]
+        }
+      ],
+      "dest": "api",
+      // "filter": "docfx-api-filters.yml"
+    }
+  ],
+  "maxParallelism": 1,
+  "build": {
+    "content": [
+      {
+        "files": [
+          "guide/*.{md,yml}",
+          "api/*",
+          "toc.yml",
+          "index.md",
+          "CHANGELOG.md"
+        ]
+      }
+    ],
+    "resource": [
+      {
+        "files": [
+          "images/**",
+          "guide/**/*.{json}"
+        ]
+      }
+    ],
+    "output": "_site",
+    "template": [
+      "default",
+      "modern",
+      "templates/material"
+    ],
+    "fileMetadata": {
+      "_noindex": {
+        "api/*": true
+      }
+    },
+    "globalMetadata": {
+      "_appName": "TrinketTinker",
+      "_appTitle": "TrinketTinker",
+      "_appLogoPath": "images/favicon.png",
+      "_appFaviconPath": "images/favicon.png",
+      "_appFooter": "<a href=\"https://github.com/Mushymato/TrinketTinker\">Source</a>   <a href=\"https://www.nexusmods.com/stardewvalley/mods/29073\">Nexus</a>",
+      "_enableSearch": true,
+      "_disableContribution": true,
+      "pdf": false
+    },
+    "postProcessors": [
+      "ExtractSearchIndex"
+    ],
+  }
+}

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="$(SolutionDir)common.targets" />
+
+  <PropertyGroup>
+    <Name>Spenny</Name>
+    <UniqueId>spacechase0.$(AssemblyName)</UniqueId>
+    <Description>Spinning Penny. Spenny.</Description>
+    <Version>1.0.4</Version>
+    <UpdateKeys>Nexus:2755</UpdateKeys>
+  </PropertyGroup>
+</Project>

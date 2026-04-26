@@ -1,0 +1,167 @@
+{
+  "$schema": "https://smapi.io/schemas/content-patcher.json",
+  "Changes": [
+    {
+      "LogName": "Bat: Sprites",
+      "Action": "Load",
+      "Target": "Mods/{{ModId}}/bat_1, Mods/{{ModId}}/bat_2, Mods/{{ModId}}/bat_3, Mods/{{ModId}}/bat_4, Mods/{{ModId}}/bat_5, Mods/{{ModId}}/bat_6, Mods/{{ModId}}/bat_t",
+      "FromFile": "assets/{{TargetWithoutPath}}.png"
+    },
+    {
+      "LogName": "Bat: Trinkets",
+      "Action": "EditData",
+      "Target": "Data/Trinkets",
+      "Entries": {
+        "{{ModId}}_Bat": {
+          "Id": "{{ModId}}_Bat",
+          "DisplayName": "{{i18n:Bat.DisplayName}}",
+          "Description": "{{i18n:Bat.Description}}",
+          "Texture": "Mods/{{ModId}}/bat_t",
+          "SheetIndex": 0,
+          "DropsNaturally": false,
+          "CanBeReforged": true
+        },
+      }
+    },
+    {
+      "LogName": "Bat: Tinker",
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/Tinker",
+      "Entries": {
+        "{{ModId}}_Bat": {
+          "Variants": [
+            {
+              "Texture": "Mods/{{ModId}}/bat_1",
+              "TrinketSpriteIndex": 0,
+            },
+            {
+              "Texture": "Mods/{{ModId}}/bat_2",
+              "TrinketSpriteIndex": 1,
+            },
+            {
+              "Texture": "Mods/{{ModId}}/bat_3",
+              "TrinketSpriteIndex": 2,
+            },
+            {
+              "Texture": "Mods/{{ModId}}/bat_4",
+              "Height": 17,
+              "TrinketSpriteIndex": 3,
+            },
+            {
+              "Texture": "Mods/{{ModId}}/bat_5",
+              "TrinketSpriteIndex": 4,
+            },
+            {
+              "Texture": "Mods/{{ModId}}/bat_6",
+              "Height": 17,
+              "TrinketSpriteIndex": 5,
+            },
+          ],
+          "VariantsBase": {
+            "Width": 16,
+            "Height": 16,
+            "HatEquip": {
+              "AdjustDefault": "f0",
+              "AdjustOnFrame": {
+                "0": "0,-8",
+                "1": "0,-12",
+                "2": "0,-16",
+                "3": "0,-12",
+                "4": "0,-8",
+              },
+              "Source": "Given",
+              "ScaleModifier": 0.6
+            }
+          },
+          "Motion": {
+            "MotionClass": "Hover",
+            "AlwaysMoving": true,
+            "DirectionMode": "R",
+            "AnimClips": {
+              "Perching": {
+                "FrameStart": 4,
+                "FrameLength": 1
+              },
+            },
+            "Args": {
+              "Magnitude": 16,
+              "Period": 800,
+              "PerchingTimeout": 6000,
+              "PerchingOffset": "0,16"
+            }
+          },
+          "Abilities": [
+            // level 1
+            [
+              {
+                "AbilityClass": "Health",
+                "Description": "{{i18n:Bat.AbilityDescription.1}}",
+                "Proc": "DamageMonster",
+                "ProcTAS": [
+                  "{{ModId}}_BatHealed"
+                ],
+                "IsCriticalHit": true,
+                "Args": {
+                  "ValueMode": "Number",
+                  "Min": 13
+                },
+              },
+              {
+                "AbilityClass": "Stamina",
+                "Proc": "Sync",
+                "Args": {
+                  "ValueMode": "Number",
+                  "Min": 13
+                },
+              }
+            ],
+            // level 2
+            [
+              {
+                "AbilityClass": "Health",
+                "Description": "{{i18n:Bat.AbilityDescription.2}}",
+                "Proc": "DamageMonster",
+                "ProcTimer": 2000,
+                "ProcTAS": [
+                  "{{ModId}}_BatHealed"
+                ],
+                "IsCriticalHit": true,
+                "Args": {
+                  "Min": 0.13
+                },
+              },
+              {
+                "AbilityClass": "Stamina",
+                "Proc": "Sync",
+                "Args": {
+                  "Min": 0.13
+                },
+              }
+            ],
+          ]
+        },
+      }
+    },
+    {
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/TAS",
+      "Entries": {
+        "{{ModId}}_BatHealed": {
+          "Id": "{{ModId}}_BatHealed",
+          "Texture": "TileSheets/animations",
+          "SourceRect": {
+            "X": 0,
+            "Y": 640,
+            "Width": 64,
+            "Height": 64
+          },
+          "Interval": 100,
+          "Frames": 8,
+          "Loops": 4,
+          "Scale": 0.25,
+          "Color": "Red"
+        }
+      }
+    },
+  ]
+}

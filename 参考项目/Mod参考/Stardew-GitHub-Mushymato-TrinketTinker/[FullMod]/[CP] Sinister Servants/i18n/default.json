@@ -1,0 +1,44 @@
+{
+  "$schema": "https://smapi.io/schemas/i18n.json",
+  // Trinkets
+  // Skull
+  "Skull.DisplayName": "{0} Polished Cranium",
+  "Skull.DisplayName.Arg.0": "Red",
+  "Skull.DisplayName.Arg.1": "Blue",
+  "Skull.Description": "A polished skull from some creature, it's cold to the touch.\n\nLv.{0}: {1}",
+  "Skull.AbilityDescription.1": "Summon a haunted skull; deal 20-30 damage to nearby enemies.",
+  "Skull.AbilityDescription.2": "Summon a hauunted skull; deal 30-40 damage to nearby enemies.",
+  "Skull.AbilityDescription.3": "Summon a haunted skull; deal 40-50 damage to nearby enemies.",
+  // Bat
+  "Bat.DisplayName": "Leathery Wing",
+  "Bat.Description": "A colorful wing, well preserved.\n\nLv.{0}: {1}",
+  "Bat.AbilityDescription.1": "Summon a bat; on critical hit, recover 13 HP and 13 Energy.",
+  "Bat.AbilityDescription.2": "Summon a bat; on critical hit, recover 13% of the damage dealt as HP and Energy.",
+  // Stick
+  "Stick.DisplayName": "Sticc",
+  "Stick.Description": "A stick?\n\nLv.{0}: {1}",
+  "Stick.AbilityDescription.1": "Summon a stick bug; harvest nearby forage, recover 44 HP on success. Shake and harvests trees and bushes.",
+  "Stick.AbilityDescription.2": "Summon a stick bug; harvest nearby crops, recover 44 Energy on success. Shake and harvests trees and bushes.",
+  "Stick.AbilityDescription.3": "Summon a stick bug; harvest nearby forage and crops, recover 44 HP and Energy on success. Shake and harvests trees and bushes.",
+  "Stick.Exclaim.1": "!!",
+  "Stick.Exclaim.2": "!?",
+  // Dust Spirit
+  "DustSpirit.DisplayName": "Fuzzy Coal",
+  "DustSpirit.Description": "It's looking at you.\n\nLv.{0}: {1}",
+  "DustSpirit.AbilityDescription.1": "Summon 3 dust spirits; every 10s, break one nearby rock and grant +20 attack. Shake nearby trees and bushes.",
+  "DustSpirit.AbilityDescription.2": "Summon 3 dust spirits; every 2s, break one nearby rock and grant +5 attack. Shake nearby trees and bushes.",
+  // Spider
+  "Spider.DisplayName": "Tiny Spider",
+  "Spider.Description": "A tiny plastic spider on some decorative webbing, scuttles around sometimes.\n\nLv.{0}: {1}",
+  "Spider.AbilityDescription.1": "Summon a hopping spider; shoots a web that immobilise an enemy for 3s every 5s.",
+  "Spider.AbilityDescription.2": "Summon a hopping spider; shoots a web that immobilise an enemy for 6s every 8s.",
+  "Spider.AbilityDescription.3": "Summon a hopping spider; shoots a web that immobilise an enemy for 10s every 11s.",
+  // Snek
+  "Snek.DisplayName": "Jug of Iridium Milk",
+  "Snek.Description": "Emits indescribable aroma enjoyed by iridium snakes.\n\nLv.{0}: {1}",
+  "Snek.AbilityDescription.1": "Summon an iridium snake; seek out and explode enemies every 3s for 77 damage. It costs 7 HP per attack, and the explosion can damage the player.",
+  // Shop
+  "AngryRoger.Name": "Angry Roger",
+  "AngryRoger.Dialog.1": "Bring to me the flesh and spirit of the damned ~~~",
+  "AngryRoger.Dialog.2": "Ooooo ~~ OOOooOoOOoooo ~~~",
+}

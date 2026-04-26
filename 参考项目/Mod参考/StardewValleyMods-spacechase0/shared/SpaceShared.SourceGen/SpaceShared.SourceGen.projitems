@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <MSBuildAllProjects Condition="'$(MSBuildVersion)' == '' Or '$(MSBuildVersion)' &lt; '16.0'">$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <SharedGUID>bf148476-41ce-4b5c-9b53-087cb894e469</SharedGUID>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration">
+    <Import_RootNamespace>SpaceShared.SourceGenCommon</Import_RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Attributes\CustomDictionaryAssetAttribute.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Attributes\DictionaryAssetDataAttribute.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Attributes\DictionaryAssetDataKeyAttribute.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Attributes\HasContentAttribute.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Attributes\HasConfigAttribute.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Attributes\HasHarmonyAttribute.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Attributes\HasStateAttribute.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Content\BaseDictionaryAssetData.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)content\ContentRegistry.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)content\HotReloadHandler.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="$(MSBuildThisFileDirectory)Content\" />
+  </ItemGroup>
+</Project>

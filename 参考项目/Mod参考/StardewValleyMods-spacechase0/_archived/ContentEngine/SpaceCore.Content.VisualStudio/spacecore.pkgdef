@@ -1,0 +1,8 @@
+[$RootKey$\TextMate\Repositories]
+"spacecore"="$PackageFolder$\Grammars"
+
+[$RootKey$\TextMate\LanguageConfiguration\GrammarMapping]
+"source.spacecore"="$PackageFolder$\spacecore-language-configuration.json"
+
+[$RootKey$\TextMate\LanguageConfiguration\ContentTypeMapping]
+"spacecore"="$PackageFolder$\spacecore-language-configuration.json"

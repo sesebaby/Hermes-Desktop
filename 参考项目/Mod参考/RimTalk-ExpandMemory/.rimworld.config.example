@@ -1,0 +1,44 @@
+# RimWorld Mod ��������ʾ��
+# ���ƴ��ļ�Ϊ .rimworld.config ����������·��
+
+# RimWorld ��װĿ¼�����
+# ʾ����Steam Ĭ��·������
+#   Windows: C:\Program Files (x86)\Steam\steamapps\common\RimWorld
+#   Linux:   ~/.steam/steam/steamapps/common/RimWorld
+#   macOS:   ~/Library/Application Support/Steam/steamapps/common/RimWorld
+RIMWORLD_DIR=YOUR_RIMWORLD_PATH_HERE
+
+# Mod �ļ������ƣ���ѡ��Ĭ�ϣ�RimTalk-MemoryPatch��
+MOD_FOLDER_NAME=RimTalk-MemoryPatch
+
+# ��Ϸ�汾����ѡ��Ĭ�ϣ�1.6��
+GAME_VERSION=1.6
+
+# ʹ��˵����
+# 1. ���ƴ��ļ�Ϊ .rimworld.config
+# 2. �� YOUR_RIMWORLD_PATH_HERE �滻Ϊ���� RimWorld ��װ·��
+# 3. ���û�����������ѡ������ Visual Studio �Զ����𣩣�
+#    Windows: setx RIMWORLD_DIR "����·��"
+#    Linux/macOS: export RIMWORLD_DIR="����·��"
+
+English Translation
+=====================================================================================
+# RimWorld Installation Directory (Required)
+# Example Steam default paths:
+#   Windows: C:\Program Files (x86)\Steam\steamapps\common\RimWorld
+#   Linux:   ~/.steam/steam/steamapps/common/RimWorld
+#   macOS:   ~/Library/Application Support/Steam/steamapps/common/RimWorld
+RIMWORLD_DIR=YOUR_RIMWORLD_PATH_HERE
+
+# Mod Folder Name (Optional, Default: RimTalk-MemoryPatch)
+MOD_FOLDER_NAME=RimTalk-MemoryPatch
+
+# Game Version (Optional, Default: 1.6)
+GAME_VERSION=1.6
+
+# Usage Instructions:
+# 1. Copy this file and rename it to .rimworld.config
+# 2. Replace YOUR_RIMWORLD_PATH_HERE with your actual RimWorld installation path
+# 3. Environment Variable Setup (Optional, for automatic Visual Studio detection):
+#    Windows: setx RIMWORLD_DIR "Your_Path_Here"
+#    Linux/macOS: export RIMWORLD_DIR="Your_Path_Here"

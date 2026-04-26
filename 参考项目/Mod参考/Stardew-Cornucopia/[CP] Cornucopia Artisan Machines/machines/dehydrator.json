@@ -1,0 +1,155 @@
+{
+	"Changes": [
+		{
+			"Action": "EditData",
+			"Target": "Data/Machines",
+			"TargetField": [
+				"(BC)Dehydrator",
+				"OutputRules"
+			],
+			"Entries": {
+				"Cornucopia_Hay": {
+					"Id": "Cornucopia_Hay",
+					"Triggers": [
+						{
+							"RequiredItemId": "(O)771",
+							"RequiredCount": 10
+						}
+					],
+					"OutputItem": [
+						{
+							"ItemId": "(O)178",
+							"MinStack": 3,
+							"MaxStack": 8
+						}
+					],
+					"MinutesUntilReady": 60,
+					"InvalidCountMessage": "{{i18n:DehydratorInvalidCount_Fiber}}"
+				},
+				"Cornucopia_DriedHerb": {
+					"Id": "Cornucopia_DriedHerb",
+					"Triggers": [
+						{
+							"RequiredTags": [
+								"herb_item"
+							],
+							"RequiredCount": 5
+						}
+					],
+					"OutputItem": [
+						{
+							"ItemId": "(O)Cornucopia_DriedHerb",
+							"ObjectInternalName": "{0} Cornucopia_DriedHerb",
+							"ObjectDisplayName": "[LocalizedText Strings/Objects:DriedFruit_Flavored_Name %PRESERVED_DISPLAY_NAME %PRESERVED_DISPLAY_NAME]",
+							"PreserveId": "DROP_IN",
+							"CopyPrice": true,
+							"PriceModifierMode": "Stack",
+							"CustomData": {
+								"selph.ExtraMachineConfig.CopyColor": "true"
+							},
+							"PriceModifiers": [
+								{
+									"Modification": "Multiply",
+									"Amount": 10
+								},
+								{
+									"Modification": "Add",
+									"Amount": 50
+								}
+							]
+						}
+					],
+					"DaysUntilReady": 1,
+					"InvalidCountMessage": "[LocalizedText Strings\\Objects:Machine_NeedsInputCount 5]"
+				},
+				"Cornucopia_DriedFlower": {
+					"Id": "Cornucopia_DriedFlower",
+					"Triggers": [
+						{
+							"RequiredTags": [
+								"category_flowers"
+							],
+							"RequiredCount": 5
+						},
+						{
+							"Id": "flower_item",
+							"RequiredTags": [
+								"flower_item"
+							],
+							"RequiredCount": 5
+						}
+					],
+					"OutputItem": [
+						{
+							"ItemId": "(O)Cornucopia_DriedFlower",
+							"ObjectInternalName": "{0} Cornucopia_DriedFlower",
+							"ObjectDisplayName": "[LocalizedText Strings/Objects:DriedFruit_Flavored_Name %PRESERVED_DISPLAY_NAME %PRESERVED_DISPLAY_NAME]",
+							"PreserveId": "DROP_IN",
+							"CopyPrice": true,
+							"PriceModifierMode": "Stack",
+							"CustomData": {
+								"selph.ExtraMachineConfig.CopyColor": "true"
+							},
+							"PriceModifiers": [
+								{
+									"Modification": "Multiply",
+									"Amount": 10
+								},
+								{
+									"Modification": "Add",
+									"Amount": 50
+								}
+							]
+						}
+					],
+					"DaysUntilReady": 1,
+					"InvalidCountMessage": "[LocalizedText Strings\\Objects:Machine_NeedsInputCount 5]"
+				},
+				"Cornucopia_DriedVegetable": {
+					"Id": "Cornucopia_DriedVegetable",
+					"Triggers": [
+						{
+							"RequiredTags": [
+								"category_vegetable"
+							],
+							"RequiredCount": 5,
+							"Condition": "!ITEM_CONTEXT_TAG Input grain_item, !ITEM_CONTEXT_TAG Input nut_item, ITEM_EDIBILITY Input 1"
+						},
+						{
+							"RequiredTags": [
+								"category_greens"
+							],
+							"RequiredCount": 5,
+							"Condition": "!ITEM_CONTEXT_TAG Input nut_item, ITEM_EDIBILITY Input 1"
+						}
+					],
+					"OutputItem": [
+						{
+							"ItemId": "(O)Cornucopia_DriedVegetable",
+							"ObjectInternalName": "{0} Cornucopia_DriedVegetable",
+							"ObjectDisplayName": "[LocalizedText Strings/Objects:DriedFruit_Flavored_Name %PRESERVED_DISPLAY_NAME %PRESERVED_DISPLAY_NAME]",
+							"PreserveId": "DROP_IN",
+							"CopyPrice": true,
+							"PriceModifierMode": "Stack",
+							"CustomData": {
+								"selph.ExtraMachineConfig.CopyColor": "true"
+							},
+							"PriceModifiers": [
+								{
+									"Modification": "Multiply",
+									"Amount": 7.5
+								},
+								{
+									"Modification": "Add",
+									"Amount": 25
+								}
+							]
+						}
+					],
+					"DaysUntilReady": 1,
+					"InvalidCountMessage": "[LocalizedText Strings\\Objects:Machine_NeedsInputCount 5]"
+				}
+			}
+		}
+	]
+}

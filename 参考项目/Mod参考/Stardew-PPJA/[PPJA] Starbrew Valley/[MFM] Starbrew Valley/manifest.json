@@ -1,0 +1,17 @@
+{
+    "Name": "[MFM] Starbrew Valley",
+    "Author": "Project Populate Json Assets",
+    "Version": "1.0.0",
+    "Description": "Allows recipes from Starbrew Valley to be mailed to the player.",
+    "UniqueID": "ppja.StarbrewValleyforMFM.dga",
+    "MinimumApiVersion": "3.7.0",
+    "Dependencies": [
+    {
+        "UniqueID": "ppja.starbrewvalley.dga",
+        "IsRequired": true
+    }],
+    "ContentPackFor":
+    {
+        "UniqueID": "DIGUS.MailFrameworkMod"
+    }
+}

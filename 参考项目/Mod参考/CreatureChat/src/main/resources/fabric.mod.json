@@ -1,0 +1,43 @@
+{
+	"schemaVersion": 1,
+	"id": "creaturechat",
+	"version": "${version}",
+	"name": "CreatureChat",
+	"description": "Chat, befriend, and interact with a rich world of creatures like never before! All creatures can talk and respond naturally using AI.",
+	"authors": [
+		"Jonathan Thomas <jonathan@openshot.org>",
+		"owlmaddie <owlmaddie@gmail.com>"
+	],
+	"contact": {
+		"homepage": "http://discord.creaturechat.com",
+		"sources": "https://github.com/CreatureChat/creature-chat"
+	},
+	"license": "GPLv3",
+	"icon": "assets/creaturechat/icon.png",
+	"environment": "*",
+    "entrypoints": {
+        "main": [
+          "com.owlmaddie.ModInit"
+        ],
+        "client": [
+          "com.owlmaddie.ClientInit"
+        ],
+        "fabric-datagen": [
+          "com.owlmaddie.datagen.CreatureChatDataGenerator"
+        ]
+    },
+	"mixins": [
+		"creaturechat.mixins.json",
+		{
+			"config": "creaturechat.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"accessWidener": "creaturechat.accesswidener",
+	"depends": {
+		"fabricloader": ">=0.14.22",
+		"minecraft": "~1.21.7",
+		"java": ">=17",
+		"fabric-api": "*"
+	}
+}

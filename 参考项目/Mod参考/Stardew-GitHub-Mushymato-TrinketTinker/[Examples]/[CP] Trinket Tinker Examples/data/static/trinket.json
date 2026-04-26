@@ -1,0 +1,47 @@
+{
+  "Changes": [
+    // Edit Data/Trinkets 
+    {
+      "Action": "EditData",
+      "Target": "Data/Trinkets",
+      "Entries": {
+        "{{ModId}}_StaticDRUL": {
+          "Id": "{{ModId}}_StaticDRUL",
+          "DisplayName": "Trinket Tinker - Static DRUL",
+          "Description": "Companion with 4 sets of movement animation in order of Down, Right, Up, Left.",
+          "Texture": "Mods/{{ModId}}/drul",
+          "SheetIndex": 0,
+          "DropsNaturally": false,
+          "CanBeReforged": false,
+        },
+        "{{ModId}}_StatiColorMask": {
+          "Id": "{{ModId}}_StatiColorMask",
+          "DisplayName": "Trinket Tinker - Color Masks",
+          "Description": "Color mask example.",
+          "Texture": "Mods/{{ModId}}/rotation-bw",
+          "SheetIndex": 1,
+          "DropsNaturally": false,
+          "CanBeReforged": true,
+        },
+        "{{ModId}}_StaticRelative": {
+          "Id": "{{ModId}}_StaticRelative",
+          "DisplayName": "Trinket Tinker - Static Relative",
+          "Description": "Static offset that respects player direction.",
+          "Texture": "Mods/{{ModId}}/rotation",
+          "SheetIndex": 2,
+          "DropsNaturally": false,
+          "CanBeReforged": false,
+        },
+        "{{ModId}}_StaticRLRepeat2": {
+          "Id": "{{ModId}}_StaticRLRepeat2",
+          "DisplayName": "Trinket Tinker - Static RL Repeat 2x2",
+          "Description": "Repeat draw example.",
+          "Texture": "Mods/{{ModId}}/rl-repeat-2",
+          "SheetIndex": 9,
+          "DropsNaturally": false,
+          "CanBeReforged": false,
+        },
+      }
+    }
+  ]
+}

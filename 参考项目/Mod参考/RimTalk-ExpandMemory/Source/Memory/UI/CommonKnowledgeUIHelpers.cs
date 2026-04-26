@@ -1,0 +1,331 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+using Verse;
+using RimWorld;
+using RimTalk.MemoryPatch; // ? 添加命名空间
+
+namespace RimTalk.Memory.UI
+{
+    /// <summary>
+    /// 常识库UI绘制委托 - 可复用的UI绘制方法
+    /// ★ v3.3.19: 拆分代码 - 分离UI绘制逻辑
+    /// </summary>
+    public static class CommonKnowledgeUIHelpers
+    {
+        // ==================== 颜色常量 ====================
+        private static readonly Color ColorInstructions = new Color(0.3f, 0.8f, 0.3f);
+        private static readonly Color ColorLore = new Color(0.8f, 0.6f, 0.3f);
+        private static readonly Color ColorPawnStatus = new Color(0.3f, 0.6f, 0.9f);
+        private static readonly Color ColorHistory = new Color(0.7f, 0.5f, 0.7f);
+        private static readonly Color ColorOther = Color.white;
+        
+        // ==================== 分类相关 ====================
+        
+        /// <summary>
+        /// 获取分类显示名称
+        /// </summary>
+        public static string GetCategoryLabel(KnowledgeCategory category)
+        {
+            switch (category)
+            {
+                case KnowledgeCategory.All:
+                    return CommonKnowledgeTranslationKeys.CategoryAll.Translate();
+                case KnowledgeCategory.Instructions:
+                    return CommonKnowledgeTranslationKeys.CategoryInstructions.Translate();
+                case KnowledgeCategory.Lore:
+                    return CommonKnowledgeTranslationKeys.CategoryLore.Translate();
+                case KnowledgeCategory.PawnStatus:
+                    return CommonKnowledgeTranslationKeys.CategoryPawnStatus.Translate();
+                case KnowledgeCategory.History:
+                    return CommonKnowledgeTranslationKeys.CategoryHistory.Translate();
+                case KnowledgeCategory.Other:
+                    return CommonKnowledgeTranslationKeys.CategoryOther.Translate();
+                default:
+                    return CommonKnowledgeTranslationKeys.CategoryUnknown.Translate();
+            }
+        }
+        
+        /// <summary>
+        /// 获取分类颜色
+        /// </summary>
+        public static Color GetCategoryColor(CommonKnowledgeEntry entry)
+        {
+            var category = GetEntryCategory(entry);
+            switch (category)
+            {
+                case KnowledgeCategory.Instructions:
+                    return ColorInstructions;
+                case KnowledgeCategory.Lore:
+                    return ColorLore;
+                case KnowledgeCategory.PawnStatus:
+                    return ColorPawnStatus;
+                case KnowledgeCategory.History:
+                    return ColorHistory;
+                default:
+                    return ColorOther;
+            }
+        }
+        
+        /// <summary>
+        /// 根据标签判断条目分类
+        /// ⭐ 优先使用显式分类（用户在UI中选择的），未设置时回退到标签关键词推断
+        /// </summary>
+        public static KnowledgeCategory GetEntryCategory(CommonKnowledgeEntry entry)
+        {
+            // ⭐ 优先使用显式分类
+            if (entry.category != KnowledgeEntryCategory.None)
+            {
+                return ExplicitCategoryToKnowledgeCategory(entry.category);
+            }
+            
+            if (string.IsNullOrEmpty(entry.tag))
+                return KnowledgeCategory.Other;
+
+            // 转换为小写以进行不区分大小写的匹配
+            string tagLower = entry.tag.ToLower();
+
+            // 按优先级顺序检查（优先匹配更具体的分类）
+            
+            // 1. 规则/指令类（Instructions）
+            if (tagLower.Contains("规则") || tagLower.Contains("instructions") || 
+                tagLower.Contains("instruction") || tagLower.Contains("rule"))
+            {
+                return KnowledgeCategory.Instructions;
+            }
+
+            // 2. 殖民者状态（PawnStatus）
+            if (tagLower.Contains("殖民者状态") || tagLower.Contains("pawnstatus") || 
+                tagLower.Contains("colonist") || tagLower.Contains("状态"))
+            {
+                return KnowledgeCategory.PawnStatus;
+            }
+
+            // 3. 历史（History）
+            if (tagLower.Contains("历史") || tagLower.Contains("history") || 
+                tagLower.Contains("past") || tagLower.Contains("记录"))
+            {
+                return KnowledgeCategory.History;
+            }
+
+            // 4. 世界观/背景（Lore）
+            if (tagLower.Contains("世界观") || tagLower.Contains("lore") || 
+                tagLower.Contains("background") || tagLower.Contains("背景") ||
+                tagLower.Contains("设定"))
+            {
+                return KnowledgeCategory.Lore;
+            }
+
+            // 5. 其他
+            return KnowledgeCategory.Other;
+        }
+        
+        /// <summary>
+        /// 将显式分类枚举转换为 UI 分类枚举
+        /// </summary>
+        public static KnowledgeCategory ExplicitCategoryToKnowledgeCategory(KnowledgeEntryCategory cat)
+        {
+            switch (cat)
+            {
+                case KnowledgeEntryCategory.Instructions: return KnowledgeCategory.Instructions;
+                case KnowledgeEntryCategory.Lore: return KnowledgeCategory.Lore;
+                case KnowledgeEntryCategory.PawnStatus: return KnowledgeCategory.PawnStatus;
+                case KnowledgeEntryCategory.History: return KnowledgeCategory.History;
+                case KnowledgeEntryCategory.Other: return KnowledgeCategory.Other;
+                default: return KnowledgeCategory.Other;
+            }
+        }
+        
+        /// <summary>
+        /// 将 UI 分类枚举转换为显式分类枚举
+        /// </summary>
+        public static KnowledgeEntryCategory KnowledgeCategoryToExplicit(KnowledgeCategory cat)
+        {
+            switch (cat)
+            {
+                case KnowledgeCategory.Instructions: return KnowledgeEntryCategory.Instructions;
+                case KnowledgeCategory.Lore: return KnowledgeEntryCategory.Lore;
+                case KnowledgeCategory.PawnStatus: return KnowledgeEntryCategory.PawnStatus;
+                case KnowledgeCategory.History: return KnowledgeEntryCategory.History;
+                case KnowledgeCategory.Other: return KnowledgeEntryCategory.Other;
+                default: return KnowledgeEntryCategory.None;
+            }
+        }
+        
+        /// <summary>
+        /// 获取显式分类的中文显示名称
+        /// </summary>
+        public static string GetExplicitCategoryLabel(KnowledgeEntryCategory cat)
+        {
+            switch (cat)
+            {
+                case KnowledgeEntryCategory.None: return "自动推断";
+                case KnowledgeEntryCategory.Instructions: return "指令规则";
+                case KnowledgeEntryCategory.Lore: return "世界观设定";
+                case KnowledgeEntryCategory.PawnStatus: return "殖民者状态";
+                case KnowledgeEntryCategory.History: return "历史记录";
+                case KnowledgeEntryCategory.Other: return "其他";
+                default: return "未知";
+            }
+        }
+        
+        // ==================== 可见性相关 ====================
+        
+        /// <summary>
+        /// 获取可见性显示文本
+        /// </summary>
+        public static string GetVisibilityText(CommonKnowledgeEntry entry)
+        {
+            if (entry.targetPawnId == -1)
+                return CommonKnowledgeTranslationKeys.VisibilityGlobal.Translate();
+            
+            var pawn = Find.Maps?
+                .SelectMany(m => m.mapPawns.FreeColonists)
+                .FirstOrDefault(p => p.thingIDNumber == entry.targetPawnId);
+            
+            return pawn != null 
+                ? CommonKnowledgeTranslationKeys.VisibilityExclusive.Translate(pawn.LabelShort) 
+                : CommonKnowledgeTranslationKeys.VisibilityDeleted.Translate(entry.targetPawnId);
+        }
+        
+        // ==================== 绘制详情字段 ====================
+        
+        /// <summary>
+        /// 绘制详情字段（标签 + 值）
+        /// </summary>
+        public static void DrawDetailField(Rect rect, string label, string value)
+        {
+            float labelWidth = 100f;
+            
+            Text.Font = GameFont.Tiny;
+            GUI.color = new Color(0.7f, 0.7f, 0.7f);
+            Widgets.Label(new Rect(rect.x, rect.y, labelWidth, rect.height), EnsureColon(label));
+            GUI.color = Color.white;
+            Text.Font = GameFont.Small;
+            
+            Widgets.Label(new Rect(rect.x + labelWidth, rect.y, rect.width - labelWidth, rect.height), value);
+        }
+
+        /// <summary>
+        /// 确保标签文本以冒号结尾（兼容不同语言翻译文件中冒号有无不一致的情况）
+        /// </summary>
+        public static string EnsureColon(string label)
+        {
+            if (string.IsNullOrEmpty(label)) return ":";
+            return label.EndsWith(":") || label.EndsWith("：") ? label : label + ":";
+        }
+
+        
+        // ==================== 绘制带颜色的复选框 ====================
+        
+        /// <summary>
+        /// 绘制带颜色指示器的复选框
+        /// </summary>
+        public static void DrawColoredCheckbox(Rect rect, string label, ref bool value, Color color)
+        {
+            // 颜色指示器
+            Rect colorRect = new Rect(rect.x, rect.y + 2f, 3f, rect.height - 4f);
+            Widgets.DrawBoxSolid(colorRect, color);
+            
+            // 复选框
+            Rect checkboxRect = new Rect(rect.x + 8f, rect.y, rect.width - 8f, rect.height);
+            Widgets.CheckboxLabeled(checkboxRect, label, ref value);
+        }
+        
+        // ==================== 绘制分类按钮 ====================
+        
+        /// <summary>
+        /// 绘制分类按钮（带选中高亮）
+        /// </summary>
+        public static bool DrawCategoryButton(Rect rect, KnowledgeCategory category, bool isSelected, int count)
+        {
+            string categoryLabel = GetCategoryLabel(category);
+            string label = $"{categoryLabel} ({count})";
+            
+            // 高亮选中项
+            if (isSelected)
+            {
+                Widgets.DrawHighlightSelected(rect);
+            }
+            else if (Mouse.IsOver(rect))
+            {
+                Widgets.DrawHighlight(rect);
+            }
+            
+            // 按钮（不绘制背景，使用自定义高亮）
+            return Widgets.ButtonText(rect, label, drawBackground: false);
+        }
+        
+        // ==================== 绘制自动生成设置 ====================
+        
+        /// <summary>
+        /// 绘制自动生成设置区域
+        /// </summary>
+        public static void DrawAutoGenerateSettings(Rect rect, Action onGeneratePawnStatus, Action onGenerateEventRecord)
+        {
+            Widgets.DrawBoxSolid(rect, new Color(0.1f, 0.1f, 0.1f, 0.3f));
+            Rect innerRect = rect.ContractedBy(5f);
+            float y = innerRect.y;
+            
+            var settings = RimTalkMemoryPatchMod.Settings; // ? 修复：使用正确的命名空间
+            
+            // 殖民者状态
+            bool enablePawnStatus = settings.enablePawnStatusKnowledge;
+            Widgets.CheckboxLabeled(new Rect(innerRect.x, y, innerRect.width, 25f), 
+                CommonKnowledgeTranslationKeys.PawnStatus.Translate(), ref enablePawnStatus);
+            settings.enablePawnStatusKnowledge = enablePawnStatus;
+            y += 30f;
+            
+            if (Widgets.ButtonText(new Rect(innerRect.x, y, innerRect.width, 25f), 
+                CommonKnowledgeTranslationKeys.GenerateNow.Translate()))
+            {
+                onGeneratePawnStatus?.Invoke();
+            }
+            y += 30f;
+            
+            // 事件记录
+            bool enableEventRecord = settings.enableEventRecordKnowledge;
+            Widgets.CheckboxLabeled(new Rect(innerRect.x, y, innerRect.width, 25f), 
+                CommonKnowledgeTranslationKeys.EventRecord.Translate(), ref enableEventRecord);
+            settings.enableEventRecordKnowledge = enableEventRecord;
+            y += 30f;
+            
+            if (Widgets.ButtonText(new Rect(innerRect.x, y, innerRect.width, 25f), 
+                CommonKnowledgeTranslationKeys.GenerateNow.Translate()))
+            {
+                onGenerateEventRecord?.Invoke();
+            }
+        }
+        
+        // ==================== 工具方法 - Pawn选择菜单 ====================
+        
+        /// <summary>
+        /// 显示Pawn选择菜单
+        /// </summary>
+        public static void ShowPawnSelectionMenu(Action<int> onSelected)
+        {
+            List<FloatMenuOption> options = new List<FloatMenuOption>();
+            
+            options.Add(new FloatMenuOption(
+                CommonKnowledgeTranslationKeys.GlobalAll.Translate(), 
+                delegate { onSelected(-1); }
+            ));
+            
+            var colonists = Find.Maps?.SelectMany(m => m.mapPawns.FreeColonists).ToList();
+            if (colonists != null && colonists.Count > 0)
+            {
+                foreach (var pawn in colonists.OrderBy(p => p.LabelShort))
+                {
+                    int pawnId = pawn.thingIDNumber;
+                    options.Add(new FloatMenuOption(
+                        CommonKnowledgeTranslationKeys.ExclusiveTo.Translate(pawn.LabelShort), 
+                        delegate { onSelected(pawnId); }
+                    ));
+                }
+            }
+            
+            Find.WindowStack.Add(new FloatMenu(options));
+        }
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "Name": "[CP] Trinket Tinker Examples",
+    "Author": "mushymato",
+    "Version": "1.0.0",
+    "Description": "Examples of trinkets using Trinket Tinker",
+    "UniqueID": "mushymato.TT.Examples",
+    "MinimumApiVersion": "4.0.0",
+    "UpdateKeys": [
+        "Nexus:???"
+    ],
+    "ContentPackFor": {
+        "UniqueID": "Pathoschild.ContentPatcher"
+    },
+    "Dependencies": [
+        {
+            "UniqueID": "mushymato.TrinketTinker",
+            "MinimumVersion": "0.1.0"
+        }
+    ]
+}

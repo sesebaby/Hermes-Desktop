@@ -1,0 +1,91 @@
+{
+	"Changes": [
+		/*{
+			"Action": "EditData",
+			"Target": "spacechase0.SpaceCore/ObjectExtensionData",
+			"Entries": {
+				"Cornucopia_NutMilk": {
+					"CategoryTextOverride": "[LocalizedText Strings/StringsFromCSFiles:Object.cs.12862]",
+					"CategoryColorOverride": {
+						"R": 0,
+						"G": 155,
+						"B": 111,
+						"A": 255
+					},
+				},
+				"Cornucopia_CoconutMilk": {
+					"CategoryTextOverride": "[LocalizedText Strings/StringsFromCSFiles:Object.cs.12862]",
+					"CategoryColorOverride": {
+						"R": 0,
+						"G": 155,
+						"B": 111,
+						"A": 255
+					},
+				},
+				"Cornucopia_EgglessEgg": {
+					"CategoryTextOverride": "[LocalizedText Strings/StringsFromCSFiles:Object.cs.12862]",
+					"CategoryColorOverride": {
+						"R": 0,
+						"G": 155,
+						"B": 111,
+						"A": 255
+					},
+				},
+			}
+		},*/
+		{
+			"Action": "EditData",
+			"Target": "Data/CookingRecipes",
+			"When": {
+				"Enable Vanilla Recipe Changes": true
+			},
+			"Fields": {
+				"Tom Kha Soup": {
+					"0": "Cornucopia_CoconutMilk 1 720 1 404 1"
+				},
+				"Spaghetti": {
+					"0": "Cornucopia_WheatNoodles 1 256 1"
+				},
+				"Tortilla": {
+					"0": "Cornucopia_CornFlour 1"
+				},
+				"Mango Sticky Rice": {
+					"0": "834 1 Cornucopia_CoconutMilk 1 423 1"
+				},
+				"Tropical Curry": {
+					"0": "Cornucopia_CoconutMilk 1 832 1 260 1"
+				},
+				"Escargot": {
+					"0": "721 1 248 1 Cornucopia_Butter 1"
+				}
+			}
+		},
+		{
+			"Action": "EditData",
+			"Target": "Data/CookingRecipes",
+			"When": {
+				"Enable Vanilla Recipe Changes": true,
+				"HasMod|contains=Cornucopia.MoreCrops": true
+			},
+			"Fields": {
+				"Bruschetta": {
+					"0": "216 1 Cornucopia_OliveOil 1 256 1"
+				}
+			}
+		},
+		{
+			"Action": "EditData",
+			"Target": "Data/CookingRecipes",
+			"When": {
+				"Enable Vanilla Recipe Changes": true,
+				"HasFlag|contains=Cornucopia.MoreCrops_ExtendedCropsPackEnabled": true,
+				"HasMod|contains=Cornucopia.MoreCrops": true
+			},
+			"Fields": {
+				"Squid Ink Ravioli": {
+					"0": "814 1 Cornucopia_SemolinaFlour 1 256 1"
+				}
+			}
+		},
+	]
+}

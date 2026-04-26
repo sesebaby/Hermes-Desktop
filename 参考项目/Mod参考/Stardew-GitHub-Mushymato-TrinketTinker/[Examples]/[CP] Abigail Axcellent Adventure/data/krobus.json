@@ -1,0 +1,284 @@
+{
+  "$schema": "https://smapi.io/schemas/content-patcher.json",
+  "Changes": [
+    {
+      "LogName": "Krobus: Trinkets",
+      "Action": "EditData",
+      "Target": "Data/Trinkets",
+      "Entries": {
+        "{{ModId}}_Krobus": {
+          "Id": "{{ModId}}_Krobus",
+          "DisplayName": "[LocalizedText Strings\\Objects:VoidGhostPendant_Name]",
+          "Description": "[LocalizedText Strings\\Objects:VoidGhostPendant_Description]\n\nLv.{0}: {1}",
+          "Texture": "Maps/springobjects",
+          "SheetIndex": 808,
+          "DropsNaturally": false,
+          "CanBeReforged": false,
+          // "CustomFields": {
+          //   "mushymato.TrinketTinker/DirectEquipOnly": "T"
+          // }
+        },
+      }
+    },
+    {
+      "LogName": "Krobus: Tinker",
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/Tinker",
+      "Entries": {
+        "{{ModId}}_Krobus": {
+          "EnableCondition": "mushymato.TrinketTinker_ENABLED_TRINKET_COUNT Target All <1",
+          "Variants": [
+            {
+              "Texture": "Characters/Krobus",
+              "Width": 16,
+              "Height": 24,
+              // for Chatter
+              "NPC": "Krobus",
+              // "Name": "[LocalizedText Strings\\NPCNames:Krobus]",
+              "Portrait": "Portraits/Krobus",
+            }
+          ],
+          "Chatter": {
+            "Weekdays": {
+              // one line will be picked from these at random
+              "Lines": [
+                "Characters/Dialogue/Krobus:Mon",
+                // "Characters/Dialogue/Krobus:Tue",
+                // "Characters/Dialogue/Krobus:Wed",
+                // "Characters/Dialogue/Krobus:Thu",
+              ],
+              "Priority": 1,
+              // "Condition": "RANDOM 0.5"
+            },
+            "Qtest": {
+              "Lines": [
+                "I think I'll go to the beach tomorrow!#$q 305/306 beachquestion_followup#Would you like to go with me?#$r 305 15 beachquestion_yes#Sure, I would love to!#$r 306 0 beachquestion_sorry#Oh, sorry, I've already made plans with someone else...#$r 306 -10 beachquestion_no#No thank you."
+              ],
+              "Responses": {
+                "beachquestion_yes": "Good! It's a date.$h",
+                "beachquestion_sorry": "Oh. Darn. Okay.$6",
+                "beachquestion_no": "Oh. Um. Sorry.$s",
+                "beachquestion_followup": "$p 305#Tomorrow should be a lot of fun!$h|Hmm, I wonder if I can get someone to go with me...$s",
+              },
+              "Priority": 0,
+            },
+            // "Subby": {
+            //   "Lines": [
+            //     "Oh what are you doing with that?"
+            //   ],
+            //   "Priority": 1,
+            //   "Condition": "FALSE"
+            // }
+          },
+          "Motion": {
+            "MotionClass": "Lerp",
+            "AlwaysMoving": false,
+            "DirectionMode": "DRUL",
+            "FrameLength": 4,
+            "Interval": 175,
+            "Anchors": [
+              {
+                "Mode": "Forage",
+                "Range": 320
+              },
+              {
+                "Mode": "Crop",
+                "Range": 240
+              },
+              {
+                "Mode": "Shakeable",
+                "Range": 320
+              },
+              {
+                "Mode": "Stone",
+                "Range": 320
+              },
+            ],
+            "AnimClips": {
+              "Idle": {
+                "FrameStart": 20,
+                "FrameLength": 4
+              }
+            },
+            "SpeechBubbles": {
+              "Smile": {
+                "Text": ">:)"
+              },
+              "ItsScary": {
+                "Text": "Help :("
+              },
+              "IHaveStone": {
+                "Text": "I have a (O)390"
+              }
+            }
+          },
+          "Abilities": [
+            [
+              {
+                "AbilityClass": "BroadcastAction",
+                "Proc": "Always",
+                "Args": {
+                  "Action": "SetNpcInvisible Krobus 1",
+                  "ActionEnd": "SetNpcVisible Krobus",
+                  "PlayerKey": "Host"
+                },
+              },
+              {
+                "AbilityClass": "Chatter",
+                "Proc": "Interact",
+                "ProcTimer": 1000,
+                // "Args": {
+                //   "ChatterPrefix": "Qte"
+                // }
+              },
+              {
+                "AbilityClass": "Nop",
+                "Proc": "Footstep",
+                "ProcTimer": 15000,
+                "ProcSpeechBubble": "ItsScary",
+                "InCombat": true
+              },
+              {
+                "AbilityClass": "Nop",
+                "Proc": "Footstep",
+                "ProcTimer": 15000,
+                "ProcSpeechBubble": "IHaveStone",
+                "ProcChatterKey": "Subby",
+                // consumes 2 stone every 15s to tell you that he has stone
+                "ProcFuel": {
+                  "RequiredItemId": "(O)390",
+                  "RequiredCount": 2
+                },
+                "InCombat": false,
+                // "Condition": "mushymato.TrinketTinker_TRINKET_HAS_ITEM Target (O)390 >0",
+              },
+              {
+                "AbilityClass": "HarvestForage",
+                "Description": "{{i18n:Stick.AbilityDescription.3}}",
+                "Proc": "Timer",
+                "ProcTimer": 250,
+                "Args": {
+                  "Range": 0,
+                  "HarvestTo": "None"
+                },
+              },
+              {
+                "AbilityClass": "HarvestCrop",
+                "Proc": "Timer",
+                "ProcTimer": 250,
+                "Args": {
+                  "Range": 0,
+                  "HarvestTo": "TinkerInventory"
+                },
+              },
+              {
+                "AbilityClass": "HarvestShakeable",
+                "Proc": "Timer",
+                "ProcTimer": 250,
+                "Args": {
+                  "Range": 9,
+                  "HarvestTo": "None"
+                },
+              },
+            ],
+            [
+              {
+                "AbilityClass": "BroadcastAction",
+                "Proc": "Always",
+                "Args": {
+                  "Action": "SetNpcInvisible Krobus 1",
+                  "ActionEnd": "SetNpcVisible Krobus",
+                  "PlayerKey": "Host"
+                },
+              },
+              {
+                "AbilityClass": "Nop",
+                "Proc": "Interact",
+                "ProcTimer": 10000,
+                "ProcSpeechBubble": "Smile",
+              },
+            ]
+          ],
+          "Inventory": {
+            "Capacity": 70
+          }
+        },
+      },
+    },
+    {
+      "LogName": "Krobus: HarvestStone",
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/Tinker",
+      "TargetField": [
+        "{{ModId}}_Krobus",
+        "Abilities",
+        "#0"
+      ],
+      "Entries": {
+        "HarvestStone": {
+          "AbilityClass": "HarvestStone",
+          "Proc": "Timer",
+          "ProcTimer": 250,
+          "Args": {
+            "Range": 0,
+            "HarvestTo": "TinkerInventory"
+          },
+        },
+      },
+      "When": {
+        "KrobusEatsRocks": true
+      }
+    },
+    {
+      "LogName": "Krobus: HarvestCrop",
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/Tinker",
+      "TargetField": [
+        "{{ModId}}_Krobus",
+        "Motion",
+        "SpeechBubbles",
+        "Smile",
+      ],
+      "Entries": {
+        "Text": "::::)"
+      },
+      "When": {
+        "KrobusEatsRocks": true
+      }
+    },
+    {
+      "LogName": "Krobus: HarvestStone",
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/Tinker",
+      "TargetField": [
+        "{{ModId}}_Krobus",
+        "Motion",
+        "Args"
+      ],
+      "Entries": {
+        "Velocity": -1,
+      },
+      "When": {
+        "KrobusEatsRocks": true
+      }
+    },
+    {
+      "LogName": "Krobus: HarvestStone",
+      "Action": "EditData",
+      "Target": "mushymato.TrinketTinker/Tinker",
+      "TargetField": [
+        "{{ModId}}_Krobus",
+        "Abilities",
+        "#0",
+        "#4",
+        "Args"
+      ],
+      "Entries": {
+        "HarvestTo": "TinkerInventory",
+      },
+      "When": {
+        "KrobusEatsRocks": true
+      }
+    }
+  ]
+}

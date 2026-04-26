@@ -1,0 +1,55 @@
+// SPDX-FileCopyrightText: 2025 owlmaddie LLC
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Assets CC-BY-NC-SA-4.0; CreatureChat™ trademark © owlmaddie LLC - unauthorized use prohibited
+package com.owlmaddie.mixin.client;
+
+import com.mojang.blaze3d.platform.NativeImage;
+import com.owlmaddie.skin.IPlayerSkinTexture;
+import net.minecraft.client.renderer.texture.HttpTexture;
+import net.minecraft.client.renderer.texture.SimpleTexture;
+import net.minecraft.resources.ResourceLocation;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+/**
+ * The {@code MixinPlayerSkinTexture} class injects code into the PlayerSkinTexture class, to make a copy
+ * of the player's skin native image, so we can later use it for pixel checking (black/white key) for
+ * loading custom player icons in the unused UV coordinates of the player skin image.
+ */
+@Mixin(HttpTexture.class)
+public abstract class MixinPlayerSkinTexture extends SimpleTexture implements IPlayerSkinTexture {
+
+    @Unique
+    private NativeImage cachedSkinImage;
+
+    public MixinPlayerSkinTexture(ResourceLocation location) {
+        super(location);
+    }
+
+    @Inject(method = "loadCallback(Lcom/mojang/blaze3d/platform/NativeImage;)V", at = @At("HEAD"))
+    private void captureNativeImage(NativeImage image, CallbackInfo ci) {
+        // Instead of image.copy(), we do a manual clone
+        this.cachedSkinImage = cloneNativeImage(image);
+    }
+
+    @Override
+    public NativeImage getLoadedImage() {
+        return this.cachedSkinImage;
+    }
+
+    // Example of the utility method in the same class (or in a separate helper):
+    private static NativeImage cloneNativeImage(NativeImage source) {
+        NativeImage copy = new NativeImage(
+                source.format(),
+                source.getWidth(),
+                source.getHeight(),
+                false
+        );
+        copy.copyFrom(source);
+        return copy;
+    }
+}
+

@@ -1,0 +1,17 @@
+{
+    "Dehydrator.Tea": "Kurutulmuş {inputName} Yaprakları",
+    "Dehydrator.Fruit": "Kurutulmuş {inputName}",
+    "DryingRack.Flower": "Kurutulmuş {inputName}",
+    "DryingRack.Herb": "Kurutulmuş {inputName}",
+    "DryingRack.Vegetable": "Kurutulmuş {inputName}",
+    "DryingRack.Mushroom": "Kurutulmuş {inputName}",
+    "Grinder.Herb": "Öğütülmüş {inputName}",
+    "Grinder.Vegetable": "Öğütülmüş {inputName}",
+    "Infuser.Schnapps": "{inputName} Schnapps",
+    "YogurtJar.Fruit": "{inputName} Yoğurdu",
+    "WaxBarrel.Candle": "{inputName} Mumu",
+    "Alembic.EssentialOil": "{inputName} Esans Yağı",
+    "Juice.Fruit": "{inputName} Suyu",
+    "SoapPress.Soap": "Elyapımı {inputName} Sabun",
+    "Smoker.Fish": "Tütsülenmiş {inputName} ",
+}

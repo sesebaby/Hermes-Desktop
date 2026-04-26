@@ -1,0 +1,208 @@
+{
+    "Format": "2.6.0",
+	"ConfigSchema": {
+		"Enable Extended Crops Pack": {
+			"AllowValues": "true, false",
+			"Default": "true",
+			"Description": "(Recommended) Adds a large variety of 40+ crops and bushes in addition to the essential pack."
+		},
+		"Enable Extended Trees Pack": {
+			"AllowValues": "true, false",
+			"Default": "true",
+			"Description": "(Recommended) Adds a large variety of 30+ fruit trees in addition to the essential pack."
+		},
+		"Enable Herbs Pack": {
+			"AllowValues": "true, false",
+			"Default": "true",
+			"Description": "Adds 20+ new herbs as crops and trees."
+		},
+		"Category Overrides": {
+			"AllowValues": "true, false",
+			"Default": "true",
+			"Description": "Enables turning some items into the 'Nut' and 'Mushroom' categories. No mechanical effect."
+		},
+		"Vanilla Category Overrides": {
+			"AllowValues": "true, false",
+			"Default": "true",
+			"Description": "Enables turning some vanilla items into the 'Nut' and 'Mushroom' categories. No mechanical effect."
+		},
+		"Disable Grape Bushes": {
+			"AllowValues": "true, false",
+			"Default": "false",
+			"Description": "Disables grapes and/or white grapes as bushes and reinstates them as standard trellis crops."
+		},
+		"Enhanced Mixed Seeds": {
+			"AllowValues": "true, false",
+			"Default": "true",
+			"Description": "With Item Extensions Framework, adds some Cornucopia crops to vanilla mixed seeds."
+		},
+		"Rename Cheese Press": {
+			"AllowValues": "true, false",
+			"Default": "false",
+			"Description": "Changes the name of the Cheese Press to 'Press', and the description to include tofu."
+		},
+		"Retexture Cheese Press": {
+			"AllowValues": "true, false",
+			"Default": "false",
+			"Description": "Changes the image of the Cheese Press to remove the cheese icon."
+		},
+		"Map Edits": {
+			"AllowValues": "true, false",
+			"Default": "true",
+			"Description": "Enable small map edits (currently just adds sapodilla trees to Ginger Island)."
+		},
+		"SVE Compat Patch": {
+			"AllowValues": "true, false",
+			"Default": "true",
+			"Description": "Removes some Cornucopia duplicates of SVE crops and fruit trees. Balance is not guaranteed."
+		},
+		"Require Items For Perfection": {
+			"AllowValues": "true, false",
+			"Default": "true",
+			"Description": "(Recommended) Crops added by this mod appear on the shipping menu and are generally required for achieving perfection."
+		}
+	},
+	"DynamicTokens": [
+		//crop ExtraHarvestChance values for later testing
+		{
+			"Name": "10Percent",
+			"Value": "0.1"
+		},
+		{
+			"Name": "25Percent",
+			"Value": "0.2"
+		},
+		{
+			"Name": "ExcludeFromShipping",
+			"Value": false
+		},
+		{
+			"Name": "ExcludeFromShipping",
+			"Value": true,
+			"When": {
+				"Require Items For Perfection": false
+			}
+		},
+	],
+    "Changes": [	
+		//set mail flags
+		{
+            "Action": "EditData",
+            "Target": "Data/TriggerActions",
+            "Entries": {
+				"Cornucopia.MoreCrops_SetExtendedCropsPackFlag": {
+                    "Id": "Cornucopia.MoreCrops_SetExtendedCropsPackFlags",
+                    "Trigger": "DayStarted",
+                    "Condition": "{{Enable Extended Crops Pack}}",
+                    "HostOnly": true,
+					"MarkActionApplied": false,
+                    "Action": "AddMail Host Cornucopia.MoreCrops_ExtendedCropsPackEnabled received",
+                },
+				"Cornucopia.MoreCrops_RemoveExtendedCropsPackFlag": {
+                    "Id": "Cornucopia.MoreCrops_RemoveExtendedCropsPackFlag",
+                    "Trigger": "DayStarted",
+                    "Condition": "!{{Enable Extended Crops Pack}}",
+                    "HostOnly": true,
+					"MarkActionApplied": false,
+                    "Action": "RemoveMail Host Cornucopia.MoreCrops_ExtendedCropsPackEnabled received",
+                },
+				"Cornucopia.MoreCrops_SetExtendedTreesPackFlag": {
+                    "Id": "Cornucopia.MoreCrops_SetExtendedTreesPackFlag",
+                    "Trigger": "DayStarted",
+                    "Condition": "{{Enable Extended Trees Pack}}",
+                    "HostOnly": true,
+					"MarkActionApplied": false,
+                    "Action": "AddMail Host Cornucopia.MoreCrops_ExtendedTreesPackEnabled received",
+                },
+				"Cornucopia.MoreCrops_RemoveExtendedTreesPackFlag": {
+                    "Id": "Cornucopia.MoreCrops_RemoveExtendedTreesPackFlag",
+                    "Trigger": "DayStarted",
+                    "Condition": "!{{Enable Extended Trees Pack}}",
+                    "HostOnly": true,
+					"MarkActionApplied": false,
+                    "Action": "RemoveMail Host Cornucopia.MoreCrops_ExtendedTreesPackEnabled received",
+                },
+				"Cornucopia.MoreCrops_SetHerbsPackFlag": { 
+                    "Id": "Cornucopia.MoreCrops_SetHerbsPackFlag",
+                    "Trigger": "DayStarted",
+                    "Condition": "{{Enable Herbs Pack}}",
+                    "HostOnly": true,
+					"MarkActionApplied": false,
+                    "Action": "AddMail Host Cornucopia.MoreCrops_HerbsPackEnabled received",
+                },
+				"Cornucopia.MoreCrops_RemoveHerbsPackFlag": { 
+                    "Id": "Cornucopia.MoreCrops_RemoveHerbsPackFlag",
+                    "Trigger": "DayStarted",
+                    "Condition": "!{{Enable Herbs Pack}}",
+                    "HostOnly": true,
+					"MarkActionApplied": false,
+                    "Action": "RemoveMail Host Cornucopia.MoreCrops_HerbsPackEnabled received",
+                },
+				"Cornucopia.MoreCrops_SetSVECompatFlag": {
+                    "Id": "Cornucopia.MoreCrops_SetSVECompatFlag",
+                    "Trigger": "DayStarted",
+                    "Condition": "{{SVE Compat Patch}}",
+                    "HostOnly": true,
+					"MarkActionApplied": false,
+                    "Action": "AddMail Host Cornucopia.MoreCrops_SVECompatPatchEnabled received",
+                },
+				"Cornucopia.MoreCrops_RemoveSVECompatFlag": {
+                    "Id": "Cornucopia.MoreCrops_RemoveSVECompatFlag",
+                    "Trigger": "DayStarted",
+                    "Condition": "!{{SVE Compat Patch}}",
+                    "HostOnly": true,
+					"MarkActionApplied": false,
+                    "Action": "RemoveMail Host Cornucopia.MoreCrops_SVECompatPatchEnabled received",
+                },
+            }
+        },
+        // add item + crop images
+        {
+            "Action": "Load",
+            "Target": "Cornucopia.MoreCrops/Crops, Cornucopia.MoreCrops/GiantCrops, Cornucopia.MoreCrops/Objects, Cornucopia.MoreCrops/Objects-Artisan, Cornucopia.MoreCrops/FruitTrees, Cornucopia.MoreCrops/Furniture, , Cornucopia.MoreCrops/teabushes_indoors, Cornucopia.MoreCrops/FruitTrees_Custom1",
+            "FromFile": "assets/{{TargetWithoutPath}}.png" // assets/Crops.png, assets/Objects.png
+        },
+		
+		{
+            "Action": "Load",
+            "Target": "Cornucopia.MoreCrops/i18n",
+            "FromFile": "{{FirstValidFile: i18n/{{language}}.json, i18n/default.json }}"
+        },
+		
+		// add teabushes and wild trees images
+		{
+            "Action": "Load",
+            "Target": "Cornucopia.MoreCrops/teabushes",
+            "FromFile": "assets/teabushes_indoors.png"
+        },
+        {
+            "Action": "EditImage",
+            "Target": "Cornucopia.MoreCrops/teabushes",
+            "FromFile": "assets/teabushes_{{season}}.png"
+        },
+		{
+            "Action": "Load",
+            "Target": "Cornucopia.MoreCrops/treesapodilla_spring, Cornucopia.MoreCrops/treesapodilla_summer, Cornucopia.MoreCrops/treesapodilla_fall, Cornucopia.MoreCrops/treesapodilla_winter, Cornucopia.MoreCrops/treedate_empty, Cornucopia.MoreCrops/treedate_fall",
+            "FromFile": "assets/{{TargetWithoutPath}}.png"
+        },
+		
+		// add subfiles
+		{
+			"Action": "Include",
+			"FromFile": "data/shop_dwarf.json, data/shop_joja.json, data/shop_marnie.json, data/shop_islandtrader.json, data/shop_oasis.json, data/shop_pierre.json, data/shop_festivals.json, data/shop_travelingcart.json"
+		},
+		{
+			"Action": "Include",
+			"FromFile": "data/crops.json, data/forage.json, data/fruittrees.json, data/furniture.json, data/giantcrops.json, data/gifttastes.json, data/letters.json, data/multiyieldcrops.json, data/objectcontexttags.json, data/objects.json, data/teabushes.json, data/wildtrees.json, data/objectreplacements.json, data/mapedits.json, data/compat.json, data/objectcategories.json"
+		},
+		{
+			"Action": "Include",
+			"FromFile": "machines/cask.json, machines/cheesepress.json, machines/keg.json, machines/loom.json, machines/mill.json, machines/oilmaker.json, machines/dehydrator.json"
+		},
+		{
+			"Action": "Include",
+			"When": {"HasMod |contains=mistyspring.ItemExtensions": true},
+			"FromFile": "data/mixedseeds.json",
+		}
+    ]
+}

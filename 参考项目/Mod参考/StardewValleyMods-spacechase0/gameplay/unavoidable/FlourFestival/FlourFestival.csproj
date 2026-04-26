@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RequireSpaceCore>true</RequireSpaceCore>
+    <HasTranslations>true</HasTranslations>
+  </PropertyGroup>
+  <Import Project="$(SolutionDir)common.targets" />
+
+  <PropertyGroup>
+    <UniqueId>spacechase0.$(AssemblyName)</UniqueId>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+</Project>

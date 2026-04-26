@@ -1,0 +1,17 @@
+﻿{
+    "Name": "[MFM] Fresh Meat",
+    "Author": "Project Populate Json Assets",
+    "Version": "1.0.0",
+    "Description": "Allows recipes to be mailed to the player.",
+    "UniqueID": "ppja.FreshMeatforMFM.dga",
+    "MinimumApiVersion": "3.7.0",
+    "Dependencies": [
+    {
+        "UniqueID": "ppja.freshmeat.dga",
+        "IsRequired": true
+    }],
+    "ContentPackFor":
+    {
+        "UniqueID": "DIGUS.MailFrameworkMod"
+    }
+}

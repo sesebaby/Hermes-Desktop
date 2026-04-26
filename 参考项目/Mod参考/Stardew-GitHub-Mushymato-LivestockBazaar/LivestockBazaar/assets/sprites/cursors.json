@@ -1,0 +1,45 @@
+{
+  "Texture": "LooseSprites/Cursors",
+  "Sprites": {
+    "dice": {
+      "SourceRect": "381,361,10,10",
+      "Scale": 4,
+    },
+    "question": {
+      "SourceRect": "175,425,12,12",
+      "Scale": 4,
+    },
+    "borderRed": {
+      "SourceRect": "375,357,3,3",
+      "FixedEdges": "1,1,1,1",
+      "Scale": 4,
+    },
+    "borderWhite": {
+      "SourceRect": "379,357,3,3",
+      "FixedEdges": "1,1,1,1",
+      "Scale": 4,
+    },
+    "inset": {
+      "SourceRect": "297,420,14,5",
+      "FixedEdges": "1,1,1,2",
+      "Scale": 4
+    },
+    "organize": {
+      "SourceRect": "165,443,10,11"
+    },
+    "shopBg": {
+      "SourceRect": "384,396,15,15",
+      "FixedEdges": "5,5,5,5",
+      "Scale": 4
+    },
+    "heartFull": {
+      "SourceRect": "211,428,7,6",
+    },
+    "heartEmpty": {
+      "SourceRect": "218,428,7,6",
+    },
+    "moveAnimal": {
+      "SourceRect": "16,384,16,16"
+    }
+  }
+}

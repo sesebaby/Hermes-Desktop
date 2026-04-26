@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- 社交用餐任务定义 -->
+  <JobDef>
+    <defName>SocialDine</defName>
+    <driverClass>RimTalkExpandActions.SocialDining.JobDriver_SocialDine</driverClass>
+    <reportString>正在与他人共餐</reportString>
+    <allowOpportunisticPrefix>true</allowOpportunisticPrefix>
+    <casualInterruptible>false</casualInterruptible>
+    <suspendable>false</suspendable>
+    <collideWithPawns>true</collideWithPawns>
+    <playerInterruptible>true</playerInterruptible>
+    <makeTargetPrisoner>false</makeTargetPrisoner>
+  </JobDef>
+</Defs>
