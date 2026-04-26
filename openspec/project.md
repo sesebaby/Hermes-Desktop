@@ -2,26 +2,17 @@
 
 ## 项目定位
 
-本仓库用于验证并落地“把 Hermes 作为游戏 NPC 内核”这条路线，当前主线宿主是星露谷 `SMAPI`。
+## Git 远程仓库注意事项
 
-当前已经确认的产品方向：
+- 本项目 fork 自 `RedWoodOG/Hermes-Desktop`，**严禁直接推送到源仓库**。
+- `origin` 指向自己的仓库 `sesebaby/Hermes-Desktop`，所有修改推送到这里。
+- `upstream` 指向源仓库 `RedWoodOG/Hermes-Desktop`，**push URL 已设为 `no_push`**，仅用于 fetch 拉取上游更新。
+- 日常操作：
+  - `git push origin <分支名>` — 推送到自己仓库（安全）
+  - `git fetch upstream` — 拉取源仓库最新代码（安全）
+  - `git push upstream` — 会直接报错，防止误操作
+- 如需向源仓库贡献，通过 GitHub 网页端从 fork 发起 Pull Request，不要直接 push。
 
-- 直接复刻 `HermesCraft` 的产品结构到星露谷
-- 产品形态固定为 `SMAPI mod + HermesDesktop.exe + 最终确认的宿主装配层`
-- 不改 Hermes 核心，不写死 NPC 行为工作流
-- 用 `skills + MCP tools + 世界状态 + 事件流 + 确认闸门` 驱动 NPC 自主行为
-- 第一阶段只做真实宿主，不再以假宿主作为主线
-
-## 技术上下文
-
-- 游戏宿主：`Stardew Valley 1.6.15 + SMAPI`
-- Mod 语言：`C# / .NET`
-- Agent 内核：`Hermes`
-- 后续核心实现主目录：`D:\GitHubPro\AllGameInAI2\hermes-agent`
-- 宿主装配层候选名：`HermesRuntimeHost.exe`
-- 宿主与侧车通信：首版固定为本地 `HTTP`
-- 大模型提供方：阿里云
-- 当前 Hermes 默认配置：`provider=alibaba`，`default=qwen3.5-flash`
 
 ## 文档与提案规则
 
@@ -38,7 +29,7 @@
 - 禁止宿主/桥接层代写或维护 `SOUL.md`、`MEMORY.md`、`USER.md`，也禁止维护任何等价的人格摘要、记忆摘要、身份快照、第二 skill lane、第二 MCP/tool lane。
 - 宿主只提供事实、事件、工具、确认和执行结果，不替 NPC 决策。
 - 任何真实世界写操作都必须走宿主执行器，不能让 Agent 直接改游戏状态。
-- 每个原版 NPC 必须有独立 `home/profile`、独立会话、独立记忆边界。
+- 每个原版 NPC 必须有独立 `home`、独立会话、独立记忆边界。
 - 群聊、私聊、偷听、送礼、交易都必须保持“Agent 自主提意图，宿主负责许可和执行”的边界。
 - 第一阶段不做复杂经济系统，不做自定义素材，不做写死剧情编排。
 

@@ -1,0 +1,8 @@
+- name: Documentation
+  href: docs/
+- name: API Reference
+  href: obj/temp/qfapi/
+- name: Changelog
+  href: docs/changelog.md
+- name: Examples
+  href: examples/examples.md

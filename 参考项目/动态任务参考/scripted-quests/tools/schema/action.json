@@ -1,0 +1,334 @@
+{
+    "title": "Action",
+    "type": "object",
+    "additionalProperties": false,
+    "defaultProperties": [
+        "dialog"
+    ],
+    "properties": {
+        "prerequisites": {
+            "propertyOrder": 1,
+            "title": "prerequisites",
+            "description": "Additional prerequisites for these actions",
+            "required": false,
+            "$ref": "prerequisites.json"
+        },
+        "delay_actions_by_ticks": {
+            "propertyOrder": 2,
+            "title": "delay_actions_by_ticks",
+            "description": "Additional delay for these actions",
+            "required": false,
+            "$ref": "delay_actions_by_ticks.json"
+        },
+        "dialog": {
+            "propertyOrder": 3,
+            "title": "dialog",
+            "description": "Formatting supported with &amp; and §, and @S becomes the player's name, and @U becomes the player's uuid (lowercase)",
+            "type": "object",
+            "defaultProperties": [
+                "text"
+            ],
+            "properties": {
+                "text": {
+                    "title": "text",
+                    "description": "Text spoken by NPC. '[Name] ' part is handled by the plugin",
+                    "options": {
+                        "keep_oneof_values": false
+                    },
+                    "oneOf": [
+                        {
+                            "title": "One line",
+                            "type": "string"
+                        },
+                        {
+                            "title": "Multiple lines",
+                            "type": "array",
+                            "minItems": 2,
+                            "items": {
+                                "title": "A line",
+                                "type": "string"
+                            }
+                        }
+                    ]
+                },
+                "raw_text": {
+                    "title": "raw_text",
+                    "description": "No name or formatting included by default",
+                    "options": {
+                        "keep_oneof_values": false
+                    },
+                    "oneOf": [
+                        {
+                            "title": "One line",
+                            "type": "string"
+                        },
+                        {
+                            "title": "Multiple lines",
+                            "type": "array",
+                            "minItems": 2,
+                            "items": {
+                                "title": "A line",
+                                "type": "string"
+                            }
+                        }
+                    ]
+                },
+                "clickable_text": {
+                    "title": "clickable_text",
+                    "description": "Colored, formatted, and put in [] for you.",
+                    "type": "array",
+                    "format": "tabs-top",
+                    "minItems": 1,
+                    "items": {
+                        "headerTemplate": "{{self.player_text}}",
+                        "type": "object",
+                        "defaultProperties": [
+                            "player_text",
+                            "actions"
+                        ],
+                        "properties": {
+                            "player_text": {
+                                "required": true,
+                                "propertyOrder": 1,
+                                "title": "player_text",
+                                "description": "Player's response",
+                                "type": "string"
+                            },
+                            "hover_text": {
+                                "required": false,
+                                "propertyOrder": 2,
+                                "title": "hover_text",
+                                "description": "Text that will display upon hovering over the actual text",
+                                "type": "string"
+                            },
+                            "delay_actions_by_ticks": {
+                                "propertyOrder": 3,
+                                "$ref": "delay_actions_by_ticks.json"
+                            },
+                            "actions": {
+                                "required": true,
+                                "propertyOrder": 4,
+                                "$ref": "actions.json"
+                            },
+                            "player_valid_radius": {
+                                "description": "Range that the player is allowed to walk from the point where they were shown the message and still have the dialog work. Default is 4.0.",
+                                "required": false,
+                                "propertyOrder": 5,
+                                "type": "number",
+                                "minimum": 3,
+                                "maximum": 29999984
+                            }
+                        }
+                    }
+                },
+                "random_text": {
+                    "title": "random_text",
+                    "type": "array",
+                    "minItems": 2,
+                    "items": {
+                        "title": "A random line",
+                        "type": "string"
+                    }
+                },
+                "all_in_one_text": {
+                    "title": "all_in_one_text",
+                    "type": "array",
+                    "format": "tabs-top",
+                    "minItems": 1,
+                    "items": {
+                        "headerTemplate": "All In One Text",
+                        "type": "object",
+                        "defaultProperties": [
+                            "actual_text",
+                            "hover_text"
+                        ],
+                        "properties": {
+                            "actual_text": {
+                                "required": true,
+                                "propertyOrder": 1,
+                                "title": "actual_text",
+                                "description": "The text that all the events and such go on top of",
+                                "type": "string"
+                            },
+                            "hover_text": {
+                                "required": false,
+                                "propertyOrder": 2,
+                                "title": "hover_text",
+                                "description": "Text that will display upon hovering over the actual text",
+                                "type": "string"
+                            },
+                            "click_action": {
+                                "title": "click_action",
+                                "description": "Something to be done on click",
+                                "options": {
+                                    "keep_oneof_values": false
+                                },
+                                "oneOf": [
+                                    {
+                                        "title": "click_command",
+                                        "type": "object",
+                                        "properties": {
+                                            "click_command": {
+                                                "required": true,
+                                                "propertyOrder": 1,
+                                                "title": "click_command",
+                                                "description": "A command to be executed on click. Must be executable by the player and also not relative since players can move. Also keep in mind that players can run this command infinitely.",
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "title": "click_url",
+                                        "type": "object",
+                                        "properties": {
+                                            "click_url": {
+                                                "required": true,
+                                                "propertyOrder": 1,
+                                                "title": "click_url",
+                                                "description": "A url to be visted upon click.",
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "set_scores": {
+            "propertyOrder": 4,
+            "title": "set_scores",
+            "description": "Set the player's specified scoreboard value(s). Click Properties, then type in the scoreboard name in the input box and click the 'add' button. Scoreboards are case-sensitive",
+            "type": "object",
+            "patternProperties": {
+                ".*": {
+                    "headerTemplate": "{{i}}",
+                    "options": {
+                        "keep_oneof_values": false
+                    },
+                    "oneOf": [
+                        {
+                            "title": "Exactly",
+                            "$ref": "score.json"
+                        },
+                        {
+                            "title": "Random",
+                            "type": "object",
+                            "properties": {
+                                "min": {
+                                    "title": "Minimum",
+                                    "$ref": "score.json"
+                                },
+                                "max": {
+                                    "title": "Maximum",
+                                    "$ref": "score.json"
+                                }
+                            }
+                        },
+                        {
+                            "title": "Copy from",
+                            "type": "string"
+                        }
+                    ]
+                }
+            }
+        },
+        "function": {
+            "propertyOrder": 5,
+            "title": "function",
+            "description": "Runs a function via the console as the player (/execute as <playername> at @s run function <function>)",
+            "type": "string"
+        },
+        "command": {
+            "propertyOrder": 6,
+            "title": "command",
+            "description": "Runs a command via the console. Any instance of '@S' (uppercase!) will be replaced with the player's name. Any instance of '@U' (uppercase!) will be replaced with the player's UUID (lowercase). Any instance of '@N' (uppercase!) will be replaced with the NPC's UUID, which can be used like @e to target a specific entity. The NPC must be selected by trading or punching to use the entity UUID, or the player will receive an error instead.",
+            "type": "string"
+        },
+        "give_loot": {
+            "propertyOrder": 7,
+            "title": "give_loot",
+            "description": "Gives the player all items from a loot table.",
+            "type": "string"
+        },
+        "remove_items": {
+            "propertyOrder": 8,
+            "title": "remove_items",
+            "oneOf": [
+                {
+                    "title": "remove item",
+                    "description": "An item to remove. All conditions given here must match to succeed. All fields are optional, but at least one of (lore|name|type) must be specified. Will remove a maximum of 'count' items.",
+                    "$ref": "item.json"
+                },
+                {
+                    "title": "remove items",
+                    "description": "Removes matching items from the player's inventory.",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "title": "Item",
+                        "description": "An item to remove. All conditions given here must match to succeed. All fields are optional, but at least one of (lore|name|type) must be specified. Will remove a maximum of 'count' items.",
+                        "$ref": "item.json"
+                    }
+                }
+            ]
+        },
+        "interact_npc": {
+            "propertyOrder": 9,
+            "title": "interact_npc",
+            "description": "Triggers a follow-on interaction with a different NPC.",
+            "type": "object",
+            "defaultProperties": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "title": "name",
+                    "description": "Name of the NPC to have the player interact with.",
+                    "type": "string"
+                },
+                "entity_type": {
+                    "title": "entity_type",
+                    "description": "EntityType of the NPC to have the player interact with (default is VILLAGER).",
+                    "type": "string"
+                }
+            }
+        },
+        "voice_over": {
+            "propertyOrder": 10,
+            "title": "voice_over",
+            "description": "Play a sound to the player as an NPC (WIP)",
+            "type": "string"
+        },
+        "rerun_components": {
+            "propertyOrder": 11,
+            "title": "rerun_components",
+            "description": "Re-runs all quest components tied to this specific NPC (including those specified in other files). To prevent infinite loops, this action will not run itself, even if conditions indicate it should.",
+            "type": "null"
+        },
+        "stop": {
+            "propertyOrder": 12,
+            "title": "stop",
+            "description": "Stops execution of the current quest file, or only a specified amount of levels deep (e.g. 1 to only stop the current list of actions, but not the list of quest components).",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 999999999,
+            "default": 999999999
+        },
+        "actions": {
+            "propertyOrder": 13,
+            "title": "actions",
+            "description": "Chained actions, useful for applying prerequisites to multiple actions at once",
+            "required": false,
+            "$ref": "actions.json"
+        },
+        "cancel_event": {
+            "propertyOrder": 14,
+            "title": "cancel_event",
+            "description": "Cancels the current event if true, or reverts cancelling it if false (useful if the default is to cancel it). This action only works in interactibles.",
+            "type": "boolean"
+        }
+    }
+}

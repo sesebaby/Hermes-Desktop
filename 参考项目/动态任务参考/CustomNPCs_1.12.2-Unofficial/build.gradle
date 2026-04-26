@@ -1,0 +1,155 @@
+import java.time.LocalDateTime
+
+// DEV resources path
+buildscript {
+    repositories {
+        maven { url = 'https://maven.minecraftforge.net/' }
+        mavenCentral()
+    }
+    dependencies {
+        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '4.+'
+        classpath group: 'org.spongepowered', name: 'mixingradle', version: '0.7.38'
+    }
+}
+
+// Plugins for creating JAR
+apply plugin: 'eclipse'
+apply plugin: 'idea'
+apply plugin: 'maven-publish'
+apply plugin: 'net.minecraftforge.gradle'
+apply plugin: 'org.spongepowered.mixin'
+
+// JAR naming
+version = getCustomVersion()
+group = mod_group
+archivesBaseName = "${mod_name} ${minecraft_version} Unofficial"
+
+// Snapshot version
+def getCustomVersion() {
+    Date date = new Date()
+    String month = LocalDateTime.now().month.toString().substring(0, 3)
+    return "v.${mod_version}-" + date.format("dd") + month.charAt(0) + month.substring(1).toLowerCase() + date.format("yyyy") + '-Snapshot'
+}
+
+// Set Java compatibility to version
+sourceCompatibility = targetCompatibility = compileJava.sourceCompatibility = compileJava.targetCompatibility = '1.8'
+
+// launch in DEV environment
+minecraft {
+    mappings channel: 'snapshot', version: '20171003-1.12'
+    accessTransformer = file('src/main/resources/META-INF/deobfuscation.cfg')
+
+    runs {
+        client {
+            workingDirectory project.file('run/client')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            property 'fml.coreMods.load', mod_group + '.mixin.NpcMixinCore'
+            properties 'mixin.env.remapRefMap': 'true'
+            property 'mixin.env.refMapRemappingFile', "${project.projectDir}/build/createSrgToMcp/output.srg"
+            property "mixin.debug", 'true'
+            args '--username=BetaZavr', '--tweakClass', 'org.spongepowered.asm.launch.MixinTweaker', '--mixin', mod_id + ".mixins.json"
+        }
+        server {
+            workingDirectory project.file('run/server')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            property 'fml.coreMods.load', mod_group + '.mixin.NpcMixinCore'
+            properties 'mixin.env.remapRefMap': 'true'
+            property 'mixin.env.refMapRemappingFile', "${project.projectDir}/build/createSrgToMcp/output.srg"
+            property "mixin.debug", 'true'
+            args '--tweakClass', 'org.spongepowered.asm.launch.MixinTweaker', '--mixin', mod_id + ".mixins.json"//, 'nogui'
+        }
+    }
+}
+
+// Add Maven repositories
+repositories {
+    mavenCentral()
+    flatDir { dirs 'libs' }
+}
+
+// Project dependencies (required libraries)
+dependencies {
+    // Minecraft Forge
+    minecraft "net.minecraftforge:forge:1.12.2-14.23.5.2860"
+
+    // Mixin Lib
+    implementation('org.spongepowered:mixin:0.8.5') {
+        exclude module: 'guava'
+        exclude module: 'commons-io'
+        exclude module: 'gson'
+    }
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+
+}
+
+// Resource processing (mcmod.info file)
+processResources {
+    inputs.property 'version', project.version
+    inputs.property 'mcversion', minecraft_version
+    from(sourceSets.main.resources.srcDirs) {
+        include 'mcmod.info'
+        expand  'modid'         : mod_id,
+                'name'          : mod_name,
+                'version'       : mod_version,
+                'mcversion'     : minecraft_version,
+                'description'   : mod_description,
+                'credits'       : mod_credits,
+                'logoFile'      : mod_logoFile,
+                'authors'       : mod_authors,
+                'url'           : mod_url,
+                'updateUrl'     : mod_update_url
+    }
+    from(sourceSets.main.resources.srcDirs) {
+        exclude 'mcmod.info'
+    }
+}
+
+// JAR file manifest settings
+mixin {
+    add sourceSets.main, "${mod_id}.refmap.json"
+    config mod_id + ".mixins.json"
+}
+
+// Creating a JAR file
+jar {
+    // Manifest settings
+    manifest {
+        attributes([
+                "Implementation-Title"       : mod_name,
+                "Implementation-Version"     : mod_version,
+                "Implementation-Vendor"      : mod_authors,
+                "Implementation-Timestamp"   : new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+                "FMLCorePluginContainsFMLMod": "true",
+                "FMLCorePlugin"              : mod_group + ".mixin.NpcMixinCore",
+                "FMLAT"                      : "deobfuscation.cfg",
+                "TweakClass"                 : "org.spongepowered.asm.launch.MixinTweaker",
+                "MixinConfigs"               : mod_id + ".mixins.json",
+                "ForceLoadAsMod"             : "true"
+        ])
+    }
+    // Reobfuscate field and method names
+    finalizedBy('reobfJar')
+}
+
+// The content below is needed for IntelliJ IDEA to be able to see the mod's resources
+idea {
+    module {
+        inheritOutputDirs = true
+        downloadJavadoc = true
+        downloadSources = true
+    }
+}
+
+subprojects {
+    apply plugin: 'idea'
+}
+
+tasks.register('prepareAssets', Copy) {
+    group = 'build'
+    from project.file('src/main/resources')
+    into project.file('build/classes/java/main')
+}
+
+classes.dependsOn(prepareAssets)

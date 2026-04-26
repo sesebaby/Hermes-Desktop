@@ -1,0 +1,43 @@
+{
+    "type": "object",
+    "defaultProperties": [
+        "prerequisites",
+        "waypoints",
+        "message"
+    ],
+    "additionalProperties": false,
+    "properties": {
+        "prerequisites": {
+            "required": true,
+            "propertyOrder": 1,
+            "$ref": "prerequisites.json"
+        },
+        "waypoints": {
+            "required": true,
+            "propertyOrder": 2,
+            "title": "waypoints",
+            "description": "Ordered list of waypoints to reach this objective",
+            "type": "array",
+            "format": "tabs-top",
+            "minItems": 1,
+            "items": {
+                "headerTemplate": "{{self.x}}, {{self.y}}, {{self.z}}",
+                "$ref": "xyz.json"
+            }
+        },
+        "message": {
+            "required": true,
+            "propertyOrder": 3,
+            "title": "message",
+            "description": "Text to display in chat when checking a quest",
+            "type": "string"
+        },
+		"world_name": {
+			"required": false,
+			"propertyOrder": 4,
+			"title": "world_name",
+			"description": "A regular expression (regex) that matches one or more world names. Using /worlds in game will tell you the name of your current world if you are unsure. If not set at all, this defaults to using Bukkit.getWorlds().get(0).getName(). See <a href=\"https://regex101.com\">regex101.com</a> for help.",
+			"type": "string"
+		}
+    }
+}

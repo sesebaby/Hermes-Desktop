@@ -1,0 +1,81 @@
+{
+	"title": "Quest Death",
+	"defaultProperties": [
+		"keep_inventory",
+		"actions",
+		"prerequisites"
+	],
+	"additionalProperties": false,
+	"properties": {
+		"keep_inventory": {
+			"propertyOrder": 1,
+			"required": false,
+			"title": "keep_inventory",
+			"description": "Whether the player should keep inventory / experience if the prerequisites match",
+			"type": "boolean"
+		},
+		"keep_xp": {
+			"propertyOrder": 2,
+			"required": false,
+			"title": "keep_xp",
+			"description": "How much experience should be kept on death, as a factor of current experience. When set, no experience will be dropped even if keep_inventory is disabled. If not set, the default behaviour is 100% if keep_inventory is enabled, and 0% otherwise.",
+			"type": "number"
+		},
+		"respawn_location": {
+			"propertyOrder": 3,
+			"required": false,
+			"title": "respawn_location",
+			"description": "Coordinates where the player should respawn if the prerequisites match",
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"x": {
+					"propertyOrder": 1,
+					"required": true,
+					"$ref": "coordinate.json"
+				},
+				"y": {
+					"propertyOrder": 2,
+					"required": true,
+					"$ref": "coordinate.json"
+				},
+				"z": {
+					"propertyOrder": 3,
+					"required": true,
+					"$ref": "coordinate.json"
+				},
+				"yaw": {
+					"propertyOrder": 4,
+					"required": false,
+					"type": "number",
+					"minimum": -360,
+					"maximum": 360
+				},
+				"pitch": {
+					"propertyOrder": 5,
+					"required": false,
+					"type": "number",
+					"minimum": -90,
+					"maximum": 90
+				}
+			}
+		},
+		"prerequisites": {
+			"propertyOrder": 4,
+			"required": false,
+			"$ref": "prerequisites.json"
+		},
+		"actions": {
+			"propertyOrder": 5,
+			"required": true,
+			"$ref": "actions.json"
+		},
+		"keep_original_respawn_location_in_same_area": {
+			"propertyOrder": 6,
+			"required": false,
+			"title": "keep_original_respawn_location_in_same_area",
+			"description": "If this quest death matches at the original respawn location of the player as well, use that location instead of the one in this file. Defaults to false. Only makes sense if the prerequisites have a location-based check.",
+			"type": "boolean"
+		}
+	}
+}

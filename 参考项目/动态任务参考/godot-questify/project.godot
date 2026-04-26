@@ -1,0 +1,48 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Questify"
+config/description="A graph-based quest editor and manager for Godot 4."
+config/tags=PackedStringArray("library")
+run/main_scene="res://example/example_scene.tscn"
+config/features=PackedStringArray("4.5")
+config/icon="res://logo.png"
+
+[autoload]
+
+Questify="*res://addons/questify/quest_manager.gd"
+
+[debug]
+
+gdscript/warnings/exclude_addons=false
+
+[dotnet]
+
+project/assembly_name="Questify"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/quest_resource_translation_parser/plugin.cfg", "res://addons/questify/plugin.cfg")
+
+[internationalization]
+
+locale/translations_pot_files=PackedStringArray("res://example/first_quest.tres")
+
+[quest_manager]
+
+update_interval=0.5
+
+[questify]
+
+general/update_interval=0.5
+general/add_quests_to_pot_generation=true
+general/update_polling=true
