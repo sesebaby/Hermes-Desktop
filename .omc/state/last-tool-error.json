@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"ls \\\".omc\\\" && ls \\\".omc/specs\\\"\",\"description\":\"检查 OMC 状态和规格目录\"}",
+  "error": "Exit code 2\nproject-memory.json\nsessions\nstate\nls: cannot access '.omc/specs': No such file or directory",
+  "timestamp": "2026-04-26T11:10:28.041Z",
+  "retry_count": 1
+}

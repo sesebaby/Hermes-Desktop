@@ -1,0 +1,289 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1777199909351,
+  "projectRoot": "D:\\GitHubPro\\Hermes-Desktop",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "scripts",
+      "src"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "Desktop": {
+      "path": "Desktop",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1777199909298,
+      "keyFiles": []
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 13,
+      "lastAccessed": 1777199909299,
+      "keyFiles": [
+        "agent_architecture_deep_dive.md",
+        "all_9_pillars_complete.md",
+        "buddy_implementation.md",
+        "build_complete.md",
+        "complete_architecture.md"
+      ]
+    },
+    "external": {
+      "path": "external",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1777199909299,
+      "keyFiles": [
+        "hermescraft-main.zip"
+      ]
+    },
+    "openspec": {
+      "path": "openspec",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1777199909300,
+      "keyFiles": [
+        "project.md"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 5,
+      "lastAccessed": 1777199909302,
+      "keyFiles": [
+        "check-repo-guard.ps1",
+        "deploy-desktop.ps1",
+        "new-msix-dev-cert.ps1",
+        "publish-msix.ps1",
+        "publish-portable.ps1"
+      ]
+    },
+    "skills": {
+      "path": "skills",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1777199909305,
+      "keyFiles": []
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 4,
+      "lastAccessed": 1777199909306,
+      "keyFiles": [
+        "Directory.Build.props",
+        "Hermes.Agent.csproj",
+        "Hermes.Core.csproj",
+        "Program.cs"
+      ]
+    },
+    "tools": {
+      "path": "tools",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1777199909309,
+      "keyFiles": []
+    },
+    "wiki": {
+      "path": "wiki",
+      "purpose": null,
+      "fileCount": 3,
+      "lastAccessed": 1777199909310,
+      "keyFiles": [
+        "index.md",
+        "log.md",
+        "SCHEMA.md"
+      ]
+    },
+    "其他资料": {
+      "path": "其他资料",
+      "purpose": null,
+      "fileCount": 13,
+      "lastAccessed": 1777199909311,
+      "keyFiles": [
+        "BN-NPC宠物势力群战占点调查.md",
+        "Bright Nights调查纪要.md",
+        "Claude_Code_超级能力与Oh_My_ClaudeCode_安装使用说明.md",
+        "Hermes-多Agent独立记忆架构分析.md",
+        "Hermes游戏NPC方案调查与结论-2026-04-18.md"
+      ]
+    },
+    "参考项目": {
+      "path": "参考项目",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1777199909312,
+      "keyFiles": []
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "readme.md",
+      "accessCount": 2,
+      "lastAccessed": 1777200210011,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\docs\\COMPANION_MODE.md",
+      "accessCount": 2,
+      "lastAccessed": 1777200251860,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\README.md",
+      "accessCount": 1,
+      "lastAccessed": 1777200204779,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\hermescraft.sh",
+      "accessCount": 1,
+      "lastAccessed": 1777200204883,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\SOUL-minecraft.md",
+      "accessCount": 1,
+      "lastAccessed": 1777200204922,
+      "type": "file"
+    },
+    {
+      "path": "ReadmeCn.md",
+      "accessCount": 1,
+      "lastAccessed": 1777200210076,
+      "type": "file"
+    },
+    {
+      "path": "openspec\\project.md",
+      "accessCount": 1,
+      "lastAccessed": 1777200210087,
+      "type": "file"
+    },
+    {
+      "path": "docs\\complete_architecture.md",
+      "accessCount": 1,
+      "lastAccessed": 1777200210128,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\bot\\server.js",
+      "accessCount": 1,
+      "lastAccessed": 1777200213622,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\bin\\mc",
+      "accessCount": 1,
+      "lastAccessed": 1777200214227,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\SOUL-civilization.md",
+      "accessCount": 1,
+      "lastAccessed": 1777200214880,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\bot\\lib\\chat.js",
+      "accessCount": 1,
+      "lastAccessed": 1777200214901,
+      "type": "file"
+    },
+    {
+      "path": "src\\Hermes.Core.csproj",
+      "accessCount": 1,
+      "lastAccessed": 1777200226917,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\docs\\CIVILIZATION_MODE.md",
+      "accessCount": 1,
+      "lastAccessed": 1777200240179,
+      "type": "file"
+    },
+    {
+      "path": "src\\Core\\Agent.cs",
+      "accessCount": 1,
+      "lastAccessed": 1777200251719,
+      "type": "file"
+    },
+    {
+      "path": "src\\LLM\\IChatClient.cs",
+      "accessCount": 1,
+      "lastAccessed": 1777200251923,
+      "type": "file"
+    },
+    {
+      "path": "src\\memory\\MemoryManager.cs",
+      "accessCount": 1,
+      "lastAccessed": 1777200272469,
+      "type": "file"
+    },
+    {
+      "path": "src\\wiki\\WikiManager.cs",
+      "accessCount": 1,
+      "lastAccessed": 1777200272541,
+      "type": "file"
+    },
+    {
+      "path": "src\\Tools",
+      "accessCount": 1,
+      "lastAccessed": 1777200272597,
+      "type": "directory"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.claude\\projects\\D--GitHubPro-Hermes-Desktop\\memory",
+      "accessCount": 1,
+      "lastAccessed": 1777201496669,
+      "type": "directory"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.claude\\projects\\D--GitHubPro-Hermes-Desktop\\memory\\MEMORY.md",
+      "accessCount": 1,
+      "lastAccessed": 1777201540009,
+      "type": "file"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.claude\\projects\\D--GitHubPro-Hermes-Desktop\\memory\\user_decision_style.md",
+      "accessCount": 1,
+      "lastAccessed": 1777201540555,
+      "type": "file"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.claude\\projects\\D--GitHubPro-Hermes-Desktop\\memory\\project_allgameinai_stardew.md",
+      "accessCount": 1,
+      "lastAccessed": 1777201541091,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}
