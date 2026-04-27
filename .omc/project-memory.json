@@ -147,6 +147,84 @@
   },
   "hotPaths": [
     {
+      "path": "src\\agents\\AgentService.cs",
+      "accessCount": 8,
+      "lastAccessed": 1777246681821,
+      "type": "file"
+    },
+    {
+      "path": "src\\Core\\Agent.cs",
+      "accessCount": 8,
+      "lastAccessed": 1777249715081,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\bot\\server.js",
+      "accessCount": 8,
+      "lastAccessed": 1777255868438,
+      "type": "file"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.claude\\projects\\D--GitHubPro-Hermes-Desktop\\memory\\MEMORY.md",
+      "accessCount": 7,
+      "lastAccessed": 1777255107656,
+      "type": "file"
+    },
+    {
+      "path": "docs\\superpowers\\specs\\2026-04-27-stardew-multi-npc-design.md",
+      "accessCount": 5,
+      "lastAccessed": 1777256388850,
+      "type": "file"
+    },
+    {
+      "path": "src\\memory\\MemoryManager.cs",
+      "accessCount": 4,
+      "lastAccessed": 1777246065594,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\bin\\mc",
+      "accessCount": 4,
+      "lastAccessed": 1777250257011,
+      "type": "file"
+    },
+    {
+      "path": "src",
+      "accessCount": 4,
+      "lastAccessed": 1777255868474,
+      "type": "directory"
+    },
+    {
+      "path": "src\\Core\\Models.cs",
+      "accessCount": 3,
+      "lastAccessed": 1777249715046,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\README.md",
+      "accessCount": 3,
+      "lastAccessed": 1777250256968,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\SOUL-minecraft.md",
+      "accessCount": 3,
+      "lastAccessed": 1777250257140,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\bot\\lib\\chat.js",
+      "accessCount": 3,
+      "lastAccessed": 1777251606997,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\hermescraft.sh",
+      "accessCount": 3,
+      "lastAccessed": 1777255868383,
+      "type": "file"
+    },
+    {
       "path": "readme.md",
       "accessCount": 2,
       "lastAccessed": 1777200210011,
@@ -159,21 +237,9 @@
       "type": "file"
     },
     {
-      "path": "external\\hermescraft-main\\README.md",
-      "accessCount": 1,
-      "lastAccessed": 1777200204779,
-      "type": "file"
-    },
-    {
-      "path": "external\\hermescraft-main\\hermescraft.sh",
-      "accessCount": 1,
-      "lastAccessed": 1777200204883,
-      "type": "file"
-    },
-    {
-      "path": "external\\hermescraft-main\\SOUL-minecraft.md",
-      "accessCount": 1,
-      "lastAccessed": 1777200204922,
+      "path": "src\\soul\\SoulService.cs",
+      "accessCount": 2,
+      "lastAccessed": 1777246065651,
       "type": "file"
     },
     {
@@ -195,27 +261,9 @@
       "type": "file"
     },
     {
-      "path": "external\\hermescraft-main\\bot\\server.js",
-      "accessCount": 1,
-      "lastAccessed": 1777200213622,
-      "type": "file"
-    },
-    {
-      "path": "external\\hermescraft-main\\bin\\mc",
-      "accessCount": 1,
-      "lastAccessed": 1777200214227,
-      "type": "file"
-    },
-    {
       "path": "external\\hermescraft-main\\SOUL-civilization.md",
       "accessCount": 1,
       "lastAccessed": 1777200214880,
-      "type": "file"
-    },
-    {
-      "path": "external\\hermescraft-main\\bot\\lib\\chat.js",
-      "accessCount": 1,
-      "lastAccessed": 1777200214901,
       "type": "file"
     },
     {
@@ -231,21 +279,9 @@
       "type": "file"
     },
     {
-      "path": "src\\Core\\Agent.cs",
-      "accessCount": 1,
-      "lastAccessed": 1777200251719,
-      "type": "file"
-    },
-    {
       "path": "src\\LLM\\IChatClient.cs",
       "accessCount": 1,
       "lastAccessed": 1777200251923,
-      "type": "file"
-    },
-    {
-      "path": "src\\memory\\MemoryManager.cs",
-      "accessCount": 1,
-      "lastAccessed": 1777200272469,
       "type": "file"
     },
     {
@@ -267,12 +303,6 @@
       "type": "directory"
     },
     {
-      "path": "C:\\Users\\Administrator\\.claude\\projects\\D--GitHubPro-Hermes-Desktop\\memory\\MEMORY.md",
-      "accessCount": 1,
-      "lastAccessed": 1777201540009,
-      "type": "file"
-    },
-    {
       "path": "C:\\Users\\Administrator\\.claude\\projects\\D--GitHubPro-Hermes-Desktop\\memory\\user_decision_style.md",
       "accessCount": 1,
       "lastAccessed": 1777201540555,
@@ -283,6 +313,96 @@
       "accessCount": 1,
       "lastAccessed": 1777201541091,
       "type": "file"
+    },
+    {
+      "path": "src\\Tools\\AgentTool.cs",
+      "accessCount": 1,
+      "lastAccessed": 1777243175161,
+      "type": "file"
+    },
+    {
+      "path": "src\\gateway\\GatewayService.cs",
+      "accessCount": 1,
+      "lastAccessed": 1777243793975,
+      "type": "file"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.claude\\projects\\D--GitHubPro-Hermes-Desktop\\memory\\feedback_code_evidence_required_for_architecture.md",
+      "accessCount": 1,
+      "lastAccessed": 1777243794461,
+      "type": "file"
+    },
+    {
+      "path": "src\\transcript\\TranscriptStore.cs",
+      "accessCount": 1,
+      "lastAccessed": 1777244166492,
+      "type": "file"
+    },
+    {
+      "path": "src\\plugins\\BuiltinMemoryPlugin.cs",
+      "accessCount": 1,
+      "lastAccessed": 1777244166532,
+      "type": "file"
+    },
+    {
+      "path": "src\\Context\\ContextManager.cs",
+      "accessCount": 1,
+      "lastAccessed": 1777244667081,
+      "type": "file"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.claude\\projects\\D--GitHubPro-Hermes-Desktop\\memory\\feedback_language_chinese_required.md",
+      "accessCount": 1,
+      "lastAccessed": 1777245488219,
+      "type": "file"
+    },
+    {
+      "path": "src\\coordinator\\CoordinatorService.cs",
+      "accessCount": 1,
+      "lastAccessed": 1777246681714,
+      "type": "file"
+    },
+    {
+      "path": "src\\coordinator",
+      "accessCount": 1,
+      "lastAccessed": 1777246681793,
+      "type": "directory"
+    },
+    {
+      "path": "external\\hermescraft-main\\bot\\lib\\perception.js",
+      "accessCount": 1,
+      "lastAccessed": 1777250091645,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\start-steve.sh",
+      "accessCount": 1,
+      "lastAccessed": 1777250111074,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\scripts\\run-landfolk-agent.sh",
+      "accessCount": 1,
+      "lastAccessed": 1777250111134,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main",
+      "accessCount": 1,
+      "lastAccessed": 1777254184804,
+      "type": "directory"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.claude\\projects\\D--GitHubPro-Hermes-Desktop\\memory\\feedback_design_docs_must_include_repo_and_reference_evidence.md",
+      "accessCount": 1,
+      "lastAccessed": 1777255097961,
+      "type": "file"
+    },
+    {
+      "path": "docs\\superpowers\\specs",
+      "accessCount": 1,
+      "lastAccessed": 1777256481934,
+      "type": "directory"
     }
   ],
   "userDirectives": []
