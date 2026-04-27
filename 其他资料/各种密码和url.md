@@ -14,16 +14,12 @@ openai：/v1/chat/completions
 
 ## 以下是codex中转商资料
 
-base_url = "https://yunyi.rdzhvip.com/codex"
-api_key="TQMM8BXT-UZV8-X6WT-4BPT-WQ5X0WVSU2XK"
-model1="gpt-5.1-codex-mini" 
-model2="gpt-5.3-codex-spark" 
+base_url = "https://newapi.168box.cn/v1"
+api_key="sk-ZRKX3OuOCacicdRZ0MwBfoN5LFTWiXXgwpX1AvQqb2JxRman"
+model1="gpt-5.4" 
+model2="gpt-5.3" 
 
-## 以下是claude中转商资料
 
- "ANTHROPIC_AUTH_TOKEN": "JCCQ6BM3-PGQJ-NY21-Q8VX-Q0AMGP9N3XU7"
-    "ANTHROPIC_BASE_URL": "https://yunyi.rdzhvip.com/claude"
-    model="Haiku 4.5" 或者 sonnet 4.5
 
 ## 以下是豆包资料
 
