@@ -17,11 +17,16 @@ public sealed class TranscriptStore
     private readonly ConcurrentDictionary<string, List<Message>> _cache = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly bool _eagerFlush;
+    private readonly ITranscriptMessageObserver? _messageObserver;
     
-    public TranscriptStore(string transcriptsDir, bool eagerFlush = false)
+    public TranscriptStore(
+        string transcriptsDir,
+        bool eagerFlush = false,
+        ITranscriptMessageObserver? messageObserver = null)
     {
         _transcriptsDir = transcriptsDir;
         _eagerFlush = eagerFlush || Environment.GetEnvironmentVariable("HERMES_EAGER_FLUSH") != null;
+        _messageObserver = messageObserver;
         
         Directory.CreateDirectory(transcriptsDir);
     }
@@ -65,6 +70,18 @@ public sealed class TranscriptStore
         _cache.AddOrUpdate(sessionId, 
             _ => new List<Message> { message },
             (_, list) => { list.Add(message); return list; });
+
+        if (_messageObserver is not null)
+        {
+            try
+            {
+                await _messageObserver.OnMessageSavedAsync(sessionId, message, ct);
+            }
+            catch
+            {
+                // Indexing/observer failures must not make transcript persistence fail.
+            }
+        }
     }
     
     /// <summary>
@@ -119,6 +136,7 @@ public sealed class TranscriptStore
     {
         var fromCache = _cache.Keys.ToList();
         var fromDisk = Directory.EnumerateFiles(_transcriptsDir, "*.jsonl")
+            .Where(f => !Path.GetFileName(f).EndsWith(".activity.jsonl", StringComparison.OrdinalIgnoreCase))
             .Select(f => Path.GetFileNameWithoutExtension(f))
             .Where(id => !fromCache.Contains(id))
             .ToList();
@@ -233,6 +251,11 @@ public sealed class TranscriptStore
         WriteIndented = false,
         Converters = { new JsonStringEnumConverter() }
     };
+}
+
+public interface ITranscriptMessageObserver
+{
+    Task OnMessageSavedAsync(string sessionId, Message message, CancellationToken ct);
 }
 
 /// <summary>

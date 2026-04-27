@@ -8,10 +8,12 @@ using Hermes.Agent.Soul;
 using Hermes.Agent.Transcript;
 using Hermes.Agent.Memory;
 using Hermes.Agent.Context;
+using Hermes.Agent.Search;
 using Microsoft.Extensions.Logging;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 public sealed class Agent : IAgent
 {
@@ -24,6 +26,7 @@ public sealed class Agent : IAgent
     private readonly TranscriptStore? _transcripts;
     private readonly MemoryManager? _memories;
     private readonly ContextManager? _contextManager;
+    private readonly TurnMemoryCoordinator? _turnMemoryCoordinator;
     private readonly SoulService? _soulService;
     private readonly PluginManager? _pluginManager;
 
@@ -95,7 +98,8 @@ public sealed class Agent : IAgent
         SoulService? soulService = null,
         PluginManager? pluginManager = null,
         IChatClient? fallbackChatClient = null,
-        CredentialPool? credentialPool = null)
+        CredentialPool? credentialPool = null,
+        TurnMemoryCoordinator? turnMemoryCoordinator = null)
     {
         _chatClient = chatClient;
         _logger = logger;
@@ -103,6 +107,7 @@ public sealed class Agent : IAgent
         _transcripts = transcripts;
         _memories = memories;
         _contextManager = contextManager;
+        _turnMemoryCoordinator = turnMemoryCoordinator;
         _soulService = soulService;
         _pluginManager = pluginManager;
         _fallbackChatClient = fallbackChatClient;
@@ -242,7 +247,14 @@ public sealed class Agent : IAgent
                 transientSystemMessages += (afterSoul - beforeSoul);
 
             var preparedContext = await AgentContextAssembler.PrepareOptimizedContextAsync(
-                session.Id, message, _contextManager, _logger, ct);
+                session.Id,
+                message,
+                _contextManager,
+                _turnMemoryCoordinator,
+                session.Messages,
+                _tools.Count == 0 ? TurnMemoryMode.Complete : TurnMemoryMode.CompleteWithTools,
+                _logger,
+                ct);
 
             if (_tools.Count == 0)
             {
@@ -263,6 +275,7 @@ public sealed class Agent : IAgent
                 await AgentSessionWriter.AppendAssistantMessageAsync(session, response, _transcripts, ct);
                 if (_contextManager is not null)
                     await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
+                await SyncCompletedMemoryTurnAsync(session.Id, message, response, interrupted: false, ct);
 
                 finalResponse = response;
                 return response;
@@ -301,6 +314,7 @@ public sealed class Agent : IAgent
                 await AgentSessionWriter.AppendAssistantMessageAsync(session, finalContent, _transcripts, ct);
                 if (_contextManager is not null)
                     await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
+                await SyncCompletedMemoryTurnAsync(session.Id, message, finalContent, interrupted: false, ct);
                 finalResponse = finalContent;
                 return finalContent;
             }
@@ -319,7 +333,7 @@ public sealed class Agent : IAgent
             {
                 // ── Parallel execution path (read-only tools only) ──
                 _logger.LogInformation("Executing {Count} tool calls in parallel", toolCallsList.Count);
-                var parallelResults = await ExecuteToolCallsParallelAsync(toolCallsList, ct);
+                var parallelResults = await ExecuteToolCallsParallelAsync(toolCallsList, session.Id, ct);
 
                 foreach (var (toolCall, result, durationMs) in parallelResults)
                 {
@@ -466,7 +480,7 @@ public sealed class Agent : IAgent
 
                 _logger.LogInformation("Executing tool {ToolName} (call {CallId})", toolCall.Name, toolCall.Id);
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                var result = await ExecuteToolCallAsync(toolCall, ct);
+                var result = await ExecuteToolCallAsync(toolCall, session.Id, ct);
                 sw.Stop();
 
                 // ── Activity tracking: AFTER execution ──
@@ -533,6 +547,7 @@ public sealed class Agent : IAgent
             await AgentSessionWriter.AppendAssistantMessageAsync(session, fallback, _transcripts, ct);
             if (_contextManager is not null)
                 await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
+            await SyncCompletedMemoryTurnAsync(session.Id, message, fallback, interrupted: false, ct);
             finalResponse = fallback;
             return fallback;
         }
@@ -684,19 +699,15 @@ public sealed class Agent : IAgent
         try
         {
         // ── Context manager integration ──
-        List<Message>? preparedContext = null;
-        if (_contextManager is not null)
-        {
-            try
-            {
-                preparedContext = await _contextManager.PrepareContextAsync(
-                    session.Id, message, retrievedContext: null, ct);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "ContextManager failed, falling back to raw session messages");
-            }
-        }
+        var preparedContext = await AgentContextAssembler.PrepareOptimizedContextAsync(
+            session.Id,
+            message,
+            _contextManager,
+            _turnMemoryCoordinator,
+            session.Messages,
+            _tools.Count == 0 ? TurnMemoryMode.Stream : TurnMemoryMode.StreamWithTools,
+            _logger,
+            ct);
 
         if (_tools.Count == 0)
         {
@@ -718,6 +729,7 @@ public sealed class Agent : IAgent
                 await _transcripts.SaveMessageAsync(session.Id, assistantMsg, ct);
             if (_contextManager is not null)
                 await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
+            await SyncCompletedMemoryTurnAsync(session.Id, message, streamedResponse.ToString(), interrupted: false, ct);
             yield break;
         }
 
@@ -751,6 +763,7 @@ public sealed class Agent : IAgent
                     await _transcripts.SaveMessageAsync(session.Id, finalMsg, ct);
                 if (_contextManager is not null)
                     await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
+                await SyncCompletedMemoryTurnAsync(session.Id, message, finalContent, interrupted: false, ct);
                 yield break;
             }
 
@@ -875,7 +888,7 @@ public sealed class Agent : IAgent
 
                 _logger.LogInformation("Executing tool {ToolName} (call {CallId})", toolCall.Name, toolCall.Id);
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                var result = await ExecuteToolCallAsync(toolCall, ct);
+                var result = await ExecuteToolCallAsync(toolCall, session.Id, ct);
                 sw.Stop();
 
                 // ── Activity tracking: AFTER execution ──
@@ -946,6 +959,7 @@ public sealed class Agent : IAgent
             await _transcripts.SaveMessageAsync(session.Id, fallbackMsg, ct);
         if (_contextManager is not null)
             await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
+        await SyncCompletedMemoryTurnAsync(session.Id, message, fallback, interrupted: false, ct);
         }
         finally
         {
@@ -1020,6 +1034,35 @@ public sealed class Agent : IAgent
         }
     }
 
+    private async Task SyncCompletedMemoryTurnAsync(
+        string sessionId,
+        string userMessage,
+        string assistantResponse,
+        bool interrupted,
+        CancellationToken ct)
+    {
+        if (_turnMemoryCoordinator is null)
+            return;
+
+        try
+        {
+            await _turnMemoryCoordinator.SyncCompletedTurnAsync(
+                sessionId,
+                userMessage,
+                assistantResponse,
+                interrupted,
+                ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Completed-turn memory sync failed non-fatally for session {SessionId}", sessionId);
+        }
+    }
+
     /// <summary>Determine if a batch of tool calls can be safely parallelized.</summary>
     private static bool ShouldParallelize(IReadOnlyList<ToolCall> toolCalls)
     {
@@ -1030,7 +1073,9 @@ public sealed class Agent : IAgent
 
     /// <summary>Execute a batch of tool calls in parallel using a semaphore to limit concurrency.</summary>
     private async Task<List<(ToolCall Call, ToolResult Result, long DurationMs)>> ExecuteToolCallsParallelAsync(
-        IReadOnlyList<ToolCall> toolCalls, CancellationToken ct)
+        IReadOnlyList<ToolCall> toolCalls,
+        string? currentSessionId,
+        CancellationToken ct)
     {
         using var semaphore = new SemaphoreSlim(MaxParallelWorkers);
         var tasks = toolCalls.Select(async toolCall =>
@@ -1039,7 +1084,7 @@ public sealed class Agent : IAgent
             try
             {
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                var result = await ExecuteToolCallAsync(toolCall, ct);
+                var result = await ExecuteToolCallAsync(toolCall, currentSessionId, ct);
                 sw.Stop();
                 return (Call: toolCall, Result: result, DurationMs: sw.ElapsedMilliseconds);
             }
@@ -1053,7 +1098,10 @@ public sealed class Agent : IAgent
         return results.ToList();
     }
 
-    private async Task<ToolResult> ExecuteToolCallAsync(ToolCall toolCall, CancellationToken ct)
+    private async Task<ToolResult> ExecuteToolCallAsync(
+        ToolCall toolCall,
+        string? currentSessionId,
+        CancellationToken ct)
     {
         if (!_tools.TryGetValue(toolCall.Name, out var tool))
         {
@@ -1065,6 +1113,12 @@ public sealed class Agent : IAgent
         {
             var parameters = JsonSerializer.Deserialize(toolCall.Arguments, tool.ParametersType, ToolArgJsonOptions)
                 ?? throw new JsonException($"Failed to deserialize arguments for {toolCall.Name}");
+            if (parameters is ISessionAwareToolParameters sessionAware &&
+                string.IsNullOrWhiteSpace(sessionAware.CurrentSessionId))
+            {
+                sessionAware.CurrentSessionId = currentSessionId;
+            }
+
             return await tool.ExecuteAsync(parameters, ct);
         }
         catch (Exception ex)
@@ -1083,6 +1137,11 @@ public sealed class Agent : IAgent
 
         foreach (var prop in props)
         {
+            if (prop.GetCustomAttributes(typeof(JsonIgnoreAttribute), false).Any())
+                continue;
+
+            var jsonName = (prop.GetCustomAttributes(typeof(JsonPropertyNameAttribute), false)
+                .FirstOrDefault() as JsonPropertyNameAttribute)?.Name ?? ToCamelCase(prop.Name);
             var propType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
             var jsonType = propType switch
             {
@@ -1102,11 +1161,11 @@ public sealed class Agent : IAgent
             if (descAttr is not null)
                 propSchema["description"] = descAttr.Description;
 
-            properties[ToCamelCase(prop.Name)] = propSchema;
+            properties[jsonName] = propSchema;
 
             // Non-nullable value types are required; nullable properties are not
             if (propType.IsValueType && Nullable.GetUnderlyingType(prop.PropertyType) is null)
-                required.Add(ToCamelCase(prop.Name));
+                required.Add(jsonName);
         }
 
         var schema = new Dictionary<string, object>

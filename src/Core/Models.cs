@@ -48,6 +48,15 @@ public interface ITool
     Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct);
 }
 
+/// <summary>
+/// Tool parameter objects can implement this to receive runtime session context
+/// that should not be exposed as model-callable schema.
+/// </summary>
+public interface ISessionAwareToolParameters
+{
+    string? CurrentSessionId { get; set; }
+}
+
 public interface IAgent
 {
     Task<string> ChatAsync(string message, Session session, CancellationToken ct);

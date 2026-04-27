@@ -1,73 +1,65 @@
 namespace Hermes.Agent.Tools;
 
 using Hermes.Agent.Core;
-using System.Text.Json;
+using Hermes.Agent.Search;
+using Hermes.Agent.Transcript;
+using Microsoft.Extensions.Logging.Abstractions;
+using System.ComponentModel;
+using System.Text.Json.Serialization;
 
 /// <summary>
-/// Search past conversation sessions by keyword.
-/// Scans transcript .jsonl files for matching content.
+/// Search long-term conversation memory or browse recent sessions.
 /// </summary>
 public sealed class SessionSearchTool : ITool
 {
-    private readonly string _transcriptDir;
+    private readonly TranscriptRecallService _recallService;
 
     public string Name => "session_search";
-    public string Description => "Search past conversation sessions by keyword. Returns matching session IDs and message snippets.";
+    public string Description =>
+        "Search long-term memory of past user/assistant conversation turns, or call with no query to browse recent sessions. " +
+        "Keyword search returns session-level summaries rather than raw per-message snippets. Tool and system messages are not searched.";
     public Type ParametersType => typeof(SessionSearchParameters);
 
     public SessionSearchTool(string transcriptDir)
+        : this(new TranscriptRecallService(
+            new TranscriptStore(transcriptDir),
+            NullLogger<TranscriptRecallService>.Instance))
     {
-        _transcriptDir = transcriptDir;
+    }
+
+    public SessionSearchTool(TranscriptRecallService recallService)
+    {
+        _recallService = recallService;
     }
 
     public async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
     {
         var p = (SessionSearchParameters)parameters;
-
-        if (string.IsNullOrWhiteSpace(p.Query))
-            return ToolResult.Fail("Query is required.");
-
-        var maxResults = p.MaxResults > 0 ? p.MaxResults : 5;
+        var limit = NormalizeLimit(p.Limit ?? 0);
 
         try
         {
-            if (!Directory.Exists(_transcriptDir))
-                return ToolResult.Ok("No transcripts found.");
-
-            var jsonlFiles = Directory.GetFiles(_transcriptDir, "*.jsonl", SearchOption.AllDirectories);
-            var results = new List<SearchHit>();
-
-            foreach (var file in jsonlFiles)
+            if (string.IsNullOrWhiteSpace(p.Query))
             {
-                if (ct.IsCancellationRequested) break;
-
-                var sessionId = Path.GetFileNameWithoutExtension(file);
-                var lines = await File.ReadAllLinesAsync(file, ct);
-
-                foreach (var line in lines)
-                {
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-
-                    if (line.Contains(p.Query, StringComparison.OrdinalIgnoreCase))
-                    {
-                        // Extract a snippet around the match
-                        var snippet = ExtractSnippet(line, p.Query);
-                        results.Add(new SearchHit(sessionId, snippet));
-
-                        if (results.Count >= maxResults)
-                            break;
-                    }
-                }
-
-                if (results.Count >= maxResults)
-                    break;
+                var recent = await _recallService.ListRecentSessionsAsync(
+                    p.CurrentSessionId,
+                    limit,
+                    ct);
+                return ToolResult.Ok(FormatRecentSessions(recent));
             }
+
+            var roleFilter = ParseRoleFilter(p.RoleFilter);
+            var results = await _recallService.SearchSessionSummariesAsync(
+                p.Query,
+                currentSessionId: p.CurrentSessionId,
+                maxSessions: limit,
+                roleFilter,
+                ct);
 
             if (results.Count == 0)
                 return ToolResult.Ok($"No sessions found matching '{p.Query}'.");
 
-            var output = results.Select(r => $"[{r.SessionId}] {r.Snippet}");
-            return ToolResult.Ok(string.Join("\n\n", output));
+            return ToolResult.Ok(FormatSessionSummaries(p.Query, results));
         }
         catch (Exception ex)
         {
@@ -75,47 +67,86 @@ public sealed class SessionSearchTool : ITool
         }
     }
 
-    private static string ExtractSnippet(string line, string query)
-    {
-        // Try to parse the JSONL line to get the content field
-        try
-        {
-            using var doc = JsonDocument.Parse(line);
-            if (doc.RootElement.TryGetProperty("Content", out var contentEl) ||
-                doc.RootElement.TryGetProperty("content", out contentEl))
-            {
-                var content = contentEl.GetString() ?? line;
-                return TruncateAround(content, query, 150);
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"SessionSearchTool failed to parse structured line: {ex}");
-        }
+    private static int NormalizeLimit(int requested)
+        => Math.Clamp(requested > 0 ? requested : 3, 1, 5);
 
-        return TruncateAround(line, query, 150);
+    private static IReadOnlySet<string>? ParseRoleFilter(string? roleFilter)
+    {
+        if (string.IsNullOrWhiteSpace(roleFilter))
+            return null;
+
+        return roleFilter
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(role => !string.IsNullOrWhiteSpace(role))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
-    private static string TruncateAround(string text, string query, int maxLen)
+    private static string FormatRecentSessions(IReadOnlyList<RecentTranscriptSession> sessions)
     {
-        var idx = text.IndexOf(query, StringComparison.OrdinalIgnoreCase);
-        if (idx < 0) idx = 0;
+        if (sessions.Count == 0)
+            return "Mode: recent\nNo prior sessions found.";
 
-        var start = Math.Max(0, idx - (maxLen / 2));
-        var end = Math.Min(text.Length, start + maxLen);
-        start = Math.Max(0, end - maxLen);
+        var lines = new List<string>
+        {
+            "Mode: recent",
+            $"Count: {sessions.Count}",
+            "Use a keyword query to search specific topics across these sessions.",
+            ""
+        };
 
-        var snippet = text[start..end].Trim();
-        if (start > 0) snippet = "..." + snippet;
-        if (end < text.Length) snippet += "...";
-        return snippet;
+        foreach (var session in sessions)
+        {
+            lines.Add($"Session: {session.SessionId}");
+            lines.Add($"When: {session.StartedAt:O} - {session.LastActivityAt:O}");
+            lines.Add($"Messages: {session.MessageCount}");
+            lines.Add($"Preview: {session.Preview}");
+            lines.Add("");
+        }
+
+        return string.Join("\n", lines).TrimEnd();
     }
 
-    private sealed record SearchHit(string SessionId, string Snippet);
+    private static string FormatSessionSummaries(
+        string query,
+        IReadOnlyList<TranscriptSessionSummary> summaries)
+    {
+        var lines = new List<string>
+        {
+            "Mode: search",
+            $"Query: {query}",
+            $"Count: {summaries.Count}",
+            ""
+        };
+
+        foreach (var summary in summaries)
+        {
+            lines.Add($"Session: {summary.SessionId}");
+            lines.Add($"When: {summary.StartedAt:O} - {summary.LastActivityAt:O}");
+            lines.Add($"Messages: {summary.MessageCount}");
+            lines.Add($"Matches: {summary.Matches.Count}");
+            lines.Add("Summary:");
+            lines.Add(summary.Summary);
+            lines.Add("");
+        }
+
+        return string.Join("\n", lines).TrimEnd();
+    }
 }
 
-public sealed class SessionSearchParameters
+public sealed class SessionSearchParameters : ISessionAwareToolParameters
 {
-    public required string Query { get; init; }
-    public int MaxResults { get; init; } = 5;
+    [JsonPropertyName("query")]
+    [Description("Search query - keywords, phrases, boolean syntax, or prefix syntax. Omit this to browse recent sessions.")]
+    public string? Query { get; init; }
+
+    [JsonPropertyName("role_filter")]
+    [Description("Optional role filter within the searchable recall corpus. Supported values: user,assistant. Tool and system messages are not searched.")]
+    public string? RoleFilter { get; init; }
+
+    [JsonPropertyName("limit")]
+    [Description("Max sessions to summarize or list (default: 3, max: 5).")]
+    public int? Limit { get; init; }
+
+    [JsonIgnore]
+    public string? CurrentSessionId { get; set; }
 }

@@ -63,9 +63,8 @@ public sealed class PromptBuilder
     /// Layout:
     ///   [0] system: stable instructions (cache anchor)
     ///   [1] system: session state JSON (slow-changing, second cache layer)
-    ///   [2..N] system: retrieved context (if any)
-    ///   [N+1..M] user/assistant: recent turns
-    ///   [M+1] user: current message
+    ///   [2..N] user/assistant: recent turns
+    ///   [N+1] user: current message
     /// </summary>
     public List<Message> ToOpenAiMessages(PromptPacket packet)
     {
@@ -99,24 +98,13 @@ public sealed class PromptBuilder
             });
         }
 
-        // Layer 3: Retrieved context (only present when relevant)
-        if (packet.RetrievedContext is { Count: > 0 })
-        {
-            var contextBlock = string.Join("\n---\n", packet.RetrievedContext);
-            messages.Add(new Message
-            {
-                Role = "system",
-                Content = $"[Retrieved Context]\n{contextBlock}"
-            });
-        }
-
-        // Layer 4: Recent conversation turns (sliding window)
+        // Layer 3: Recent conversation turns (sliding window)
         if (packet.RecentTurns is { Count: > 0 })
         {
             messages.AddRange(packet.RecentTurns);
         }
 
-        // Layer 5: Current user message
+        // Layer 4: Current user message
         messages.Add(new Message
         {
             Role = "user",

@@ -26,7 +26,12 @@ public sealed class SessionSearchIndex : IDisposable
         _logger = logger;
         Directory.CreateDirectory(Path.GetDirectoryName(dbPath) ?? ".");
 
-        _db = new SqliteConnection($"Data Source={dbPath}");
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = dbPath,
+            Pooling = false
+        }.ToString();
+        _db = new SqliteConnection(connectionString);
         _db.Open();
         InitializeSchema();
     }
@@ -94,11 +99,12 @@ public sealed class SessionSearchIndex : IDisposable
         {
             using var cmd = _db.CreateCommand();
             cmd.CommandText = @"
-                SELECT m.session_id, m.role, snippet(messages_fts, 0, '»', '«', '...', 40) as snippet,
+                SELECT m.session_id, m.role, m.content, snippet(messages_fts, 0, '»', '«', '...', 40) as snippet,
                        rank, m.timestamp
                 FROM messages_fts
                 JOIN messages m ON messages_fts.rowid = m.id
                 WHERE messages_fts MATCH $query
+                  AND LOWER(m.role) IN ('user', 'assistant')
                 ORDER BY rank
                 LIMIT $limit";
             cmd.Parameters.AddWithValue("$query", SanitizeQuery(query));
@@ -111,9 +117,10 @@ public sealed class SessionSearchIndex : IDisposable
                 {
                     SessionId = reader.GetString(0),
                     Role = reader.GetString(1),
-                    Snippet = reader.GetString(2),
-                    Rank = reader.GetDouble(3),
-                    Timestamp = reader.GetString(4)
+                    Content = reader.GetString(2),
+                    Snippet = reader.GetString(3),
+                    Rank = reader.GetDouble(4),
+                    Timestamp = reader.GetString(5)
                 });
             }
         }
@@ -134,12 +141,31 @@ public sealed class SessionSearchIndex : IDisposable
         cmd.ExecuteNonQuery();
     }
 
+    /// <summary>Delete all indexed messages so the derived index can be rebuilt from JSONL.</summary>
+    public void Clear()
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = "DELETE FROM messages";
+        cmd.ExecuteNonQuery();
+    }
+
     /// <summary>Total indexed message count.</summary>
     public long MessageCount()
     {
         using var cmd = _db.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM messages";
         return (long)(cmd.ExecuteScalar() ?? 0);
+    }
+
+    /// <summary>True when a previous app version indexed roles outside recall scope.</summary>
+    public bool ContainsNonRecallableRoles()
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT COUNT(*)
+            FROM messages
+            WHERE LOWER(role) NOT IN ('user', 'assistant')";
+        return (long)(cmd.ExecuteScalar() ?? 0) > 0;
     }
 
     /// <summary>Sanitize user query for FTS5 — escape special chars.</summary>
@@ -150,7 +176,8 @@ public sealed class SessionSearchIndex : IDisposable
         return query
             .Replace("(", "")
             .Replace(")", "")
-            .Replace(":", " ");
+            .Replace(":", " ")
+            .Replace("-", " ");
     }
 
     public void Dispose()
@@ -166,6 +193,7 @@ public sealed class SearchResult
 {
     public required string SessionId { get; init; }
     public required string Role { get; init; }
+    public required string Content { get; init; }
     public required string Snippet { get; init; }
     public required double Rank { get; init; }
     public required string Timestamp { get; init; }

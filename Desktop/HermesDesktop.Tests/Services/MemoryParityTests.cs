@@ -1,0 +1,888 @@
+using Hermes.Agent.Context;
+using Hermes.Agent.Core;
+using Hermes.Agent.LLM;
+using Hermes.Agent.Memory;
+using Hermes.Agent.Search;
+using Hermes.Agent.Transcript;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace HermesDesktop.Tests.Services;
+
+[TestClass]
+public sealed class MemoryParityTests
+{
+    private string _tempDir = "";
+
+    [TestInitialize]
+    public void SetUp()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), $"hermes-memory-parity-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_tempDir);
+    }
+
+    [TestCleanup]
+    public void TearDown()
+    {
+        if (Directory.Exists(_tempDir))
+            Directory.Delete(_tempDir, recursive: true);
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_NoTools_FirstCallAugmentsCurrentUserWithPriorTranscriptRecall()
+    {
+        var transcripts = await CreateTranscriptsWithPriorMemoryAsync("prior-a", "The user asked me to remember codename basalt-lantern.");
+        var client = new RecordingChatClient { CompleteResponse = "I recall basalt-lantern." };
+        var agent = CreateAgent(client, transcripts);
+        var session = new Session { Id = "current-no-tools" };
+
+        await agent.ChatAsync("What did I ask you to remember before?", session, CancellationToken.None);
+
+        var sent = AssertSingleCompleteCall(client);
+        var lastUser = sent.Last(m => m.Role == "user");
+        StringAssert.Contains(lastUser.Content, "What did I ask you to remember before?");
+        StringAssert.Contains(lastUser.Content, "basalt-lantern");
+        StringAssert.Contains(lastUser.Content, "recalled memory context");
+        Assert.IsFalse(sent.Any(m => m.Role == "system" && m.Content.Contains("basalt-lantern", StringComparison.OrdinalIgnoreCase)),
+            "Transcript recall must not be emitted as a synthetic system message.");
+
+        var persisted = await transcripts.LoadSessionAsync("current-no-tools", CancellationToken.None);
+        Assert.AreEqual("What did I ask you to remember before?", persisted[0].Content,
+            "Injected recall must not be persisted as user-authored transcript content.");
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_WithTools_FirstToolLoopCallAugmentsCurrentUserWithPriorTranscriptRecall()
+    {
+        var transcripts = await CreateTranscriptsWithPriorMemoryAsync("prior-tool", "The earlier task used passphrase copper-harbor.");
+        var client = new RecordingChatClient();
+        client.ToolResponses.Enqueue(new ChatResponse { Content = "done", FinishReason = "stop" });
+
+        var agent = CreateAgent(client, transcripts);
+        agent.RegisterTool(new NoopTool());
+
+        await agent.ChatAsync("What passphrase did we use earlier?", new Session { Id = "current-tools" }, CancellationToken.None);
+
+        Assert.AreEqual(1, client.CompleteWithToolsCalls.Count);
+        var lastUser = client.CompleteWithToolsCalls[0].Last(m => m.Role == "user");
+        StringAssert.Contains(lastUser.Content, "What passphrase did we use earlier?");
+        StringAssert.Contains(lastUser.Content, "copper-harbor");
+        StringAssert.Contains(lastUser.Content, "recalled memory context");
+    }
+
+    [TestMethod]
+    public async Task StreamChatAsync_WithTools_FirstToolLoopCallAugmentsCurrentUserWithPriorTranscriptRecall()
+    {
+        var transcripts = await CreateTranscriptsWithPriorMemoryAsync("prior-stream", "The previous distinctive marker was glacier-orchid.");
+        var client = new RecordingChatClient();
+        client.ToolResponses.Enqueue(new ChatResponse { Content = "stream done", FinishReason = "stop" });
+
+        var agent = CreateAgent(client, transcripts);
+        agent.RegisterTool(new NoopTool());
+
+        await foreach (var _ in agent.StreamChatAsync("What was the previous marker?", new Session { Id = "current-stream" }, CancellationToken.None))
+        {
+        }
+
+        Assert.AreEqual(1, client.CompleteWithToolsCalls.Count);
+        var lastUser = client.CompleteWithToolsCalls[0].Last(m => m.Role == "user");
+        StringAssert.Contains(lastUser.Content, "What was the previous marker?");
+        StringAssert.Contains(lastUser.Content, "glacier-orchid");
+        StringAssert.Contains(lastUser.Content, "recalled memory context");
+    }
+
+    [TestMethod]
+    public void PromptBuilder_DoesNotEmitRetrievedTranscriptRecallAsSystemLayer()
+    {
+        var builder = new PromptBuilder("stable system");
+        var packet = new PromptPacket
+        {
+            SystemPrompt = "stable system",
+            SessionStateJson = "{}",
+            RetrievedContext = new List<string> { "transcript recall: basalt-lantern" },
+            RecentTurns = new List<Message>(),
+            CurrentUserMessage = "current question"
+        };
+
+        var messages = builder.ToOpenAiMessages(packet);
+
+        Assert.IsFalse(messages.Any(m => m.Role == "system" && m.Content.Contains("basalt-lantern", StringComparison.OrdinalIgnoreCase)),
+            "Transcript recall is coordinator-internal transport and must not be surfaced by PromptBuilder as a system layer.");
+        Assert.AreEqual("current question", messages.Last().Content);
+    }
+
+    [TestMethod]
+    public void TurnMemoryCoordinator_BuildMemoryContextBlock_UsesPythonFenceShape()
+    {
+        var block = TurnMemoryCoordinator.BuildMemoryContextBlock("durable marker basalt-lantern");
+
+        Assert.IsTrue(block.StartsWith("<memory-context>\n[System note:", StringComparison.Ordinal), block);
+        StringAssert.Contains(block, "NOT new user input");
+        StringAssert.Contains(block, "durable marker basalt-lantern");
+        Assert.IsTrue(block.EndsWith("</memory-context>", StringComparison.Ordinal), block);
+        Assert.IsFalse(block.Contains("<memory_context>", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task TranscriptStore_SaveMessageAsync_SucceedsWhenIndexObserverThrows()
+    {
+        var observer = new ThrowingTranscriptObserver();
+        var store = new TranscriptStore(_tempDir, messageObserver: observer);
+
+        await store.SaveMessageAsync("observer-session", new Message { Role = "user", Content = "still persists" }, CancellationToken.None);
+
+        Assert.IsTrue(store.SessionExists("observer-session"));
+        var loaded = await store.LoadSessionAsync("observer-session", CancellationToken.None);
+        Assert.AreEqual("still persists", loaded[0].Content);
+        Assert.AreEqual(1, observer.Attempts);
+    }
+
+    [TestMethod]
+    public async Task TranscriptStore_SaveMessageAsync_IndexesNewMessagesThroughObserver()
+    {
+        var dbPath = Path.Combine(_tempDir, "session-search.sqlite");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        var observer = new SessionSearchTranscriptObserver(index, NullLogger<SessionSearchTranscriptObserver>.Instance);
+        var store = new TranscriptStore(_tempDir, messageObserver: observer);
+
+        await store.SaveMessageAsync("indexed-session", new Message { Role = "user", Content = "fresh searchable token nebula-cedar" }, CancellationToken.None);
+
+        var results = index.Search("nebula-cedar", maxResults: 5);
+        Assert.IsTrue(results.Any(r => r.SessionId == "indexed-session"),
+            "New transcript writes should become searchable through the post-write observer.");
+    }
+
+    [TestMethod]
+    public async Task TranscriptRecallService_BackfillIndexAsync_PopulatesFtsFromExistingJsonl()
+    {
+        var store = new TranscriptStore(_tempDir);
+        await store.SaveMessageAsync("backfill-session", new Message { Role = "user", Content = "legacy transcript contains quartz-meadow" }, CancellationToken.None);
+
+        var dbPath = Path.Combine(_tempDir, "backfill.sqlite");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance, index);
+
+        await recall.BackfillIndexAsync(CancellationToken.None);
+
+        var results = index.Search("quartz-meadow", maxResults: 5);
+        Assert.IsTrue(results.Any(r => r.SessionId == "backfill-session"),
+            "Existing JSONL transcripts should be backfillable into the derived FTS index.");
+    }
+
+    [TestMethod]
+    public async Task TranscriptRecallService_SearchAsync_UsesExistingFtsIndexWhenAvailable()
+    {
+        var store = new TranscriptStore(_tempDir);
+        var dbPath = Path.Combine(_tempDir, "existing-index.sqlite");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        index.IndexMessage("indexed-only-session", "user", "indexed-only token ember-fjord", DateTime.UtcNow);
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance, index);
+
+        var results = await recall.SearchAsync("ember-fjord", currentSessionId: null, maxItems: 5, ct: CancellationToken.None);
+
+        Assert.AreEqual(1, results.Count);
+        Assert.AreEqual("indexed-only-session", results[0].SessionId);
+        StringAssert.Contains(results[0].Content, "ember-fjord");
+    }
+
+    [TestMethod]
+    public async Task TranscriptRecallService_SearchAsync_DoesNotScanJsonlWhenFtsReturnsHits()
+    {
+        var store = new TranscriptStore(_tempDir);
+        await store.SaveMessageAsync("jsonl-only-session", new Message
+        {
+            Role = "user",
+            Content = "jsonl-only garnet-brook"
+        }, CancellationToken.None);
+        var dbPath = Path.Combine(_tempDir, "fts-hit.sqlite");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        index.IndexMessage("fts-session", "user", "indexed garnet-brook", DateTime.UtcNow);
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance, index);
+
+        var results = await recall.SearchAsync("garnet-brook", currentSessionId: null, maxItems: 5, ct: CancellationToken.None);
+
+        Assert.AreEqual(1, results.Count,
+            "Once FTS returns ranked hits, search must not widen the result set with non-FTS JSONL scoring.");
+        Assert.AreEqual("fts-session", results[0].SessionId);
+        Assert.IsFalse(results.Any(r => r.SessionId == "jsonl-only-session"));
+    }
+
+    [TestMethod]
+    public async Task TranscriptRecallService_IndexBackedSearchExcludesToolMessages()
+    {
+        var dbPath = Path.Combine(_tempDir, "tool-filter.sqlite");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        var observer = new SessionSearchTranscriptObserver(index, NullLogger<SessionSearchTranscriptObserver>.Instance);
+        var store = new TranscriptStore(_tempDir, messageObserver: observer);
+        await store.SaveMessageAsync("tool-session", new Message
+        {
+            Role = "tool",
+            Content = "tool-only secret opal-canyon"
+        }, CancellationToken.None);
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance, index);
+
+        var results = await recall.SearchAsync("opal-canyon", currentSessionId: null, maxItems: 5, ct: CancellationToken.None);
+
+        Assert.AreEqual(0, results.Count,
+            "Index-backed live search must not widen recall beyond user/assistant messages.");
+    }
+
+    [TestMethod]
+    public async Task TranscriptRecallService_SearchAsync_FallsBackToJsonlWhenIndexHasNoHits()
+    {
+        var store = new TranscriptStore(_tempDir);
+        await store.SaveMessageAsync("fallback-session", new Message
+        {
+            Role = "user",
+            Content = "fallback-only amber-hill"
+        }, CancellationToken.None);
+        var dbPath = Path.Combine(_tempDir, "stale-index.sqlite");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        index.IndexMessage("unrelated-session", "user", "unrelated indexed content", DateTime.UtcNow);
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance, index);
+
+        var results = await recall.SearchAsync("amber-hill", currentSessionId: null, maxItems: 5, ct: CancellationToken.None);
+
+        Assert.AreEqual(1, results.Count);
+        Assert.AreEqual("fallback-session", results[0].SessionId);
+        StringAssert.Contains(results[0].Content, "amber-hill");
+    }
+
+    [TestMethod]
+    public async Task TranscriptRecallService_SearchAsync_RebuildsPollutedIndexBeforeSearching()
+    {
+        var store = new TranscriptStore(_tempDir);
+        await store.SaveMessageAsync("clean-session", new Message
+        {
+            Role = "user",
+            Content = "clean user sapphire-glen"
+        }, CancellationToken.None);
+        var dbPath = Path.Combine(_tempDir, "polluted-index.sqlite");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        index.IndexMessage("polluted-session", "tool", "polluted tool sapphire-glen", DateTime.UtcNow);
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance, index);
+
+        var results = await recall.SearchAsync("sapphire-glen", currentSessionId: null, maxItems: 5, ct: CancellationToken.None);
+
+        Assert.AreEqual(1, results.Count);
+        Assert.AreEqual("clean-session", results[0].SessionId);
+        StringAssert.Contains(results[0].Content, "clean user sapphire-glen");
+        Assert.IsFalse(results[0].Content.Contains("polluted tool", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task TranscriptRecallService_SearchSessionSummariesAsync_ExcludesToolMessagesFromSummaryInput()
+    {
+        var store = new TranscriptStore(_tempDir);
+        await store.SaveMessageAsync("summary-tool-session", new Message
+        {
+            Role = "user",
+            Content = "Please remember topaz-reef"
+        }, CancellationToken.None);
+        await store.SaveMessageAsync("summary-tool-session", new Message
+        {
+            Role = "tool",
+            ToolName = "bash",
+            Content = "TOOL SECRET should not surface in summary"
+        }, CancellationToken.None);
+        await store.SaveMessageAsync("summary-tool-session", new Message
+        {
+            Role = "assistant",
+            Content = "The visible conclusion is topaz-reef"
+        }, CancellationToken.None);
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance);
+
+        var summaries = await recall.SearchSessionSummariesAsync("topaz-reef", maxSessions: 1, ct: CancellationToken.None);
+
+        Assert.AreEqual(1, summaries.Count);
+        StringAssert.Contains(summaries[0].Summary, "topaz-reef");
+        Assert.IsFalse(summaries[0].Summary.Contains("TOOL SECRET", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(summaries[0].Summary.Contains("TOOL(", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task SessionSearchTool_UsesTranscriptRecallServiceCorpus()
+    {
+        var transcripts = await CreateTranscriptsWithPriorMemoryAsync("manual-search", "Manual recall should find silver-bridge.");
+        var recall = new TranscriptRecallService(transcripts, NullLogger<TranscriptRecallService>.Instance);
+        var tool = new Hermes.Agent.Tools.SessionSearchTool(recall);
+
+        var result = await tool.ExecuteAsync(new Hermes.Agent.Tools.SessionSearchParameters
+        {
+            Query = "silver-bridge",
+            Limit = 5
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        StringAssert.Contains(result.Content, "manual-search");
+        StringAssert.Contains(result.Content, "silver-bridge");
+    }
+
+    [TestMethod]
+    public async Task HermesMemoryOrchestrator_OnTurnStartThenPrefetchAll_CallsProvidersInOrderAndAggregates()
+    {
+        var calls = new List<string>();
+        var first = new RecordingMemoryProvider("first", calls) { PrefetchResult = "first context" };
+        var second = new RecordingMemoryProvider("second", calls) { PrefetchResult = "second context" };
+        var orchestrator = new HermesMemoryOrchestrator(
+            new IMemoryProvider[] { first, second },
+            NullLogger<HermesMemoryOrchestrator>.Instance);
+
+        await orchestrator.OnTurnStartAsync(7, "recall basalt", "session-a", CancellationToken.None);
+        var context = await orchestrator.PrefetchAllAsync("recall basalt", "session-a", CancellationToken.None);
+
+        CollectionAssert.AreEqual(new[]
+        {
+            "first:on_turn_start:7:session-a:recall basalt",
+            "second:on_turn_start:7:session-a:recall basalt",
+            "first:prefetch:session-a:recall basalt",
+            "second:prefetch:session-a:recall basalt"
+        }, calls);
+        StringAssert.Contains(context, "first context");
+        StringAssert.Contains(context, "second context");
+    }
+
+    [TestMethod]
+    public async Task HermesMemoryOrchestrator_ProviderFailuresAreNonFatal()
+    {
+        var calls = new List<string>();
+        var failing = new RecordingMemoryProvider("failing", calls)
+        {
+            ThrowOnTurnStart = true,
+            ThrowOnPrefetch = true,
+            ThrowOnSync = true,
+            ThrowOnQueue = true
+        };
+        var healthy = new RecordingMemoryProvider("healthy", calls) { PrefetchResult = "healthy context" };
+        var orchestrator = new HermesMemoryOrchestrator(
+            new IMemoryProvider[] { failing, healthy },
+            NullLogger<HermesMemoryOrchestrator>.Instance);
+
+        await orchestrator.OnTurnStartAsync(1, "query", "session-b", CancellationToken.None);
+        var context = await orchestrator.PrefetchAllAsync("query", "session-b", CancellationToken.None);
+        await orchestrator.SyncAllAsync("user", "assistant", "session-b", CancellationToken.None);
+        await orchestrator.QueuePrefetchAllAsync("user", "session-b", CancellationToken.None);
+
+        StringAssert.Contains(context, "healthy context");
+        Assert.IsTrue(calls.Contains("healthy:on_turn_start:1:session-b:query"));
+        Assert.IsTrue(calls.Contains("healthy:prefetch:session-b:query"));
+        Assert.IsTrue(calls.Contains("healthy:sync:session-b:user=>assistant"));
+        Assert.IsTrue(calls.Contains("healthy:queue_prefetch:session-b:user"));
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_CompletedTurnSyncsMemoryAndQueuesNextPrefetch()
+    {
+        var transcripts = new TranscriptStore(_tempDir);
+        var client = new RecordingChatClient { CompleteResponse = "completed answer" };
+        var calls = new List<string>();
+        var provider = new RecordingMemoryProvider("provider", calls);
+        var coordinator = CreateCoordinator(client, transcripts, provider);
+        var agent = CreateAgent(client, transcripts, coordinator);
+
+        await agent.ChatAsync("sync this turn", new Session { Id = "sync-session" }, CancellationToken.None);
+
+        Assert.IsTrue(calls.Contains("provider:sync:sync-session:sync this turn=>completed answer"));
+        Assert.IsTrue(calls.Contains("provider:queue_prefetch:sync-session:sync this turn"));
+        Assert.IsTrue(
+            calls.IndexOf("provider:sync:sync-session:sync this turn=>completed answer") <
+            calls.IndexOf("provider:queue_prefetch:sync-session:sync this turn"),
+            "Python reference syncs the completed turn before queueing the next prefetch.");
+    }
+
+    [TestMethod]
+    public async Task ChatAsync_EmptyAssistantResponseDoesNotSyncMemory()
+    {
+        var transcripts = new TranscriptStore(_tempDir);
+        var client = new RecordingChatClient { CompleteResponse = "" };
+        var calls = new List<string>();
+        var provider = new RecordingMemoryProvider("provider", calls);
+        var coordinator = CreateCoordinator(client, transcripts, provider);
+        var agent = CreateAgent(client, transcripts, coordinator);
+
+        await agent.ChatAsync("do not sync empty output", new Session { Id = "empty-response" }, CancellationToken.None);
+
+        Assert.IsFalse(calls.Any(c => c.Contains(":sync:", StringComparison.Ordinal)));
+        Assert.IsFalse(calls.Any(c => c.Contains(":queue_prefetch:", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task SessionSearchTool_EmptyQueryListsRecentSessions()
+    {
+        var store = new TranscriptStore(_tempDir);
+        await store.SaveMessageAsync("recent-a", new Message
+        {
+            Role = "user",
+            Content = "worked on alpine scheduler",
+            Timestamp = DateTime.UtcNow.AddMinutes(-10)
+        }, CancellationToken.None);
+        await store.SaveMessageAsync("recent-b", new Message
+        {
+            Role = "assistant",
+            Content = "finished harbor gateway",
+            Timestamp = DateTime.UtcNow.AddMinutes(-5)
+        }, CancellationToken.None);
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance);
+        var tool = new Hermes.Agent.Tools.SessionSearchTool(recall);
+
+        var result = await tool.ExecuteAsync(new Hermes.Agent.Tools.SessionSearchParameters
+        {
+            Limit = 5
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        StringAssert.Contains(result.Content, "Mode: recent");
+        StringAssert.Contains(result.Content, "recent-a");
+        StringAssert.Contains(result.Content, "recent-b");
+        StringAssert.Contains(result.Content, "worked on alpine scheduler");
+    }
+
+    [TestMethod]
+    public async Task SessionSearchTool_OmittedLimitDefaultsToPythonThree()
+    {
+        var store = new TranscriptStore(_tempDir);
+        for (var i = 0; i < 4; i++)
+        {
+            await store.SaveMessageAsync($"default-limit-{i}", new Message
+            {
+                Role = "user",
+                Content = $"default limit session {i}",
+                Timestamp = DateTime.UtcNow.AddMinutes(i)
+            }, CancellationToken.None);
+        }
+
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance);
+        var tool = new Hermes.Agent.Tools.SessionSearchTool(recall);
+
+        var result = await tool.ExecuteAsync(new Hermes.Agent.Tools.SessionSearchParameters(), CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        StringAssert.Contains(result.Content, "Count: 3");
+        Assert.IsFalse(result.Content.Contains("default-limit-0", StringComparison.OrdinalIgnoreCase),
+            "Python session_search defaults omitted limit to 3 and should omit the oldest fourth session.");
+    }
+
+    [TestMethod]
+    public async Task SessionSearchTool_QueryReturnsSessionLevelSummaryFallback()
+    {
+        var store = new TranscriptStore(_tempDir);
+        await store.SaveMessageAsync("summary-session", new Message { Role = "user", Content = "Please investigate vector-jasmine failures." }, CancellationToken.None);
+        await store.SaveMessageAsync("summary-session", new Message { Role = "assistant", Content = "We fixed vector-jasmine by changing retry handling." }, CancellationToken.None);
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance);
+        var tool = new Hermes.Agent.Tools.SessionSearchTool(recall);
+
+        var result = await tool.ExecuteAsync(new Hermes.Agent.Tools.SessionSearchParameters
+        {
+            Query = "vector-jasmine",
+            Limit = 3
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        StringAssert.Contains(result.Content, "Mode: search");
+        StringAssert.Contains(result.Content, "Session: summary-session");
+        StringAssert.Contains(result.Content, "Summary:");
+        StringAssert.Contains(result.Content, "vector-jasmine");
+        Assert.AreEqual(1, CountOccurrences(result.Content, "Session: summary-session"),
+            "Search results should be grouped once per session, not emitted as raw per-message snippets.");
+    }
+
+    [TestMethod]
+    public async Task SessionSearchTool_CurrentSessionIdExcludesCurrentSessionFromRecentAndSearch()
+    {
+        var store = new TranscriptStore(_tempDir);
+        await store.SaveMessageAsync("current-session", new Message { Role = "user", Content = "current hidden orbit-key" }, CancellationToken.None);
+        await store.SaveMessageAsync("prior-session", new Message { Role = "user", Content = "prior visible orbit-key" }, CancellationToken.None);
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance);
+        var tool = new Hermes.Agent.Tools.SessionSearchTool(recall);
+
+        var recent = await tool.ExecuteAsync(new Hermes.Agent.Tools.SessionSearchParameters
+        {
+            CurrentSessionId = "current-session",
+            Limit = 5
+        }, CancellationToken.None);
+        var searched = await tool.ExecuteAsync(new Hermes.Agent.Tools.SessionSearchParameters
+        {
+            Query = "orbit-key",
+            CurrentSessionId = "current-session",
+            Limit = 5
+        }, CancellationToken.None);
+
+        Assert.IsTrue(recent.Success);
+        Assert.IsFalse(recent.Content.Contains("current-session", StringComparison.OrdinalIgnoreCase));
+        StringAssert.Contains(recent.Content, "prior-session");
+        Assert.IsTrue(searched.Success);
+        Assert.IsFalse(searched.Content.Contains("current hidden orbit-key", StringComparison.OrdinalIgnoreCase));
+        StringAssert.Contains(searched.Content, "prior visible orbit-key");
+    }
+
+    [TestMethod]
+    public async Task Agent_InjectsCurrentSessionIdIntoSessionAwareToolParameters()
+    {
+        var store = new TranscriptStore(_tempDir);
+        await store.SaveMessageAsync("active-agent-session", new Message { Role = "user", Content = "current-only raven-mint should be excluded" }, CancellationToken.None);
+        await store.SaveMessageAsync("prior-agent-session", new Message { Role = "user", Content = "prior raven-mint should be visible" }, CancellationToken.None);
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance);
+        var client = new RecordingChatClient();
+        client.ToolResponses.Enqueue(new ChatResponse
+        {
+            FinishReason = "tool_calls",
+            ToolCalls = new List<ToolCall>
+            {
+                new()
+                {
+                    Id = "call-session-search",
+                    Name = "session_search",
+                    Arguments = "{\"query\":\"raven-mint\",\"limit\":3}"
+                }
+            }
+        });
+        client.ToolResponses.Enqueue(new ChatResponse { Content = "final", FinishReason = "stop" });
+        var agent = CreateAgent(client, store);
+        agent.RegisterTool(new Hermes.Agent.Tools.SessionSearchTool(recall));
+        var session = new Session { Id = "active-agent-session" };
+
+        await agent.ChatAsync("search memory for raven-mint", session, CancellationToken.None);
+
+        var toolMessage = session.Messages.Single(m => string.Equals(m.Role, "tool", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(toolMessage.Content.Contains("current-only raven-mint", StringComparison.OrdinalIgnoreCase));
+        StringAssert.Contains(toolMessage.Content, "prior raven-mint should be visible");
+    }
+
+    [TestMethod]
+    public void SessionSearchTool_SchemaMatchesPythonNamesAndHidesInjectedCurrentSessionId()
+    {
+        var store = new TranscriptStore(_tempDir);
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance);
+        var agent = new Agent(new RecordingChatClient(), NullLogger<Agent>.Instance);
+        agent.RegisterTool(new Hermes.Agent.Tools.SessionSearchTool(recall));
+
+        var schema = agent.GetToolDefinitions().Single(t => t.Name == "session_search").Parameters.GetRawText();
+
+        StringAssert.Contains(schema, "\"query\"");
+        StringAssert.Contains(schema, "\"role_filter\"");
+        StringAssert.Contains(schema, "\"limit\"");
+        Assert.IsFalse(schema.Contains("roleFilter", StringComparison.Ordinal));
+        Assert.IsFalse(schema.Contains("maxResults", StringComparison.Ordinal));
+        Assert.IsFalse(schema.Contains("currentSessionId", StringComparison.Ordinal));
+        Assert.IsFalse(schema.Contains("current_session_id", StringComparison.Ordinal));
+        StringAssert.Contains(schema, "user,assistant");
+        StringAssert.Contains(schema, "Tool and system messages are not searched");
+        Assert.IsFalse(schema.Contains("\"required\"", StringComparison.Ordinal),
+            "Python session_search has no required parameters so the model can call it with no arguments for recent-session mode.");
+    }
+
+    [TestMethod]
+    public async Task TranscriptRecallService_SearchSessionSummariesAsync_SummarizesSessionsConcurrently()
+    {
+        var store = new TranscriptStore(_tempDir);
+        for (var i = 0; i < 3; i++)
+        {
+            await store.SaveMessageAsync($"parallel-{i}", new Message
+            {
+                Role = "user",
+                Content = $"parallel-token request {i}"
+            }, CancellationToken.None);
+            await store.SaveMessageAsync($"parallel-{i}", new Message
+            {
+                Role = "assistant",
+                Content = $"parallel-token answer {i}"
+            }, CancellationToken.None);
+        }
+
+        var summaryClient = new ConcurrentSummaryChatClient();
+        var recall = new TranscriptRecallService(
+            store,
+            NullLogger<TranscriptRecallService>.Instance,
+            summaryClient: summaryClient);
+
+        var summaries = await recall.SearchSessionSummariesAsync(
+            "parallel-token",
+            maxSessions: 3,
+            ct: CancellationToken.None);
+
+        Assert.AreEqual(3, summaries.Count);
+        Assert.AreEqual(3, summaryClient.CompleteCalls);
+        Assert.IsTrue(summaryClient.MaxConcurrent > 1,
+            "Python session_search summarizes matching sessions with bounded concurrency, not sequential one-by-one calls.");
+        Assert.IsTrue(summaries.All(s => s.Summary.Contains("LLM summary", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task TranscriptRecallService_StripsInjectedMemoryContextBlocksBeforeRecall()
+    {
+        var store = new TranscriptStore(_tempDir);
+        await store.SaveMessageAsync("dirty-session", new Message
+        {
+            Role = "assistant",
+            Content = "Keep durable marker willow-lake. <memory_context>stale nested token should not return</memory_context>"
+        }, CancellationToken.None);
+        await store.SaveMessageAsync("dirty-session-2", new Message
+        {
+            Role = "user",
+            Content = "Another durable marker cedar-river. <memory-context>old injected block</memory-context>"
+        }, CancellationToken.None);
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance);
+
+        var result = await recall.RecallAsync("willow-lake", "current", ct: CancellationToken.None);
+        var staleOnly = await recall.SearchAsync("stale nested token", "current", ct: CancellationToken.None);
+
+        Assert.IsTrue(result.Injected);
+        StringAssert.Contains(result.ContextBlock!, "willow-lake");
+        Assert.IsFalse(result.ContextBlock!.Contains("stale nested token", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(result.ContextBlock!.Contains("<memory_context>", StringComparison.OrdinalIgnoreCase));
+        Assert.AreEqual(0, staleOnly.Count, "Queries must not match stale context from prior injected memory blocks.");
+    }
+
+    private async Task<TranscriptStore> CreateTranscriptsWithPriorMemoryAsync(string priorSessionId, string priorContent)
+    {
+        var transcripts = new TranscriptStore(_tempDir);
+        await transcripts.SaveMessageAsync(priorSessionId, new Message { Role = "user", Content = priorContent }, CancellationToken.None);
+        await transcripts.SaveMessageAsync(priorSessionId, new Message { Role = "assistant", Content = "Acknowledged." }, CancellationToken.None);
+        return transcripts;
+    }
+
+    private static Agent CreateAgent(
+        RecordingChatClient client,
+        TranscriptStore transcripts,
+        TurnMemoryCoordinator? coordinator = null)
+    {
+        var contextManager = new ContextManager(
+            transcripts,
+            client,
+            new TokenBudget(maxTokens: 8000, recentTurnWindow: 6),
+            new PromptBuilder("stable system"),
+            NullLogger<ContextManager>.Instance);
+        coordinator ??= new TurnMemoryCoordinator(
+            contextManager,
+            new TranscriptRecallService(transcripts, NullLogger<TranscriptRecallService>.Instance),
+            NullLogger<TurnMemoryCoordinator>.Instance);
+
+        return new Agent(
+            client,
+            NullLogger<Agent>.Instance,
+            transcripts: transcripts,
+            contextManager: contextManager,
+            turnMemoryCoordinator: coordinator);
+    }
+
+    private static TurnMemoryCoordinator CreateCoordinator(
+        RecordingChatClient client,
+        TranscriptStore transcripts,
+        params IMemoryProvider[] providers)
+    {
+        var contextManager = new ContextManager(
+            transcripts,
+            client,
+            new TokenBudget(maxTokens: 8000, recentTurnWindow: 6),
+            new PromptBuilder("stable system"),
+            NullLogger<ContextManager>.Instance);
+        var orchestrator = new HermesMemoryOrchestrator(
+            providers,
+            NullLogger<HermesMemoryOrchestrator>.Instance);
+
+        return new TurnMemoryCoordinator(
+            contextManager,
+            orchestrator,
+            NullLogger<TurnMemoryCoordinator>.Instance);
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+
+        return count;
+    }
+
+    private static List<Message> AssertSingleCompleteCall(RecordingChatClient client)
+    {
+        Assert.AreEqual(1, client.CompleteCalls.Count);
+        return client.CompleteCalls[0];
+    }
+
+    private sealed class NoopTool : ITool
+    {
+        public string Name => "noop_tool";
+        public string Description => "No-op test tool.";
+        public Type ParametersType => typeof(NoopParams);
+        public Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+            => Task.FromResult(ToolResult.Ok("noop"));
+    }
+
+    private sealed class NoopParams
+    {
+    }
+
+    private sealed class ThrowingTranscriptObserver : ITranscriptMessageObserver
+    {
+        public int Attempts { get; private set; }
+
+        public Task OnMessageSavedAsync(string sessionId, Message message, CancellationToken ct)
+        {
+            Attempts++;
+            throw new InvalidOperationException("index unavailable");
+        }
+    }
+
+    private sealed class RecordingMemoryProvider : IMemoryProvider
+    {
+        private readonly List<string> _calls;
+
+        public RecordingMemoryProvider(string name, List<string> calls)
+        {
+            Name = name;
+            _calls = calls;
+        }
+
+        public string Name { get; }
+        public string PrefetchResult { get; init; } = "";
+        public bool ThrowOnTurnStart { get; init; }
+        public bool ThrowOnPrefetch { get; init; }
+        public bool ThrowOnSync { get; init; }
+        public bool ThrowOnQueue { get; init; }
+
+        public Task OnTurnStartAsync(int turnNumber, string userMessage, string sessionId, CancellationToken ct)
+        {
+            _calls.Add($"{Name}:on_turn_start:{turnNumber}:{sessionId}:{userMessage}");
+            if (ThrowOnTurnStart)
+                throw new InvalidOperationException($"{Name} turn start failed");
+            return Task.CompletedTask;
+        }
+
+        public Task<string?> PrefetchAsync(string query, string sessionId, CancellationToken ct)
+        {
+            _calls.Add($"{Name}:prefetch:{sessionId}:{query}");
+            if (ThrowOnPrefetch)
+                throw new InvalidOperationException($"{Name} prefetch failed");
+            return Task.FromResult<string?>(PrefetchResult);
+        }
+
+        public Task SyncTurnAsync(string userContent, string assistantContent, string sessionId, CancellationToken ct)
+        {
+            _calls.Add($"{Name}:sync:{sessionId}:{userContent}=>{assistantContent}");
+            if (ThrowOnSync)
+                throw new InvalidOperationException($"{Name} sync failed");
+            return Task.CompletedTask;
+        }
+
+        public Task QueuePrefetchAsync(string query, string sessionId, CancellationToken ct)
+        {
+            _calls.Add($"{Name}:queue_prefetch:{sessionId}:{query}");
+            if (ThrowOnQueue)
+                throw new InvalidOperationException($"{Name} queue failed");
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingChatClient : IChatClient
+    {
+        public List<List<Message>> CompleteCalls { get; } = new();
+        public List<List<Message>> CompleteWithToolsCalls { get; } = new();
+        public Queue<ChatResponse> ToolResponses { get; } = new();
+        public string CompleteResponse { get; init; } = "ok";
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+        {
+            CompleteCalls.Add(Clone(messages));
+            return Task.FromResult(CompleteResponse);
+        }
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            CompleteWithToolsCalls.Add(Clone(messages));
+            return Task.FromResult(ToolResponses.Count > 0
+                ? ToolResponses.Dequeue()
+                : new ChatResponse { Content = "done", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            CompleteCalls.Add(Clone(messages));
+            yield return "stream";
+            await Task.CompletedTask;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            CompleteCalls.Add(Clone(messages));
+            yield return new StreamEvent.TokenDelta("stream");
+            yield return new StreamEvent.MessageComplete("stop");
+            await Task.CompletedTask;
+        }
+
+        private static List<Message> Clone(IEnumerable<Message> messages)
+            => messages.Select(m => new Message
+            {
+                Role = m.Role,
+                Content = m.Content,
+                Timestamp = m.Timestamp,
+                ToolCallId = m.ToolCallId,
+                ToolName = m.ToolName,
+                ToolCalls = m.ToolCalls
+            }).ToList();
+    }
+
+    private sealed class ConcurrentSummaryChatClient : IChatClient
+    {
+        private int _current;
+        private int _maxConcurrent;
+
+        public int CompleteCalls { get; private set; }
+        public int MaxConcurrent => _maxConcurrent;
+
+        public async Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+        {
+            CompleteCalls++;
+            var current = Interlocked.Increment(ref _current);
+            try
+            {
+                var observed = _maxConcurrent;
+                while (current > observed)
+                {
+                    var prior = Interlocked.CompareExchange(ref _maxConcurrent, current, observed);
+                    if (prior == observed)
+                        break;
+                    observed = prior;
+                }
+
+                await Task.Delay(75, ct);
+                return "LLM summary";
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _current);
+            }
+        }
+
+        public Task<ChatResponse> CompleteWithToolsAsync(IEnumerable<Message> messages, IEnumerable<ToolDefinition> tools, CancellationToken ct)
+            => throw new NotSupportedException();
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+}

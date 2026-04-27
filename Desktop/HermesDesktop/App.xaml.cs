@@ -11,6 +11,7 @@ using Hermes.Agent.Permissions;
 using Hermes.Agent.Tasks;
 using Hermes.Agent.Buddy;
 using Hermes.Agent.Context;
+using Hermes.Agent.Search;
 using Hermes.Agent.Agents;
 using Hermes.Agent.Coordinator;
 using Hermes.Agent.Mcp;
@@ -337,7 +338,17 @@ public partial class App : Application
 
         // Transcript store
         var transcriptsDir = Path.Combine(projectDir, "transcripts");
-        services.AddSingleton(sp => new TranscriptStore(transcriptsDir, eagerFlush: true));
+        var sessionSearchDbPath = Path.Combine(projectDir, "session-search.sqlite");
+        services.AddSingleton(sp => new SessionSearchIndex(
+            sessionSearchDbPath,
+            sp.GetRequiredService<ILogger<SessionSearchIndex>>()));
+        services.AddSingleton<ITranscriptMessageObserver>(sp => new SessionSearchTranscriptObserver(
+            sp.GetRequiredService<SessionSearchIndex>(),
+            sp.GetRequiredService<ILogger<SessionSearchTranscriptObserver>>()));
+        services.AddSingleton(sp => new TranscriptStore(
+            transcriptsDir,
+            eagerFlush: true,
+            messageObserver: sp.GetRequiredService<ITranscriptMessageObserver>()));
 
         // Memory manager
         var memoryDir = Path.Combine(projectDir, "memory");
@@ -453,6 +464,20 @@ public partial class App : Application
             sp.GetRequiredService<PromptBuilder>(),
             sp.GetRequiredService<ILogger<ContextManager>>(),
             soulService: sp.GetRequiredService<SoulService>()));
+        services.AddSingleton(sp => new TranscriptRecallService(
+            sp.GetRequiredService<TranscriptStore>(),
+            sp.GetRequiredService<ILogger<TranscriptRecallService>>(),
+            sp.GetRequiredService<SessionSearchIndex>(),
+            sp.GetRequiredService<IChatClient>()));
+        services.AddSingleton<IMemoryProvider>(sp => new TranscriptMemoryProvider(
+            sp.GetRequiredService<TranscriptRecallService>()));
+        services.AddSingleton(sp => new HermesMemoryOrchestrator(
+            sp.GetServices<IMemoryProvider>(),
+            sp.GetRequiredService<ILogger<HermesMemoryOrchestrator>>()));
+        services.AddSingleton(sp => new TurnMemoryCoordinator(
+            sp.GetRequiredService<ContextManager>(),
+            sp.GetRequiredService<HermesMemoryOrchestrator>(),
+            sp.GetRequiredService<ILogger<TurnMemoryCoordinator>>()));
 
         // MCP manager
         services.AddSingleton(sp => new McpManager(
@@ -491,7 +516,8 @@ public partial class App : Application
                 memories: sp.GetRequiredService<MemoryManager>(),
                 contextManager: sp.GetRequiredService<ContextManager>(),
                 soulService: sp.GetRequiredService<SoulService>(),
-                pluginManager: sp.GetRequiredService<PluginManager>());
+                pluginManager: sp.GetRequiredService<PluginManager>(),
+                turnMemoryCoordinator: sp.GetRequiredService<TurnMemoryCoordinator>());
             agent.MaxToolIterations = HermesEnvironment.MaxAgentIterations;
             return agent;
         });
@@ -739,9 +765,8 @@ public partial class App : Application
         RegisterAndTrack(agent, toolRegistry, new MemoryTool(memoryManager));
 
         // Session search tool
-        var transcriptDir = Path.Combine(
-            HermesEnvironment.HermesHomePath, "hermes-cs", "transcripts");
-        RegisterAndTrack(agent, toolRegistry, new SessionSearchTool(transcriptDir));
+        RegisterAndTrack(agent, toolRegistry, new SessionSearchTool(
+            services.GetRequiredService<TranscriptRecallService>()));
 
         // Skill invoke tool
         var skillManager = services.GetRequiredService<SkillManager>();

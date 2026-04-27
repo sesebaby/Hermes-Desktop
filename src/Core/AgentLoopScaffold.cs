@@ -2,6 +2,7 @@ namespace Hermes.Agent.Core;
 
 using Hermes.Agent.Context;
 using Hermes.Agent.Memory;
+using Hermes.Agent.Search;
 using Hermes.Agent.Soul;
 using Hermes.Agent.Transcript;
 using Microsoft.Extensions.Logging;
@@ -78,9 +79,29 @@ internal static class AgentContextAssembler
         string sessionId,
         string userMessage,
         ContextManager? contextManager,
+        TurnMemoryCoordinator? turnMemoryCoordinator,
+        IReadOnlyList<Message>? baseMessages,
+        TurnMemoryMode mode,
         ILogger logger,
         CancellationToken ct)
     {
+        if (turnMemoryCoordinator is not null)
+        {
+            try
+            {
+                return (await turnMemoryCoordinator.PrepareFirstCallAsync(
+                    sessionId,
+                    userMessage,
+                    baseMessages,
+                    mode,
+                    ct)).Messages;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "TurnMemoryCoordinator failed, falling back to ContextManager/raw session messages");
+            }
+        }
+
         if (contextManager is null)
             return null;
 
