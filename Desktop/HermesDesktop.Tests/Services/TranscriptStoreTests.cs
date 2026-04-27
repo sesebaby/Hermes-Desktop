@@ -1,6 +1,11 @@
 using Hermes.Agent.Core;
+using Hermes.Agent.Search;
 using Hermes.Agent.Transcript;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace HermesDesktop.Tests.Services;
 
@@ -24,12 +29,214 @@ public class TranscriptStoreTests
     [TestCleanup]
     public void TearDown()
     {
+        SqliteConnection.ClearAllPools();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
         if (Directory.Exists(_tempDir))
             Directory.Delete(_tempDir, recursive: true);
     }
 
     private TranscriptStore CreateStore(bool eagerFlush = false)
         => new(_tempDir, eagerFlush);
+
+    // ── Python state.db parity ──
+
+    [TestMethod]
+    public void SessionSearchIndex_Constructor_CreatesPythonStyleStateDbSchema()
+    {
+        var dbPath = Path.Combine(_tempDir, "state.db");
+
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+
+        using var db = new SqliteConnection($"Data Source={dbPath}");
+        db.Open();
+        CollectionAssert.IsSubsetOf(
+            new[] { "schema_version", "sessions", "messages", "state_meta", "messages_fts", "activities" },
+            ReadTableNames(db));
+        Assert.AreEqual(9L, ExecuteScalarLong(db, "SELECT version FROM schema_version LIMIT 1"));
+        CollectionAssert.IsSubsetOf(
+            new[] { "id", "source", "user_id", "model", "model_config", "system_prompt", "parent_session_id", "started_at", "ended_at", "end_reason", "message_count", "tool_call_count", "api_call_count" },
+            ReadColumnNames(db, "sessions"));
+        CollectionAssert.IsSubsetOf(
+            new[] { "id", "session_id", "role", "content", "tool_call_id", "tool_calls", "tool_name", "timestamp", "token_count", "finish_reason", "reasoning", "reasoning_content", "reasoning_details", "codex_reasoning_items", "codex_message_items" },
+            ReadColumnNames(db, "messages"));
+    }
+
+    [TestMethod]
+    public void SessionSearchIndex_SaveMessage_CreatesSessionRowsAndCounters()
+    {
+        var dbPath = Path.Combine(_tempDir, "state.db");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        var message = new Message
+        {
+            Role = "assistant",
+            Content = "Will call a tool for python-style state.",
+            ToolCalls = new List<ToolCall>
+            {
+                new() { Id = "call-1", Name = "memory", Arguments = "{\"action\":\"add\"}" }
+            }
+        };
+
+        index.SaveMessage("sqlite-session", message, source: "desktop");
+
+        using var db = new SqliteConnection($"Data Source={dbPath}");
+        db.Open();
+        Assert.AreEqual(1L, ExecuteScalarLong(db, "SELECT COUNT(*) FROM sessions WHERE id = 'sqlite-session' AND source = 'desktop'"));
+        Assert.AreEqual(1L, ExecuteScalarLong(db, "SELECT message_count FROM sessions WHERE id = 'sqlite-session'"));
+        Assert.AreEqual(1L, ExecuteScalarLong(db, "SELECT tool_call_count FROM sessions WHERE id = 'sqlite-session'"));
+        Assert.AreEqual(1L, ExecuteScalarLong(db, "SELECT COUNT(*) FROM messages WHERE session_id = 'sqlite-session' AND role = 'assistant'"));
+        Assert.IsTrue((ExecuteScalarString(db, "SELECT tool_calls FROM messages WHERE session_id = 'sqlite-session'") ?? "").Contains("call-1"));
+    }
+
+    [TestMethod]
+    public async Task TranscriptStore_WithSqliteStateStore_LoadsSqliteOnlySessions()
+    {
+        var dbPath = Path.Combine(_tempDir, "state.db");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        index.SaveMessage("sqlite-only", new Message { Role = "user", Content = "sqlite authoritative orchid-river" }, source: "desktop");
+        var store = new TranscriptStore(_tempDir, sessionStore: index);
+
+        Assert.IsTrue(store.SessionExists("sqlite-only"));
+        var loaded = await store.LoadSessionAsync("sqlite-only", CancellationToken.None);
+        var ids = store.GetAllSessionIds();
+
+        Assert.AreEqual(1, loaded.Count);
+        Assert.AreEqual("sqlite authoritative orchid-river", loaded[0].Content);
+        CollectionAssert.Contains(ids, "sqlite-only");
+    }
+
+    [TestMethod]
+    public void SessionSearchIndex_Search_SupportsSourceFiltersAndCjkFallback()
+    {
+        var dbPath = Path.Combine(_tempDir, "state.db");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        index.SaveMessage("desktop-session", new Message { Role = "user", Content = "中文任务 石榴计划" }, source: "desktop");
+        index.SaveMessage("gateway-session", new Message { Role = "user", Content = "中文任务 石榴计划" }, source: "discord");
+        index.SaveMessage("dot-session", new Message { Role = "user", Content = "Fix my-app.config.ts and alpha-token" }, source: "desktop");
+
+        var cjk = index.Search("石榴计划", maxResults: 5, sourceFilter: new[] { "desktop" });
+        var dotted = index.Search("my-app.config.ts", maxResults: 5, excludeSources: new[] { "discord" });
+
+        Assert.AreEqual(1, cjk.Count);
+        Assert.AreEqual("desktop-session", cjk[0].SessionId);
+        Assert.AreEqual("desktop", cjk[0].Source);
+        Assert.IsTrue(dotted.Any(r => r.SessionId == "dot-session"));
+    }
+
+    [TestMethod]
+    public async Task TranscriptStore_SaveActivityAsync_WritesStateDbWithoutJsonl()
+    {
+        var store = CreateStore();
+        var entry = new ActivityEntry
+        {
+            ToolName = "shell",
+            ToolCallId = "call-activity",
+            InputSummary = "git status",
+            OutputSummary = "clean",
+            DurationMs = 42,
+            Status = ActivityStatus.Success,
+            DiffPreview = "diff",
+            ScreenshotPath = "shot.png"
+        };
+
+        await store.SaveActivityAsync("activity-session", entry, CancellationToken.None);
+        var loaded = await store.LoadActivityAsync("activity-session", CancellationToken.None);
+
+        AssertNoJsonlFiles();
+        using var db = OpenDefaultStateDb();
+        Assert.AreEqual(1L, ExecuteScalarLong(db, "SELECT COUNT(*) FROM activities WHERE session_id = 'activity-session'"));
+        Assert.AreEqual("shell", ExecuteScalarString(db, "SELECT tool_name FROM activities WHERE session_id = 'activity-session'"));
+        Assert.AreEqual(1, loaded.Count);
+        Assert.AreEqual("call-activity", loaded[0].ToolCallId);
+        Assert.AreEqual(ActivityStatus.Success, loaded[0].Status);
+    }
+
+    [TestMethod]
+    public async Task Constructor_ImportsLegacyMessageJsonlIntoStateDbAndDeletesJsonl()
+    {
+        var legacyPath = Path.Combine(_tempDir, "legacy-session.jsonl");
+        var legacyMessage = new Message
+        {
+            Role = "user",
+            Content = "legacy import sapphire-ridge",
+            Timestamp = new DateTime(2026, 4, 25, 10, 0, 0, DateTimeKind.Utc)
+        };
+        await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(legacyMessage, JsonOptions) + "\n");
+
+        var store = CreateStore();
+        var loaded = await store.LoadSessionAsync("legacy-session", CancellationToken.None);
+
+        Assert.AreEqual(1, loaded.Count);
+        Assert.AreEqual("legacy import sapphire-ridge", loaded[0].Content);
+        AssertNoJsonlFiles();
+        AssertNoLegacyPayloadBackups();
+    }
+
+    [TestMethod]
+    public async Task Constructor_ImportsLegacyActivityJsonlIntoStateDbAndDeletesJsonl()
+    {
+        var legacyPath = Path.Combine(_tempDir, "legacy-session.activity.jsonl");
+        var legacyEntry = new ActivityEntry
+        {
+            ToolName = "legacy-tool",
+            ToolCallId = "legacy-call",
+            Status = ActivityStatus.Failed,
+            OutputSummary = "legacy output"
+        };
+        await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(legacyEntry, ActivityJsonOptions) + "\n");
+
+        var store = CreateStore();
+        var loaded = await store.LoadActivityAsync("legacy-session", CancellationToken.None);
+
+        Assert.AreEqual(1, loaded.Count);
+        Assert.AreEqual("legacy-tool", loaded[0].ToolName);
+        Assert.AreEqual(ActivityStatus.Failed, loaded[0].Status);
+        AssertNoJsonlFiles();
+        AssertNoLegacyPayloadBackups();
+    }
+
+    [TestMethod]
+    public async Task Constructor_DeletesMalformedLegacyJsonlAndRecordsImportErrorMetadata()
+    {
+        var legacyPath = Path.Combine(_tempDir, "mixed-legacy.jsonl");
+        var validMessage = new Message
+        {
+            Role = "user",
+            Content = "valid line survives malformed legacy import"
+        };
+        await File.WriteAllTextAsync(
+            legacyPath,
+            JsonSerializer.Serialize(validMessage, JsonOptions) + "\n{not valid json}\n");
+
+        var store = CreateStore();
+        var loaded = await store.LoadSessionAsync("mixed-legacy", CancellationToken.None);
+
+        Assert.AreEqual(1, loaded.Count);
+        Assert.AreEqual("valid line survives malformed legacy import", loaded[0].Content);
+        AssertNoJsonlFiles();
+        AssertNoLegacyPayloadBackups();
+        using var db = OpenDefaultStateDb();
+        Assert.AreEqual(1L, ExecuteScalarLong(db, "SELECT COUNT(*) FROM state_meta WHERE key LIKE 'legacy_import_error:mixed-legacy:%'"));
+        var meta = ExecuteScalarString(db, "SELECT value FROM state_meta WHERE key LIKE 'legacy_import_error:mixed-legacy:%'");
+        StringAssert.Contains(meta ?? "", "JsonException");
+        Assert.IsFalse((meta ?? "").Contains("{not valid json}", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task GetRecentSessionIds_OrdersByLastMessageTimestamp()
+    {
+        var store = CreateStore();
+        await SaveAtAsync(store, "s1", "s1-old", new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        await SaveAtAsync(store, "s1", "s1-newer", new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc));
+        await SaveAtAsync(store, "s2", "s2-newest", new DateTime(2026, 1, 5, 0, 0, 0, DateTimeKind.Utc));
+        await SaveAtAsync(store, "s3", "s3-middle", new DateTime(2026, 1, 3, 0, 0, 0, DateTimeKind.Utc));
+        await SaveAtAsync(store, "s4", "s4-oldest", new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc));
+        await SaveAtAsync(store, "s5", "s5-recent", new DateTime(2026, 1, 4, 0, 0, 0, DateTimeKind.Utc));
+
+        var recent = store.GetRecentSessionIds(4);
+
+        CollectionAssert.AreEqual(new[] { "s2", "s5", "s3", "s1" }, recent);
+    }
 
     // ── Construction ──
 
@@ -45,21 +252,21 @@ public class TranscriptStoreTests
     // ── SaveMessageAsync ──
 
     [TestMethod]
-    public async Task SaveMessageAsync_WritesJsonlFileToDisk()
+    public async Task SaveMessageAsync_WritesStateDbWithoutSessionJsonl()
     {
         var store = CreateStore();
         var msg = new Message { Role = "user", Content = "Hello there" };
 
         await store.SaveMessageAsync("session1", msg, CancellationToken.None);
 
-        var files = Directory.GetFiles(_tempDir, "*.jsonl");
-        Assert.AreEqual(1, files.Length);
-        var content = await File.ReadAllTextAsync(files[0]);
-        StringAssert.Contains(content, "Hello there");
+        AssertNoJsonlFiles();
+        using var db = OpenDefaultStateDb();
+        Assert.AreEqual(1L, ExecuteScalarLong(db, "SELECT COUNT(*) FROM sessions WHERE id = 'session1'"));
+        Assert.AreEqual("Hello there", ExecuteScalarString(db, "SELECT content FROM messages WHERE session_id = 'session1'"));
     }
 
     [TestMethod]
-    public async Task SaveMessageAsync_AppendsMultipleMessages_InSameFile()
+    public async Task SaveMessageAsync_AppendsMultipleMessages_InSameSession()
     {
         var store = CreateStore();
         var msg1 = new Message { Role = "user", Content = "First" };
@@ -68,23 +275,23 @@ public class TranscriptStoreTests
         await store.SaveMessageAsync("sess", msg1, CancellationToken.None);
         await store.SaveMessageAsync("sess", msg2, CancellationToken.None);
 
-        var files = Directory.GetFiles(_tempDir, "*.jsonl");
-        Assert.AreEqual(1, files.Length);
-        var lines = (await File.ReadAllLinesAsync(files[0]))
-            .Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
-        Assert.AreEqual(2, lines.Length);
+        AssertNoJsonlFiles();
+        using var db = OpenDefaultStateDb();
+        Assert.AreEqual(2L, ExecuteScalarLong(db, "SELECT COUNT(*) FROM messages WHERE session_id = 'sess'"));
+        Assert.AreEqual(2L, ExecuteScalarLong(db, "SELECT message_count FROM sessions WHERE id = 'sess'"));
     }
 
     [TestMethod]
-    public async Task SaveMessageAsync_DifferentSessions_CreateSeparateFiles()
+    public async Task SaveMessageAsync_DifferentSessions_CreateSeparateSessionRows()
     {
         var store = CreateStore();
 
         await store.SaveMessageAsync("session-a", new Message { Role = "user", Content = "A" }, CancellationToken.None);
         await store.SaveMessageAsync("session-b", new Message { Role = "user", Content = "B" }, CancellationToken.None);
 
-        var files = Directory.GetFiles(_tempDir, "*.jsonl");
-        Assert.AreEqual(2, files.Length);
+        AssertNoJsonlFiles();
+        using var db = OpenDefaultStateDb();
+        Assert.AreEqual(2L, ExecuteScalarLong(db, "SELECT COUNT(*) FROM sessions"));
     }
 
     [TestMethod]
@@ -266,16 +473,19 @@ public class TranscriptStoreTests
     // ── DeleteSessionAsync ──
 
     [TestMethod]
-    public async Task DeleteSessionAsync_RemovesFile_FromDisk()
+    public async Task DeleteSessionAsync_RemovesRows_FromStateDb()
     {
         var store = CreateStore();
         await store.SaveMessageAsync("to-delete", new Message { Role = "user", Content = "bye" }, CancellationToken.None);
+        await store.SaveActivityAsync("to-delete", new ActivityEntry { ToolName = "shell" }, CancellationToken.None);
 
         await store.DeleteSessionAsync("to-delete", CancellationToken.None);
 
         Assert.IsFalse(store.SessionExists("to-delete"));
-        var files = Directory.GetFiles(_tempDir, "*.jsonl");
-        Assert.AreEqual(0, files.Length);
+        using var db = OpenDefaultStateDb();
+        Assert.AreEqual(0L, ExecuteScalarLong(db, "SELECT COUNT(*) FROM sessions WHERE id = 'to-delete'"));
+        Assert.AreEqual(0L, ExecuteScalarLong(db, "SELECT COUNT(*) FROM messages WHERE session_id = 'to-delete'"));
+        Assert.AreEqual(0L, ExecuteScalarLong(db, "SELECT COUNT(*) FROM activities WHERE session_id = 'to-delete'"));
     }
 
     [TestMethod]
@@ -376,4 +586,81 @@ public class TranscriptStoreTests
         var loaded = await store.LoadSessionAsync("concurrent", CancellationToken.None);
         Assert.AreEqual(count, loaded.Count, "All concurrent saves should be present");
     }
+
+    private static string[] ReadTableNames(SqliteConnection db)
+    {
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type IN ('table', 'virtual table') ORDER BY name";
+        using var reader = cmd.ExecuteReader();
+        var names = new List<string>();
+        while (reader.Read())
+            names.Add(reader.GetString(0));
+        return names.ToArray();
+    }
+
+    private SqliteConnection OpenDefaultStateDb()
+    {
+        var db = new SqliteConnection($"Data Source={Path.Combine(_tempDir, "state.db")}");
+        db.Open();
+        return db;
+    }
+
+    private void AssertNoJsonlFiles()
+    {
+        var files = Directory.GetFiles(_tempDir, "*.jsonl", SearchOption.AllDirectories);
+        Assert.AreEqual(0, files.Length, "Session and activity data must be stored in state.db, not JSONL files.");
+    }
+
+    private void AssertNoLegacyPayloadBackups()
+    {
+        var backups = Directory.GetFiles(_tempDir, "*.imported", SearchOption.AllDirectories)
+            .Concat(Directory.GetFiles(_tempDir, "*.unimported", SearchOption.AllDirectories))
+            .ToArray();
+        Assert.AreEqual(0, backups.Length, "Legacy JSONL payloads must not be retained under alternate extensions.");
+    }
+
+    private static Task SaveAtAsync(TranscriptStore store, string sessionId, string content, DateTime timestamp)
+        => store.SaveMessageAsync(
+            sessionId,
+            new Message { Role = "user", Content = content, Timestamp = timestamp },
+            CancellationToken.None);
+
+    private static string[] ReadColumnNames(SqliteConnection db, string table)
+    {
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = $"PRAGMA table_info({table})";
+        using var reader = cmd.ExecuteReader();
+        var names = new List<string>();
+        while (reader.Read())
+            names.Add(reader.GetString(1));
+        return names.ToArray();
+    }
+
+    private static long ExecuteScalarLong(SqliteConnection db, string sql)
+    {
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = sql;
+        return (long)(cmd.ExecuteScalar() ?? 0L);
+    }
+
+    private static string? ExecuteScalarString(SqliteConnection db, string sql)
+    {
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = sql;
+        return cmd.ExecuteScalar() as string;
+    }
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    private static readonly JsonSerializerOptions ActivityJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false,
+        Converters = { new JsonStringEnumConverter() }
+    };
 }

@@ -142,7 +142,7 @@ public sealed class MemoryParityTests
     [TestMethod]
     public async Task TranscriptStore_SaveMessageAsync_IndexesNewMessagesThroughObserver()
     {
-        var dbPath = Path.Combine(_tempDir, "session-search.sqlite");
+        var dbPath = Path.Combine(_tempDir, "state.db");
         using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
         var observer = new SessionSearchTranscriptObserver(index, NullLogger<SessionSearchTranscriptObserver>.Instance);
         var store = new TranscriptStore(_tempDir, messageObserver: observer);
@@ -155,7 +155,7 @@ public sealed class MemoryParityTests
     }
 
     [TestMethod]
-    public async Task TranscriptRecallService_BackfillIndexAsync_PopulatesFtsFromExistingJsonl()
+    public async Task TranscriptRecallService_BackfillIndexAsync_PopulatesFtsFromExistingSqliteSessions()
     {
         var store = new TranscriptStore(_tempDir);
         await store.SaveMessageAsync("backfill-session", new Message { Role = "user", Content = "legacy transcript contains quartz-meadow" }, CancellationToken.None);
@@ -168,7 +168,7 @@ public sealed class MemoryParityTests
 
         var results = index.Search("quartz-meadow", maxResults: 5);
         Assert.IsTrue(results.Any(r => r.SessionId == "backfill-session"),
-            "Existing JSONL transcripts should be backfillable into the derived FTS index.");
+            "Existing SQLite sessions should be backfillable into another FTS/state index.");
     }
 
     [TestMethod]
@@ -188,13 +188,13 @@ public sealed class MemoryParityTests
     }
 
     [TestMethod]
-    public async Task TranscriptRecallService_SearchAsync_DoesNotScanJsonlWhenFtsReturnsHits()
+    public async Task TranscriptRecallService_SearchAsync_DoesNotUseFallbackWhenFtsReturnsHits()
     {
         var store = new TranscriptStore(_tempDir);
-        await store.SaveMessageAsync("jsonl-only-session", new Message
+        await store.SaveMessageAsync("sqlite-fallback-session", new Message
         {
             Role = "user",
-            Content = "jsonl-only garnet-brook"
+            Content = "sqlite fallback garnet-brook"
         }, CancellationToken.None);
         var dbPath = Path.Combine(_tempDir, "fts-hit.sqlite");
         using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
@@ -204,9 +204,9 @@ public sealed class MemoryParityTests
         var results = await recall.SearchAsync("garnet-brook", currentSessionId: null, maxItems: 5, ct: CancellationToken.None);
 
         Assert.AreEqual(1, results.Count,
-            "Once FTS returns ranked hits, search must not widen the result set with non-FTS JSONL scoring.");
+            "Once FTS returns ranked hits, search must not widen the result set with non-FTS fallback scoring.");
         Assert.AreEqual("fts-session", results[0].SessionId);
-        Assert.IsFalse(results.Any(r => r.SessionId == "jsonl-only-session"));
+        Assert.IsFalse(results.Any(r => r.SessionId == "sqlite-fallback-session"));
     }
 
     [TestMethod]
@@ -230,7 +230,7 @@ public sealed class MemoryParityTests
     }
 
     [TestMethod]
-    public async Task TranscriptRecallService_SearchAsync_FallsBackToJsonlWhenIndexHasNoHits()
+    public async Task TranscriptRecallService_SearchAsync_FallsBackToSqliteWhenIndexHasNoHits()
     {
         var store = new TranscriptStore(_tempDir);
         await store.SaveMessageAsync("fallback-session", new Message

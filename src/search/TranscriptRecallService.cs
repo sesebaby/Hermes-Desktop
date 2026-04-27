@@ -364,15 +364,8 @@ public sealed class TranscriptRecallService
                 continue;
             }
 
-            foreach (var message in messages.Where(IsRecallableRole))
-            {
-                var cleanContent = SanitizeContext(message.Content);
-                if (string.IsNullOrWhiteSpace(cleanContent))
-                    continue;
-
-                _index.IndexMessage(sessionId, message.Role, cleanContent, message.Timestamp);
-                indexed++;
-            }
+            _index.ReplaceSessionMessages(sessionId, messages);
+            indexed += messages.Count(m => IsRecallableRole(m));
         }
 
         _logger.LogInformation("Backfilled transcript recall index with {Count} messages", indexed);
@@ -383,7 +376,7 @@ public sealed class TranscriptRecallService
         if (_index is null)
             return;
 
-        if (_index.MessageCount() > 0 && !_index.ContainsNonRecallableRoles())
+        if (_index.MessageCount() > 0)
             return;
 
         if (Interlocked.Exchange(ref _backfillAttempted, 1) != 0)
@@ -395,7 +388,7 @@ public sealed class TranscriptRecallService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Transcript recall index backfill failed; JSONL recall remains available");
+            _logger.LogWarning(ex, "Transcript recall index backfill failed; SQLite session recall remains available");
         }
     }
 

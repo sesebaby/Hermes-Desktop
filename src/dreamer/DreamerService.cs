@@ -14,7 +14,6 @@ using Microsoft.Extensions.Logging;
 public sealed class DreamerService
 {
     private readonly string _configPath;
-    private readonly string _transcriptsDir;
     private readonly DreamerRoom _room;
     private readonly Func<DreamerConfig, IChatClient> _walkClientFactory;
     private readonly Func<DreamerConfig, IChatClient> _echoClientFactory;
@@ -34,12 +33,10 @@ public sealed class DreamerService
     /// </summary>
     /// <param name="hermesHome">The base Hermes runtime directory used for paths and runtime state.</param>
     /// <param name="configPath">File path to the Dreamer configuration file that will be reloaded each cycle.</param>
-    /// <param name="transcriptsDir">Directory containing transcript `*.jsonl` files used to build research context.</param>
     /// <param name="room">The DreamerRoom that provides workspace directories (walks, inbox, feedback) and layout management.</param>
     public DreamerService(
         string hermesHome,
         string configPath,
-        string transcriptsDir,
         DreamerRoom room,
         Func<DreamerConfig, IChatClient> walkClientFactory,
         Func<DreamerConfig, IChatClient> echoClientFactory,
@@ -52,7 +49,6 @@ public sealed class DreamerService
         ILoggerFactory loggerFactory)
     {
         _configPath = configPath;
-        _transcriptsDir = transcriptsDir;
         _room = room;
         _walkClientFactory = walkClientFactory;
         _echoClientFactory = echoClientFactory;
@@ -278,33 +274,27 @@ public sealed class DreamerService
     /// <param name="config">Controls which sources are included: when <c>InputTranscripts</c> is true, up to four most-recent transcript sessions are included; when <c>InputInbox</c> is true, inbox and RSS inbox markdown files are included.</param>
     /// <param name="ct">Cancellation token that may abort the operation.</param>
     /// <returns>
-    /// A single string made of labeled chunks joined by blank lines, or the literal "(no research context)" if no chunks were collected. Session chunks contain up to the last 24 messages formatted as "Role: Content". Inbox and RSS inbox chunks include file contents truncated to 4000 characters. Up to four transcript files and up to six files per inbox directory are considered.
+    /// A single string made of labeled chunks joined by blank lines, or the literal "(no research context)" if no chunks were collected. Session chunks contain up to the last 24 messages formatted as "Role: Content". Inbox and RSS inbox chunks include file contents truncated to 4000 characters. Up to four recent sessions and up to six files per inbox directory are considered.
     /// </returns>
     private async Task<string> BuildResearchContextAsync(DreamerConfig config, CancellationToken ct)
     {
         var chunks = new List<string>();
 
-        if (config.InputTranscripts && Directory.Exists(_transcriptsDir))
+        if (config.InputTranscripts)
         {
-            List<string> files;
+            List<string> sessionIds;
             try
             {
-                files = Directory.EnumerateFiles(_transcriptsDir, "*.jsonl")
-                    .Select(f => (f, t: File.GetLastWriteTimeUtc(f)))
-                    .OrderByDescending(x => x.t)
-                    .Take(4)
-                    .Select(x => x.f)
-                    .ToList();
+                sessionIds = _transcripts.GetRecentSessionIds(maxResults: 4);
             }
-            catch (Exception ex) when (IsRecoverableFileException(ex))
+            catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Skipping transcript research context; transcript enumeration failed");
-                files = new List<string>();
+                _logger.LogWarning(ex, "Skipping transcript research context; session enumeration failed");
+                sessionIds = new List<string>();
             }
 
-            foreach (var path in files)
+            foreach (var id in sessionIds)
             {
-                var id = Path.GetFileNameWithoutExtension(path);
                 try
                 {
                     var msgs = await _transcripts.LoadSessionAsync(id, ct);

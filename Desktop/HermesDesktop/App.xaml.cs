@@ -340,17 +340,14 @@ public partial class App : Application
 
         // Transcript store
         var transcriptsDir = Path.Combine(projectDir, "transcripts");
-        var sessionSearchDbPath = Path.Combine(projectDir, "session-search.sqlite");
+        var sessionStateDbPath = Path.Combine(projectDir, "state.db");
         services.AddSingleton(sp => new SessionSearchIndex(
-            sessionSearchDbPath,
+            sessionStateDbPath,
             sp.GetRequiredService<ILogger<SessionSearchIndex>>()));
-        services.AddSingleton<ITranscriptMessageObserver>(sp => new SessionSearchTranscriptObserver(
-            sp.GetRequiredService<SessionSearchIndex>(),
-            sp.GetRequiredService<ILogger<SessionSearchTranscriptObserver>>()));
         services.AddSingleton(sp => new TranscriptStore(
             transcriptsDir,
             eagerFlush: true,
-            messageObserver: sp.GetRequiredService<ITranscriptMessageObserver>()));
+            sessionStore: sp.GetRequiredService<SessionSearchIndex>()));
 
         // Memory manager
         var memoryDir = Path.Combine(hermesHome, "memories");
@@ -639,11 +636,9 @@ public partial class App : Application
             IChatClient CreateEchoClient(DreamerConfig cfg) => new OpenAiClient(cfg.ToEchoLlmConfig(), echoHttp);
 
             var rss = new RssFetcher(rssHttp, room, lf.CreateLogger<RssFetcher>());
-            var transcriptsDir = Path.Combine(projectDir, "transcripts");
             var dreamer = new DreamerService(
                 hermesHome,
                 cfgPath,
-                transcriptsDir,
                 room,
                 CreateWalkClient,
                 CreateEchoClient,

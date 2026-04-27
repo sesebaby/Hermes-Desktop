@@ -1,73 +1,63 @@
 namespace Hermes.Agent.Transcript;
 
 using System.Collections.Concurrent;
-using Hermes.Agent.Core;
-using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Hermes.Agent.Core;
+using Hermes.Agent.Search;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 /// <summary>
-/// Transcript-first persistence layer.
-/// Every message is written to disk BEFORE updating in-memory state.
-/// Crash-proof, resume-capable, JSONL format.
+/// SQLite-first session persistence layer backed by Python-style state.db.
+/// Session messages and activity logs are not written to JSONL.
 /// </summary>
 public sealed class TranscriptStore
 {
     private readonly string _transcriptsDir;
     private readonly ConcurrentDictionary<string, List<Message>> _cache = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
-    private readonly bool _eagerFlush;
     private readonly ITranscriptMessageObserver? _messageObserver;
-    
+    private readonly SessionSearchIndex _sessionStore;
+    private readonly string _sessionSource;
+
     public TranscriptStore(
         string transcriptsDir,
         bool eagerFlush = false,
-        ITranscriptMessageObserver? messageObserver = null)
+        ITranscriptMessageObserver? messageObserver = null,
+        SessionSearchIndex? sessionStore = null,
+        string sessionSource = "desktop")
     {
         _transcriptsDir = transcriptsDir;
-        _eagerFlush = eagerFlush || Environment.GetEnvironmentVariable("HERMES_EAGER_FLUSH") != null;
         _messageObserver = messageObserver;
-        
+        _sessionSource = string.IsNullOrWhiteSpace(sessionSource) ? "desktop" : sessionSource;
+        _sessionStore = sessionStore ?? new SessionSearchIndex(
+            Path.Combine(transcriptsDir, "state.db"),
+            NullLogger<SessionSearchIndex>.Instance);
+
         Directory.CreateDirectory(transcriptsDir);
+        ImportLegacyJsonlTranscripts();
     }
-    
+
     /// <summary>
-    /// CRITICAL: Save message to disk BEFORE updating in-memory state.
-    /// This is what makes Hermes crash-proof.
+    /// Save message into SQLite state.db before updating in-memory state.
     /// </summary>
     public async Task SaveMessageAsync(string sessionId, Message message, CancellationToken ct)
     {
-        var transcriptPath = GetTranscriptPath(sessionId);
-
-        // Ensure directory exists
-        Directory.CreateDirectory(Path.GetDirectoryName(transcriptPath)!);
-
-        // Serialize to JSONL
-        var json = JsonSerializer.Serialize(message, JsonOptions);
-        var bytes = System.Text.Encoding.UTF8.GetBytes(json + "\n");
-
-        // INV-008: Atomic transcript writes using FileStream with WriteThrough
-        // Ensures data hits disk immediately, preventing data loss on crash.
         await _writeLock.WaitAsync(ct);
         try
         {
-            using var fs = new FileStream(
-                transcriptPath,
-                FileMode.Append,
-                FileAccess.Write,
-                FileShare.Read,
-                bufferSize: 4096,
-                FileOptions.WriteThrough | FileOptions.SequentialScan);
-            await fs.WriteAsync(bytes, ct);
-            await fs.FlushAsync(ct);
+            _sessionStore.SaveMessage(sessionId, message, _sessionSource);
         }
         finally
         {
             _writeLock.Release();
         }
-        
+
         // NOW update in-memory cache
-        _cache.AddOrUpdate(sessionId, 
+        _cache.AddOrUpdate(sessionId,
             _ => new List<Message> { message },
             (_, list) => { list.Add(message); return list; });
 
@@ -79,131 +69,68 @@ public sealed class TranscriptStore
             }
             catch
             {
-                // Indexing/observer failures must not make transcript persistence fail.
+                // Observer failures must not make session persistence fail.
             }
         }
     }
-    
-    /// <summary>
-    /// Load entire session transcript from disk.
-    /// </summary>
-    public async Task<List<Message>> LoadSessionAsync(string sessionId, CancellationToken ct)
+
+    /// <summary>Load entire session transcript from SQLite.</summary>
+    public Task<List<Message>> LoadSessionAsync(string sessionId, CancellationToken ct)
     {
-        // Check cache first
+        ct.ThrowIfCancellationRequested();
+
         if (_cache.TryGetValue(sessionId, out var cached))
-            return cached.ToList();
-        
-        var transcriptPath = GetTranscriptPath(sessionId);
-        
-        if (!File.Exists(transcriptPath))
+            return Task.FromResult(cached.ToList());
+
+        var messages = _sessionStore.LoadMessages(sessionId);
+        if (messages.Count == 0 && !_sessionStore.SessionExists(sessionId))
             throw new SessionNotFoundException(sessionId);
-        
-        var lines = await File.ReadAllLinesAsync(transcriptPath, ct);
-        
-        var messages = new List<Message>();
-        foreach (var line in lines)
-        {
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-            
-            var message = JsonSerializer.Deserialize<Message>(line, JsonOptions);
-            if (message != null)
-                messages.Add(message);
-        }
-        
-        // Cache for next time
+
         _cache[sessionId] = messages;
-        
-        return messages;
+        return Task.FromResult(messages.ToList());
     }
-    
-    /// <summary>
-    /// Check if session exists (has transcript).
-    /// </summary>
+
     public bool SessionExists(string sessionId)
-    {
-        if (_cache.ContainsKey(sessionId))
-            return true;
-        
-        var transcriptPath = GetTranscriptPath(sessionId);
-        return File.Exists(transcriptPath);
-    }
-    
-    /// <summary>
-    /// Get all session IDs (from disk + cache).
-    /// </summary>
+        => _cache.ContainsKey(sessionId) || _sessionStore.SessionExists(sessionId);
+
     public List<string> GetAllSessionIds()
     {
-        var fromCache = _cache.Keys.ToList();
-        var fromDisk = Directory.EnumerateFiles(_transcriptsDir, "*.jsonl")
-            .Where(f => !Path.GetFileName(f).EndsWith(".activity.jsonl", StringComparison.OrdinalIgnoreCase))
-            .Select(f => Path.GetFileNameWithoutExtension(f))
-            .Where(id => !fromCache.Contains(id))
-            .ToList();
-        
-        fromCache.AddRange(fromDisk);
-        return fromCache;
+        var ids = _cache.Keys.ToList();
+        var seen = ids.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        ids.AddRange(_sessionStore.ListSessionIds().Where(id => seen.Add(id)));
+        return ids;
     }
-    
-    /// <summary>
-    /// Delete session transcript.
-    /// </summary>
+
+    public List<string> GetRecentSessionIds(int maxResults)
+        => _sessionStore.ListSessionIdsByRecentActivity(maxResults);
+
     public async Task DeleteSessionAsync(string sessionId, CancellationToken ct)
     {
-        var transcriptPath = GetTranscriptPath(sessionId);
-        var activityPath = GetActivityPath(sessionId);
-
-        if (File.Exists(transcriptPath) || File.Exists(activityPath))
+        await _writeLock.WaitAsync(ct);
+        try
         {
-            await _writeLock.WaitAsync(ct);
-            try
-            {
-                if (File.Exists(transcriptPath))
-                    File.Delete(transcriptPath);
-                if (File.Exists(activityPath))
-                    File.Delete(activityPath);
-            }
-            finally
-            {
-                _writeLock.Release();
-            }
+            _sessionStore.DeleteSession(sessionId);
+        }
+        finally
+        {
+            _writeLock.Release();
         }
 
         _cache.TryRemove(sessionId, out _);
     }
-    
-    /// <summary>
-    /// Clear in-memory cache (free memory, keep disk).
-    /// </summary>
-    public void ClearCache()
-    {
-        _cache.Clear();
-    }
 
-    /// <summary>
-    /// Append an activity entry to the session's activity JSONL file.
-    /// </summary>
+    /// <summary>Clear in-memory cache; SQLite state remains on disk.</summary>
+    public void ClearCache() => _cache.Clear();
+
+    /// <summary>Save an activity entry into SQLite state.db.</summary>
     public async Task SaveActivityAsync(string sessionId, ActivityEntry entry, CancellationToken ct)
     {
-        var activityPath = GetActivityPath(sessionId);
-        Directory.CreateDirectory(Path.GetDirectoryName(activityPath)!);
+        ct.ThrowIfCancellationRequested();
 
-        var json = JsonSerializer.Serialize(entry, ActivityJsonOptions);
-        var bytes = System.Text.Encoding.UTF8.GetBytes(json + "\n");
-
-        // INV-008: Atomic writes with WriteThrough for activity log too
         await _writeLock.WaitAsync(ct);
         try
         {
-            using var fs = new FileStream(
-                activityPath,
-                FileMode.Append,
-                FileAccess.Write,
-                FileShare.Read,
-                bufferSize: 4096,
-                FileOptions.WriteThrough | FileOptions.SequentialScan);
-            await fs.WriteAsync(bytes, ct);
-            await fs.FlushAsync(ct);
+            _sessionStore.SaveActivity(sessionId, entry, _sessionSource);
         }
         finally
         {
@@ -211,33 +138,149 @@ public sealed class TranscriptStore
         }
     }
 
-    /// <summary>
-    /// Load all activity entries for a session from its activity JSONL file.
-    /// </summary>
-    public async Task<List<ActivityEntry>> LoadActivityAsync(string sessionId, CancellationToken ct)
+    public Task<List<ActivityEntry>> LoadActivityAsync(string sessionId, CancellationToken ct)
     {
-        var activityPath = GetActivityPath(sessionId);
-        if (!File.Exists(activityPath))
-            return new List<ActivityEntry>();
-
-        var lines = await File.ReadAllLinesAsync(activityPath, ct);
-        var entries = new List<ActivityEntry>();
-        foreach (var line in lines)
-        {
-            if (string.IsNullOrWhiteSpace(line)) continue;
-            var entry = JsonSerializer.Deserialize<ActivityEntry>(line, ActivityJsonOptions);
-            if (entry is not null)
-                entries.Add(entry);
-        }
-        return entries;
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(_sessionStore.LoadActivities(sessionId));
     }
-    
-    private string GetTranscriptPath(string sessionId) =>
-        Path.Combine(_transcriptsDir, $"{sessionId}.jsonl");
 
-    private string GetActivityPath(string sessionId) =>
-        Path.Combine(_transcriptsDir, $"{sessionId}.activity.jsonl");
-    
+    private void ImportLegacyJsonlTranscripts()
+    {
+        if (!Directory.Exists(_transcriptsDir))
+            return;
+
+        foreach (var path in Directory.EnumerateFiles(_transcriptsDir, "*.jsonl"))
+        {
+            if (Path.GetFileName(path).EndsWith(".activity.jsonl", StringComparison.OrdinalIgnoreCase))
+                ImportLegacyActivity(path);
+            else
+                ImportLegacyMessages(path);
+
+            DeleteLegacyJsonl(path);
+        }
+    }
+
+    private bool ImportLegacyMessages(string path)
+    {
+        var sessionId = Path.GetFileNameWithoutExtension(path);
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return false;
+
+        var messages = new List<Message>();
+        var lineNumber = 0;
+        try
+        {
+            foreach (var line in File.ReadLines(path))
+            {
+                lineNumber++;
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+
+                try
+                {
+                    var message = JsonSerializer.Deserialize<Message>(line, JsonOptions);
+                    if (message is not null)
+                        messages.Add(message);
+                    else
+                        RecordLegacyImportError(sessionId, path, lineNumber, "message", "deserializer returned null", line);
+                }
+                catch (Exception ex)
+                {
+                    RecordLegacyImportError(sessionId, path, lineNumber, "message", ex.GetType().Name, line);
+                }
+            }
+        }
+        catch (Exception ex) when (IsRecoverableFileException(ex))
+        {
+            RecordLegacyImportError(sessionId, path, lineNumber, "message-file", ex.GetType().Name, rawLine: null);
+        }
+
+        if (messages.Count > 0 && messages.Count > _sessionStore.GetSessionMessageCount(sessionId))
+            _sessionStore.ReplaceSessionMessages(sessionId, messages, _sessionSource);
+
+        return true;
+    }
+
+    private bool ImportLegacyActivity(string path)
+    {
+        var fileName = Path.GetFileName(path);
+        var sessionId = fileName[..^".activity.jsonl".Length];
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return false;
+
+        var lineNumber = 0;
+        try
+        {
+            foreach (var line in File.ReadLines(path))
+            {
+                lineNumber++;
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+
+                try
+                {
+                    var entry = JsonSerializer.Deserialize<ActivityEntry>(line, ActivityJsonOptions);
+                    if (entry is not null)
+                        _sessionStore.SaveActivity(sessionId, entry, _sessionSource);
+                    else
+                        RecordLegacyImportError(sessionId, path, lineNumber, "activity", "deserializer returned null", line);
+                }
+                catch (Exception ex)
+                {
+                    RecordLegacyImportError(sessionId, path, lineNumber, "activity", ex.GetType().Name, line);
+                }
+            }
+        }
+        catch (Exception ex) when (IsRecoverableFileException(ex))
+        {
+            RecordLegacyImportError(sessionId, path, lineNumber, "activity-file", ex.GetType().Name, rawLine: null);
+        }
+
+        return true;
+    }
+
+    private void DeleteLegacyJsonl(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+                return;
+
+            File.Delete(path);
+        }
+        catch
+        {
+            // Import is authoritative once state.db is updated; a failed cleanup
+            // should not block startup or session loading.
+        }
+    }
+
+    private void RecordLegacyImportError(
+        string sessionId,
+        string path,
+        int lineNumber,
+        string kind,
+        string error,
+        string? rawLine)
+    {
+        var fileName = Path.GetFileName(path);
+        var key = $"legacy_import_error:{sessionId}:{kind}:{lineNumber}:{Guid.NewGuid():N}";
+        var value = JsonSerializer.Serialize(new
+        {
+            file = fileName,
+            line = lineNumber,
+            kind,
+            error,
+            sha256 = rawLine is null ? null : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawLine))).ToLowerInvariant(),
+            length = rawLine?.Length ?? 0,
+            importedAt = DateTime.UtcNow
+        }, JsonOptions);
+        _sessionStore.SetStateMeta(key, value);
+    }
+
+    private static bool IsRecoverableFileException(Exception ex)
+        => ex is IOException or UnauthorizedAccessException;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -263,7 +306,7 @@ public interface ITranscriptMessageObserver
 /// </summary>
 public sealed class SessionNotFoundException : Exception
 {
-    public SessionNotFoundException(string sessionId) 
+    public SessionNotFoundException(string sessionId)
         : base($"Session '{sessionId}' not found. Use 'hermes list' to see available sessions.")
     {
     }
@@ -276,239 +319,71 @@ public sealed class ResumeManager
 {
     private readonly TranscriptStore _transcripts;
     private readonly ILogger<ResumeManager> _logger;
-    
+
     public ResumeManager(TranscriptStore transcripts, ILogger<ResumeManager> logger)
     {
         _transcripts = transcripts;
         _logger = logger;
     }
-    
-    /// <summary>
-    /// Resume a session from transcript.
-    /// Returns session with full message history.
-    /// </summary>
+
     public async Task<Session> ResumeSessionAsync(string sessionId, CancellationToken ct)
     {
-        _logger.LogInformation("Resuming session {SessionId}", sessionId);
-        
-        // Load transcript
-        var messages = await _transcripts.LoadSessionAsync(sessionId, ct);
-        
-        if (messages.Count == 0)
+        try
         {
-            throw new InvalidOperationException($"Session {sessionId} is empty");
+            var messages = await _transcripts.LoadSessionAsync(sessionId, ct);
+
+            var session = new Session { Id = sessionId };
+            foreach (var msg in messages)
+                session.Messages.Add(msg);
+
+            _logger.LogInformation("Resumed session {SessionId} with {Count} messages", sessionId, messages.Count);
+            return session;
         }
-        
-        // Restore session state
-        var session = new Session
+        catch (SessionNotFoundException)
         {
-            Id = sessionId,
-            Messages = messages,
-            UserId = messages.FirstOrDefault(m => m.Role == "user")?.ToolCallId, // Hacky, fix later
-            Platform = "cli",
-            CreatedAt = messages.First().Timestamp,
-            LastActivityAt = messages.Last().Timestamp
-        };
-        
-        _logger.LogInformation(
-            "Resumed session {SessionId} with {Count} messages, last activity {LastActivity}",
-            sessionId, 
-            messages.Count, 
-            session.LastActivityAt);
-        
-        Console.WriteLine($"Resumed session {sessionId} ({messages.Count} messages)");
-        
-        return session;
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resume session {SessionId}", sessionId);
+            throw;
+        }
     }
-    
-    /// <summary>
-    /// List all available sessions with metadata.
-    /// </summary>
-    public async Task<List<SessionSummary>> ListSessionsAsync(CancellationToken ct)
+
+    public List<SessionInfo> ListSessions()
     {
         var sessionIds = _transcripts.GetAllSessionIds();
-        var summaries = new List<SessionSummary>();
-        
-        foreach (var id in sessionIds.OrderByDescending(id => id)) // Newest first
+        var infos = new List<SessionInfo>();
+
+        foreach (var id in sessionIds)
         {
             try
             {
-                var messages = await _transcripts.LoadSessionAsync(id, ct);
-                
-                summaries.Add(new SessionSummary
+                var messages = _transcripts.LoadSessionAsync(id, CancellationToken.None)
+                    .GetAwaiter().GetResult();
+
+                infos.Add(new SessionInfo
                 {
-                    SessionId = id,
+                    Id = id,
                     MessageCount = messages.Count,
-                    CreatedAt = messages.FirstOrDefault()?.Timestamp ?? DateTime.MinValue,
-                    LastActivityAt = messages.LastOrDefault()?.Timestamp ?? DateTime.MinValue,
-                    FirstMessage = messages.FirstOrDefault(m => m.Role == "user")?.Content?.Take(50).ToString() ?? ""
+                    LastMessage = messages.LastOrDefault()?.Content ?? "",
+                    LastActivity = messages.LastOrDefault()?.Timestamp ?? DateTime.MinValue
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to load session {SessionId}", id);
+                _logger.LogWarning(ex, "Could not load session info for {SessionId}", id);
             }
         }
-        
-        return summaries.OrderByDescending(s => s.LastActivityAt).ToList();
+
+        return infos.OrderByDescending(i => i.LastActivity).ToList();
     }
 }
 
-public sealed class SessionSummary
+public sealed class SessionInfo
 {
-    public required string SessionId { get; init; }
+    public required string Id { get; init; }
     public int MessageCount { get; init; }
-    public DateTime CreatedAt { get; init; }
-    public DateTime LastActivityAt { get; init; }
-    public required string FirstMessage { get; init; }
-}
-
-/// <summary>
-/// Session history for up-arrow navigation and Ctrl+R search.
-/// Separate from transcripts - tracks commands/prompts only.
-/// </summary>
-public sealed class SessionHistory
-{
-    private readonly string _historyPath;
-    private readonly List<HistoryEntry> _pendingEntries = new();
-    private readonly SemaphoreSlim _flushLock = new(1, 1);
-    private System.Timers.Timer? _flushTimer;
-    private const int MAX_HISTORY_ITEMS = 100;
-    private const int MAX_PASTED_CONTENT_LENGTH = 1024;
-    
-    public SessionHistory(string historyPath)
-    {
-        _historyPath = historyPath;
-        
-        // Auto-flush after 100ms of inactivity
-        _flushTimer = new System.Timers.Timer(100);
-        _flushTimer.Elapsed += async (_, _) => await FlushAsync(CancellationToken.None);
-        _flushTimer.AutoReset = false;
-    }
-    
-    /// <summary>
-    /// Add entry to history (fire-and-forget flush).
-    /// </summary>
-    public void AddToHistory(string command, string project, string? sessionId)
-    {
-        var entry = new HistoryEntry
-        {
-            Command = command,
-            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            Project = project,
-            SessionId = sessionId
-        };
-        
-        _pendingEntries.Add(entry);
-        
-        // Reset flush timer
-        _flushTimer?.Stop();
-        _flushTimer?.Start();
-    }
-    
-    /// <summary>
-    /// Get history entries (current session first, then from file).
-    /// </summary>
-    public async IAsyncEnumerable<HistoryEntry> GetHistoryAsync()
-    {
-        // Current session pending entries first (newest first)
-        foreach (var entry in _pendingEntries.OrderByDescending(e => e.Timestamp))
-        {
-            yield return entry;
-        }
-        
-        // Then from file
-        if (File.Exists(_historyPath))
-        {
-            var lines = await File.ReadAllLinesAsync(_historyPath);
-            foreach (var line in lines)
-            {
-                if (string.IsNullOrWhiteSpace(line))
-                    continue;
-                
-                var entry = JsonSerializer.Deserialize<HistoryEntry>(line);
-                if (entry != null)
-                    yield return entry;
-            }
-        }
-    }
-    
-    /// <summary>
-    /// Remove last entry (undo).
-    /// </summary>
-    public async Task RemoveLastAsync(CancellationToken ct)
-    {
-        // Fast path: if still in pending, splice out
-        if (_pendingEntries.Count > 0)
-        {
-            _pendingEntries.RemoveAt(_pendingEntries.Count - 1);
-            return;
-        }
-        
-        // Slow path: remove from file
-        if (!File.Exists(_historyPath))
-            return;
-        
-        await _flushLock.WaitAsync(ct);
-        try
-        {
-            var lines = (await File.ReadAllLinesAsync(_historyPath, ct)).ToList();
-            if (lines.Count > 0)
-            {
-                lines.RemoveAt(lines.Count - 1);
-                await File.WriteAllLinesAsync(_historyPath, lines, ct);
-            }
-        }
-        finally
-        {
-            _flushLock.Release();
-        }
-    }
-    
-    /// <summary>
-    /// Clear all history.
-    /// </summary>
-    public async Task ClearAsync(CancellationToken ct)
-    {
-        _pendingEntries.Clear();
-        
-        if (File.Exists(_historyPath))
-        {
-            await _flushLock.WaitAsync(ct);
-            try
-            {
-                File.Delete(_historyPath);
-            }
-            finally
-            {
-                _flushLock.Release();
-            }
-        }
-    }
-    
-    private async Task FlushAsync(CancellationToken ct)
-    {
-        if (_pendingEntries.Count == 0)
-            return;
-        
-        await _flushLock.WaitAsync(ct);
-        try
-        {
-            var jsonLines = _pendingEntries.Select(e => JsonSerializer.Serialize(e));
-            await File.AppendAllLinesAsync(_historyPath, jsonLines, ct);
-            _pendingEntries.Clear();
-        }
-        finally
-        {
-            _flushLock.Release();
-        }
-    }
-}
-
-public sealed class HistoryEntry
-{
-    public required string Command { get; init; }
-    public long Timestamp { get; init; }
-    public required string Project { get; init; }
-    public string? SessionId { get; init; }
+    public string LastMessage { get; init; } = "";
+    public DateTime LastActivity { get; init; }
 }
