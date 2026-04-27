@@ -388,6 +388,26 @@ public sealed class MemoryParityTests
     }
 
     [TestMethod]
+    public void SystemPrompts_Build_IncludesPythonMemoryAndSessionSearchGuidanceWhenEnabled()
+    {
+        var prompt = SystemPrompts.Build(includeMemoryGuidance: true, includeSessionSearchGuidance: true);
+
+        StringAssert.Contains(prompt, "You have persistent memory across sessions");
+        StringAssert.Contains(prompt, "Do NOT save task progress");
+        StringAssert.Contains(prompt, "Write memories as declarative facts");
+        StringAssert.Contains(prompt, "use session_search to recall it before asking them to repeat themselves");
+    }
+
+    [TestMethod]
+    public void SystemPrompts_Build_OmitsPythonMemoryAndSessionSearchGuidanceWhenDisabled()
+    {
+        var prompt = SystemPrompts.Build(includeMemoryGuidance: false, includeSessionSearchGuidance: false);
+
+        Assert.IsFalse(prompt.Contains("You have persistent memory across sessions", StringComparison.Ordinal));
+        Assert.IsFalse(prompt.Contains("use session_search to recall it before asking them to repeat themselves", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public async Task SessionSearchTool_UsesTranscriptRecallServiceCorpus()
     {
         var transcripts = await CreateTranscriptsWithPriorMemoryAsync("manual-search", "Manual recall should find silver-bridge.");
@@ -403,6 +423,18 @@ public sealed class MemoryParityTests
         Assert.IsTrue(result.Success);
         StringAssert.Contains(result.Content, "manual-search");
         StringAssert.Contains(result.Content, "silver-bridge");
+    }
+
+    [TestMethod]
+    public void SessionSearchTool_Description_UsesPythonProactiveRecallGuidance()
+    {
+        var tool = new Hermes.Agent.Tools.SessionSearchTool(new TranscriptRecallService(new TranscriptStore(_tempDir), NullLogger<TranscriptRecallService>.Instance));
+
+        StringAssert.Contains(tool.Description, "Search your long-term memory of past conversations");
+        StringAssert.Contains(tool.Description, "TWO MODES");
+        StringAssert.Contains(tool.Description, "USE THIS PROACTIVELY");
+        StringAssert.Contains(tool.Description, "Start here when the user asks what were we working on");
+        StringAssert.Contains(tool.Description, "Use OR between keywords");
     }
 
     [TestMethod]
@@ -518,10 +550,17 @@ public sealed class MemoryParityTests
         }, CancellationToken.None);
 
         Assert.IsTrue(result.Success);
-        StringAssert.Contains(result.Content, "Mode: recent");
-        StringAssert.Contains(result.Content, "recent-a");
-        StringAssert.Contains(result.Content, "recent-b");
-        StringAssert.Contains(result.Content, "worked on alpine scheduler");
+        var data = JsonDocument.Parse(result.Content).RootElement;
+        Assert.IsTrue(data.GetProperty("success").GetBoolean());
+        Assert.AreEqual("recent", data.GetProperty("mode").GetString());
+        Assert.AreEqual(2, data.GetProperty("count").GetInt32());
+        StringAssert.Contains(data.GetProperty("message").GetString(), "Use a keyword query");
+        var results = data.GetProperty("results").EnumerateArray().ToArray();
+        Assert.AreEqual(2, results.Length);
+        var recentA = results.Single(r => r.GetProperty("session_id").GetString() == "recent-a");
+        Assert.AreEqual("desktop", recentA.GetProperty("source").GetString());
+        Assert.IsTrue(recentA.GetProperty("message_count").GetInt32() > 0);
+        StringAssert.Contains(recentA.GetProperty("preview").GetString(), "worked on alpine scheduler");
     }
 
     [TestMethod]
@@ -544,7 +583,10 @@ public sealed class MemoryParityTests
         var result = await tool.ExecuteAsync(new Hermes.Agent.Tools.SessionSearchParameters(), CancellationToken.None);
 
         Assert.IsTrue(result.Success);
-        StringAssert.Contains(result.Content, "Count: 3");
+        var data = JsonDocument.Parse(result.Content).RootElement;
+        Assert.AreEqual("recent", data.GetProperty("mode").GetString());
+        Assert.AreEqual(3, data.GetProperty("count").GetInt32());
+        Assert.AreEqual(3, data.GetProperty("results").GetArrayLength());
         Assert.IsFalse(result.Content.Contains("default-limit-0", StringComparison.OrdinalIgnoreCase),
             "Python session_search defaults omitted limit to 3 and should omit the oldest fourth session.");
     }
@@ -565,12 +607,14 @@ public sealed class MemoryParityTests
         }, CancellationToken.None);
 
         Assert.IsTrue(result.Success);
-        StringAssert.Contains(result.Content, "Mode: search");
-        StringAssert.Contains(result.Content, "Session: summary-session");
-        StringAssert.Contains(result.Content, "Summary:");
-        StringAssert.Contains(result.Content, "vector-jasmine");
-        Assert.AreEqual(1, CountOccurrences(result.Content, "Session: summary-session"),
-            "Search results should be grouped once per session, not emitted as raw per-message snippets.");
+        var data = JsonDocument.Parse(result.Content).RootElement;
+        Assert.IsTrue(data.GetProperty("success").GetBoolean());
+        Assert.AreEqual("vector-jasmine", data.GetProperty("query").GetString());
+        Assert.AreEqual(1, data.GetProperty("count").GetInt32());
+        var session = data.GetProperty("results").EnumerateArray().Single();
+        Assert.AreEqual("summary-session", session.GetProperty("session_id").GetString());
+        StringAssert.Contains(session.GetProperty("summary").GetString(), "vector-jasmine");
+        Assert.AreEqual("desktop", session.GetProperty("source").GetString());
     }
 
     [TestMethod]

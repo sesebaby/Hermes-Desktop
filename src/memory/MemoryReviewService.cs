@@ -86,7 +86,11 @@ public sealed class MemoryReviewService
         IReadOnlyList<Message> messagesSnapshot,
         CancellationToken ct)
     {
-        var reviewMessages = messagesSnapshot.Select(CloneMessage).ToList();
+        var reviewMessages = new List<Message>
+        {
+            new() { Role = "system", Content = MemoryReferenceText.MemoryGuidance }
+        };
+        reviewMessages.AddRange(messagesSnapshot.Select(CloneMessage));
         reviewMessages.Add(new Message { Role = "user", Content = MemoryReviewPrompt });
 
         var response = await _chatClient.CompleteWithToolsAsync(
@@ -121,45 +125,12 @@ public sealed class MemoryReviewService
     }
 
     private static ToolDefinition BuildMemoryToolDefinition()
-    {
-        var schema = JsonSerializer.SerializeToElement(new
-        {
-            type = "object",
-            properties = new Dictionary<string, object>
-            {
-                ["action"] = new
-                {
-                    type = "string",
-                    @enum = new[] { "add", "replace", "remove" },
-                    description = "The action to perform."
-                },
-                ["target"] = new
-                {
-                    type = "string",
-                    @enum = new[] { "memory", "user" },
-                    description = "Which memory store: memory for agent notes, user for user profile."
-                },
-                ["content"] = new
-                {
-                    type = "string",
-                    description = "The entry content. Required for add and replace."
-                },
-                ["old_text"] = new
-                {
-                    type = "string",
-                    description = "Short unique substring identifying the entry to replace or remove."
-                }
-            },
-            required = new[] { "action", "target" }
-        });
-
-        return new ToolDefinition
+        => new()
         {
             Name = "memory",
-            Description = "Save durable information to persistent memory that survives across sessions.",
-            Parameters = schema
+            Description = MemoryReferenceText.MemoryToolDescription,
+            Parameters = MemoryReferenceText.BuildMemoryToolParameterSchema()
         };
-    }
 
     private static Message CloneMessage(Message message)
         => new()

@@ -85,4 +85,27 @@ public static class SystemPrompts
 - When you see a build or test failure, investigate and fix it before declaring success.
 - Be careful with file paths — use the correct OS path separator for the platform.
 - This is a Windows environment — use appropriate commands and path formats.";
+
+    /// <summary>
+    /// Build the desktop system prompt with Python-style tool-aware memory guidance.
+    /// The Python reference appends these guidance blocks only when the matching
+    /// tools are available, so desktop startup should pass the actual availability
+    /// flags instead of baking the guidance into <see cref="Default"/>.
+    /// </summary>
+    public static string Build(bool includeMemoryGuidance, bool includeSessionSearchGuidance)
+    {
+        var prompt = Default;
+        var guidance = new List<string>();
+
+        if (includeMemoryGuidance)
+            guidance.Add(MemoryReferenceText.MemoryGuidance);
+
+        if (includeSessionSearchGuidance)
+            guidance.Add(MemoryReferenceText.SessionSearchGuidance);
+
+        if (guidance.Count > 0)
+            prompt += "\n\n" + string.Join(" ", guidance);
+
+        return prompt;
+    }
 }

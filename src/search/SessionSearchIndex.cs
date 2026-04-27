@@ -377,7 +377,7 @@ public sealed class SessionSearchIndex : IDisposable
             using var db = OpenConnection();
             using var cmd = db.CreateCommand();
             cmd.CommandText = @"
-                SELECT id, source, parent_session_id
+                SELECT id, source, parent_session_id, model
                 FROM sessions
                 WHERE id = $session_id";
             cmd.Parameters.AddWithValue("$session_id", sessionId);
@@ -388,7 +388,8 @@ public sealed class SessionSearchIndex : IDisposable
             return new SessionMetadata(
                 reader.GetString(0),
                 reader.GetString(1),
-                reader.IsDBNull(2) ? null : reader.GetString(2));
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3));
         }
     }
 
@@ -882,4 +883,5 @@ public sealed class SearchResult
 public sealed record SessionMetadata(
     string Id,
     string Source,
-    string? ParentSessionId);
+    string? ParentSessionId,
+    string? Model);

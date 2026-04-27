@@ -6,6 +6,7 @@ using Hermes.Agent.Transcript;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.ComponentModel;
 using System.Globalization;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -15,11 +16,14 @@ using System.Text.Json.Serialization;
 public sealed class SessionSearchTool : ITool
 {
     private readonly TranscriptRecallService _recallService;
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = null,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
 
     public string Name => "session_search";
-    public string Description =>
-        "Search long-term memory of past user/assistant conversation turns, or call with no query to browse recent sessions. " +
-        "Keyword search returns session-level summaries rather than raw per-message snippets. Tool and system messages are not searched.";
+    public string Description => MemoryReferenceText.SessionSearchToolDescription;
     public Type ParametersType => typeof(SessionSearchParameters);
 
     public SessionSearchTool(string transcriptDir)
@@ -59,13 +63,20 @@ public sealed class SessionSearchTool : ITool
                 ct);
 
             if (results.Count == 0)
-                return ToolResult.Ok($"No sessions found matching '{p.Query}'.");
+                return ToolResult.Ok(Serialize(new SessionSearchNoResultsResponse(
+                    Success: true,
+                    Query: p.Query.Trim(),
+                    Results: Array.Empty<SessionSearchResultDto>(),
+                    Count: 0,
+                    Message: "No matching sessions found.")));
 
             return ToolResult.Ok(FormatSessionSummaries(p.Query, results));
         }
         catch (Exception ex)
         {
-            return ToolResult.Fail($"Search failed: {ex.Message}", ex);
+            return ToolResult.Fail(Serialize(new SessionSearchErrorResponse(
+                Success: false,
+                Error: $"Search failed: {ex.Message}")), ex);
         }
     }
 
@@ -84,55 +95,82 @@ public sealed class SessionSearchTool : ITool
     }
 
     private static string FormatRecentSessions(IReadOnlyList<RecentTranscriptSession> sessions)
-    {
-        if (sessions.Count == 0)
-            return "Mode: recent\nNo prior sessions found.";
-
-        var lines = new List<string>
-        {
-            "Mode: recent",
-            $"Count: {sessions.Count}",
-            "Use a keyword query to search specific topics across these sessions.",
-            ""
-        };
-
-        foreach (var session in sessions)
-        {
-            lines.Add($"Session: {session.SessionId}");
-            lines.Add($"When: {session.StartedAt:O} - {session.LastActivityAt:O}");
-            lines.Add($"Messages: {session.MessageCount}");
-            lines.Add($"Preview: {session.Preview}");
-            lines.Add("");
-        }
-
-        return string.Join("\n", lines).TrimEnd();
-    }
+        => Serialize(new RecentSessionsResponse(
+            Success: true,
+            Mode: "recent",
+            Results: sessions
+                .Select(session => new RecentSessionDto(
+                    SessionId: session.SessionId,
+                    Title: session.Title,
+                    Source: session.Source,
+                    StartedAt: session.StartedAt.ToString("O", CultureInfo.InvariantCulture),
+                    LastActive: session.LastActivityAt.ToString("O", CultureInfo.InvariantCulture),
+                    MessageCount: session.MessageCount,
+                    Preview: session.Preview))
+                .ToArray(),
+            Count: sessions.Count,
+            Message: $"Showing {sessions.Count} most recent sessions. Use a keyword query to search specific topics."));
 
     private static string FormatSessionSummaries(
         string query,
         IReadOnlyList<TranscriptSessionSummary> summaries)
-    {
-        var lines = new List<string>
-        {
-            "Mode: search",
-            $"Query: {query}",
-            $"Count: {summaries.Count}",
-            ""
-        };
+        => Serialize(new SessionSearchResponse(
+            Success: true,
+            Query: query,
+            Results: summaries
+                .Select(summary => new SessionSearchResultDto(
+                    SessionId: summary.SessionId,
+                    When: summary.StartedAt.ToString("O", CultureInfo.InvariantCulture),
+                    Source: summary.Source,
+                    Model: summary.Model,
+                    Summary: summary.Summary))
+                .ToArray(),
+            Count: summaries.Count,
+            SessionsSearched: summaries.Count));
 
-        foreach (var summary in summaries)
-        {
-            lines.Add($"Session: {summary.SessionId}");
-            lines.Add($"When: {summary.StartedAt:O} - {summary.LastActivityAt:O}");
-            lines.Add($"Messages: {summary.MessageCount}");
-            lines.Add($"Matches: {summary.Matches.Count}");
-            lines.Add("Summary:");
-            lines.Add(summary.Summary);
-            lines.Add("");
-        }
+    private static string Serialize<T>(T value)
+        => JsonSerializer.Serialize(value, JsonOptions);
 
-        return string.Join("\n", lines).TrimEnd();
-    }
+    private sealed record RecentSessionsResponse(
+        [property: JsonPropertyName("success")] bool Success,
+        [property: JsonPropertyName("mode")] string Mode,
+        [property: JsonPropertyName("results")] IReadOnlyList<RecentSessionDto> Results,
+        [property: JsonPropertyName("count")] int Count,
+        [property: JsonPropertyName("message")] string Message);
+
+    private sealed record RecentSessionDto(
+        [property: JsonPropertyName("session_id")] string SessionId,
+        [property: JsonPropertyName("title")] string? Title,
+        [property: JsonPropertyName("source")] string Source,
+        [property: JsonPropertyName("started_at")] string StartedAt,
+        [property: JsonPropertyName("last_active")] string LastActive,
+        [property: JsonPropertyName("message_count")] int MessageCount,
+        [property: JsonPropertyName("preview")] string Preview);
+
+    private sealed record SessionSearchResponse(
+        [property: JsonPropertyName("success")] bool Success,
+        [property: JsonPropertyName("query")] string Query,
+        [property: JsonPropertyName("results")] IReadOnlyList<SessionSearchResultDto> Results,
+        [property: JsonPropertyName("count")] int Count,
+        [property: JsonPropertyName("sessions_searched")] int SessionsSearched);
+
+    private sealed record SessionSearchNoResultsResponse(
+        [property: JsonPropertyName("success")] bool Success,
+        [property: JsonPropertyName("query")] string Query,
+        [property: JsonPropertyName("results")] IReadOnlyList<SessionSearchResultDto> Results,
+        [property: JsonPropertyName("count")] int Count,
+        [property: JsonPropertyName("message")] string? Message);
+
+    private sealed record SessionSearchResultDto(
+        [property: JsonPropertyName("session_id")] string SessionId,
+        [property: JsonPropertyName("when")] string When,
+        [property: JsonPropertyName("source")] string Source,
+        [property: JsonPropertyName("model")] string? Model,
+        [property: JsonPropertyName("summary")] string Summary);
+
+    private sealed record SessionSearchErrorResponse(
+        [property: JsonPropertyName("success")] bool Success,
+        [property: JsonPropertyName("error")] string Error);
 }
 
 public sealed class SessionSearchParameters : ISessionAwareToolParameters

@@ -507,6 +507,8 @@ public class MemoryToolTests
         StringAssert.Contains(_tool.Description, "do this proactively");
         StringAssert.Contains(_tool.Description, "PRIORITY: User preferences and corrections > environment facts > procedural knowledge");
         StringAssert.Contains(_tool.Description, "save it as a skill with the skill tool");
+        StringAssert.Contains(_tool.Description, "Write memories as declarative facts");
+        StringAssert.Contains(_tool.Description, "Procedures and workflows belong in skills, not memory");
     }
 
     [TestMethod]

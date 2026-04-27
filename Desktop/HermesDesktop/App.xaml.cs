@@ -458,7 +458,9 @@ public partial class App : Application
 
         // Token budget & Prompt builder for Context Runtime
         services.AddSingleton(sp => new TokenBudget(maxTokens: 8000, recentTurnWindow: 6));
-        services.AddSingleton(sp => new PromptBuilder(SystemPrompts.Default));
+        services.AddSingleton(sp => new PromptBuilder(SystemPrompts.Build(
+            includeMemoryGuidance: memoryAvailable,
+            includeSessionSearchGuidance: true)));
 
         // Context manager (with soul integration)
         services.AddSingleton(sp => new ContextManager(

@@ -88,6 +88,42 @@ public class MemoryReviewServiceTests
         CollectionAssert.Contains(plugin.Writes, "add:user:User prefers concise replies.");
     }
 
+    [TestMethod]
+    public async Task ReviewConversationAsync_UsesPythonMemoryToolDescriptionAndSchema()
+    {
+        ToolDefinition? captured = null;
+        var chatClient = new Mock<IChatClient>(MockBehavior.Strict);
+        chatClient
+            .Setup(c => c.CompleteWithToolsAsync(
+                It.IsAny<IEnumerable<Message>>(),
+                It.IsAny<IEnumerable<ToolDefinition>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<Message>, IEnumerable<ToolDefinition>, CancellationToken>(
+                (_, tools, _) => captured = tools.Single())
+            .ReturnsAsync(new ChatResponse { Content = "Nothing to save." });
+
+        var memoryManager = new MemoryManager(
+            _tempDir,
+            chatClient.Object,
+            NullLogger<MemoryManager>.Instance);
+        var service = new MemoryReviewService(
+            chatClient.Object,
+            memoryManager,
+            NullLogger<MemoryReviewService>.Instance,
+            nudgeInterval: 1);
+
+        await service.ReviewConversationAsync(
+            new[] { new Message { Role = "user", Content = "I prefer concise replies." } },
+            CancellationToken.None);
+
+        Assert.IsNotNull(captured);
+        Assert.AreEqual("memory", captured!.Name);
+        StringAssert.Contains(captured.Description, "Write memories as declarative facts");
+        CollectionAssert.AreEqual(
+            new[] { "action", "target" },
+            captured.Parameters.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ToArray());
+    }
+
     private MemoryReviewService CreateService(int nudgeInterval)
     {
         var chatClient = new Mock<IChatClient>(MockBehavior.Loose).Object;

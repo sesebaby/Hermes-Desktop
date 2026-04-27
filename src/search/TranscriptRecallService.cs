@@ -247,8 +247,11 @@ public sealed class TranscriptRecallService
 
             var firstUser = cleanMessages.FirstOrDefault(m => string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase));
             var preview = firstUser?.Content ?? cleanMessages[0].Content;
+            var metadata = _transcripts.GetSessionMetadata(sessionId);
             sessions.Add(new RecentTranscriptSession(
                 sessionId,
+                Title: null,
+                Source: metadata?.Source ?? "desktop",
                 cleanMessages.Min(m => m.Timestamp),
                 cleanMessages.Max(m => m.Timestamp),
                 cleanMessages.Count,
@@ -318,6 +321,7 @@ public sealed class TranscriptRecallService
             if (cleanMessages.Count == 0)
                 continue;
 
+            var metadata = _transcripts.GetSessionMetadata(group.Key);
             var conversation = FormatConversation(cleanMessages);
             conversation = TruncateAroundMatches(conversation, query, maxChars: 12000);
             preparedSessions.Add(new PreparedTranscriptSession(
@@ -325,6 +329,8 @@ public sealed class TranscriptRecallService
                 cleanMessages.Min(m => m.Timestamp),
                 cleanMessages.Max(m => m.Timestamp),
                 cleanMessages.Count,
+                metadata?.Source ?? "desktop",
+                metadata?.Model,
                 conversation,
                 group.ToList()));
         }
@@ -345,6 +351,8 @@ public sealed class TranscriptRecallService
                     prepared.StartedAt,
                     prepared.LastActivityAt,
                     prepared.MessageCount,
+                    prepared.Source,
+                    prepared.Model,
                     summary,
                     prepared.Matches);
             }
@@ -644,6 +652,8 @@ public sealed record TranscriptRecallItem(
 
 public sealed record RecentTranscriptSession(
     string SessionId,
+    string? Title,
+    string Source,
     DateTime StartedAt,
     DateTime LastActivityAt,
     int MessageCount,
@@ -654,6 +664,8 @@ public sealed record TranscriptSessionSummary(
     DateTime StartedAt,
     DateTime LastActivityAt,
     int MessageCount,
+    string Source,
+    string? Model,
     string Summary,
     IReadOnlyList<TranscriptRecallItem> Matches);
 
@@ -662,6 +674,8 @@ internal sealed record PreparedTranscriptSession(
     DateTime StartedAt,
     DateTime LastActivityAt,
     int MessageCount,
+    string Source,
+    string? Model,
     string Conversation,
     IReadOnlyList<TranscriptRecallItem> Matches);
 
