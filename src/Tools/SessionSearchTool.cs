@@ -5,6 +5,8 @@ using Hermes.Agent.Search;
 using Hermes.Agent.Transcript;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.ComponentModel;
+using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 /// <summary>
@@ -144,9 +146,49 @@ public sealed class SessionSearchParameters : ISessionAwareToolParameters
     public string? RoleFilter { get; init; }
 
     [JsonPropertyName("limit")]
+    [JsonConverter(typeof(FlexibleNullableIntConverter))]
     [Description("Max sessions to summarize or list (default: 3, max: 5).")]
     public int? Limit { get; init; }
 
     [JsonIgnore]
     public string? CurrentSessionId { get; set; }
+}
+
+public sealed class FlexibleNullableIntConverter : JsonConverter<int?>
+{
+    public override int? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.Null:
+                return null;
+            case JsonTokenType.Number:
+                if (reader.TryGetInt32(out var intValue))
+                    return intValue;
+                if (reader.TryGetDouble(out var doubleValue))
+                    return (int)doubleValue;
+                return null;
+            case JsonTokenType.String:
+                var value = reader.GetString();
+                return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+                    ? parsed
+                    : null;
+            case JsonTokenType.StartObject:
+            case JsonTokenType.StartArray:
+                using (JsonDocument.ParseValue(ref reader))
+                {
+                    return null;
+                }
+            default:
+                return null;
+        }
+    }
+
+    public override void Write(Utf8JsonWriter writer, int? value, JsonSerializerOptions options)
+    {
+        if (value.HasValue)
+            writer.WriteNumberValue(value.Value);
+        else
+            writer.WriteNullValue();
+    }
 }

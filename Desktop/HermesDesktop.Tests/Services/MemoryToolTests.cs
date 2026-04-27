@@ -502,6 +502,14 @@ public class MemoryToolTests
     }
 
     [TestMethod]
+    public void MemoryToolDescription_UsesPythonProactiveSaveGuidance()
+    {
+        StringAssert.Contains(_tool.Description, "do this proactively");
+        StringAssert.Contains(_tool.Description, "PRIORITY: User preferences and corrections > environment facts > procedural knowledge");
+        StringAssert.Contains(_tool.Description, "save it as a skill with the skill tool");
+    }
+
+    [TestMethod]
     public async Task MemoryTool_NotifiesPluginManagerOnWrites()
     {
         var plugin = new RecordingMemoryPlugin();

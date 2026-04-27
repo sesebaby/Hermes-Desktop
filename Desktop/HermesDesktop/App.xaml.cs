@@ -869,7 +869,7 @@ public partial class App : Application
     }
 
     private static bool IsConfigEnabled(string section, string key)
-        => string.Equals(HermesEnvironment.ReadConfigSetting(section, key), "true", StringComparison.OrdinalIgnoreCase);
+        => MemorySettings.IsEnabled(HermesEnvironment.ReadConfigSetting(section, key));
 
     private static int ReadNonNegativeConfigInt(string section, string key, int fallback)
     {

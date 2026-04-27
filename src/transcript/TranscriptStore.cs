@@ -93,6 +93,15 @@ public sealed class TranscriptStore
     public bool SessionExists(string sessionId)
         => _cache.ContainsKey(sessionId) || _sessionStore.SessionExists(sessionId);
 
+    public SessionMetadata? GetSessionMetadata(string sessionId)
+        => _sessionStore.GetSessionMetadata(sessionId);
+
+    public bool IsChildSession(string sessionId)
+        => _sessionStore.IsChildSession(sessionId);
+
+    public string ResolveRootSessionId(string sessionId)
+        => _sessionStore.ResolveRootSessionId(sessionId);
+
     public List<string> GetAllSessionIds()
     {
         var ids = _cache.Keys.ToList();

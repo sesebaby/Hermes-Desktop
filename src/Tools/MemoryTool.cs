@@ -30,13 +30,19 @@ public sealed class MemoryTool : ITool, IToolSchemaProvider
     public string Description =>
         "Save durable information to persistent memory that survives across sessions. " +
         "Memory is injected into future turns, so keep it compact and focused on facts that will still matter later.\n\n" +
-        "WHEN TO SAVE: user corrections or explicit remember/don't-do-that-again requests; user preferences, habits, " +
-        "personal details, communication style; environment facts, project conventions, tool quirks, and stable facts " +
-        "that reduce future user steering.\n\n" +
+        "WHEN TO SAVE (do this proactively, don't wait to be asked):\n" +
+        "- User corrects you or says 'remember this' / 'don't do that again'\n" +
+        "- User shares a preference, habit, or personal detail (name, role, timezone, coding style)\n" +
+        "- You discover something about the environment (OS, installed tools, project structure)\n" +
+        "- You learn a convention, API quirk, or workflow specific to this user's setup\n" +
+        "- You identify a stable fact that will be useful again in future sessions\n\n" +
+        "PRIORITY: User preferences and corrections > environment facts > procedural knowledge. " +
+        "The most valuable memory prevents the user from having to repeat themselves.\n\n" +
         "Do NOT save task progress, session outcomes, completed-work logs, or temporary TODO state to memory; use " +
-        "session_search for past transcript recall. Write declarative facts, not imperative instructions.\n\n" +
-        "Targets: 'user' for who the user is; 'memory' for agent notes such as environment facts and project conventions. " +
-        "Actions: add, replace, remove.";
+        "session_search to recall those from past transcripts. If you've discovered a new way to do something, " +
+        "solved a problem that could be necessary later, save it as a skill with the skill tool.\n\n" +
+        "TWO TARGETS: 'user' for who the user is; 'memory' for agent notes such as environment facts and project conventions. " +
+        "ACTIONS: add, replace, remove. SKIP: trivial/obvious info, things easily re-discovered, raw data dumps, and temporary task state.";
 
     public Type ParametersType => typeof(MemoryToolParameters);
 

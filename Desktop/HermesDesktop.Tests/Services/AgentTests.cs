@@ -371,6 +371,8 @@ public class AgentPluginManagerTests
             .Returns(Task.CompletedTask);
         _mockPlugin.Setup(p => p.OnTurnEndAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
+        _mockPlugin.Setup(p => p.OnSessionEndAsync(It.IsAny<IReadOnlyList<Message>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         _pluginManager.Register(_mockPlugin.Object);
     }
@@ -450,6 +452,27 @@ public class AgentPluginManagerTests
         _mockPlugin.Verify(
             p => p.OnTurnEndAsync(It.IsAny<string>(), It.IsAny<string>(), "specific-session-id-xyz", It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [TestMethod]
+    public async Task EndSessionAsync_WithPluginManager_CallsOnSessionEndWithConversationMessages()
+    {
+        var agent = new Agent(_mockChatClient.Object, NullLogger<Agent>.Instance, pluginManager: _pluginManager);
+        var session = new Session { Id = "pm-ended-session" };
+        session.AddMessage(new Message { Role = "user", Content = "session fact" });
+        session.AddMessage(new Message { Role = "assistant", Content = "session answer" });
+
+        await agent.EndSessionAsync(session, CancellationToken.None);
+
+        _mockPlugin.Verify(
+            p => p.OnSessionEndAsync(
+                It.Is<IReadOnlyList<Message>>(messages =>
+                    messages.Count == 2 &&
+                    messages[0].Content == "session fact" &&
+                    messages[1].Content == "session answer"),
+                It.IsAny<CancellationToken>()),
+            Times.Once,
+            "Python memory providers receive full conversation history once at an actual session boundary.");
     }
 
     // ── System prompt injection ──

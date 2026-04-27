@@ -522,7 +522,7 @@ public sealed partial class ChatPage : Page
 
     private async void NewChat_Click(object sender, RoutedEventArgs e)
     {
-        _chatService.ResetConversation();
+        await _chatService.ResetConversationAsync(CancellationToken.None);
         _agent.ClearActivityLog();
         ReplayPanelView.Clear();
         _sessionRecorder.StopRecording();

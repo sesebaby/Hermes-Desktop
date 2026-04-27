@@ -22,6 +22,10 @@ public sealed class TranscriptRecallService
         "you", "me", "my", "our", "before", "earlier", "previous", "previously", "remember",
         "ask", "asked", "use", "used", "tell", "about"
     };
+    private static readonly HashSet<string> HiddenSessionSources = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "tool"
+    };
 
     private readonly TranscriptStore _transcripts;
     private readonly ILogger<TranscriptRecallService> _logger;
@@ -103,14 +107,16 @@ public sealed class TranscriptRecallService
         var keywords = ExtractKeywords(query);
         var scored = new List<(TranscriptRecallItem Item, int Score)>();
         var recent = new List<TranscriptRecallItem>();
+        var currentRootSessionId = ResolveRootSessionId(currentSessionId);
 
         foreach (var sessionId in _transcripts.GetAllSessionIds())
         {
             ct.ThrowIfCancellationRequested();
 
-            if (string.Equals(sessionId, currentSessionId, StringComparison.OrdinalIgnoreCase))
+            if (IsExcludedSearchSession(sessionId, currentSessionId, currentRootSessionId))
                 continue;
 
+            var resolvedSessionId = ResolveRootSessionId(sessionId) ?? sessionId;
             List<Message> messages;
             try
             {
@@ -129,7 +135,7 @@ public sealed class TranscriptRecallService
                     continue;
 
                 var item = new TranscriptRecallItem(
-                    sessionId,
+                    resolvedSessionId,
                     message.Role,
                     cleanContent,
                     message.Timestamp);
@@ -173,17 +179,24 @@ public sealed class TranscriptRecallService
         if (_index is null)
             return new List<TranscriptRecallItem>();
 
-        var indexedResults = _index.Search(query, Math.Max(maxItems * 5, 20));
+        var currentRootSessionId = ResolveRootSessionId(currentSessionId);
+        var indexedResults = _index.Search(
+            query,
+            Math.Max(maxItems * 5, 20),
+            excludeSources: HiddenSessionSources,
+            roleFilter: roleFilter);
         return indexedResults
-            .Where(r => !string.Equals(r.SessionId, currentSessionId, StringComparison.OrdinalIgnoreCase))
-            .Where(r => string.Equals(r.Role, "user", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(r.Role, "assistant", StringComparison.OrdinalIgnoreCase))
-            .Where(r => roleFilter is null || roleFilter.Count == 0 || roleFilter.Contains(r.Role))
+            .Select(r => (Result: r, ResolvedSessionId: ResolveRootSessionId(r.SessionId) ?? r.SessionId))
+            .Where(r => !IsCurrentSessionLineage(r.Result.SessionId, currentSessionId, currentRootSessionId) &&
+                        !IsCurrentSessionLineage(r.ResolvedSessionId, currentSessionId, currentRootSessionId))
+            .Where(r => string.Equals(r.Result.Role, "user", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(r.Result.Role, "assistant", StringComparison.OrdinalIgnoreCase))
+            .Where(r => roleFilter is null || roleFilter.Count == 0 || roleFilter.Contains(r.Result.Role))
             .Select(r => new TranscriptRecallItem(
-                r.SessionId,
-                r.Role,
-                SanitizeContext(r.Content),
-                DateTime.TryParse(r.Timestamp, out var ts) ? ts : DateTime.MinValue))
+                r.ResolvedSessionId,
+                r.Result.Role,
+                SanitizeContext(r.Result.Content),
+                DateTime.TryParse(r.Result.Timestamp, out var ts) ? ts : DateTime.MinValue))
             .Where(r => !string.IsNullOrWhiteSpace(r.Content))
             .Take(maxItems)
             .ToList();
@@ -196,11 +209,12 @@ public sealed class TranscriptRecallService
     {
         var sessions = new List<RecentTranscriptSession>();
         var safeLimit = Math.Clamp(limit, 1, 20);
+        var currentRootSessionId = ResolveRootSessionId(currentSessionId);
 
         foreach (var sessionId in _transcripts.GetAllSessionIds())
         {
             ct.ThrowIfCancellationRequested();
-            if (string.Equals(sessionId, currentSessionId, StringComparison.OrdinalIgnoreCase))
+            if (IsExcludedRecentSession(sessionId, currentSessionId, currentRootSessionId))
                 continue;
 
             List<Message> messages;
@@ -572,6 +586,54 @@ public sealed class TranscriptRecallService
 
     private static bool RoleMatches(Message message, IReadOnlySet<string>? roleFilter)
         => roleFilter is null || roleFilter.Count == 0 || roleFilter.Contains(message.Role);
+
+    private bool IsExcludedSearchSession(
+        string sessionId,
+        string? currentSessionId,
+        string? currentRootSessionId)
+        => IsHiddenSession(sessionId) || IsCurrentSessionLineage(sessionId, currentSessionId, currentRootSessionId);
+
+    private bool IsExcludedRecentSession(
+        string sessionId,
+        string? currentSessionId,
+        string? currentRootSessionId)
+        => IsHiddenSession(sessionId)
+           || _transcripts.IsChildSession(sessionId)
+           || IsCurrentSessionLineage(sessionId, currentSessionId, currentRootSessionId);
+
+    private bool IsHiddenSession(string sessionId)
+    {
+        var source = _transcripts.GetSessionMetadata(sessionId)?.Source;
+        return !string.IsNullOrWhiteSpace(source) && HiddenSessionSources.Contains(source);
+    }
+
+    private bool IsCurrentSessionLineage(
+        string sessionId,
+        string? currentSessionId,
+        string? currentRootSessionId)
+    {
+        if (string.IsNullOrWhiteSpace(currentSessionId))
+            return false;
+
+        if (string.Equals(sessionId, currentSessionId, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        var rootSessionId = ResolveRootSessionId(sessionId);
+        return !string.IsNullOrWhiteSpace(currentRootSessionId) &&
+               !string.IsNullOrWhiteSpace(rootSessionId) &&
+               string.Equals(rootSessionId, currentRootSessionId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string? ResolveRootSessionId(string? sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return null;
+
+        if (_index is not null && _index.SessionExists(sessionId))
+            return _index.ResolveRootSessionId(sessionId);
+
+        return _transcripts.ResolveRootSessionId(sessionId);
+    }
 }
 
 public sealed record TranscriptRecallItem(

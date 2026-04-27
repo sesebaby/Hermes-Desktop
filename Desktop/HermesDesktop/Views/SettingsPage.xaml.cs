@@ -69,7 +69,9 @@ public sealed partial class SettingsPage : Page
 
     private void LoadUserProfile()
     {
-        var userMdPath = Path.Combine(HermesEnvironment.HermesHomePath, "USER.md");
+        var userMdPath = File.Exists(HermesEnvironment.UserFilePath)
+            ? HermesEnvironment.UserFilePath
+            : HermesEnvironment.LegacyUserFilePath;
         UserProfilePathLabel.Text = string.Format(CultureInfo.CurrentCulture, ResourceLoader.GetString("SettingsUserProfilePathFormat"), userMdPath);
 
         if (!File.Exists(userMdPath)) return;
@@ -121,7 +123,7 @@ public sealed partial class SettingsPage : Page
     {
         try
         {
-            var userMdPath = Path.Combine(HermesEnvironment.HermesHomePath, "USER.md");
+            var userMdPath = HermesEnvironment.UserFilePath;
             var name = UserNameBox.Text.Trim();
             var role = UserRoleBox.Text.Trim();
             var style = UserStyleBox.Text.Trim();
@@ -144,7 +146,9 @@ This file is a living document about the human I work with. It helps me provide 
 (This section is updated automatically by the agent as it learns about you.)
 ";
 
+            Directory.CreateDirectory(Path.GetDirectoryName(userMdPath)!);
             await File.WriteAllTextAsync(userMdPath, content);
+            await File.WriteAllTextAsync(HermesEnvironment.LegacyUserFilePath, content);
 
             // Save project directory to environment if changed
             if (!string.IsNullOrEmpty(projectDir) && Directory.Exists(projectDir))
@@ -164,7 +168,9 @@ This file is a living document about the human I work with. It helps me provide 
 
     private void EditUserMd_Click(object sender, RoutedEventArgs e)
     {
-        var userMdPath = Path.Combine(HermesEnvironment.HermesHomePath, "USER.md");
+        var userMdPath = File.Exists(HermesEnvironment.UserFilePath)
+            ? HermesEnvironment.UserFilePath
+            : HermesEnvironment.LegacyUserFilePath;
         if (File.Exists(userMdPath))
         {
             var psi = new System.Diagnostics.ProcessStartInfo(userMdPath) { UseShellExecute = true };

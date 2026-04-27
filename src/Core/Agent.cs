@@ -1075,6 +1075,23 @@ public sealed class Agent : IAgent
         }
     }
 
+    public async Task EndSessionAsync(Session? session, CancellationToken ct)
+    {
+        if (session is null || _pluginManager is null)
+            return;
+
+        using var cleanupCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cleanupCts.CancelAfter(PluginCleanupTimeout);
+        try
+        {
+            await _pluginManager.OnSessionEndAsync(session.Messages.ToList(), cleanupCts.Token);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Plugin OnSessionEnd failed");
+        }
+    }
+
     private async Task<(int Count, string? PluginSystemContent)> RefreshTransientPluginSystemMessageAsync(
         Session session,
         int transientSystemMessages,

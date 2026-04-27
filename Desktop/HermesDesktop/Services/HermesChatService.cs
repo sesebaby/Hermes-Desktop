@@ -198,6 +198,12 @@ internal sealed class HermesChatService : IDisposable
 
     public async Task LoadSessionAsync(string sessionId, CancellationToken ct)
     {
+        if (_currentSession is not null &&
+            !string.Equals(_currentSession.Id, sessionId, StringComparison.OrdinalIgnoreCase))
+        {
+            await EndCurrentSessionAsync(ct);
+        }
+
         var messages = await _transcriptStore.LoadSessionAsync(sessionId, ct);
         _currentSession = new Session
         {
@@ -210,13 +216,17 @@ internal sealed class HermesChatService : IDisposable
         _logger.LogInformation("Loaded session {SessionId} with {Count} messages", sessionId, messages.Count);
     }
 
-    public void ResetConversation()
+    public async Task ResetConversationAsync(CancellationToken ct = default)
     {
+        await EndCurrentSessionAsync(ct);
         _currentSession = null;
         _streamCts?.Cancel();
         _streamCts?.Dispose();
         _streamCts = null;
     }
+
+    public void ResetConversation()
+        => ResetConversationAsync(CancellationToken.None).GetAwaiter().GetResult();
 
     // ── Permission Mode ──
 
@@ -243,8 +253,33 @@ internal sealed class HermesChatService : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
+        try
+        {
+            Task.Run(() => EndCurrentSessionAsync(CancellationToken.None))
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to end session during chat service disposal");
+        }
         _streamCts?.Dispose();
         _disposed = true;
+    }
+
+    private async Task EndCurrentSessionAsync(CancellationToken ct)
+    {
+        if (_currentSession is null)
+            return;
+
+        try
+        {
+            await _agent.EndSessionAsync(_currentSession, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to end session {SessionId}", _currentSession.Id);
+        }
     }
 
     internal sealed record HermesChatReply(string Response, string SessionId);

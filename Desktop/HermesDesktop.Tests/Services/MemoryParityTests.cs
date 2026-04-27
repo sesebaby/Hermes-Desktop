@@ -8,6 +8,7 @@ using Hermes.Agent.Tools;
 using Hermes.Agent.Transcript;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Text.Json;
 
 namespace HermesDesktop.Tests.Services;
 
@@ -300,6 +301,90 @@ public sealed class MemoryParityTests
         StringAssert.Contains(summaries[0].Summary, "topaz-reef");
         Assert.IsFalse(summaries[0].Summary.Contains("TOOL SECRET", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(summaries[0].Summary.Contains("TOOL(", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task TranscriptRecallService_SearchSessionSummariesAsync_ExcludesCurrentSessionLineage()
+    {
+        var dbPath = Path.Combine(_tempDir, "lineage.sqlite");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        var store = new TranscriptStore(_tempDir, sessionStore: index);
+        var now = DateTime.UtcNow;
+        index.SaveMessage("current-root", new Message { Role = "user", Content = "lineage-token current root", Timestamp = now }, parentSessionId: null);
+        index.SaveMessage("current-child", new Message { Role = "user", Content = "lineage-token current child", Timestamp = now.AddSeconds(1) }, parentSessionId: "current-root");
+        index.SaveMessage("other-root", new Message { Role = "user", Content = "lineage-token other root", Timestamp = now.AddSeconds(2) }, parentSessionId: null);
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance, index);
+
+        var fromChild = await recall.SearchSessionSummariesAsync("lineage-token", "current-child", maxSessions: 5, ct: CancellationToken.None);
+        var fromRoot = await recall.SearchSessionSummariesAsync("lineage-token", "current-root", maxSessions: 5, ct: CancellationToken.None);
+
+        CollectionAssert.AreEqual(new[] { "other-root" }, fromChild.Select(s => s.SessionId).ToArray(),
+            "Searching from a compressed/delegated child session must exclude its root lineage.");
+        CollectionAssert.AreEqual(new[] { "other-root" }, fromRoot.Select(s => s.SessionId).ToArray(),
+            "Searching from a root session must exclude child sessions that resolve back to the current root.");
+    }
+
+    [TestMethod]
+    public async Task TranscriptRecallService_SearchAsync_ExcludesHiddenToolSourceSessions()
+    {
+        var dbPath = Path.Combine(_tempDir, "hidden-source.sqlite");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        var store = new TranscriptStore(_tempDir, sessionStore: index);
+        index.SaveMessage("visible-session", new Message { Role = "user", Content = "source-token visible" }, source: "desktop");
+        index.SaveMessage("hidden-tool-session", new Message { Role = "user", Content = "source-token hidden" }, source: "tool");
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance, index);
+
+        var results = await recall.SearchAsync("source-token", currentSessionId: null, maxItems: 5, ct: CancellationToken.None);
+
+        Assert.IsTrue(results.Any(r => r.SessionId == "visible-session"));
+        Assert.IsFalse(results.Any(r => r.SessionId == "hidden-tool-session"),
+            "Python hides sessions whose source is 'tool' from session_search by default.");
+    }
+
+    [TestMethod]
+    public async Task TranscriptRecallService_ListRecentSessions_ExcludesHiddenSourcesAndChildSessions()
+    {
+        var dbPath = Path.Combine(_tempDir, "recent-filter.sqlite");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        var store = new TranscriptStore(_tempDir, sessionStore: index);
+        var now = DateTime.UtcNow;
+        index.SaveMessage("visible-root", new Message { Role = "user", Content = "visible recent", Timestamp = now }, source: "desktop");
+        index.SaveMessage("visible-child", new Message { Role = "user", Content = "child recent", Timestamp = now.AddSeconds(1) }, source: "desktop", parentSessionId: "visible-root");
+        index.SaveMessage("hidden-tool", new Message { Role = "user", Content = "hidden recent", Timestamp = now.AddSeconds(2) }, source: "tool");
+        var recall = new TranscriptRecallService(store, NullLogger<TranscriptRecallService>.Instance, index);
+
+        var recent = await recall.ListRecentSessionsAsync(limit: 10, ct: CancellationToken.None);
+
+        CollectionAssert.AreEqual(new[] { "visible-root" }, recent.Select(s => s.SessionId).ToArray(),
+            "Recent browsing should mirror Python: hide tool-source sessions and omit child/delegation sessions.");
+    }
+
+    [TestMethod]
+    public async Task SessionSearchTool_DeserializationToleratesMalformedLimitLikePython()
+    {
+        var transcripts = await CreateTranscriptsWithPriorMemoryAsync("limit-session", "Malformed limit still finds bronze-river.");
+        var recall = new TranscriptRecallService(transcripts, NullLogger<TranscriptRecallService>.Instance);
+        var tool = new Hermes.Agent.Tools.SessionSearchTool(recall);
+        var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+        foreach (var json in new[]
+        {
+            """{"query":"bronze-river","limit":"2"}""",
+            """{"query":"bronze-river","limit":"int"}""",
+            """{"query":"bronze-river","limit":{"type":"int"}}""",
+            """{"query":"bronze-river","limit":null}"""
+        })
+        {
+            var parameters = (Hermes.Agent.Tools.SessionSearchParameters)JsonSerializer.Deserialize(
+                json,
+                tool.ParametersType,
+                jsonOptions)!;
+
+            var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+            Assert.IsTrue(result.Success, result.Content);
+            StringAssert.Contains(result.Content, "limit-session");
+        }
     }
 
     [TestMethod]

@@ -367,6 +367,65 @@ public sealed class SessionSearchIndex : IDisposable
         }
     }
 
+    public SessionMetadata? GetSessionMetadata(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return null;
+
+        lock (_gate)
+        {
+            using var db = OpenConnection();
+            using var cmd = db.CreateCommand();
+            cmd.CommandText = @"
+                SELECT id, source, parent_session_id
+                FROM sessions
+                WHERE id = $session_id";
+            cmd.Parameters.AddWithValue("$session_id", sessionId);
+            using var reader = cmd.ExecuteReader();
+            if (!reader.Read())
+                return null;
+
+            return new SessionMetadata(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2));
+        }
+    }
+
+    public bool IsChildSession(string sessionId)
+        => !string.IsNullOrWhiteSpace(GetSessionMetadata(sessionId)?.ParentSessionId);
+
+    public string ResolveRootSessionId(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return sessionId;
+
+        lock (_gate)
+        {
+            using var db = OpenConnection();
+            var current = sessionId;
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            while (!string.IsNullOrWhiteSpace(current) && visited.Add(current))
+            {
+                using var cmd = db.CreateCommand();
+                cmd.CommandText = "SELECT parent_session_id FROM sessions WHERE id = $session_id";
+                cmd.Parameters.AddWithValue("$session_id", current);
+                var parent = cmd.ExecuteScalar();
+                if (parent is null or DBNull)
+                    break;
+
+                var parentId = parent.ToString();
+                if (string.IsNullOrWhiteSpace(parentId))
+                    break;
+
+                current = parentId;
+            }
+
+            return current;
+        }
+    }
+
     public List<string> ListSessionIds()
     {
         lock (_gate)
@@ -819,3 +878,8 @@ public sealed class SearchResult
     public string? Model { get; init; }
     public string? SessionStartedAt { get; init; }
 }
+
+public sealed record SessionMetadata(
+    string Id,
+    string Source,
+    string? ParentSessionId);

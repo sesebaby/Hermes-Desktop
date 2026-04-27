@@ -38,7 +38,9 @@ internal static class HermesEnvironment
     // ── Soul system paths ──
     internal static string SoulDir => Path.Combine(HermesHomePath, "soul");
     internal static string SoulFilePath => Path.Combine(HermesHomePath, "SOUL.md");
-    internal static string UserFilePath => Path.Combine(HermesHomePath, "USER.md");
+    internal static string MemoryDirPath => Path.Combine(HermesHomePath, "memories");
+    internal static string UserFilePath => Path.Combine(MemoryDirPath, "USER.md");
+    internal static string LegacyUserFilePath => Path.Combine(HermesHomePath, "USER.md");
     internal static string MistakesFilePath => Path.Combine(SoulDir, "mistakes.jsonl");
     internal static string HabitsFilePath => Path.Combine(SoulDir, "habits.jsonl");
     internal static string ProjectAgentsPath(string projectDir) =>

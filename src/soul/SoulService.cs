@@ -11,7 +11,8 @@ using System.Text.Json;
 ///
 /// File layout under hermesHome:
 ///   SOUL.md              — Agent identity (global)
-///   USER.md              — User profile (global)
+///   memories/USER.md     — Python-compatible user profile (authoritative)
+///   USER.md              — Legacy user profile mirror
 ///   soul/mistakes.jsonl  — Append-only mistake journal
 ///   soul/habits.jsonl    — Append-only good-habit journal
 ///   projects/{dir}/AGENTS.md — Per-project rules
@@ -20,6 +21,7 @@ public sealed class SoulService
 {
     private readonly string _hermesHome;
     private readonly string _soulDir;
+    private readonly string _memoryDir;
     private readonly ILogger<SoulService> _logger;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -35,7 +37,8 @@ public sealed class SoulService
     private const int MaxJournalEntries = 5;
 
     public string SoulFilePath => Path.Combine(_hermesHome, "SOUL.md");
-    public string UserFilePath => Path.Combine(_hermesHome, "USER.md");
+    public string UserFilePath => Path.Combine(_memoryDir, "USER.md");
+    public string LegacyUserFilePath => Path.Combine(_hermesHome, "USER.md");
     public string MistakesFilePath => Path.Combine(_soulDir, "mistakes.jsonl");
     public string HabitsFilePath => Path.Combine(_soulDir, "habits.jsonl");
 
@@ -43,6 +46,7 @@ public sealed class SoulService
     {
         _hermesHome = hermesHome;
         _soulDir = Path.Combine(hermesHome, "soul");
+        _memoryDir = Path.Combine(hermesHome, "memories");
         _logger = logger;
 
         Directory.CreateDirectory(_soulDir);
@@ -54,7 +58,7 @@ public sealed class SoulService
     /// <summary>Load a soul file by type. Returns empty string if file doesn't exist.</summary>
     public async Task<string> LoadFileAsync(SoulFileType type, string? projectDir = null)
     {
-        var path = GetFilePath(type, projectDir);
+        var path = GetReadFilePath(type, projectDir);
         if (!File.Exists(path)) return "";
         return await File.ReadAllTextAsync(path);
     }
@@ -63,9 +67,11 @@ public sealed class SoulService
     public async Task SaveFileAsync(SoulFileType type, string content, string? projectDir = null)
     {
         var path = GetFilePath(type, projectDir);
-        var dir = Path.GetDirectoryName(path);
-        if (dir is not null) Directory.CreateDirectory(dir);
-        await File.WriteAllTextAsync(path, content);
+        await WriteTextCreatingDirectoryAsync(path, content);
+
+        if (type == SoulFileType.User && !string.Equals(path, LegacyUserFilePath, StringComparison.OrdinalIgnoreCase))
+            await WriteTextCreatingDirectoryAsync(LegacyUserFilePath, content);
+
         _logger.LogInformation("Soul: saved {Type} to {Path}", type, path);
     }
 
@@ -81,6 +87,14 @@ public sealed class SoulService
                 : Path.Combine(_hermesHome, "AGENTS.md"),
             _ => throw new ArgumentOutOfRangeException(nameof(type))
         };
+    }
+
+    private string GetReadFilePath(SoulFileType type, string? projectDir = null)
+    {
+        if (type == SoulFileType.User)
+            return File.Exists(UserFilePath) ? UserFilePath : LegacyUserFilePath;
+
+        return GetFilePath(type, projectDir);
     }
 
     // ── Mistake journal ──
@@ -198,14 +212,46 @@ public sealed class SoulService
             _logger.LogInformation("Soul: created default SOUL.md");
         }
 
-        if (!File.Exists(UserFilePath))
+        if (!File.Exists(LegacyUserFilePath))
         {
-            File.WriteAllText(UserFilePath, DefaultUserTemplate);
+            File.WriteAllText(LegacyUserFilePath, DefaultUserTemplate);
             _logger.LogInformation("Soul: created default USER.md");
         }
+
+        MigrateLegacyUserProfileIfNeeded();
     }
 
     // ── Helpers ──
+
+    private void MigrateLegacyUserProfileIfNeeded()
+    {
+        if (File.Exists(UserFilePath) || !File.Exists(LegacyUserFilePath))
+            return;
+
+        var legacy = File.ReadAllText(LegacyUserFilePath);
+        if (!LooksConfiguredUserProfile(legacy))
+            return;
+
+        Directory.CreateDirectory(_memoryDir);
+        File.WriteAllText(UserFilePath, legacy);
+        _logger.LogInformation("Soul: migrated legacy USER.md to Python-compatible memories/USER.md");
+    }
+
+    private static bool LooksConfiguredUserProfile(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return false;
+
+        return !content.Contains("<!-- UNCONFIGURED -->", StringComparison.OrdinalIgnoreCase) &&
+               !content.Contains("No profile configured yet", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task WriteTextCreatingDirectoryAsync(string path, string content)
+    {
+        var dir = Path.GetDirectoryName(path);
+        if (dir is not null) Directory.CreateDirectory(dir);
+        await File.WriteAllTextAsync(path, content);
+    }
 
     private static async Task<List<T>> LoadJournalAsync<T>(string path)
     {
