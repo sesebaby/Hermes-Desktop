@@ -49,6 +49,15 @@ public interface ITool
 }
 
 /// <summary>
+/// Tools can implement this when reflection cannot express their model-facing
+/// JSON schema accurately enough.
+/// </summary>
+public interface IToolSchemaProvider
+{
+    JsonElement GetParameterSchema();
+}
+
+/// <summary>
 /// Tool parameter objects can implement this to receive runtime session context
 /// that should not be exposed as model-callable schema.
 /// </summary>

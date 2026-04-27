@@ -1,5 +1,6 @@
 using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
+using Hermes.Agent.Memory;
 using Hermes.Agent.Plugins;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -1405,6 +1406,49 @@ public class AgentStreamChatTests
         });
     }
 
+    [TestMethod]
+    public async Task StreamChatAsync_ConsumerStopsMidStream_DoesNotRunMemoryReview()
+    {
+        _stubClient.StreamEvents = new StreamEvent[]
+        {
+            new StreamEvent.TokenDelta("partial"),
+            new StreamEvent.TokenDelta(" remainder")
+        };
+        var reviewClient = new CountingReviewChatClient();
+        var tempDir = Path.Combine(Path.GetTempPath(), $"hermes-agent-review-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var memoryManager = new MemoryManager(
+                tempDir,
+                reviewClient,
+                NullLogger<MemoryManager>.Instance);
+            var reviewService = new MemoryReviewService(
+                reviewClient,
+                memoryManager,
+                NullLogger<MemoryReviewService>.Instance,
+                nudgeInterval: 1);
+            var agent = new Agent(
+                _stubClient,
+                NullLogger<Agent>.Instance,
+                memoryReviewService: reviewService);
+
+            await foreach (var evt in agent.StreamChatAsync("msg", new Session { Id = "partial-stream" }, CancellationToken.None))
+            {
+                if (evt is StreamEvent.TokenDelta)
+                    break;
+            }
+
+            await Task.Delay(100);
+            Assert.AreEqual(0, reviewClient.CompleteWithToolsCalls);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
     private sealed class StreamEmptyParams { }
 
     /// <summary>Stub IChatClient with configurable streaming behavior.</summary>
@@ -1446,6 +1490,41 @@ public class AgentStreamChatTests
                 ct.ThrowIfCancellationRequested();
                 yield return evt;
             }
+        }
+    }
+
+    private sealed class CountingReviewChatClient : IChatClient
+    {
+        public int CompleteWithToolsCalls { get; private set; }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            CompleteWithToolsCalls++;
+            return Task.FromResult(new ChatResponse { Content = "Nothing to save.", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(
+            IEnumerable<Message> messages,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
         }
     }
 }

@@ -14,7 +14,8 @@ using System.Text;
 //   - Single external provider per category
 //   - Failure isolation (exceptions per-plugin never block others)
 //   - Tool routing via _toolToPlugin dict
-//   - Context fencing for memory recalls
+//   - Context fencing belongs to API-call recall injection, not provider
+//     system-prompt blocks
 
 /// <summary>
 /// Manages plugin lifecycle: registration, initialization, hook dispatch,
@@ -140,7 +141,8 @@ public sealed class PluginManager
 
     /// <summary>
     /// Collect system prompt blocks from all plugins.
-    /// Memory context is fenced in &lt;memory-context&gt; tags (upstream pattern).
+    /// Provider system-prompt blocks are appended verbatim; recalled context is
+    /// fenced separately by the turn memory coordinator.
     /// </summary>
     public async Task<string> GetSystemPromptBlocksAsync(CancellationToken ct)
     {
@@ -153,17 +155,7 @@ public sealed class PluginManager
                 var block = await plugin.GetSystemPromptBlockAsync(ct);
                 if (!string.IsNullOrWhiteSpace(block))
                 {
-                    if (plugin.Category == "memory")
-                    {
-                        // Context fencing — prevents model confusion with user input
-                        sb.AppendLine("<memory-context>");
-                        sb.AppendLine(block);
-                        sb.AppendLine("</memory-context>");
-                    }
-                    else
-                    {
-                        sb.AppendLine(block);
-                    }
+                    sb.AppendLine(block);
                     sb.AppendLine();
                 }
             }

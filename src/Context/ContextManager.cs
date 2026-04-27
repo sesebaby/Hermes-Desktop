@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
+using Hermes.Agent.Plugins;
 using Hermes.Agent.Soul;
 using Hermes.Agent.Transcript;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,7 @@ public sealed class ContextManager
     private readonly PromptBuilder _promptBuilder;
     private readonly ILogger<ContextManager> _logger;
     private readonly SoulService? _soulService;
+    private readonly PluginManager? _pluginManager;
 
     private readonly ConcurrentDictionary<string, SessionState> _sessionStates = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = new();
@@ -35,7 +37,8 @@ public sealed class ContextManager
         TokenBudget budget,
         PromptBuilder promptBuilder,
         ILogger<ContextManager> logger,
-        SoulService? soulService = null)
+        SoulService? soulService = null,
+        PluginManager? pluginManager = null)
     {
         _transcripts = transcripts;
         _chatClient = chatClient;
@@ -43,6 +46,7 @@ public sealed class ContextManager
         _promptBuilder = promptBuilder;
         _logger = logger;
         _soulService = soulService;
+        _pluginManager = pluginManager;
     }
 
     /// <summary>
@@ -114,18 +118,17 @@ public sealed class ContextManager
                 totalTokens, _budget.MaxTokens, pressure, recentTurns.Count, evictedMessages.Count);
 
             // Summarize evicted messages if we have any and need to
-            if (evictedMessages.Count > 0 && pressure >= BudgetPressure.High)
+            var shouldSummarizeEvicted =
+                evictedMessages.Count > 0 &&
+                (pressure >= BudgetPressure.High ||
+                 string.IsNullOrEmpty(state.Summary.Content) ||
+                 IsSummaryStaleBeyond(state, turnsStalenessThreshold: 10));
+
+            if (shouldSummarizeEvicted)
             {
-                await SummarizeEvictedAsync(state, evictedMessages, ct);
-            }
-            else if (evictedMessages.Count > 0 && string.IsNullOrEmpty(state.Summary.Content))
-            {
-                // First time we evict messages — create initial summary
-                await SummarizeEvictedAsync(state, evictedMessages, ct);
-            }
-            else if (evictedMessages.Count > 0 && IsSummaryStaleBeyond(state, turnsStalenessThreshold: 10))
-            {
-                // Summary is stale — re-summarize to capture recent evictions
+                if (_pluginManager is not null)
+                    await _pluginManager.OnPreCompressAsync(evictedMessages, ct);
+
                 await SummarizeEvictedAsync(state, evictedMessages, ct);
             }
 
@@ -158,6 +161,19 @@ public sealed class ContextManager
                 }
             }
 
+            string? pluginSystemContext = null;
+            if (_pluginManager is not null)
+            {
+                try
+                {
+                    pluginSystemContext = await _pluginManager.GetSystemPromptBlocksAsync(ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to load plugin system context — continuing without it");
+                }
+            }
+
             // Build the prompt
             var packet = _promptBuilder.Build(new BuildRequest
             {
@@ -165,7 +181,8 @@ public sealed class ContextManager
                 CurrentUserMessage = userMessage,
                 RecentTurns = recentTurns,
                 RetrievedContext = retrievedContext,
-                SoulContext = soulContext
+                SoulContext = soulContext,
+                PluginSystemContext = pluginSystemContext
             });
 
             return _promptBuilder.ToOpenAiMessages(packet);

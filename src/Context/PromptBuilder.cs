@@ -51,6 +51,7 @@ public sealed class PromptBuilder
         {
             SystemPrompt = _systemPrompt,
             SoulContext = request.SoulContext,
+            PluginSystemContext = request.PluginSystemContext,
             SessionStateJson = stateJson,
             RetrievedContext = request.RetrievedContext,
             RecentTurns = request.RecentTurns,
@@ -88,7 +89,17 @@ public sealed class PromptBuilder
             Content = packet.SystemPrompt
         });
 
-        // Layer 2: Session state (changes slowly — good for incremental caching)
+        // Layer 2: Plugin system context (memory snapshot, provider guidance).
+        if (!string.IsNullOrWhiteSpace(packet.PluginSystemContext))
+        {
+            messages.Add(new Message
+            {
+                Role = "system",
+                Content = packet.PluginSystemContext
+            });
+        }
+
+        // Layer 3: Session state (changes slowly — good for incremental caching)
         if (!string.IsNullOrEmpty(packet.SessionStateJson) && packet.SessionStateJson != "{}")
         {
             messages.Add(new Message
@@ -98,13 +109,13 @@ public sealed class PromptBuilder
             });
         }
 
-        // Layer 3: Recent conversation turns (sliding window)
+        // Layer 4: Recent conversation turns (sliding window)
         if (packet.RecentTurns is { Count: > 0 })
         {
             messages.AddRange(packet.RecentTurns);
         }
 
-        // Layer 4: Current user message
+        // Layer 5: Current user message
         messages.Add(new Message
         {
             Role = "user",
@@ -142,6 +153,9 @@ public sealed class BuildRequest
 
     /// <summary>Optional assembled soul context (identity, user profile, project rules, learned behaviors).</summary>
     public string? SoulContext { get; init; }
+
+    /// <summary>Optional plugin-provided system context, such as frozen builtin memory snapshots.</summary>
+    public string? PluginSystemContext { get; init; }
 }
 
 /// <summary>Assembled prompt ready for conversion to provider message format.</summary>
@@ -158,6 +172,9 @@ public sealed class PromptPacket
 
     /// <summary>Assembled soul context (identity, user profile, project rules, learned behaviors).</summary>
     public string? SoulContext { get; init; }
+
+    /// <summary>Plugin-provided system context, such as frozen builtin memory snapshots.</summary>
+    public string? PluginSystemContext { get; init; }
 
     /// <summary>Recent conversation turns from the sliding window.</summary>
     public List<Message> RecentTurns { get; init; } = new();

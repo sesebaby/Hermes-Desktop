@@ -293,10 +293,10 @@ This file is a living document about the human I work with. It helps me provide 
     // ── Memory ──
     private void LoadMemorySettings()
     {
-        MemoryEnabledToggle.IsOn = !string.Equals(
-            HermesEnvironment.ReadConfigSetting("memory", "memory_enabled"), "false", StringComparison.OrdinalIgnoreCase);
-        UserProfileEnabledToggle.IsOn = !string.Equals(
-            HermesEnvironment.ReadConfigSetting("memory", "user_profile_enabled"), "false", StringComparison.OrdinalIgnoreCase);
+        MemoryEnabledToggle.IsOn = string.Equals(
+            HermesEnvironment.ReadConfigSetting("memory", "memory_enabled"), "true", StringComparison.OrdinalIgnoreCase);
+        UserProfileEnabledToggle.IsOn = string.Equals(
+            HermesEnvironment.ReadConfigSetting("memory", "user_profile_enabled"), "true", StringComparison.OrdinalIgnoreCase);
 
         var memLimit = HermesEnvironment.ReadConfigSetting("memory", "memory_char_limit");
         if (double.TryParse(memLimit, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ml))

@@ -25,6 +25,7 @@ using Hermes.Agent.Dreamer;
 using HermesDesktop.Services;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -309,6 +310,7 @@ public partial class App : Application
         {
             hermesHome, projectDir,
             Path.Combine(hermesHome, "soul"),              // mistakes.jsonl, habits.jsonl
+            Path.Combine(hermesHome, "memories"),          // Python-compatible curated MEMORY.md / USER.md
             Path.Combine(hermesHome, "dreamer"),            // Dreamer room (walks, projects, inbox)
             Path.Combine(projectDir, "transcripts"),
             Path.Combine(projectDir, "memory"),
@@ -351,11 +353,16 @@ public partial class App : Application
             messageObserver: sp.GetRequiredService<ITranscriptMessageObserver>()));
 
         // Memory manager
-        var memoryDir = Path.Combine(projectDir, "memory");
+        var memoryDir = Path.Combine(hermesHome, "memories");
+        var memoryEnabled = IsConfigEnabled("memory", "memory_enabled");
+        var userProfileEnabled = IsConfigEnabled("memory", "user_profile_enabled");
+        var memoryAvailable = memoryEnabled || userProfileEnabled;
         services.AddSingleton(sp => new MemoryManager(
             memoryDir,
             sp.GetRequiredService<IChatClient>(),
-            sp.GetRequiredService<ILogger<MemoryManager>>()));
+            sp.GetRequiredService<ILogger<MemoryManager>>(),
+            memoryCharLimit: ReadPositiveConfigInt("memory", "memory_char_limit", 2200),
+            userCharLimit: ReadPositiveConfigInt("memory", "user_char_limit", 1375)));
 
         // Skill manager — copy bundled skills on first run if user dir is empty (non-fatal)
         var skillsDir = Path.Combine(projectDir, "skills");
@@ -463,7 +470,8 @@ public partial class App : Application
             sp.GetRequiredService<TokenBudget>(),
             sp.GetRequiredService<PromptBuilder>(),
             sp.GetRequiredService<ILogger<ContextManager>>(),
-            soulService: sp.GetRequiredService<SoulService>()));
+            soulService: sp.GetRequiredService<SoulService>(),
+            pluginManager: sp.GetRequiredService<PluginManager>()));
         services.AddSingleton(sp => new TranscriptRecallService(
             sp.GetRequiredService<TranscriptStore>(),
             sp.GetRequiredService<ILogger<TranscriptRecallService>>(),
@@ -490,8 +498,24 @@ public partial class App : Application
         services.AddSingleton(sp =>
         {
             var pm = new PluginManager(sp.GetRequiredService<ILogger<PluginManager>>());
-            pm.Register(new BuiltinMemoryPlugin(sp.GetRequiredService<MemoryManager>()));
+            var builtinMemoryEnabled = !string.Equals(HermesEnvironment.ReadConfigSetting("plugins", "builtin_memory"), "false", StringComparison.OrdinalIgnoreCase);
+            pm.Register(new BuiltinMemoryPlugin(
+                sp.GetRequiredService<MemoryManager>(),
+                includeMemory: builtinMemoryEnabled && memoryEnabled,
+                includeUser: builtinMemoryEnabled && userProfileEnabled));
             return pm;
+        });
+        services.AddSingleton(sp =>
+        {
+            var nudgeInterval = memoryEnabled || userProfileEnabled
+                ? ReadNonNegativeConfigInt("memory", "nudge_interval", 10)
+                : 0;
+            return new MemoryReviewService(
+                sp.GetRequiredService<IChatClient>(),
+                sp.GetRequiredService<MemoryManager>(),
+                sp.GetRequiredService<ILogger<MemoryReviewService>>(),
+                sp.GetRequiredService<PluginManager>(),
+                nudgeInterval);
         });
 
         // Analytics / Insights service
@@ -517,7 +541,8 @@ public partial class App : Application
                 contextManager: sp.GetRequiredService<ContextManager>(),
                 soulService: sp.GetRequiredService<SoulService>(),
                 pluginManager: sp.GetRequiredService<PluginManager>(),
-                turnMemoryCoordinator: sp.GetRequiredService<TurnMemoryCoordinator>());
+                turnMemoryCoordinator: sp.GetRequiredService<TurnMemoryCoordinator>(),
+                memoryReviewService: sp.GetRequiredService<MemoryReviewService>());
             agent.MaxToolIterations = HermesEnvironment.MaxAgentIterations;
             return agent;
         });
@@ -757,12 +782,15 @@ public partial class App : Application
         // Agent tool (subagent spawning — needs chat client and tool registry)
         RegisterAndTrack(agent, toolRegistry, new AgentTool(chatClient, toolRegistry));
 
-        // Memory tool — delegates to MemoryManager so save/list/delete and the
-        // auto-recall plugin operate on the same store and saved files always
-        // carry the YAML frontmatter the scanner requires.
+        // Memory tool — Python-compatible curated MEMORY.md / USER.md store.
         var memoryManager = services.GetRequiredService<MemoryManager>();
+        var memoryAvailable = IsConfigEnabled("memory", "memory_enabled") ||
+                              IsConfigEnabled("memory", "user_profile_enabled");
         MigrateLegacyMemoriesIfNeeded(memoryManager.MemoryDir);
-        RegisterAndTrack(agent, toolRegistry, new MemoryTool(memoryManager));
+        RegisterAndTrack(agent, toolRegistry, new MemoryTool(
+            memoryManager,
+            services.GetRequiredService<PluginManager>(),
+            isAvailable: memoryAvailable));
 
         // Session search tool
         RegisterAndTrack(agent, toolRegistry, new SessionSearchTool(
@@ -795,36 +823,113 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Pre-v2.5 the MemoryTool wrote to HermesHomePath/memories while the
-    /// auto-recall plugin scanned HermesHomePath/hermes-cs/memory. If the old
-    /// directory has files and the new one is empty, copy them so legacy
-    /// memories remain accessible after the path alignment.
+    /// Import old timestamped YAML-frontmatter memories into the Python-compatible
+    /// fixed files without deleting or moving the legacy files.
     /// </summary>
     private static void MigrateLegacyMemoriesIfNeeded(string currentMemoryDir)
     {
         try
         {
-            var legacyDir = Path.Combine(HermesEnvironment.HermesHomePath, "memories");
+            var legacyDir = Path.Combine(HermesEnvironment.HermesHomePath, "hermes-cs", "memory");
             if (!Directory.Exists(legacyDir)) return;
 
             var legacyFiles = Directory.GetFiles(legacyDir, "*.md");
             if (legacyFiles.Length == 0) return;
 
             Directory.CreateDirectory(currentMemoryDir);
-            if (Directory.EnumerateFileSystemEntries(currentMemoryDir).Any())
-                return; // Current dir already populated; don't overwrite.
 
             foreach (var src in legacyFiles)
             {
-                var dst = Path.Combine(currentMemoryDir, Path.GetFileName(src));
-                if (!File.Exists(dst))
-                    File.Copy(src, dst);
+                var fileName = Path.GetFileName(src);
+                if (string.Equals(fileName, "MEMORY.md", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(fileName, "USER.md", StringComparison.OrdinalIgnoreCase))
+                {
+                    ImportLegacyEntries(
+                        File.ReadAllText(src),
+                        Path.Combine(currentMemoryDir, fileName.Equals("USER.md", StringComparison.OrdinalIgnoreCase) ? "USER.md" : "MEMORY.md"));
+                    continue;
+                }
+
+                var (target, body) = ParseLegacyMemoryFile(src);
+                if (string.IsNullOrWhiteSpace(body))
+                    continue;
+
+                ImportLegacyEntries(
+                    body,
+                    Path.Combine(currentMemoryDir, target == "user" ? "USER.md" : "MEMORY.md"));
             }
         }
         catch (Exception ex)
         {
             BestEffort.LogFailure(TryGetAppLogger(), ex, "migrating legacy memory directory");
         }
+    }
+
+    private static int ReadPositiveConfigInt(string section, string key, int fallback)
+    {
+        var raw = HermesEnvironment.ReadConfigSetting(section, key);
+        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0
+            ? value
+            : fallback;
+    }
+
+    private static bool IsConfigEnabled(string section, string key)
+        => string.Equals(HermesEnvironment.ReadConfigSetting(section, key), "true", StringComparison.OrdinalIgnoreCase);
+
+    private static int ReadNonNegativeConfigInt(string section, string key, int fallback)
+    {
+        var raw = HermesEnvironment.ReadConfigSetting(section, key);
+        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value >= 0
+            ? value
+            : fallback;
+    }
+
+    private static (string Target, string Body) ParseLegacyMemoryFile(string path)
+    {
+        var content = File.ReadAllText(path).Trim();
+        if (!content.StartsWith("---", StringComparison.Ordinal))
+            return ("memory", content);
+
+        var end = content.IndexOf("---", 3, StringComparison.Ordinal);
+        if (end < 0)
+            return ("memory", content);
+
+        var frontmatter = content[3..end];
+        var body = content[(end + 3)..].Trim();
+        var typeLine = frontmatter
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(line => line.TrimStart().StartsWith("type:", StringComparison.OrdinalIgnoreCase));
+        var type = typeLine?.Split(':', 2)[1].Trim().Trim('"', '\'').ToLowerInvariant();
+        return (type == "user" ? "user" : "memory", body);
+    }
+
+    private static void ImportLegacyEntries(string rawEntries, string destinationPath)
+    {
+        var existing = ReadMemoryEntries(destinationPath);
+        var imported = rawEntries
+            .Split(MemoryManager.EntryDelimiter, StringSplitOptions.None)
+            .Select(entry => entry.Trim())
+            .Where(entry => !string.IsNullOrWhiteSpace(entry));
+
+        var merged = existing.Concat(imported).Distinct(StringComparer.Ordinal).ToList();
+        File.WriteAllText(destinationPath, string.Join(MemoryManager.EntryDelimiter, merged));
+    }
+
+    private static List<string> ReadMemoryEntries(string path)
+    {
+        if (!File.Exists(path))
+            return new List<string>();
+
+        var raw = File.ReadAllText(path);
+        if (string.IsNullOrWhiteSpace(raw))
+            return new List<string>();
+
+        return raw
+            .Split(MemoryManager.EntryDelimiter, StringSplitOptions.None)
+            .Select(entry => entry.Trim())
+            .Where(entry => !string.IsNullOrWhiteSpace(entry))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
 
     /// <summary>Find the repo's skills/ directory by walking up from the build output to find .git or skills/.</summary>

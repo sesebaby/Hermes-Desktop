@@ -47,7 +47,7 @@ public sealed partial class MemoryPanel : UserControl
     public MemoryPanel()
     {
         InitializeComponent();
-        _memoryDir = Path.Combine(HermesEnvironment.HermesHomePath, "hermes-cs", "memory");
+        _memoryDir = Path.Combine(HermesEnvironment.HermesHomePath, "memories");
         Loaded += (_, _) =>
         {
             _soulService = App.Services?.GetService<SoulService>();
@@ -103,17 +103,12 @@ public sealed partial class MemoryPanel : UserControl
             try
             {
                 var content = File.ReadAllText(file);
-                var type = "unknown";
-                if (content.StartsWith("---"))
-                {
-                    var end = content.IndexOf("---", 3);
-                    if (end > 0)
-                    {
-                        var fm = content[3..end];
-                        var typeLine = fm.Split('\n').FirstOrDefault(l => l.TrimStart().StartsWith("type:"));
-                        if (typeLine is not null) type = typeLine.Split(':', 2)[1].Trim();
-                    }
-                }
+                var filename = Path.GetFileName(file);
+                var type = filename.Equals("USER.md", StringComparison.OrdinalIgnoreCase)
+                    ? "user"
+                    : filename.Equals("MEMORY.md", StringComparison.OrdinalIgnoreCase)
+                        ? "memory"
+                        : "unknown";
 
                 var lastWrite = File.GetLastWriteTimeUtc(file);
                 var age = FormatAge(lastWrite);
@@ -236,6 +231,7 @@ public sealed partial class MemoryPanel : UserControl
 
     private static SolidColorBrush GetTypeColor(string type) => type switch
     {
+        "memory" => new SolidColorBrush(ColorHelper.FromArgb(255, 100, 180, 100)),
         "user" => new SolidColorBrush(ColorHelper.FromArgb(255, 80, 140, 200)),
         "feedback" => new SolidColorBrush(ColorHelper.FromArgb(255, 200, 140, 80)),
         "project" => new SolidColorBrush(ColorHelper.FromArgb(255, 100, 180, 100)),

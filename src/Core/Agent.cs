@@ -27,6 +27,7 @@ public sealed class Agent : IAgent
     private readonly MemoryManager? _memories;
     private readonly ContextManager? _contextManager;
     private readonly TurnMemoryCoordinator? _turnMemoryCoordinator;
+    private readonly MemoryReviewService? _memoryReviewService;
     private readonly SoulService? _soulService;
     private readonly PluginManager? _pluginManager;
 
@@ -99,7 +100,8 @@ public sealed class Agent : IAgent
         PluginManager? pluginManager = null,
         IChatClient? fallbackChatClient = null,
         CredentialPool? credentialPool = null,
-        TurnMemoryCoordinator? turnMemoryCoordinator = null)
+        TurnMemoryCoordinator? turnMemoryCoordinator = null,
+        MemoryReviewService? memoryReviewService = null)
     {
         _chatClient = chatClient;
         _logger = logger;
@@ -112,6 +114,7 @@ public sealed class Agent : IAgent
         _pluginManager = pluginManager;
         _fallbackChatClient = fallbackChatClient;
         _credentialPool = credentialPool;
+        _memoryReviewService = memoryReviewService;
     }
 
     /// <summary>
@@ -201,7 +204,9 @@ public sealed class Agent : IAgent
         // Transient system messages injected at index 0 for THIS turn only.
         // Tracked so we can pop them in finally — see class doc above.
         int transientSystemMessages = 0;
+        string? transientPluginSystemContent = null;
         string finalResponse = "";
+        bool completedTurnSuccessfully = false;
 
         try
         {
@@ -219,6 +224,7 @@ public sealed class Agent : IAgent
                             Content = pluginBlocks
                         });
                         transientSystemMessages++;
+                        transientPluginSystemContent = pluginBlocks;
                     }
                 }
                 catch (Exception ex)
@@ -256,6 +262,14 @@ public sealed class Agent : IAgent
                 _logger,
                 ct);
 
+            (transientSystemMessages, transientPluginSystemContent) =
+                await RefreshTransientPluginSystemMessageAsync(
+                    session,
+                    transientSystemMessages,
+                    transientPluginSystemContent,
+                    ct,
+                    "chat");
+
             if (_tools.Count == 0)
             {
                 // No tools registered — simple completion
@@ -278,6 +292,7 @@ public sealed class Agent : IAgent
                 await SyncCompletedMemoryTurnAsync(session.Id, message, response, interrupted: false, ct);
 
                 finalResponse = response;
+                completedTurnSuccessfully = true;
                 return response;
             }
 
@@ -316,6 +331,7 @@ public sealed class Agent : IAgent
                     await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
                 await SyncCompletedMemoryTurnAsync(session.Id, message, finalContent, interrupted: false, ct);
                 finalResponse = finalContent;
+                completedTurnSuccessfully = true;
                 return finalContent;
             }
 
@@ -549,6 +565,7 @@ public sealed class Agent : IAgent
                 await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
             await SyncCompletedMemoryTurnAsync(session.Id, message, fallback, interrupted: false, ct);
             finalResponse = fallback;
+            completedTurnSuccessfully = true;
             return fallback;
         }
         finally
@@ -565,6 +582,11 @@ public sealed class Agent : IAgent
                 else
                     break; // Defensive: shape changed underneath us; stop rather than corrupt.
             }
+
+            _memoryReviewService?.QueueAfterTurn(
+                session.Messages.ToList(),
+                finalResponse,
+                interrupted: !completedTurnSuccessfully);
 
             // ── Plugin turn end fires on EVERY exit path (success, no-tools, max-iter, exception, cancellation) ──
             // Routed through FirePluginTurnEndAsync so cleanup runs on a fresh
@@ -589,6 +611,7 @@ public sealed class Agent : IAgent
         // can pop them in finally and avoid the v2.4.0 context-bloat regression
         // where every streaming turn left another stale snapshot at index 0.
         int transientSystemMessages = 0;
+        string? transientPluginSystemContent = null;
 
         // Streamed text accumulator. Fed into OnTurnEndAsync so plugins observing
         // assistant output (e.g. learning plugins, transcript indexers) see the
@@ -596,6 +619,7 @@ public sealed class Agent : IAgent
         // cancellation, errors, or the max-iteration fallback. Built up by
         // intercepting every TokenDelta yielded downstream.
         var streamedResponse = new System.Text.StringBuilder();
+        bool completedTurnSuccessfully = false;
 
         // ── Plugin turn start ──
         // StreamChatAsync historically skipped the plugin lifecycle entirely,
@@ -626,6 +650,7 @@ public sealed class Agent : IAgent
                         Content = pluginBlocks
                     });
                     transientSystemMessages++;
+                    transientPluginSystemContent = pluginBlocks;
                 }
             }
             catch (Exception ex)
@@ -709,6 +734,14 @@ public sealed class Agent : IAgent
             _logger,
             ct);
 
+        (transientSystemMessages, transientPluginSystemContent) =
+            await RefreshTransientPluginSystemMessageAsync(
+                session,
+                transientSystemMessages,
+                transientPluginSystemContent,
+                ct,
+                "stream");
+
         if (_tools.Count == 0)
         {
             // No tools registered — stream the response directly
@@ -730,6 +763,7 @@ public sealed class Agent : IAgent
             if (_contextManager is not null)
                 await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
             await SyncCompletedMemoryTurnAsync(session.Id, message, streamedResponse.ToString(), interrupted: false, ct);
+            completedTurnSuccessfully = true;
             yield break;
         }
 
@@ -764,6 +798,7 @@ public sealed class Agent : IAgent
                 if (_contextManager is not null)
                     await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
                 await SyncCompletedMemoryTurnAsync(session.Id, message, finalContent, interrupted: false, ct);
+                completedTurnSuccessfully = true;
                 yield break;
             }
 
@@ -960,6 +995,7 @@ public sealed class Agent : IAgent
         if (_contextManager is not null)
             await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
         await SyncCompletedMemoryTurnAsync(session.Id, message, fallback, interrupted: false, ct);
+        completedTurnSuccessfully = true;
         }
         finally
         {
@@ -972,6 +1008,11 @@ public sealed class Agent : IAgent
                 else
                     break;
             }
+
+            _memoryReviewService?.QueueAfterTurn(
+                session.Messages.ToList(),
+                streamedResponse.ToString(),
+                interrupted: !completedTurnSuccessfully);
 
             // ── Plugin turn end fires on EVERY exit path ──
             // streamedResponse holds whatever text actually reached the consumer
@@ -1032,6 +1073,82 @@ public sealed class Agent : IAgent
         {
             _logger.LogWarning(ex, "Plugin OnTurnEnd failed ({Context})", contextLabel);
         }
+    }
+
+    private async Task<(int Count, string? PluginSystemContent)> RefreshTransientPluginSystemMessageAsync(
+        Session session,
+        int transientSystemMessages,
+        string? previousPluginSystemContent,
+        CancellationToken ct,
+        string contextLabel)
+    {
+        if (_pluginManager is null)
+            return (transientSystemMessages, previousPluginSystemContent);
+
+        try
+        {
+            var pluginBlocks = await _pluginManager.GetSystemPromptBlocksAsync(ct);
+            var pluginIndex = FindTransientPluginSystemMessageIndex(
+                session,
+                transientSystemMessages,
+                previousPluginSystemContent);
+
+            if (string.IsNullOrWhiteSpace(pluginBlocks))
+            {
+                if (pluginIndex >= 0)
+                {
+                    session.Messages.RemoveAt(pluginIndex);
+                    transientSystemMessages = Math.Max(0, transientSystemMessages - 1);
+                }
+
+                return (transientSystemMessages, null);
+            }
+
+            var refreshed = new Message
+            {
+                Role = "system",
+                Content = pluginBlocks
+            };
+
+            if (pluginIndex >= 0)
+            {
+                session.Messages[pluginIndex] = refreshed;
+            }
+            else
+            {
+                session.Messages.Insert(0, refreshed);
+                transientSystemMessages++;
+            }
+
+            return (transientSystemMessages, pluginBlocks);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Refreshing plugin system prompt blocks failed ({Context})", contextLabel);
+            return (transientSystemMessages, previousPluginSystemContent);
+        }
+    }
+
+    private static int FindTransientPluginSystemMessageIndex(
+        Session session,
+        int transientSystemMessages,
+        string? previousPluginSystemContent)
+    {
+        if (string.IsNullOrWhiteSpace(previousPluginSystemContent))
+            return -1;
+
+        var limit = Math.Min(transientSystemMessages, session.Messages.Count);
+        for (var i = 0; i < limit; i++)
+        {
+            var candidate = session.Messages[i];
+            if (string.Equals(candidate.Role, "system", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(candidate.Content, previousPluginSystemContent, StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private async Task SyncCompletedMemoryTurnAsync(
@@ -1130,6 +1247,9 @@ public sealed class Agent : IAgent
 
     private static JsonElement BuildParameterSchema(ITool tool)
     {
+        if (tool is IToolSchemaProvider schemaProvider)
+            return schemaProvider.GetParameterSchema();
+
         // Build a JSON Schema from the tool's ParametersType using reflection
         var props = tool.ParametersType.GetProperties();
         var properties = new Dictionary<string, object>();

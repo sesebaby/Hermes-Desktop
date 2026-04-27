@@ -2,7 +2,9 @@ using Hermes.Agent.Context;
 using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Memory;
+using Hermes.Agent.Plugins;
 using Hermes.Agent.Search;
+using Hermes.Agent.Tools;
 using Hermes.Agent.Transcript;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -633,6 +635,192 @@ public sealed class MemoryParityTests
         Assert.AreEqual(0, staleOnly.Count, "Queries must not match stale context from prior injected memory blocks.");
     }
 
+    [TestMethod]
+    public async Task ContextManager_PrepareContext_CallsPluginPreCompressBeforeSummarizingEvictedMessages()
+    {
+        var transcripts = new TranscriptStore(_tempDir);
+        await transcripts.SaveMessageAsync("compress-session", new Message { Role = "user", Content = "old turn to summarize" }, CancellationToken.None);
+        await transcripts.SaveMessageAsync("compress-session", new Message { Role = "assistant", Content = "old response to summarize" }, CancellationToken.None);
+        await transcripts.SaveMessageAsync("compress-session", new Message { Role = "user", Content = "recent turn stays" }, CancellationToken.None);
+
+        var plugin = new RecordingPreCompressPlugin();
+        var pluginManager = new PluginManager(NullLogger<PluginManager>.Instance);
+        pluginManager.Register(plugin);
+        var client = new RecordingChatClient { CompleteResponse = "compressed summary" };
+        var contextManager = new ContextManager(
+            transcripts,
+            client,
+            new TokenBudget(maxTokens: 8000, recentTurnWindow: 1),
+            new PromptBuilder("stable system"),
+            NullLogger<ContextManager>.Instance,
+            pluginManager: pluginManager);
+
+        await contextManager.PrepareContextAsync(
+            "compress-session",
+            "current question",
+            retrievedContext: null,
+            CancellationToken.None);
+
+        Assert.AreEqual(1, plugin.PreCompressCalls);
+        Assert.AreEqual(1, client.CompleteCalls.Count,
+            "The fixture must trigger summarization so the pre-compress hook is tied to a real compression path.");
+    }
+
+    [TestMethod]
+    public async Task Agent_OptimizedContextIncludesBuiltinMemoryPluginSnapshot()
+    {
+        var client = new RecordingChatClient();
+        var transcripts = new TranscriptStore(_tempDir);
+        var memoryManager = CreateMemoryManager(client);
+        var memoryTool = new MemoryTool(memoryManager);
+        await memoryTool.ExecuteAsync(new MemoryToolParameters
+        {
+            Action = "add",
+            Target = "memory",
+            Content = "Optimized context must include marker basalt-memory."
+        }, CancellationToken.None);
+
+        var agent = CreateAgentWithBuiltinMemory(client, transcripts, memoryManager, recentTurnWindow: 6);
+
+        await agent.ChatAsync("Use optimized context.", new Session { Id = "plugin-context-session" }, CancellationToken.None);
+
+        var outbound = AssertSingleCompleteCall(client);
+        Assert.IsTrue(outbound.Any(m =>
+            string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase) &&
+            m.Content.Contains("basalt-memory", StringComparison.Ordinal)),
+            "The ContextManager/PromptBuilder path must preserve builtin memory plugin system prompt blocks.");
+    }
+
+    [TestMethod]
+    public async Task Agent_CompressionTurnUsesRefreshedBuiltinMemorySnapshot()
+    {
+        var client = new RecordingChatClient();
+        var transcripts = new TranscriptStore(_tempDir);
+        var memoryManager = CreateMemoryManager(client);
+        var memoryTool = new MemoryTool(memoryManager);
+        await memoryTool.ExecuteAsync(new MemoryToolParameters
+        {
+            Action = "add",
+            Target = "memory",
+            Content = "Initial memory before session."
+        }, CancellationToken.None);
+
+        var agent = CreateAgentWithBuiltinMemory(client, transcripts, memoryManager, recentTurnWindow: 1);
+        var session = new Session { Id = "compression-refresh-session" };
+        await agent.ChatAsync("first question", session, CancellationToken.None);
+
+        await memoryTool.ExecuteAsync(new MemoryToolParameters
+        {
+            Action = "add",
+            Target = "memory",
+            Content = "Compression refresh must include marker cedar-compress."
+        }, CancellationToken.None);
+
+        await agent.ChatAsync("second question triggers compression", session, CancellationToken.None);
+
+        var secondOutbound = client.CompleteCalls.Last(call =>
+            call.Any(m => string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase) &&
+                          m.Content.Contains("second question triggers compression", StringComparison.Ordinal)));
+        Assert.IsTrue(secondOutbound.Any(m =>
+            string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase) &&
+            m.Content.Contains("cedar-compress", StringComparison.Ordinal)),
+            "The turn that summarizes evicted context must use the refreshed builtin memory snapshot immediately.");
+    }
+
+    [TestMethod]
+    public async Task StreamChatAsync_CompressionToolContinuationUsesRefreshedBuiltinMemorySnapshot()
+    {
+        var client = new RecordingChatClient();
+        var transcripts = new TranscriptStore(_tempDir);
+        var memoryManager = CreateMemoryManager(client);
+        var memoryTool = new MemoryTool(memoryManager);
+        await memoryTool.ExecuteAsync(new MemoryToolParameters
+        {
+            Action = "add",
+            Target = "memory",
+            Content = "Initial streaming memory before session."
+        }, CancellationToken.None);
+
+        var agent = CreateAgentWithBuiltinMemory(client, transcripts, memoryManager, recentTurnWindow: 1);
+        agent.RegisterTool(new NoopTool());
+        var session = new Session { Id = "stream-compression-refresh-session" };
+        client.ToolResponses.Enqueue(new ChatResponse { Content = "first stream done", FinishReason = "stop" });
+        await foreach (var _ in agent.StreamChatAsync("first stream question", session, CancellationToken.None))
+        {
+        }
+
+        await memoryTool.ExecuteAsync(new MemoryToolParameters
+        {
+            Action = "add",
+            Target = "memory",
+            Content = "Streaming compression refresh must include marker spruce-stream."
+        }, CancellationToken.None);
+        client.ToolResponses.Enqueue(new ChatResponse
+        {
+            FinishReason = "tool_calls",
+            ToolCalls = new List<ToolCall>
+            {
+                new() { Id = "stream-call", Name = "noop_tool", Arguments = "{}" }
+            }
+        });
+        client.ToolResponses.Enqueue(new ChatResponse { Content = "second stream done", FinishReason = "stop" });
+
+        await foreach (var _ in agent.StreamChatAsync("second stream question triggers compression", session, CancellationToken.None))
+        {
+        }
+
+        var continuation = client.CompleteWithToolsCalls.Last();
+        Assert.IsTrue(continuation.Any(m =>
+            string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase) &&
+            m.Content.Contains("spruce-stream", StringComparison.Ordinal)),
+            "Streaming tool-loop continuations must use the refreshed builtin memory snapshot after compression.");
+    }
+
+    [TestMethod]
+    public async Task Agent_CompressionToolContinuationRemovesStaleBuiltinMemoryWhenSnapshotBecomesEmpty()
+    {
+        var client = new RecordingChatClient();
+        var transcripts = new TranscriptStore(_tempDir);
+        var memoryManager = CreateMemoryManager(client);
+        var memoryTool = new MemoryTool(memoryManager);
+        await memoryTool.ExecuteAsync(new MemoryToolParameters
+        {
+            Action = "add",
+            Target = "memory",
+            Content = "Temporary memory marker maple-stale."
+        }, CancellationToken.None);
+
+        var agent = CreateAgentWithBuiltinMemory(client, transcripts, memoryManager, recentTurnWindow: 1);
+        agent.RegisterTool(new NoopTool());
+        var session = new Session { Id = "empty-compression-refresh-session" };
+        client.ToolResponses.Enqueue(new ChatResponse { Content = "first done", FinishReason = "stop" });
+        await agent.ChatAsync("first question", session, CancellationToken.None);
+
+        await memoryTool.ExecuteAsync(new MemoryToolParameters
+        {
+            Action = "remove",
+            Target = "memory",
+            OldText = "maple-stale"
+        }, CancellationToken.None);
+        client.ToolResponses.Enqueue(new ChatResponse
+        {
+            FinishReason = "tool_calls",
+            ToolCalls = new List<ToolCall>
+            {
+                new() { Id = "empty-call", Name = "noop_tool", Arguments = "{}" }
+            }
+        });
+        client.ToolResponses.Enqueue(new ChatResponse { Content = "second done", FinishReason = "stop" });
+
+        await agent.ChatAsync("second question triggers empty refresh", session, CancellationToken.None);
+
+        var continuation = client.CompleteWithToolsCalls.Last();
+        Assert.IsFalse(continuation.Any(m =>
+            string.Equals(m.Role, "system", StringComparison.OrdinalIgnoreCase) &&
+            m.Content.Contains("maple-stale", StringComparison.Ordinal)),
+            "If compression refreshes builtin memory to empty, tool-loop continuations must not retain the stale turn-start snapshot.");
+    }
+
     private async Task<TranscriptStore> CreateTranscriptsWithPriorMemoryAsync(string priorSessionId, string priorContent)
     {
         var transcripts = new TranscriptStore(_tempDir);
@@ -662,6 +850,41 @@ public sealed class MemoryParityTests
             NullLogger<Agent>.Instance,
             transcripts: transcripts,
             contextManager: contextManager,
+            turnMemoryCoordinator: coordinator);
+    }
+
+    private MemoryManager CreateMemoryManager(IChatClient client)
+        => new(
+            Path.Combine(_tempDir, "memories"),
+            client,
+            NullLogger<MemoryManager>.Instance);
+
+    private static Agent CreateAgentWithBuiltinMemory(
+        RecordingChatClient client,
+        TranscriptStore transcripts,
+        MemoryManager memoryManager,
+        int recentTurnWindow)
+    {
+        var pluginManager = new PluginManager(NullLogger<PluginManager>.Instance);
+        pluginManager.Register(new BuiltinMemoryPlugin(memoryManager));
+        var contextManager = new ContextManager(
+            transcripts,
+            client,
+            new TokenBudget(maxTokens: 8000, recentTurnWindow: recentTurnWindow),
+            new PromptBuilder("stable system"),
+            NullLogger<ContextManager>.Instance,
+            pluginManager: pluginManager);
+        var coordinator = new TurnMemoryCoordinator(
+            contextManager,
+            new TranscriptRecallService(transcripts, NullLogger<TranscriptRecallService>.Instance),
+            NullLogger<TurnMemoryCoordinator>.Instance);
+
+        return new Agent(
+            client,
+            NullLogger<Agent>.Instance,
+            transcripts: transcripts,
+            contextManager: contextManager,
+            pluginManager: pluginManager,
             turnMemoryCoordinator: coordinator);
     }
 
@@ -775,6 +998,19 @@ public sealed class MemoryParityTests
             _calls.Add($"{Name}:queue_prefetch:{sessionId}:{query}");
             if (ThrowOnQueue)
                 throw new InvalidOperationException($"{Name} queue failed");
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingPreCompressPlugin : PluginBase
+    {
+        public override string Name => "recording-pre-compress";
+        public override string Category => "memory";
+        public int PreCompressCalls { get; private set; }
+
+        public override Task OnPreCompressAsync(IReadOnlyList<Message> messages, CancellationToken ct)
+        {
+            PreCompressCalls++;
             return Task.CompletedTask;
         }
     }
