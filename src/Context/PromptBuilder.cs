@@ -18,17 +18,22 @@ public sealed class PromptBuilder
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    private readonly string _systemPrompt;
+    private readonly Func<string> _systemPromptProvider;
 
     /// <summary>The stable system prompt used as the cache anchor.</summary>
-    public string SystemPrompt => _systemPrompt;
+    public string SystemPrompt => _systemPromptProvider();
 
     /// <summary>
     /// Creates a prompt builder with a fixed system prompt that serves as the cache anchor.
     /// </summary>
     public PromptBuilder(string systemPrompt)
     {
-        _systemPrompt = systemPrompt;
+        _systemPromptProvider = () => systemPrompt;
+    }
+
+    public PromptBuilder(Func<string> systemPromptProvider)
+    {
+        _systemPromptProvider = systemPromptProvider;
     }
 
     /// <summary>
@@ -49,7 +54,7 @@ public sealed class PromptBuilder
 
         return new PromptPacket
         {
-            SystemPrompt = _systemPrompt,
+            SystemPrompt = SystemPrompt,
             SoulContext = request.SoulContext,
             PluginSystemContext = request.PluginSystemContext,
             SessionStateJson = stateJson,

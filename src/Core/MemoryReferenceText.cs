@@ -33,6 +33,14 @@ public static class MemoryReferenceText
         "When the user references something from a past conversation or you suspect relevant cross-session context exists, " +
         "use session_search to recall it before asking them to repeat themselves.";
 
+    public const string SkillsGuidance =
+        "After completing a complex task (5+ tool calls), fixing a tricky error, " +
+        "or discovering a non-trivial workflow, save the approach as a " +
+        "skill with skill_manage so you can reuse it next time.\n" +
+        "When using a skill and finding it outdated, incomplete, or wrong, " +
+        "patch it immediately with skill_manage(action='patch') -- don't wait to be asked. " +
+        "Skills that aren't maintained become liabilities.";
+
     public const string MemoryToolDescription =
         "Save durable information to persistent memory that survives across sessions. " +
         "Memory is injected into future turns, so keep it compact and focused on facts that will still matter later.\n\n" +

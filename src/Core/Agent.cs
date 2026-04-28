@@ -56,7 +56,7 @@ public sealed class Agent : IAgent
     private static readonly HashSet<string> ParallelSafeTools = new(StringComparer.OrdinalIgnoreCase)
     {
         "read_file", "glob", "grep", "webfetch", "websearch",
-        "session_search", "skill_invoke", "memory", "lsp"
+        "session_search", "skill_invoke", "skills_list", "skill_view", "memory", "lsp"
     };
 
     /// <summary>Tools that must never run in parallel.</summary>
@@ -207,6 +207,8 @@ public sealed class Agent : IAgent
         string? transientPluginSystemContent = null;
         string finalResponse = "";
         bool completedTurnSuccessfully = false;
+        int reviewToolIterations = 0;
+        bool skillManageUsed = false;
 
         try
         {
@@ -302,6 +304,7 @@ public sealed class Agent : IAgent
             while (iterations < MaxToolIterations)
             {
             iterations++;
+            reviewToolIterations = iterations;
 
             // Use prepared context for first iteration, then fall back to session.Messages
             // because session.Messages accumulates tool results as the loop progresses
@@ -337,6 +340,8 @@ public sealed class Agent : IAgent
 
             // Normalize tool-call IDs for deterministic referencing across providers
             var normalizedToolCalls = NormalizeToolCallIds(response.ToolCalls!, iterations);
+            skillManageUsed |= normalizedToolCalls.Any(toolCall =>
+                string.Equals(toolCall.Name, "skill_manage", StringComparison.OrdinalIgnoreCase));
 
             // Record the assistant message with its tool call requests
             await AgentSessionWriter.AppendAssistantToolRequestMessageAsync(
@@ -586,7 +591,9 @@ public sealed class Agent : IAgent
             _memoryReviewService?.QueueAfterTurn(
                 session.Messages.ToList(),
                 finalResponse,
-                interrupted: !completedTurnSuccessfully);
+                interrupted: !completedTurnSuccessfully,
+                toolIterations: reviewToolIterations,
+                skillManageUsed: skillManageUsed);
 
             // ── Plugin turn end fires on EVERY exit path (success, no-tools, max-iter, exception, cancellation) ──
             // Routed through FirePluginTurnEndAsync so cleanup runs on a fresh
@@ -620,6 +627,8 @@ public sealed class Agent : IAgent
         // intercepting every TokenDelta yielded downstream.
         var streamedResponse = new System.Text.StringBuilder();
         bool completedTurnSuccessfully = false;
+        int reviewToolIterations = 0;
+        bool skillManageUsed = false;
 
         // ── Plugin turn start ──
         // StreamChatAsync historically skipped the plugin lifecycle entirely,
@@ -774,6 +783,7 @@ public sealed class Agent : IAgent
         while (iterations < MaxToolIterations)
         {
             iterations++;
+            reviewToolIterations = iterations;
 
             var messagesToUse = (iterations == 1 && preparedContext is not null)
                 ? preparedContext
@@ -804,6 +814,8 @@ public sealed class Agent : IAgent
 
             // Normalize tool-call IDs for deterministic referencing across providers
             var normalizedStreamToolCalls = NormalizeToolCallIds(response.ToolCalls!, iterations);
+            skillManageUsed |= normalizedStreamToolCalls.Any(toolCall =>
+                string.Equals(toolCall.Name, "skill_manage", StringComparison.OrdinalIgnoreCase));
 
             // Record assistant message with tool call requests
             var assistantToolMsg = new Message
@@ -1012,7 +1024,9 @@ public sealed class Agent : IAgent
             _memoryReviewService?.QueueAfterTurn(
                 session.Messages.ToList(),
                 streamedResponse.ToString(),
-                interrupted: !completedTurnSuccessfully);
+                interrupted: !completedTurnSuccessfully,
+                toolIterations: reviewToolIterations,
+                skillManageUsed: skillManageUsed);
 
             // ── Plugin turn end fires on EVERY exit path ──
             // streamedResponse holds whatever text actually reached the consumer

@@ -92,7 +92,11 @@ public static class SystemPrompts
     /// tools are available, so desktop startup should pass the actual availability
     /// flags instead of baking the guidance into <see cref="Default"/>.
     /// </summary>
-    public static string Build(bool includeMemoryGuidance, bool includeSessionSearchGuidance)
+    public static string Build(
+        bool includeMemoryGuidance,
+        bool includeSessionSearchGuidance,
+        bool includeSkillsGuidance = false,
+        string? skillsMandatoryPrompt = null)
     {
         var prompt = Default;
         var guidance = new List<string>();
@@ -102,6 +106,12 @@ public static class SystemPrompts
 
         if (includeSessionSearchGuidance)
             guidance.Add(MemoryReferenceText.SessionSearchGuidance);
+
+        if (includeSkillsGuidance)
+            guidance.Add(MemoryReferenceText.SkillsGuidance);
+
+        if (!string.IsNullOrWhiteSpace(skillsMandatoryPrompt))
+            guidance.Add(skillsMandatoryPrompt);
 
         if (guidance.Count > 0)
             prompt += "\n\n" + string.Join(" ", guidance);

@@ -458,9 +458,11 @@ public partial class App : Application
 
         // Token budget & Prompt builder for Context Runtime
         services.AddSingleton(sp => new TokenBudget(maxTokens: 8000, recentTurnWindow: 6));
-        services.AddSingleton(sp => new PromptBuilder(SystemPrompts.Build(
+        services.AddSingleton(sp => new PromptBuilder(() => SystemPrompts.Build(
             includeMemoryGuidance: memoryAvailable,
-            includeSessionSearchGuidance: true)));
+            includeSessionSearchGuidance: true,
+            includeSkillsGuidance: true,
+            skillsMandatoryPrompt: sp.GetRequiredService<SkillManager>().BuildSkillsMandatoryPrompt())));
 
         // Context manager (with soul integration)
         services.AddSingleton(sp => new ContextManager(
@@ -514,7 +516,9 @@ public partial class App : Application
                 sp.GetRequiredService<MemoryManager>(),
                 sp.GetRequiredService<ILogger<MemoryReviewService>>(),
                 sp.GetRequiredService<PluginManager>(),
-                nudgeInterval);
+                nudgeInterval,
+                sp.GetRequiredService<SkillManager>(),
+                ReadNonNegativeConfigInt("skills", "creation_nudge_interval", 10));
         });
 
         // Analytics / Insights service
@@ -795,6 +799,9 @@ public partial class App : Application
 
         // Skill invoke tool
         var skillManager = services.GetRequiredService<SkillManager>();
+        RegisterAndTrack(agent, toolRegistry, new SkillsListTool(skillManager));
+        RegisterAndTrack(agent, toolRegistry, new SkillViewTool(skillManager));
+        RegisterAndTrack(agent, toolRegistry, new SkillManageTool(skillManager));
         RegisterAndTrack(agent, toolRegistry, new SkillInvokeTool(skillManager));
 
         // Send message tool (wired to native C# gateway)
