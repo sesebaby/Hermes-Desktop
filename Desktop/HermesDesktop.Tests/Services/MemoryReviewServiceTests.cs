@@ -39,6 +39,32 @@ public class MemoryReviewServiceTests
     }
 
     [TestMethod]
+    public void MemoryReviewDefaults_AreFiveForDesktopFallbacks()
+    {
+        Assert.AreEqual(5, MemoryReviewDefaults.NudgeInterval);
+        Assert.AreEqual(5, MemoryReviewDefaults.SkillCreationNudgeInterval);
+    }
+
+    [TestMethod]
+    public void MarkTurnAndCheckDue_DefaultConstructorUsesFiveTurnNudgeInterval()
+    {
+        var chatClient = new Mock<IChatClient>(MockBehavior.Loose).Object;
+        var memoryManager = new MemoryManager(
+            _tempDir,
+            chatClient,
+            NullLogger<MemoryManager>.Instance);
+        var service = new MemoryReviewService(
+            chatClient,
+            memoryManager,
+            NullLogger<MemoryReviewService>.Instance);
+
+        for (var i = 0; i < 4; i++)
+            Assert.IsFalse(service.MarkTurnAndCheckDue($"response {i}", interrupted: false));
+
+        Assert.IsTrue(service.MarkTurnAndCheckDue("response 5", interrupted: false));
+    }
+
+    [TestMethod]
     public async Task ReviewConversationAsync_ExecutesMemoryToolCallAndBridge()
     {
         var chatClient = new Mock<IChatClient>(MockBehavior.Strict);

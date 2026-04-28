@@ -509,7 +509,7 @@ public partial class App : Application
         services.AddSingleton(sp =>
         {
             var nudgeInterval = memoryEnabled || userProfileEnabled
-                ? ReadNonNegativeConfigInt("memory", "nudge_interval", 10)
+                ? ReadNonNegativeConfigInt("memory", "nudge_interval", MemoryReviewDefaults.NudgeInterval)
                 : 0;
             return new MemoryReviewService(
                 sp.GetRequiredService<IChatClient>(),
@@ -518,7 +518,7 @@ public partial class App : Application
                 sp.GetRequiredService<PluginManager>(),
                 nudgeInterval,
                 sp.GetRequiredService<SkillManager>(),
-                ReadNonNegativeConfigInt("skills", "creation_nudge_interval", 10));
+                ReadNonNegativeConfigInt("skills", "creation_nudge_interval", MemoryReviewDefaults.SkillCreationNudgeInterval));
         });
 
         // Analytics / Insights service

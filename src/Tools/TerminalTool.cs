@@ -1,12 +1,12 @@
 namespace Hermes.Agent.Tools;
 
 using Hermes.Agent.Core;
-using System.Diagnostics;
+using Hermes.Agent.Execution;
 
 public sealed class TerminalTool : ITool
 {
     public string Name => "terminal";
-    public string Description => "Execute shell commands on the local system";
+    public string Description => "Execute shell commands on the local system with deterministic timeout handling";
     public Type ParametersType => typeof(TerminalParameters);
     
     public Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
@@ -19,41 +19,26 @@ public sealed class TerminalTool : ITool
     {
         try
         {
-            var psi = new ProcessStartInfo
+            var timeoutMs = Math.Max(1, timeout) * 1000;
+            await using var backend = new LocalBackend(new ExecutionConfig
             {
-                FileName = "cmd.exe",
-                Arguments = $"/c {command}",
-                WorkingDirectory = cwd ?? Directory.GetCurrentDirectory(),
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = false,
-                StandardOutputEncoding = System.Text.Encoding.UTF8,
-                StandardErrorEncoding = System.Text.Encoding.UTF8,
-            };
-            
-            using var process = new Process { StartInfo = psi };
-            process.Start();
-            
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeout));
-            
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
-            var stderrTask = process.StandardError.ReadToEndAsync();
-            var waitTask = Task.Run(() => process.WaitForExit(), timeoutCts.Token);
-            
-            await Task.WhenAll(stdoutTask, stderrTask, waitTask);
-            
-            var output = await stdoutTask;
-            var error = await stderrTask;
-            
-            return process.ExitCode == 0 
-                ? ToolResult.Ok(string.IsNullOrEmpty(output) ? "Command completed successfully." : output)
-                : ToolResult.Fail($"Command failed with exit code {process.ExitCode}: {error}");
-        }
-        catch (OperationCanceledException)
-        {
-            return ToolResult.Fail($"Command timed out after {timeout} seconds");
+                DefaultTimeoutMs = timeoutMs
+            });
+
+            var result = await backend.ExecuteAsync(
+                command,
+                cwd,
+                timeoutMs: timeoutMs,
+                background: false,
+                ct);
+
+            if (result.Success)
+                return ToolResult.Ok(string.IsNullOrWhiteSpace(result.Output) ? "Command completed successfully." : result.Output);
+
+            var message = $"Exit code {result.ExitCode}: {result.Output}";
+            if (!string.IsNullOrWhiteSpace(result.ExitCodeMeaning))
+                message += $"\n({result.ExitCodeMeaning})";
+            return ToolResult.Fail(message);
         }
         catch (Exception ex)
         {

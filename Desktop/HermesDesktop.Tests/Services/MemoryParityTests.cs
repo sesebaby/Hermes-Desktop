@@ -396,6 +396,8 @@ public sealed class MemoryParityTests
         StringAssert.Contains(prompt, "Do NOT save task progress");
         StringAssert.Contains(prompt, "Write memories as declarative facts");
         StringAssert.Contains(prompt, "use session_search to recall it before asking them to repeat themselves");
+        StringAssert.Contains(prompt, "Never answer current time, date, timezone");
+        StringAssert.Contains(prompt, "Get-Date -Format");
     }
 
     [TestMethod]

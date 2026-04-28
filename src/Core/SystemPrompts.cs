@@ -86,6 +86,13 @@ public static class SystemPrompts
 - Be careful with file paths — use the correct OS path separator for the platform.
 - This is a Windows environment — use appropriate commands and path formats.";
 
+    public const string RuntimeFactsGuidance =
+        @"# Runtime Facts
+
+Never answer current time, date, timezone, OS state, process state, ports, files, git state, hashes, encodings, or arithmetic from memory. Use tools to check the live environment.
+
+For current time/date/timezone on Windows, prefer the terminal or bash tool with PowerShell commands such as `Get-Date -Format ""yyyy-MM-dd dddd HH:mm:ss K""` or `Get-Date -Format o`. Do not use interactive `date` prompts on Windows.";
+
     /// <summary>
     /// Build the desktop system prompt with Python-style tool-aware memory guidance.
     /// The Python reference appends these guidance blocks only when the matching
@@ -96,10 +103,14 @@ public static class SystemPrompts
         bool includeMemoryGuidance,
         bool includeSessionSearchGuidance,
         bool includeSkillsGuidance = false,
-        string? skillsMandatoryPrompt = null)
+        string? skillsMandatoryPrompt = null,
+        bool includeRuntimeFactsGuidance = true)
     {
         var prompt = Default;
         var guidance = new List<string>();
+
+        if (includeRuntimeFactsGuidance)
+            guidance.Add(RuntimeFactsGuidance);
 
         if (includeMemoryGuidance)
             guidance.Add(MemoryReferenceText.MemoryGuidance);

@@ -8,6 +8,12 @@ using Hermes.Agent.Skills;
 using Hermes.Agent.Tools;
 using Microsoft.Extensions.Logging;
 
+public static class MemoryReviewDefaults
+{
+    public const int NudgeInterval = 5;
+    public const int SkillCreationNudgeInterval = 5;
+}
+
 /// <summary>
 /// Periodic post-response memory review.
 /// Mirrors Python's background memory nudge: after every configured N user
@@ -73,9 +79,9 @@ public sealed class MemoryReviewService
         MemoryManager memoryManager,
         ILogger<MemoryReviewService> logger,
         PluginManager? pluginManager = null,
-        int nudgeInterval = 10,
+        int nudgeInterval = MemoryReviewDefaults.NudgeInterval,
         SkillManager? skillManager = null,
-        int skillNudgeInterval = 10)
+        int skillNudgeInterval = MemoryReviewDefaults.SkillCreationNudgeInterval)
     {
         _chatClient = chatClient;
         _memoryManager = memoryManager;

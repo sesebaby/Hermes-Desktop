@@ -69,4 +69,25 @@ public class ShellSecurityAnalyzerTests
             (result.Reason ?? string.Empty).Contains("Path traversal", StringComparison.Ordinal) ||
             (result.Warnings?.Any(w => w.Contains("Path traversal", StringComparison.Ordinal)) ?? false));
     }
+
+    [TestMethod]
+    public void Analyze_PowerShellGetDateFormat_IsSafe()
+    {
+        var analyzer = new ShellSecurityAnalyzer();
+
+        var result = analyzer.Analyze("Get-Date -Format dddd");
+
+        Assert.AreEqual(SecurityClassification.Safe, result.Classification);
+    }
+
+    [TestMethod]
+    public void Analyze_DiskFormatCommand_IsDangerous()
+    {
+        var analyzer = new ShellSecurityAnalyzer();
+
+        var result = analyzer.Analyze("format C: /fs:ntfs");
+
+        Assert.AreEqual(SecurityClassification.Dangerous, result.Classification);
+        StringAssert.Contains(result.Reason ?? string.Empty, "Disk formatting command detected");
+    }
 }

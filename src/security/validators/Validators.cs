@@ -182,6 +182,9 @@ public sealed class PrivilegeValidator : IShellValidator
 public sealed class FileSystemValidator : IShellValidator
 {
     public string Name => "FileSystem";
+    private static readonly Regex DiskFormatCommand = new(
+        @"(^|[;&|]\s*|\s)(format|format\.com)(\s+[a-z]:|\s+/fs:|\s+/q|\s+/y|\s+/x|\s+/p:|\s+/v:)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
     
     public SecurityResult Validate(string command, ShellContext? context)
     {
@@ -194,7 +197,7 @@ public sealed class FileSystemValidator : IShellValidator
         }
         
         // Check for format commands
-        if (normalized.Contains("mkfs.") || normalized.Contains("format "))
+        if (normalized.Contains("mkfs.") || DiskFormatCommand.IsMatch(command))
         {
             return SecurityResult.Dangerous("Disk formatting command detected");
         }
