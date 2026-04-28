@@ -67,7 +67,7 @@
 
 ### Pillar 8: Skills System ✅
 - SkillManager (Markdown + YAML)
-- Built-in skills (api-expert, test-writer, security-reviewer)
+- Manifest-controlled bundled skills plus user-created skills
 - Skill invocation
 - Create/delete skills
 
@@ -225,8 +225,8 @@ var buddy = await buddyService.GetBuddyAsync(userId, ct);
 ### 8. Skills
 ```csharp
 // Markdown + YAML custom capabilities
-var skill = await skillManager.CreateSkillAsync("api-expert", ...);
-// Built-in: api-expert, test-writer, security-reviewer
+var skill = await skillManager.CreateSkillAsync("my-skill", ...);
+// Runtime-visible bundled skills are loaded from disk and filtered by the bundled-skills manifest.
 ```
 
 ### 9. Permissions

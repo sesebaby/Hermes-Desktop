@@ -88,7 +88,7 @@ Hermes Desktop 是一个**进程内代理运行时**，具有原生 Windows UI &
 - **并行执行** &mdash; 8个工作线程的信号量用于只读工具，变更操作带有权限门控的串行执行
 - **运行时模型切换** &mdash; 无需重启即可在 Claude、GPT、Ollama、Qwen、DeepSeek 等之间切换
 - **子代理派生** &mdash; 5种配置模板用于委派和并行工作
-- **94个技能** &mdash; 覆盖28个类别（代码审查、TDD、GitHub工作流、MLOps、研究、创意等）
+- **21个仓库技能** &mdash; 其中13个出货、8个暂缓，覆盖10个活跃类别
 
 ### 记忆与身份
 
@@ -208,7 +208,7 @@ Hermes.CS/
 │   ├── Views/                   #   8 个页面 + 侧边面板
 │   ├── Services/                #   聊天桥接、环境、诊断
 │   └── Strings/                 #   本地化 (en-us、zh-cn)
-├── skills/                      # 94 个技能定义
+├── skills/                      # 21 个仓库技能定义（13 个出货 + 8 个暂缓）
 ├── scripts/                     # 构建、发布、安装脚本
 └── HermesDesktop.slnx
 ```

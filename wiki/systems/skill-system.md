@@ -65,19 +65,16 @@ var response = await _chatClient.CompleteAsync(new[] { systemMessage }, ct);
 
 ## Built-in Skills
 
-Three hardcoded skills in BuiltInSkills static class:
-- `api-expert` -- REST API design patterns
-- `test-writer` -- comprehensive test writing (Given_When_Then)
-- `security-reviewer` -- vulnerability scanning checklist
+There is no separate hardcoded built-in skill catalog in the current repo snapshot. Runtime-visible bundled skills are loaded from disk by `SkillManager`, and the shipping set is constrained by `.bundled-skills-manifest.json`.
 
 ## Disk Layout
 
-Skills directory at repo root: `skills/` with ~28 category subdirectories containing ~94+ skills. Categories include: apple, autonomous-ai-agents, claude-code, creative, data-science, devops, gaming, github, media, mlops, productivity, research, software-development, and more.
+Skills directory at repo root: `skills/` with 10 active category subdirectories containing 21 repo skill definitions. The checked-in manifest currently ships 13 retained skills and keeps 8 more as deferred, non-shipping sources.
 
 ## Key Files
 - `src/skills/skillmanager.cs` -- SkillManager, Skill, SkillInvoker, BuiltInSkills (~535 lines)
 - `src/skills/SkillsHub.cs` -- additional skill management
-- `skills/` -- 94+ skill files across 28 categories
+- `skills/` -- 21 repo skill files across 10 active categories, with shipping controlled by `.bundled-skills-manifest.json`
 
 ## See Also
 - [[tool-system]]

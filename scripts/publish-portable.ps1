@@ -112,12 +112,59 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-# --- 3. Bundle skills/ into the publish folder so first-run bundling works ---
+# --- 3. Bundle the manifest-driven retain set into the publish folder ---
 $bundledSkills = Join-Path $repoRoot "skills"
 $targetSkills = Join-Path $OutputDir "skills"
-if (Test-Path $bundledSkills) {
-    Write-Host "Bundling skills/ into publish output..." -ForegroundColor DarkGray
-    Copy-Item -Recurse -Force $bundledSkills $targetSkills
+if (Test-Path $targetSkills) {
+    Remove-Item -Recurse -Force $targetSkills
+}
+
+$manifestPath = Join-Path $bundledSkills ".bundled-skills-manifest.json"
+if (-not (Test-Path $manifestPath)) {
+    throw "Bundled skill manifest not found: $manifestPath"
+}
+
+$manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+New-Item -ItemType Directory -Path $targetSkills -Force | Out-Null
+Copy-Item -Force $manifestPath (Join-Path $targetSkills ".bundled-skills-manifest.json")
+
+function Copy-RetainedSkillRoot {
+    param(
+        [Parameter(Mandatory=$true)][string]$SourceRootRelativePath
+    )
+
+    $sourceRoot = Join-Path $bundledSkills $SourceRootRelativePath
+    $destinationRoot = Join-Path $targetSkills $SourceRootRelativePath
+    if (-not (Test-Path $sourceRoot)) {
+        throw "Retained bundled skill root is missing: $sourceRoot"
+    }
+
+    if (Test-Path $destinationRoot) {
+        Remove-Item -Recurse -Force $destinationRoot
+    }
+
+    New-Item -ItemType Directory -Path $destinationRoot -Force | Out-Null
+    Copy-Item -Recurse -Force $sourceRoot\* $destinationRoot
+
+    $segments = $SourceRootRelativePath -split '[\\/]' | Where-Object { $_ -and $_.Trim().Length -gt 0 }
+    if ($segments.Count -gt 1) {
+        for ($i = 0; $i -lt $segments.Count - 1; $i++) {
+            $categoryRelative = ($segments[0..$i] -join [IO.Path]::DirectorySeparatorChar)
+            $sourceDescription = Join-Path (Join-Path $bundledSkills $categoryRelative) "DESCRIPTION.md"
+            if (Test-Path $sourceDescription) {
+                $destinationDescription = Join-Path (Join-Path $targetSkills $categoryRelative) "DESCRIPTION.md"
+                New-Item -ItemType Directory -Path (Split-Path $destinationDescription) -Force | Out-Null
+                Copy-Item -Force $sourceDescription $destinationDescription
+            }
+        }
+    }
+}
+
+Write-Host "Bundling manifest-driven retain skills into publish output..." -ForegroundColor DarkGray
+foreach ($skill in $manifest.skills | Where-Object { $_.disposition -eq "retain" }) {
+    foreach ($sourceRoot in $skill.sourceRoots) {
+        Copy-RetainedSkillRoot -SourceRootRelativePath $sourceRoot.rootRelativePath
+    }
 }
 
 $exe = Join-Path $OutputDir "HermesDesktop.exe"

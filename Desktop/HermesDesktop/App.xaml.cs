@@ -359,20 +359,26 @@ public partial class App : Application
             memoryCharLimit: ReadPositiveConfigInt("memory", "memory_char_limit", 2200),
             userCharLimit: ReadPositiveConfigInt("memory", "user_char_limit", 1375)));
 
-        // Skill manager — copy bundled skills on first run if user dir is empty (non-fatal)
+        // Skill manager — reconcile bundled skills against the active user tree on startup (non-fatal)
         var skillsDir = Path.Combine(projectDir, "skills");
+        var skillsProvenancePath = BundledSkillCatalogService.GetDefaultProvenancePath(projectDir);
+        var skillsQuarantineDir = BundledSkillCatalogService.GetDefaultQuarantineRoot(projectDir);
         try
         {
             var bundledSkillsDir = FindRepoSkillsDir();
-            if ((!Directory.Exists(skillsDir) || !Directory.EnumerateFileSystemEntries(skillsDir).Any())
-                && bundledSkillsDir is not null && Directory.Exists(bundledSkillsDir))
+            if (bundledSkillsDir is not null && Directory.Exists(bundledSkillsDir))
             {
-                CopyDirectoryRecursive(bundledSkillsDir, skillsDir);
+                var skillCatalog = new BundledSkillCatalogService();
+                skillCatalog.ReconcileActiveSkills(
+                    bundledSkillsDir,
+                    skillsDir,
+                    skillsProvenancePath,
+                    skillsQuarantineDir);
             }
         }
         catch (Exception ex)
         {
-            BestEffort.LogFailure(TryGetAppLogger(), ex, "copying bundled skills");
+            BestEffort.LogFailure(TryGetAppLogger(), ex, "reconciling bundled skills");
         }
         services.AddSingleton(sp => new SkillManager(
             skillsDir,
@@ -910,28 +916,6 @@ public partial class App : Application
 
         System.Diagnostics.Debug.WriteLine("Could not find bundled skills directory");
         return null;
-    }
-
-    /// <summary>Copy a directory tree recursively (used for first-run skill bundling).</summary>
-    private static void CopyDirectoryRecursive(string source, string destination)
-    {
-        Directory.CreateDirectory(destination);
-        foreach (var file in Directory.EnumerateFiles(source))
-        {
-            try { File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: true); }
-            catch (Exception ex)
-            {
-                BestEffort.LogFailure(TryGetAppLogger(), ex, "copying bundled skills file", $"file={file}");
-            }
-        }
-        foreach (var dir in Directory.EnumerateDirectories(source))
-        {
-            try { CopyDirectoryRecursive(dir, Path.Combine(destination, Path.GetFileName(dir))); }
-            catch (Exception ex)
-            {
-                BestEffort.LogFailure(TryGetAppLogger(), ex, "copying bundled skills directory", $"directory={dir}");
-            }
-        }
     }
 
     /// <summary>

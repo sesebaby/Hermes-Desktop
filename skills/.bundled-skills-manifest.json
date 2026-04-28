@@ -1,0 +1,1200 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-04-28T23:33:29.2489425Z",
+  "skills": [
+    {
+      "id": "algorithmic-art",
+      "name": "algorithmic-art",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\algorithmic-art",
+          "skillFileRelativePath": "claude-code\\algorithmic-art\\SKILL.md",
+          "directorySha256": "d1355c44f7ec45fda66638941213550c00d1b07fb6296b13d07d3f9061e04f3b",
+          "skillFileSha256": "15bc2d39296c2322272d79625d96f25267f6f0a65983164a5273bd48044fb793"
+        }
+      ]
+    },
+    {
+      "id": "apple-notes",
+      "name": "apple-notes",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "apple\\apple-notes",
+          "skillFileRelativePath": "apple\\apple-notes\\SKILL.md",
+          "directorySha256": "261af94d122be87d5ecb0ebbef5e0b932cd24b0b41e09c6f2af7d2c1c08bd135",
+          "skillFileSha256": "7db435c12c7b482ca29172b2225ec68ee82dd61bfd3740e03030e23511da9380"
+        }
+      ]
+    },
+    {
+      "id": "apple-reminders",
+      "name": "apple-reminders",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "apple\\apple-reminders",
+          "skillFileRelativePath": "apple\\apple-reminders\\SKILL.md",
+          "directorySha256": "87149f2a08803b49af2ff28b8b381c20eec89b6ad7a89ee8d8e88b3de71e68b0",
+          "skillFileSha256": "4ed4810f50a8593752bf9097494b50f4afbadef235504a2a2eb3b1570919a845"
+        }
+      ]
+    },
+    {
+      "id": "arxiv",
+      "name": "arxiv",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "research\\arxiv",
+          "skillFileRelativePath": "research\\arxiv\\SKILL.md",
+          "directorySha256": "1c5334698fdec511e7274462610c6e11aa3db2c54903b0ae2b3f3fa710e3b188",
+          "skillFileSha256": "d5ea2446a913385f36a2bfe7a5860caa9437255ad25abe5a2b9d680cdd0cad56"
+        }
+      ]
+    },
+    {
+      "id": "ascii-art",
+      "name": "ascii-art",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "creative\\ascii-art",
+          "skillFileRelativePath": "creative\\ascii-art\\SKILL.md",
+          "directorySha256": "1c68e92f45d2d79c56344d7be79bb8e91dc16f3d0c8cb853c1b6d000946647ea",
+          "skillFileSha256": "f6cc0a5bffb085857026fd7fb3b3b6eadfe36ddfbd03051bbecb7c5315c6c4e2"
+        }
+      ]
+    },
+    {
+      "id": "ascii-video",
+      "name": "ascii-video",
+      "disposition": "retain",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "creative\\ascii-video",
+          "skillFileRelativePath": "creative\\ascii-video\\SKILL.md",
+          "directorySha256": "ba848bde8ac47827f8648cdf583927d6f54cf89308c1480df72f3e83b9074818",
+          "skillFileSha256": "9a0c9f7333e707518d0e3cf7596493e516d4a6307e89e1cd2f84a7584f254739"
+        }
+      ]
+    },
+    {
+      "id": "audiocraft-audio-generation",
+      "name": "audiocraft-audio-generation",
+      "disposition": "retain",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\models\\audiocraft",
+          "skillFileRelativePath": "mlops\\models\\audiocraft\\SKILL.md",
+          "directorySha256": "d090e74485297469e747c5e6af72ebc00039ea060added7d747a774897d18e58",
+          "skillFileSha256": "0ac770a148d33866427a46a5f9dc14c6c93f5e406b4d80981ff7e3173807c349"
+        }
+      ]
+    },
+    {
+      "id": "axolotl",
+      "name": "axolotl",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\training\\axolotl",
+          "skillFileRelativePath": "mlops\\training\\axolotl\\SKILL.md",
+          "directorySha256": "60b81d7d3519f420b57cb4a0c5bd2c520249ea7b7ecd90514053581c2fc08e5b",
+          "skillFileSha256": "9b94ed136ddfbf3668434821c32c2af013e226160d22f7932646c7172be0c11c"
+        }
+      ]
+    },
+    {
+      "id": "blogwatcher",
+      "name": "blogwatcher",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "research\\blogwatcher",
+          "skillFileRelativePath": "research\\blogwatcher\\SKILL.md",
+          "directorySha256": "417f78a690f576cb9b890f53814f99767c16649d9b345c344add86dd8c6b4cbd",
+          "skillFileSha256": "398c6e5e75dd38ab8ebc80484e85022e489474a6e4e1a2f59bcbe23715acaf83"
+        }
+      ]
+    },
+    {
+      "id": "canvas-design",
+      "name": "canvas-design",
+      "disposition": "retain",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\canvas-design",
+          "skillFileRelativePath": "claude-code\\canvas-design\\SKILL.md",
+          "directorySha256": "de4f6f13b202396d166c6300e651044b37f0eae617779b209d826b5908556bb7",
+          "skillFileSha256": "78d32632435e95e53909192c00d49f9c7b69db03a75c93369e0e1a696989d1c5"
+        }
+      ]
+    },
+    {
+      "id": "claude-code",
+      "name": "claude-code",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "autonomous-ai-agents\\claude-code",
+          "skillFileRelativePath": "autonomous-ai-agents\\claude-code\\SKILL.md",
+          "directorySha256": "857d82511b9763119b0f44bdf17dbd4a4aa8897dbb27b0a09fb6ea4e7e88d965",
+          "skillFileSha256": "337d32dadcd3f981141e5e65d4d69c6acb1496e0d7a58bb2a25932a05896ccbc"
+        }
+      ]
+    },
+    {
+      "id": "clip",
+      "name": "clip",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\models\\clip",
+          "skillFileRelativePath": "mlops\\models\\clip\\SKILL.md",
+          "directorySha256": "3c41ec7584f28ea7b452d60a3971911c6c7dc5d8e6b9d1beefbd2aaa327e9497",
+          "skillFileSha256": "8f25de127cf8be0ef387485f57602a5f29c9069397aaae15c934ea837f042fdf"
+        }
+      ]
+    },
+    {
+      "id": "code-review",
+      "name": "code-review",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\code-review",
+          "skillFileRelativePath": "claude-code\\code-review\\SKILL.md",
+          "directorySha256": "eb3f8fb5b6abb0be2f12e91cb12353f4db300bb12ddc86b8e53a396bc90f3289",
+          "skillFileSha256": "db1bdfec04f98da01f2c64f6eda58a2bea929d90c8a3a63c243dc2cd1c578b3a"
+        },
+        {
+          "rootRelativePath": "software-development\\code-review",
+          "skillFileRelativePath": "software-development\\code-review\\SKILL.md",
+          "directorySha256": "f144235f00920a98f85f833d4823c6fb9bfda3e2b2b3ea1db5c9ca524611a179",
+          "skillFileSha256": "e4c1e93f99f241da9571ed3e2120edd702991974228820279446d0d891b618d1"
+        }
+      ]
+    },
+    {
+      "id": "codebase-inspection",
+      "name": "codebase-inspection",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "github\\codebase-inspection",
+          "skillFileRelativePath": "github\\codebase-inspection\\SKILL.md",
+          "directorySha256": "880c7c60f74b2bf13e0fd95255b4f9e8a590a6e7a8aa04cea79aeb3d1a52edb0",
+          "skillFileSha256": "124558be2449215b7393dd56cfb47147a294a1ec5d41cd1e1e2b191e80420e03"
+        }
+      ]
+    },
+    {
+      "id": "codex",
+      "name": "codex",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "autonomous-ai-agents\\codex",
+          "skillFileRelativePath": "autonomous-ai-agents\\codex\\SKILL.md",
+          "directorySha256": "0eea17fbacc60c3d62ce5124fb3afec1af03910ec84078030fd9ce5435b01de4",
+          "skillFileSha256": "cf745cd452e4d562a960270a536045dd826b7ba03c61ad9c486cdaa427b988c6"
+        }
+      ]
+    },
+    {
+      "id": "commit",
+      "name": "commit",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\commit",
+          "skillFileRelativePath": "claude-code\\commit\\SKILL.md",
+          "directorySha256": "727fb71c2576a451f4b0a5cfdd93fc0c2680642738d42b593be94cea08fb31c1",
+          "skillFileSha256": "4455ddd4defe3e6ec1c1ee4eb9c3b3ac7b2113011df069400a9c3b83a4c7b762"
+        }
+      ]
+    },
+    {
+      "id": "commit-push-pr",
+      "name": "commit-push-pr",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\commit-push-pr",
+          "skillFileRelativePath": "claude-code\\commit-push-pr\\SKILL.md",
+          "directorySha256": "f1de2ff3c572eb16375d2ea787c95aefeb90cbf74d944644d9939da301fbd426",
+          "skillFileSha256": "b090799ced4f801cbb7260a613c214a75b7a9c99027df3424c62a8a22aa87f0a"
+        }
+      ]
+    },
+    {
+      "id": "documentation",
+      "name": "documentation",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\documentation",
+          "skillFileRelativePath": "claude-code\\documentation\\SKILL.md",
+          "directorySha256": "35d774ba0a83e4ddf33e262a220598a015935c90b56828ccfa70417670886c45",
+          "skillFileSha256": "cc1224963518257e3ce531e5386b2da194b63c7d41f3be6cc09d99ebda1e1658"
+        }
+      ]
+    },
+    {
+      "id": "docx",
+      "name": "docx",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\docx",
+          "skillFileRelativePath": "claude-code\\docx\\SKILL.md",
+          "directorySha256": "3381a5f1217c9f47aa4345118278da06d9e51e3a13200ae409ee7bca975e5a0d",
+          "skillFileSha256": "7de24965efd509305bde05dd32bfd5c05420c07333631df409e462227d8a4838"
+        }
+      ]
+    },
+    {
+      "id": "dogfood",
+      "name": "dogfood",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "dogfood",
+          "skillFileRelativePath": "dogfood\\SKILL.md",
+          "directorySha256": "efb81405d8d12dcc478e26d9e52f109f6236ec4278280eb91343bd01739a7ba5",
+          "skillFileSha256": "cf106c289709f2c6e6ce0687984881b3c3293f9bbbbaa4679db86a01d80b08ce"
+        }
+      ]
+    },
+    {
+      "id": "dspy",
+      "name": "dspy",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\research\\dspy",
+          "skillFileRelativePath": "mlops\\research\\dspy\\SKILL.md",
+          "directorySha256": "a69641fd8dfe57a4746280deb7d021cb2739b221501e2fa7e4464b6078de03ec",
+          "skillFileSha256": "97e1ac62e569297490e917aa8952aae6bdb2dada1d95fe15e3adcf99dde210fc"
+        }
+      ]
+    },
+    {
+      "id": "evaluating-llms-harness",
+      "name": "evaluating-llms-harness",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\evaluation\\lm-evaluation-harness",
+          "skillFileRelativePath": "mlops\\evaluation\\lm-evaluation-harness\\SKILL.md",
+          "directorySha256": "1c287283b5ac839522781e8648fd3ae0d195de0a7c2f8042e3faac50330d14a6",
+          "skillFileSha256": "41e2dd15ab0d1744355ed1e5763d3f396ba5efbcd3a179c745e85c3e364aefb0"
+        }
+      ]
+    },
+    {
+      "id": "excalidraw",
+      "name": "excalidraw",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "creative\\excalidraw",
+          "skillFileRelativePath": "creative\\excalidraw\\SKILL.md",
+          "directorySha256": "561ec2fbabbf67152492b4c3e5e9b0e9df162fc641f36a12c97d29479c4d2e5a",
+          "skillFileSha256": "900ae0506385c6ef9e103f44230ea2b45caa8c18e5d91afc637e70543af4c83b"
+        }
+      ]
+    },
+    {
+      "id": "find-nearby",
+      "name": "find-nearby",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "leisure\\find-nearby",
+          "skillFileRelativePath": "leisure\\find-nearby\\SKILL.md",
+          "directorySha256": "dcfa9710251e6bf88177e72a1f1cbb4f6b2a9a88ee5fc8c2e05a19e3466a85a8",
+          "skillFileSha256": "1ab5b114ab81e3f62cf147106cb0787314e996f7f3626da84ff0a6bc311c4b49"
+        }
+      ]
+    },
+    {
+      "id": "findmy",
+      "name": "findmy",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "apple\\findmy",
+          "skillFileRelativePath": "apple\\findmy\\SKILL.md",
+          "directorySha256": "1e8d6ecdd8361fb59e58bd01c5df64316ac3d1e963db35c59f97d474fb99040e",
+          "skillFileSha256": "23f02d1dc091f9ce37856607e3b544bda2553f89dafcf2882e4c92c554f40543"
+        }
+      ]
+    },
+    {
+      "id": "fine-tuning-with-trl",
+      "name": "fine-tuning-with-trl",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\training\\trl-fine-tuning",
+          "skillFileRelativePath": "mlops\\training\\trl-fine-tuning\\SKILL.md",
+          "directorySha256": "2afa9d32c40b561c31af44cf2a4a6d582a14232c81acd57c6ddb187c6bc8e02e",
+          "skillFileSha256": "c92fd8c530ebb3410662a97f977fa9d959e397883bf80c4cf3b6b5d8aef98d07"
+        }
+      ]
+    },
+    {
+      "id": "frontend-design",
+      "name": "frontend-design",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\frontend-design",
+          "skillFileRelativePath": "claude-code\\frontend-design\\SKILL.md",
+          "directorySha256": "dadb4a5cb18a68e8f32f94f53a8ea38eb5f7ad281cb0fb6198dcf2467055c797",
+          "skillFileSha256": "c772dc57099997cdebff19e853c32758ae6abb327ed55b2c217dd0ffac4b17da"
+        }
+      ]
+    },
+    {
+      "id": "gguf-quantization",
+      "name": "gguf-quantization",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\inference\\gguf",
+          "skillFileRelativePath": "mlops\\inference\\gguf\\SKILL.md",
+          "directorySha256": "67657263a9aee04d556e844707767acb2c8efc455499c9efe51c8ba13016927f",
+          "skillFileSha256": "8944bce3f696818423bd3433340b730b121a561c757ed749814e90d34680b81f"
+        }
+      ]
+    },
+    {
+      "id": "gif-search",
+      "name": "gif-search",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "media\\gif-search",
+          "skillFileRelativePath": "media\\gif-search\\SKILL.md",
+          "directorySha256": "95b4195ae40e394927e3cb00480c24c3586b4763560ed339069b7a50cf9dea00",
+          "skillFileSha256": "674d565bc7e82b2be5254d2328aac0b713a2646e39c406f030ace1d1618c3f19"
+        }
+      ]
+    },
+    {
+      "id": "github-auth",
+      "name": "github-auth",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "github\\github-auth",
+          "skillFileRelativePath": "github\\github-auth\\SKILL.md",
+          "directorySha256": "70990c215211d6f14fc8ed19e82715a378bf6fec803f2bf343134913dcc72e67",
+          "skillFileSha256": "cd74d126244a4de500d019e2e057ac77b6c51a6a535d0c0b7e1a9e4914d61e04"
+        }
+      ]
+    },
+    {
+      "id": "github-code-review",
+      "name": "github-code-review",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "github\\github-code-review",
+          "skillFileRelativePath": "github\\github-code-review\\SKILL.md",
+          "directorySha256": "5cced1de184b8caa3f06eeaacf6fb1f5fbb9a61fdc827deac8643bc63f8a1d8d",
+          "skillFileSha256": "17da19ee1c91a9d55b95e6bbe9a409b7461bd4cde773d31a8233807a9572e2b9"
+        }
+      ]
+    },
+    {
+      "id": "github-issues",
+      "name": "github-issues",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "github\\github-issues",
+          "skillFileRelativePath": "github\\github-issues\\SKILL.md",
+          "directorySha256": "75e67c25f5705885db308315d12c7fe513d4d9fcc6d5d66beee6dc5b57774e46",
+          "skillFileSha256": "946c969961e2173156b957c50a222534fb6a09807cb74d65c5cb1af786325511"
+        }
+      ]
+    },
+    {
+      "id": "github-pr-workflow",
+      "name": "github-pr-workflow",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "github\\github-pr-workflow",
+          "skillFileRelativePath": "github\\github-pr-workflow\\SKILL.md",
+          "directorySha256": "c9afee47414303aced60ac307d5a6d267ac3943f88331177ba6421dc55116344",
+          "skillFileSha256": "13a1b3716ce7cac4a99e5b7cad715929b8ad661db16f89c01dde8829fe905dda"
+        }
+      ]
+    },
+    {
+      "id": "github-repo-management",
+      "name": "github-repo-management",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "github\\github-repo-management",
+          "skillFileRelativePath": "github\\github-repo-management\\SKILL.md",
+          "directorySha256": "cf5281e7aa1e3c6e945116d07bc4b33a44a2a576c5ef95bceedc34804ca17904",
+          "skillFileSha256": "cc9210c3ce36ca67b58c569cfff16588a3db537792aa02b5192e327d453dd569"
+        }
+      ]
+    },
+    {
+      "id": "godmode",
+      "name": "godmode",
+      "disposition": "retain",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "red-teaming\\godmode",
+          "skillFileRelativePath": "red-teaming\\godmode\\SKILL.md",
+          "directorySha256": "c7b7355f334fe7e0b2c89d7bb1357137f984bfd5b0e7f1882cca1b7669aec6de",
+          "skillFileSha256": "21e03c53b0bf5ae883f175851c18f5c02e756de1605fd4e53c4064eb74785859"
+        }
+      ]
+    },
+    {
+      "id": "google-workspace",
+      "name": "google-workspace",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "productivity\\google-workspace",
+          "skillFileRelativePath": "productivity\\google-workspace\\SKILL.md",
+          "directorySha256": "8bbf1dcd8bd431f8aad8eef915e3d06f998331c6391a470736ccfd03f51d8b44",
+          "skillFileSha256": "a0d52cd9f65508dd58cc7763a697c0aa96a75eae4d08aab7dc5cc52bf0a144e6"
+        }
+      ]
+    },
+    {
+      "id": "grpo-rl-training",
+      "name": "grpo-rl-training",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\training\\grpo-rl-training",
+          "skillFileRelativePath": "mlops\\training\\grpo-rl-training\\SKILL.md",
+          "directorySha256": "e8cffae28384bd4864b988a8e37f7c6f07f25b9926e313b93aad6c7ccef6d331",
+          "skillFileSha256": "f8326221ed9ae156572f5faf55b4b85557035bfc68efc0d2b26e7014b0bdd668"
+        }
+      ]
+    },
+    {
+      "id": "guidance",
+      "name": "guidance",
+      "disposition": "defer",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\inference\\guidance",
+          "skillFileRelativePath": "mlops\\inference\\guidance\\SKILL.md",
+          "directorySha256": "2cec87c91dff0d78be97825047c5604344951097ca30d7c3aa83816b6a31344a",
+          "skillFileSha256": "4cae0f18f6a9e2c93d56679a68fa1528ee773063b126a24d58ad97d9d36a79b7"
+        }
+      ]
+    },
+    {
+      "id": "heartmula",
+      "name": "heartmula",
+      "disposition": "defer",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "media\\heartmula",
+          "skillFileRelativePath": "media\\heartmula\\SKILL.md",
+          "directorySha256": "82ae944bafdac387638a74fc092aef61f164ed71c03f00ed2eaae69b37894ddf",
+          "skillFileSha256": "e0febeb473506b91367ad90ad6a96cf6c6ec64ffa3dba4e8d5817907786b83f3"
+        }
+      ]
+    },
+    {
+      "id": "hermes-agent",
+      "name": "hermes-agent",
+      "disposition": "retain",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "autonomous-ai-agents\\hermes-agent",
+          "skillFileRelativePath": "autonomous-ai-agents\\hermes-agent\\SKILL.md",
+          "directorySha256": "487ef1d930e42045f21d91144a30581bb5168e217ce70ee790282cda74b9a65d",
+          "skillFileSha256": "0a107882989e658c4d1a977b4aac7d21a2c25c312a5109e0b9830f75ef7c104e"
+        }
+      ]
+    },
+    {
+      "id": "himalaya",
+      "name": "himalaya",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "email\\himalaya",
+          "skillFileRelativePath": "email\\himalaya\\SKILL.md",
+          "directorySha256": "49c69182121b39748509657d9b736e573d11cd4cbb6066862aa5ec86fdf0cdc8",
+          "skillFileSha256": "527a484b4253fce402443bc2e64646279f3e5e97dd6785cc313ae83d8186c9b0"
+        }
+      ]
+    },
+    {
+      "id": "huggingface-hub",
+      "name": "huggingface-hub",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\huggingface-hub",
+          "skillFileRelativePath": "mlops\\huggingface-hub\\SKILL.md",
+          "directorySha256": "f1f1125f9241619b2c3e9cc36352f673772f571f270e4f18ccdb6cdde66cc7a9",
+          "skillFileSha256": "c7bd6b76dafb48bc6fc2a921bd2a2d4351524b03030dbed4f17113a63c75578c"
+        }
+      ]
+    },
+    {
+      "id": "imessage",
+      "name": "imessage",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "apple\\imessage",
+          "skillFileRelativePath": "apple\\imessage\\SKILL.md",
+          "directorySha256": "3aa76ae975d553048fd63cc308ee77ea9f2e52960ed68e0ea0113139d615093f",
+          "skillFileSha256": "501a6c3859a4726b1fbcb7c721ed06ff2e37aa8912195e34c4ad475af1eb0fe3"
+        }
+      ]
+    },
+    {
+      "id": "jupyter-live-kernel",
+      "name": "jupyter-live-kernel",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "data-science\\jupyter-live-kernel",
+          "skillFileRelativePath": "data-science\\jupyter-live-kernel\\SKILL.md",
+          "directorySha256": "43e67122e61c5dc9dac06c0d77edd19eafb5a0a47abe145cea2c8e14d20afad1",
+          "skillFileSha256": "0012c00dafca79564cafa9f204070a3ae74e5c6a2bbcf0a73c6f43a52af134d1"
+        }
+      ]
+    },
+    {
+      "id": "linear",
+      "name": "linear",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "productivity\\linear",
+          "skillFileRelativePath": "productivity\\linear\\SKILL.md",
+          "directorySha256": "f0e297a0f880e86b8e7f829f1989b543e36d00e0d3f6249debd7c066ed2dd014",
+          "skillFileSha256": "3a660b20e52f850ee6b23885b75d10eb813ebf8871082569752eb2cbf1ed1cd4"
+        }
+      ]
+    },
+    {
+      "id": "llama-cpp",
+      "name": "llama-cpp",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\inference\\llama-cpp",
+          "skillFileRelativePath": "mlops\\inference\\llama-cpp\\SKILL.md",
+          "directorySha256": "51585f3a62b45df4ced61c81b0c98927ff23efb12e0fc2c54c1712148bee4587",
+          "skillFileSha256": "43ef9b1b96c921ebd1e684a50d26b277cd14caf20f900f6a347c67f81692f8e5"
+        }
+      ]
+    },
+    {
+      "id": "mcp-builder",
+      "name": "mcp-builder",
+      "disposition": "retain",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\mcp-builder",
+          "skillFileRelativePath": "claude-code\\mcp-builder\\SKILL.md",
+          "directorySha256": "1e66120a34d3c373c0fce07c0de064abfa6c78ba8b286f5ded022b1563076e61",
+          "skillFileSha256": "4f14b9fefdbdb07cf2b6d9d0538910b017a6ebe3de5d657ea803d8e6eefaf1be"
+        }
+      ]
+    },
+    {
+      "id": "mcporter",
+      "name": "mcporter",
+      "disposition": "defer",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mcp\\mcporter",
+          "skillFileRelativePath": "mcp\\mcporter\\SKILL.md",
+          "directorySha256": "0935552e46e1b70ce14f18839627e962034a07d3c9c80fdbaa86be3e0b411f1b",
+          "skillFileSha256": "4331b56bea8086337a60723726eda7c8f11e0c3e61648f31499c58eb7ed5907e"
+        }
+      ]
+    },
+    {
+      "id": "minecraft-modpack-server",
+      "name": "minecraft-modpack-server",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "gaming\\minecraft-modpack-server",
+          "skillFileRelativePath": "gaming\\minecraft-modpack-server\\SKILL.md",
+          "directorySha256": "1f8ceb66e7ba2f6eec1e3c704d04543de21c41b8d75432c30a00ce284db28640",
+          "skillFileSha256": "2308fa7d26d83660b31a11ffa11ab05a4a9e0ca752ed845ddf83a4d6f09c273b"
+        }
+      ]
+    },
+    {
+      "id": "modal-serverless-gpu",
+      "name": "modal-serverless-gpu",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\cloud\\modal",
+          "skillFileRelativePath": "mlops\\cloud\\modal\\SKILL.md",
+          "directorySha256": "0b81f3fc1475f76c9773c84cd25376297a0c4b5af21c1e631c618c437339e564",
+          "skillFileSha256": "1c165503db4b8caa37930dea9f60fd6c5f5a4aca2c4f3eba2861536686508996"
+        }
+      ]
+    },
+    {
+      "id": "nano-pdf",
+      "name": "nano-pdf",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "productivity\\nano-pdf",
+          "skillFileRelativePath": "productivity\\nano-pdf\\SKILL.md",
+          "directorySha256": "56a95e1d644176ff29a7c1d685551925f2443d904dd038700b4553613f576d11",
+          "skillFileSha256": "a05f8c9ba164d7da56ceb94b21e0fe3d3b0b79b82b50ebf95198b594ee9dcba0"
+        }
+      ]
+    },
+    {
+      "id": "native-mcp",
+      "name": "native-mcp",
+      "disposition": "retain",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mcp\\native-mcp",
+          "skillFileRelativePath": "mcp\\native-mcp\\SKILL.md",
+          "directorySha256": "4f64921295340512c885a716e7b1ba2df41b839b2cfb94bcfdce71705df070d7",
+          "skillFileSha256": "b496eb100f77baf0a5b5e8e65bf905df39bca8dbf722f9a7cf8d89b59995d602"
+        }
+      ]
+    },
+    {
+      "id": "notion",
+      "name": "notion",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "productivity\\notion",
+          "skillFileRelativePath": "productivity\\notion\\SKILL.md",
+          "directorySha256": "a9b9fd90e4351abbf36073c4fcc0e31e658511da94a08e5a466c5507867c3f5c",
+          "skillFileSha256": "442c4f2f4631dffe3e38b5bac02fa3e53872fc62a887892a57a1c98b6b03a0cb"
+        }
+      ]
+    },
+    {
+      "id": "obliteratus",
+      "name": "obliteratus",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\inference\\obliteratus",
+          "skillFileRelativePath": "mlops\\inference\\obliteratus\\SKILL.md",
+          "directorySha256": "38cae69062f84b2f10678f10f4b91662320def255abf41f31185793741dfc94e",
+          "skillFileSha256": "a16202ceadb11d00cb9330ce727d3e70c6c5d8b9fb9deb172d1b7396a7fc5b11"
+        }
+      ]
+    },
+    {
+      "id": "obsidian",
+      "name": "obsidian",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "note-taking\\obsidian",
+          "skillFileRelativePath": "note-taking\\obsidian\\SKILL.md",
+          "directorySha256": "d81f41d69490cdde340056f269c5a59a7ab488dd1ddbb07f4f7c79031e620f78",
+          "skillFileSha256": "5e409d0a69c115e9b81947d434b2fd639f695ce51b1897228f941fc89acfe262"
+        }
+      ]
+    },
+    {
+      "id": "ocr-and-documents",
+      "name": "ocr-and-documents",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "productivity\\ocr-and-documents",
+          "skillFileRelativePath": "productivity\\ocr-and-documents\\SKILL.md",
+          "directorySha256": "03a7e541ace0d1a3a8474a3aaebf4116975202c07eed2a76a65f8d62ea7298a8",
+          "skillFileSha256": "f945b5fe52821df31b4fcb9f5cecfe46de541e073179c8a346db5661f59e354c"
+        }
+      ]
+    },
+    {
+      "id": "opencode",
+      "name": "opencode",
+      "disposition": "defer",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "autonomous-ai-agents\\opencode",
+          "skillFileRelativePath": "autonomous-ai-agents\\opencode\\SKILL.md",
+          "directorySha256": "d4a3fd98eb66cec925b0f311216b1c5afa10600cdbc30967747384c6ecb51536",
+          "skillFileSha256": "c492e0581a0cdd510b56aa66176d1d18914718f2a6785be87235158101285e5e"
+        }
+      ]
+    },
+    {
+      "id": "openhue",
+      "name": "openhue",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "smart-home\\openhue",
+          "skillFileRelativePath": "smart-home\\openhue\\SKILL.md",
+          "directorySha256": "ebf38ec513f13b6228209f3c1a42233f34c97c7e342c6b2d943426b7553b10a5",
+          "skillFileSha256": "87aeab737ed107920495943e2eaf340e54840e77c1ddaa0fb069023dece46dc5"
+        }
+      ]
+    },
+    {
+      "id": "outlines",
+      "name": "outlines",
+      "disposition": "retain",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\inference\\outlines",
+          "skillFileRelativePath": "mlops\\inference\\outlines\\SKILL.md",
+          "directorySha256": "b81bc590005e976c806bc9b906422aaaf81373add43bcd6077e62b2dd38d806d",
+          "skillFileSha256": "bf0ca8aa5c8a4cfea3c1f2b0bf402e8acd821e22816a3c1db0298a454a7c6085"
+        }
+      ]
+    },
+    {
+      "id": "pdf",
+      "name": "pdf",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\pdf",
+          "skillFileRelativePath": "claude-code\\pdf\\SKILL.md",
+          "directorySha256": "4bd22978a603c69a7445acc258872dda4a05da6cc49024f5fbf191440018e79d",
+          "skillFileSha256": "d006667287de09a0422fd11f4a5340c9d791f1dad3800ab5003b0f48b02e83c1"
+        }
+      ]
+    },
+    {
+      "id": "peft-fine-tuning",
+      "name": "peft-fine-tuning",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\training\\peft",
+          "skillFileRelativePath": "mlops\\training\\peft\\SKILL.md",
+          "directorySha256": "54e88a82811fa83cfa8187ad4ba4993d470bb435d67da8c0897f42d3f26a4e13",
+          "skillFileSha256": "23f8edb118a35034cc06ad3fcc4e34d35264c285c6437c4601cfeaa3734ab4a6"
+        }
+      ]
+    },
+    {
+      "id": "plan",
+      "name": "plan",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\plan",
+          "skillFileRelativePath": "claude-code\\plan\\SKILL.md",
+          "directorySha256": "40934c62044c3dc2b3bb9737bb8aae80a802c65867f715d97b1c9171397be11b",
+          "skillFileSha256": "7228cb40d1b904b8b4f18221cdf0dd1d91f5da1cbcd148a65e7fc8fadca88c9c"
+        },
+        {
+          "rootRelativePath": "software-development\\plan",
+          "skillFileRelativePath": "software-development\\plan\\SKILL.md",
+          "directorySha256": "5a039a8620c02c4c93e35481207d8be0cf3e98c2630ab8a8250d1b9c76559ba3",
+          "skillFileSha256": "733ace95093aa1a07e9f5eb47194cb56eac08238a071561a4a50c28ccdb4812a"
+        }
+      ]
+    },
+    {
+      "id": "pokemon-player",
+      "name": "pokemon-player",
+      "disposition": "defer",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "gaming\\pokemon-player",
+          "skillFileRelativePath": "gaming\\pokemon-player\\SKILL.md",
+          "directorySha256": "625d5cf11deb8e7ffceb201d1ce0cb1c0d280be3e1e66cff8f6aa17059f1cd40",
+          "skillFileSha256": "9632b779e818b9ab2a72789d00d2e3f62b5c9077fb3cf8f228ccd063d97aa823"
+        }
+      ]
+    },
+    {
+      "id": "polymarket",
+      "name": "polymarket",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "research\\polymarket",
+          "skillFileRelativePath": "research\\polymarket\\SKILL.md",
+          "directorySha256": "4579e20720e5a8307fee7e881111f4ddc23d5eed23f9daa3db2641cd3ad16262",
+          "skillFileSha256": "c91cff686a45c30819b5106756c48f34bc665854c50bc17a3ef7f0a338a53ad9"
+        }
+      ]
+    },
+    {
+      "id": "powerpoint",
+      "name": "powerpoint",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "productivity\\powerpoint",
+          "skillFileRelativePath": "productivity\\powerpoint\\SKILL.md",
+          "directorySha256": "5f632ff62d0883110c395ab81da34ea64b74d56f4c872e86968cb82b1122e514",
+          "skillFileSha256": "c3ae1380d151a130bd6707793f895b110a7c991fd443d05dec0fd8b94297b9a4"
+        }
+      ]
+    },
+    {
+      "id": "pptx",
+      "name": "pptx",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\pptx",
+          "skillFileRelativePath": "claude-code\\pptx\\SKILL.md",
+          "directorySha256": "3b9c9b7d6376eadb1b4a1188db39254d3f008eb7d816ff7d9549779c255dfdee",
+          "skillFileSha256": "4c19459d1a3e5388ac33d718ca8f1491cd7b0194b5bb86639b4e0a31911240ed"
+        }
+      ]
+    },
+    {
+      "id": "pytorch-fsdp",
+      "name": "pytorch-fsdp",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\training\\pytorch-fsdp",
+          "skillFileRelativePath": "mlops\\training\\pytorch-fsdp\\SKILL.md",
+          "directorySha256": "59ab88301a773089b22b8751a4116b6a9dd4ffb41cda79e84c2133d1c7bd31dd",
+          "skillFileSha256": "c7491aa05c3898484dc1c7cf294ac3e736896a394e7e553d6c45b3fa63f25f84"
+        }
+      ]
+    },
+    {
+      "id": "refactor",
+      "name": "refactor",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\refactor",
+          "skillFileRelativePath": "claude-code\\refactor\\SKILL.md",
+          "directorySha256": "9c42a4b85665801caf5975fc948cfd805ed2ab5aea5e5c7687bad69bb4a0ff4b",
+          "skillFileSha256": "30ec7ff8989b44a932aa1a8eedf241b909f681f7ed6ef0569abe9e303756252f"
+        }
+      ]
+    },
+    {
+      "id": "requesting-code-review",
+      "name": "requesting-code-review",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "software-development\\requesting-code-review",
+          "skillFileRelativePath": "software-development\\requesting-code-review\\SKILL.md",
+          "directorySha256": "e8bca94b845c75a10a9d51c877983b9a09725679d717da961856db6c1ee96bde",
+          "skillFileSha256": "e5bb9aa01a890a655c360c76be7099c9a28252a412e68882ab92fc9db183d2cc"
+        }
+      ]
+    },
+    {
+      "id": "research-paper-writing",
+      "name": "research-paper-writing",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "research\\research-paper-writing",
+          "skillFileRelativePath": "research\\research-paper-writing\\SKILL.md",
+          "directorySha256": "10f93e1b9ccaf2f9b9f2aa6d2fc4335060731a685c382ac4b69aaeed100b34df",
+          "skillFileSha256": "f46be1dedd14020be60e9613d30840a700aeaca67a5902a09463986981b8c5fa"
+        }
+      ]
+    },
+    {
+      "id": "security-audit",
+      "name": "security-audit",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\security-audit",
+          "skillFileRelativePath": "claude-code\\security-audit\\SKILL.md",
+          "directorySha256": "d276eaa029c2a543797ceb3c2311fc745122ad33afd705f080631768773b46aa",
+          "skillFileSha256": "5c12e6e2b74224b896bc0beb32d382fc9b9db2e516bf8a22ebcabc4e997ef6eb"
+        }
+      ]
+    },
+    {
+      "id": "segment-anything-model",
+      "name": "segment-anything-model",
+      "disposition": "defer",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\models\\segment-anything",
+          "skillFileRelativePath": "mlops\\models\\segment-anything\\SKILL.md",
+          "directorySha256": "0ee2fd1659075ec6147eaec3d01dd8fef1ba68e4129c4be33efc1fc71ac3efca",
+          "skillFileSha256": "3c807d51dfbfab0a3c002722e31c4c0b19021e6e60771621f27c77e66bc00345"
+        }
+      ]
+    },
+    {
+      "id": "serving-llms-vllm",
+      "name": "serving-llms-vllm",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\inference\\vllm",
+          "skillFileRelativePath": "mlops\\inference\\vllm\\SKILL.md",
+          "directorySha256": "2b7ecf6d28e6304f5be3629bdb9dc656b93ee19e00d50a8cc98f3df68cde59b5",
+          "skillFileSha256": "9e7b5bc87b06b0743b30c89e4a054f861f1944f1e27b537ce7264058ddecbcb1"
+        }
+      ]
+    },
+    {
+      "id": "simplify",
+      "name": "simplify",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\simplify",
+          "skillFileRelativePath": "claude-code\\simplify\\SKILL.md",
+          "directorySha256": "29c8017450c7a4ffbdbb9a376e4e66da0516c25c352f916a0498a6ae123ba021",
+          "skillFileSha256": "952e9105467de84a316ee9f9e6440f94bd11371ddc2a67fe63130a9fe3cd19b7"
+        }
+      ]
+    },
+    {
+      "id": "skill-creator",
+      "name": "skill-creator",
+      "disposition": "retain",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\skill-creator",
+          "skillFileRelativePath": "claude-code\\skill-creator\\SKILL.md",
+          "directorySha256": "b75d444454861941a90932b334e9467d1526c2180bc3399be2b9c60f1357cb35",
+          "skillFileSha256": "a6114bcb2873c5704c5bda60c1a82949254cdaa78c3cce7b142dc45cb03caf1b"
+        }
+      ]
+    },
+    {
+      "id": "songsee",
+      "name": "songsee",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "media\\songsee",
+          "skillFileRelativePath": "media\\songsee\\SKILL.md",
+          "directorySha256": "4d3f40a59344fa79d9f46fefabf9179d499bad46765bdaa40ac479b9cf268a49",
+          "skillFileSha256": "1dfc7ec566179f6d15581d3f4dffcf70ba8ade16a4c5e1515415bdd27e721569"
+        }
+      ]
+    },
+    {
+      "id": "songwriting-and-ai-music",
+      "name": "songwriting-and-ai-music",
+      "disposition": "defer",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "creative\\songwriting-and-ai-music",
+          "skillFileRelativePath": "creative\\songwriting-and-ai-music\\SKILL.md",
+          "directorySha256": "87522d706d2543d37a7fd23efb40e9bb1d7821c3d5ce038270b865fbd04bfe04",
+          "skillFileSha256": "c9639529dabfe7d212e2bb60391cf33bdf9111906e69db3f175a88a68b4b9450"
+        }
+      ]
+    },
+    {
+      "id": "stable-diffusion-image-generation",
+      "name": "stable-diffusion-image-generation",
+      "disposition": "retain",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\models\\stable-diffusion",
+          "skillFileRelativePath": "mlops\\models\\stable-diffusion\\SKILL.md",
+          "directorySha256": "6bf5b7f6d3810504e2618be0aa7aa48fead903af6374fbc3ff6f08e4e759c38d",
+          "skillFileSha256": "ab4a7ea5779541e2554ef76570459f1a069607cbecacdcccadc75c076b1a7606"
+        }
+      ]
+    },
+    {
+      "id": "subagent-driven-development",
+      "name": "subagent-driven-development",
+      "disposition": "retain",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "software-development\\subagent-driven-development",
+          "skillFileRelativePath": "software-development\\subagent-driven-development\\SKILL.md",
+          "directorySha256": "ce76b6024e3d226584264f439ed6be40b0c79b97887069819087ac46e612eb8a",
+          "skillFileSha256": "c5029ed1ff3241a6c098b9e5481e04df013be0ffd9c8048f7c5ca4cccf57360a"
+        }
+      ]
+    },
+    {
+      "id": "systematic-debugging",
+      "name": "systematic-debugging",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\systematic-debugging",
+          "skillFileRelativePath": "claude-code\\systematic-debugging\\SKILL.md",
+          "directorySha256": "6194b0eace930104f2f33b6bbf2636f3654f5ab4d784cbd0a6b1a0b4b9cf9aa7",
+          "skillFileSha256": "3a2fc2264d0582cb9d5dd8faf018774abb6884ceac9e3ea3e0dc5021bec042a5"
+        },
+        {
+          "rootRelativePath": "software-development\\systematic-debugging",
+          "skillFileRelativePath": "software-development\\systematic-debugging\\SKILL.md",
+          "directorySha256": "f3178aa1913eb7bc3e333df20181c9668d8a131ff36227c40ca65664121d84f4",
+          "skillFileSha256": "6e407367f02896f83a6281f9f06832f82d0b3f44c3d6804c1aa01851dcf3fc7f"
+        }
+      ]
+    },
+    {
+      "id": "test-driven-development",
+      "name": "test-driven-development",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\test-driven-development",
+          "skillFileRelativePath": "claude-code\\test-driven-development\\SKILL.md",
+          "directorySha256": "1312b3689f9b892d44dcc56dcdd077b4e8ecae97fdc146566513549274128309",
+          "skillFileSha256": "be71d9865124524a424d2b7e5206847913275bf2abb9ce51a5de24b86f99d601"
+        },
+        {
+          "rootRelativePath": "software-development\\test-driven-development",
+          "skillFileRelativePath": "software-development\\test-driven-development\\SKILL.md",
+          "directorySha256": "96ac0ee977c8879eaac94d776b3e17d8469257fd9013a6800c70516fe5793d80",
+          "skillFileSha256": "9778a651bf9ece1a7a721041990a6d0a55c9cdc9897da40ea5a59480ef18a503"
+        }
+      ]
+    },
+    {
+      "id": "unsloth",
+      "name": "unsloth",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\training\\unsloth",
+          "skillFileRelativePath": "mlops\\training\\unsloth\\SKILL.md",
+          "directorySha256": "798ebb5eda3fad3116925c955fc07136593a1bd67bf93943369a65cdcad654b7",
+          "skillFileSha256": "0a40dedee567c1771651c33ee89997cd07d2a8e275d61d5f72853dcb27feb3d0"
+        }
+      ]
+    },
+    {
+      "id": "webapp-testing",
+      "name": "webapp-testing",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\webapp-testing",
+          "skillFileRelativePath": "claude-code\\webapp-testing\\SKILL.md",
+          "directorySha256": "ecbfc9b5884e165224d257c25c976e19bed6cc33963c85be62bfe5841b60680c",
+          "skillFileSha256": "ac23fe084b63337438a048972b2b7a44a0d72c52bd5bfd825b9739daec571550"
+        }
+      ]
+    },
+    {
+      "id": "webhook-subscriptions",
+      "name": "webhook-subscriptions",
+      "disposition": "defer",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "devops\\webhook-subscriptions",
+          "skillFileRelativePath": "devops\\webhook-subscriptions\\SKILL.md",
+          "directorySha256": "efbe8f839ca704629803c9fb63d0e44e1d14ab7ad8e37bafcb1de712fb4fe27c",
+          "skillFileSha256": "b8aa88bd99ff31c77280d7388e3b282d03660d0809af7b71e7ec561b9405cac2"
+        }
+      ]
+    },
+    {
+      "id": "weights-and-biases",
+      "name": "weights-and-biases",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\evaluation\\weights-and-biases",
+          "skillFileRelativePath": "mlops\\evaluation\\weights-and-biases\\SKILL.md",
+          "directorySha256": "736d8f13a0ef549fea852550a2f918f077e62bee00c7beb3c7345283c435c3a1",
+          "skillFileSha256": "dafe030deff56c6aacae3adf5c61b780ef7a97757c550df7052dc8baf7aaa9f6"
+        }
+      ]
+    },
+    {
+      "id": "whisper",
+      "name": "whisper",
+      "disposition": "retain",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "mlops\\models\\whisper",
+          "skillFileRelativePath": "mlops\\models\\whisper\\SKILL.md",
+          "directorySha256": "e441720a35d64b2c3d296678104d34f59b4e43644d64eb325e2d4492dd2baec9",
+          "skillFileSha256": "8ca1b97fa814f1e1ec5fed6564b5979e59d145870294eff4f93326f382f05777"
+        }
+      ]
+    },
+    {
+      "id": "writing-plans",
+      "name": "writing-plans",
+      "disposition": "retain",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "software-development\\writing-plans",
+          "skillFileRelativePath": "software-development\\writing-plans\\SKILL.md",
+          "directorySha256": "ba0b8211f7c318447025e69117fb238ef5e5e237917fa6b98e1de1fbfba23b2e",
+          "skillFileSha256": "9ba58baf2a6b057120120584a70181ef6713e06af5f23097e5fa8acc254b34e1"
+        }
+      ]
+    },
+    {
+      "id": "xitter",
+      "name": "xitter",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "social-media\\xitter",
+          "skillFileRelativePath": "social-media\\xitter\\SKILL.md",
+          "directorySha256": "31f30b27135da933c7c511804be7271edd12bea493dbcdebd3cb50f64b505506",
+          "skillFileSha256": "d891eddce926839e3be7cb9b53fce1e8d076ec9b71dfba48090717c17aa7ef5b"
+        }
+      ]
+    },
+    {
+      "id": "xlsx",
+      "name": "xlsx",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "claude-code\\xlsx",
+          "skillFileRelativePath": "claude-code\\xlsx\\SKILL.md",
+          "directorySha256": "e0a2dfe3f381647df52fbe87e43c034e60ec86b3fc0e69520c0b3fb59f1b217a",
+          "skillFileSha256": "364f57b2e5a82c2013aa09fd85f3053628cba58d16e10ec24fc61654b8d8ff00"
+        }
+      ]
+    },
+    {
+      "id": "youtube-content",
+      "name": "youtube-content",
+      "disposition": "delete",
+      "sourceRoots": [
+        {
+          "rootRelativePath": "media\\youtube-content",
+          "skillFileRelativePath": "media\\youtube-content\\SKILL.md",
+          "directorySha256": "2e028c646e77c57c3b19f5ede74032155b6dfa2007b36c968b91fb09281e2bd4",
+          "skillFileSha256": "e84ab1f04440c8ec3a995b15a456193fdf31301c7d63513a7a6a8a18eed0ecc6"
+        }
+      ]
+    }
+  ]
+}
