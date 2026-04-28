@@ -311,14 +311,6 @@ This file is a living document about the human I work with. It helps me provide 
         var userLimit = HermesEnvironment.ReadConfigSetting("memory", "user_char_limit");
         if (double.TryParse(userLimit, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ul))
             UserCharLimitBox.Value = ul;
-
-        CompressionEnabledToggle.IsOn = string.Equals(
-            HermesEnvironment.ReadConfigSetting("compression", "enabled"), "true", StringComparison.OrdinalIgnoreCase);
-
-        var threshold = HermesEnvironment.ReadConfigSetting("compression", "threshold");
-        if (double.TryParse(threshold, NumberStyles.Float, CultureInfo.InvariantCulture, out var ct))
-            CompressionThresholdSlider.Value = ct;
-        CompressionThresholdLabel.Text = CompressionThresholdSlider.Value.ToString("F2", CultureInfo.InvariantCulture);
     }
 
     // ── Display ──
@@ -414,12 +406,6 @@ This file is a living document about the human I work with. It helps me provide 
     {
         if (TemperatureValueLabel is not null)
             TemperatureValueLabel.Text = e.NewValue.ToString("F1", CultureInfo.InvariantCulture);
-    }
-
-    private void CompressionThresholdSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-    {
-        if (CompressionThresholdLabel is not null)
-            CompressionThresholdLabel.Text = e.NewValue.ToString("F2", CultureInfo.InvariantCulture);
     }
 
     private void AuthModeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -608,13 +594,6 @@ This file is a living document about the human I work with. It helps me provide 
                 ["user_char_limit"] = ((int)UserCharLimitBox.Value).ToString(CultureInfo.InvariantCulture),
             };
             await HermesEnvironment.SaveConfigSectionAsync("memory", memSettings);
-
-            var compSettings = new Dictionary<string, string>
-            {
-                ["enabled"] = CompressionEnabledToggle.IsOn.ToString().ToLowerInvariant(),
-                ["threshold"] = CompressionThresholdSlider.Value.ToString("F2", CultureInfo.InvariantCulture),
-            };
-            await HermesEnvironment.SaveConfigSectionAsync("compression", compSettings);
 
             MemorySaveStatus.Text = ResourceLoader.GetString("SettingsSaveSuccessRestart");
             MemorySaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOnlineBrush"];

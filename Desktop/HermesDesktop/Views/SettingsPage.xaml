@@ -612,8 +612,6 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock x:Uid="SettingsLblMemoryEnabled" VerticalAlignment="Center"
@@ -639,21 +637,6 @@
                                        SpinButtonPlacementMode="Inline"
                                        Background="{StaticResource AppInsetBrush}"
                                        BorderBrush="{StaticResource AppStrokeBrush}"/>
-
-                            <TextBlock Grid.Row="4" x:Uid="SettingsLblCompressionEnabled" VerticalAlignment="Center"
-                                       Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="13"/>
-                            <ToggleSwitch x:Name="CompressionEnabledToggle" Grid.Row="4" Grid.Column="1"/>
-
-                            <TextBlock Grid.Row="5" x:Uid="SettingsLblCompressionThreshold" VerticalAlignment="Center"
-                                       Style="{StaticResource LabelTextStyle}"/>
-                            <StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                                <Slider x:Name="CompressionThresholdSlider" Minimum="0" Maximum="1"
-                                        StepFrequency="0.05" Value="0.5" Width="250"
-                                        ValueChanged="CompressionThresholdSlider_ValueChanged"/>
-                                <TextBlock x:Name="CompressionThresholdLabel" FontSize="12"
-                                           VerticalAlignment="Center"
-                                           Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                            </StackPanel>
                         </Grid>
 
                         <StackPanel Orientation="Horizontal" Spacing="12">

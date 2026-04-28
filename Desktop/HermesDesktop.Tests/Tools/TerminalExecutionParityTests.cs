@@ -109,6 +109,27 @@ public class TerminalExecutionParityTests
     }
 
     [TestMethod]
+    public async Task LocalBackend_WindowsSingleQuotedPosixTimezoneNameFormat_IsTranslated()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Inconclusive("Windows-specific shell selection test.");
+
+        await using var backend = new LocalBackend(new ExecutionConfig { DefaultTimeoutMs = 5000 });
+
+        var result = await backend.ExecuteAsync(
+            "date '+%Y-%m-%d %A %H:%M:%S %Z'",
+            workingDirectory: "",
+            timeoutMs: 5000,
+            background: false,
+            ct: CancellationToken.None);
+
+        Assert.AreEqual(0, result.ExitCode, result.Output);
+        StringAssert.Contains(result.Output, DateTime.Now.ToString("yyyy-MM-dd"));
+        Assert.IsFalse(result.Output.Contains("%Z", StringComparison.Ordinal), result.Output);
+        Assert.IsFalse(result.Output.Contains("timed out", StringComparison.OrdinalIgnoreCase), result.Output);
+    }
+
+    [TestMethod]
     public async Task TerminalTool_TimeoutKillsProcessAndReturnsFailure()
     {
         var command = OperatingSystem.IsWindows()

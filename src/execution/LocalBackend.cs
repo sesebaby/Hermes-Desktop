@@ -140,19 +140,59 @@ public sealed partial class LocalBackend : IExecutionBackend
         if (string.Equals(trimmed, "date", StringComparison.OrdinalIgnoreCase))
             return "Get-Date -Format \"yyyy-MM-dd HH:mm:ss K\"";
 
-        var exactWeekdayDate = PosixWeekdayDateRegex().Match(trimmed);
-        if (exactWeekdayDate.Success)
+        var posixDateFormat = TryExtractPosixDateFormat(trimmed);
+        if (string.Equals(posixDateFormat, "%Y-%m-%d %A %w", StringComparison.Ordinal))
             return "$d=Get-Date; \"{0:yyyy-MM-dd dddd} {1}\" -f $d, [int]$d.DayOfWeek";
 
-        var dateFormat = PosixDateFormatRegex().Match(trimmed);
-        if (dateFormat.Success)
+        if (!string.IsNullOrWhiteSpace(posixDateFormat))
         {
-            var powerShellCommand = ConvertSimplePosixDateFormat(dateFormat.Groups["format"].Value)
+            var powerShellCommand = ConvertSimplePosixDateFormat(posixDateFormat)
                 ?? "Get-Date -Format o";
             return powerShellCommand;
         }
 
         return command;
+    }
+
+    private static string? TryExtractPosixDateFormat(string command)
+    {
+        if (!command.StartsWith("date", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        var tail = command[4..].TrimStart();
+        if (tail.Length == 0)
+            return null;
+
+        if (tail[0] is '"' or '\'')
+        {
+            var quote = tail[0];
+            if (tail.Length < 3 || tail[^1] != quote)
+                return null;
+
+            var inner = tail[1..^1];
+            return inner.StartsWith("+", StringComparison.Ordinal) && inner.Length > 1
+                ? inner[1..]
+                : null;
+        }
+
+        if (!tail.StartsWith("+", StringComparison.Ordinal))
+            return null;
+
+        tail = tail[1..].TrimStart();
+        if (tail.Length == 0)
+            return null;
+
+        if (tail[0] is '"' or '\'')
+        {
+            var quote = tail[0];
+            if (tail.Length < 2 || tail[^1] != quote)
+                return null;
+
+            var inner = tail[1..^1];
+            return inner.Length == 0 ? null : inner;
+        }
+
+        return tail;
     }
 
     private static string? ConvertSimplePosixDateFormat(string format)
@@ -302,12 +342,6 @@ public sealed partial class LocalBackend : IExecutionBackend
 
     [GeneratedRegex(@"\x1B\[[0-9;]*[a-zA-Z]|\x1B\].*?\x07|\x1B[()][AB012]")]
     private static partial Regex AnsiRegex();
-
-    [GeneratedRegex(@"^date\s+\+[""']?(?<format>%Y-%m-%d\s+%A\s+%w)[""']?\s*$", RegexOptions.IgnoreCase)]
-    private static partial Regex PosixWeekdayDateRegex();
-
-    [GeneratedRegex(@"^date\s+\+[""']?(?<format>[^""']+)[""']?\s*$", RegexOptions.IgnoreCase)]
-    private static partial Regex PosixDateFormatRegex();
 
     [GeneratedRegex(@"^(Get|Set|New|Remove|Test|Select|Where|ForEach|Measure|ConvertTo|ConvertFrom|Invoke|Start|Stop|Restart|Write|Read|Copy|Move|Clear|Join|Split|Resolve)-[A-Za-z]", RegexOptions.IgnoreCase)]
     private static partial Regex PowerShellVerbRegex();
