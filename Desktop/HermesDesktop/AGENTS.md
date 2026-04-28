@@ -29,7 +29,7 @@ This is a **WinUI 3** desktop application built on the **Windows App SDK**. It u
 
 When choosing scope, **prefer reliability and trust over feature count.**
 
-- **Gateway (messengers):** Treat the **Python Hermes gateway as an out-of-process sidecar**. The desktop app is the **control plane**: configure tokens and **start/stop** the gateway — do **not** embed a long-running bot host in the GUI process (wrong form factor when the machine sleeps).
+- **Gateway (messengers):** The gateway surface has been retired in this runtime. Keep the desktop shell focused on local agent life, memory, Dreamer, skills, and task coordination.
 - **Differentiator:** The product’s value is **native Windows UX** — soul browser, skills library, visual settings, activity log, session manager. Upstream open-source Hermes does not ship this shell; protect and improve it before chasing parity on marginal tools.
 - **Hardening first:** Invest in behaviors that prevent **silent data loss** and **runaway cost** — e.g. compression cooldown, provider fallback, atomic writes, deterministic IDs. **A smaller set of dependable tools beats a large set of flaky ones.**
 
@@ -87,7 +87,7 @@ Every time you work on this codebase, follow this checklist:
 **Step 1 -- Web Search (ALWAYS try first):**
 1. Open and read [windows-apis.instructions.md](.github/instructions/windows-apis.instructions.md) -- it contains the API namespace catalog and lookup guidance.
 2. Translate the unknown type/namespace into search keywords (e.g., `ImageDescription` -> "WinAppSDK ImageDescription API").
-3. Use `web_search` or `web_fetch` to search the [WinAppSDK API Reference](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/) and the [Platform SDK API Reference](https://learn.microsoft.com/en-us/uwp/api/) for the correct namespace, class name, and method signatures.
+3. Use the official Windows App SDK and Platform SDK references to verify the correct namespace, class name, and method signatures.
 4. Check the [release notes](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/stable-channel) to verify the API is available in the project's SDK version (read from `.csproj`).
 
 **Step 2 -- Sample Repos:**

@@ -78,14 +78,6 @@
     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
   </PropertyGroup>
 
-  <!-- Playwright copies Vite-hashed assets under .playwright/; MRT PRI treats dotted names as qualifiers (PRI249). -->
-  <Target Name="HermesExcludePlaywrightFromPriLayout" AfterTargets="GetPriOutputs" BeforeTargets="_GenerateProjectPriConfigurationFiles">
-    <ItemGroup>
-      <_AppxLayoutAssetPackageFiles Include="@(PriOutputs)"
-        Condition="$([MSBuild]::ValueOrDefault('%(PriOutputs.TargetPath)', '').Contains('.playwright')) or $([MSBuild]::ValueOrDefault('%(PriOutputs.Identity)', '').Contains('.playwright')) or '%(PriOutputs.TargetPath)' == 'playwright.ps1'" />
-    </ItemGroup>
-  </Target>
-
   <PropertyGroup>
     <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
     <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>

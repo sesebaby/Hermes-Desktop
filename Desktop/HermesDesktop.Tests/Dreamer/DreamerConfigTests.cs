@@ -49,7 +49,6 @@ public class DreamerConfigTests
         Assert.AreEqual("full", c.Autonomy);
         Assert.IsTrue(c.InputTranscripts);
         Assert.IsTrue(c.InputInbox);
-        Assert.AreEqual("", c.DiscordChannelId);
         Assert.AreEqual(0, c.RssFeeds.Count);
     }
 
@@ -85,7 +84,6 @@ public class DreamerConfigTests
               build_model: gpt-4o-mini
               walk_interval_minutes: 15
               digest_times: 08:00,20:00
-              discord_channel_id: 1234567890
               trigger_threshold: 5.5
               min_walks_to_trigger: 3
               autonomy: drafts
@@ -110,7 +108,6 @@ public class DreamerConfigTests
         Assert.AreEqual(2, c.DigestTimes.Count);
         Assert.AreEqual("08:00", c.DigestTimes[0]);
         Assert.AreEqual("20:00", c.DigestTimes[1]);
-        Assert.AreEqual("1234567890", c.DiscordChannelId);
         Assert.AreEqual(5.5, c.TriggerThreshold, 0.001);
         Assert.AreEqual(3, c.MinWalksToTrigger);
         Assert.AreEqual("drafts", c.Autonomy);

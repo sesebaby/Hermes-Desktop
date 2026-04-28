@@ -59,7 +59,7 @@ public sealed class ActivityDisplayItem : INotifyPropertyChanged
     /// change so x:Bind OneWay updates fire when the agent finishes a tool call
     /// and the row transitions from Running → Success/Failed via UpdateFrom.
     /// Without PropertyChanged here the expanded "Output" panel stays empty
-    /// even when the tool returned data (the original "missing terminal output"
+    /// even when the tool returned data (the original "missing output"
     /// bug — InputFull/OutputFull were plain auto-properties so the OneWay
     /// binding only saw the empty initial value).
     /// </summary>

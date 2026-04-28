@@ -1,6 +1,5 @@
 namespace Hermes.Agent.Permissions;
 
-using Hermes.Agent.Tools;
 using Microsoft.Extensions.Logging;
 using System.Text.RegularExpressions;
 
@@ -249,28 +248,10 @@ public sealed class PermissionManager
         return Regex.IsMatch(inputStr, regexPattern, RegexOptions.IgnoreCase);
     }
     
-    private bool IsReadOnlyTool<T>(string toolName, T input)
+    private static bool IsReadOnlyTool<T>(string toolName, T input)
     {
-        // Read-only tools
-        var readOnlyTools = new[] { "read_file", "glob", "grep", "ls", "task_get", "task_list" };
-        
-        if (readOnlyTools.Contains(toolName))
-            return true;
-        
-        // Check if bash command is read-only
-        if (toolName == "bash" && input is BashParameters bash)
-        {
-            return IsReadOnlyBashCommand(bash.Command);
-        }
-        
-        return false;
-    }
-    
-    private bool IsReadOnlyBashCommand(string command)
-    {
-        // Read-only commands
-        var readOnlyPrefixes = new[] { "git ", "ls ", "cat ", "head ", "tail ", "grep ", "rg ", "find ", "pwd ", "echo " };
-        return readOnlyPrefixes.Any(p => command.StartsWith(p, StringComparison.OrdinalIgnoreCase));
+        var readOnlyTools = new[] { "session_search", "skills_list", "skill_view" };
+        return readOnlyTools.Contains(toolName, StringComparer.OrdinalIgnoreCase);
     }
     
     private bool IsInWorkspace<T>(T input)

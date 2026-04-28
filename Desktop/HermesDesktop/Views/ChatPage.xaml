@@ -193,8 +193,6 @@
                     <StackPanel Orientation="Horizontal" Spacing="2">
                         <Button x:Name="TabSessions" x:Uid="ChatPageTabSessions" Click="PanelTab_Click" Tag="sessions"
                                 Background="Transparent" Foreground="{StaticResource AppAccentTextBrush}" FontSize="11" Padding="8,4" CornerRadius="6" MinWidth="0"/>
-                        <Button x:Name="TabFiles" x:Uid="ChatPageTabFiles" Click="PanelTab_Click" Tag="files"
-                                Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="11" Padding="8,4" CornerRadius="6" MinWidth="0"/>
                         <Button x:Name="TabTasks" x:Uid="ChatPageTabTasks" Click="PanelTab_Click" Tag="tasks"
                                 Background="Transparent" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="11" Padding="8,4" CornerRadius="6" MinWidth="0"/>
                         <Button x:Name="TabReplay" x:Uid="ChatPageTabReplay" Click="PanelTab_Click" Tag="replay"
@@ -206,7 +204,6 @@
                 <Border Grid.Row="1" Padding="12,8">
                     <Grid>
                         <panels:SessionPanel x:Name="SessionPanelView" Visibility="Visible"/>
-                        <panels:FileBrowserPanel x:Name="FileBrowserPanelView" Visibility="Collapsed"/>
                         <panels:TaskPanel x:Name="TaskPanelView" Visibility="Collapsed"/>
                         <panels:ReplayPanel x:Name="ReplayPanelView" Visibility="Collapsed"/>
                     </Grid>

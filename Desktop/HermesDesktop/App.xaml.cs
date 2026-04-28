@@ -19,8 +19,6 @@ using Hermes.Agent.Analytics;
 using Hermes.Agent.Plugins;
 using Hermes.Agent.Soul;
 using Hermes.Agent.Tools;
-using Hermes.Agent.Gateway;
-using Hermes.Agent.Gateway.Platforms;
 using Hermes.Agent.Dreamer;
 using HermesDesktop.Services;
 using System;
@@ -255,7 +253,7 @@ public partial class App : Application
     /// <remarks>
     /// Ensures the Hermes home and project directories exist and creates default SOUL.md and USER.md if missing (non-fatal on failure).
     /// Registers core services such as logging, chat clients, transcript and memory stores, skill and task managers, wiki, soul services, agent and orchestration services, tools and plugins, analytics, and Dreamer status.
-    /// After building the provider it registers tools, initializes MCP (fire-and-forget), wires the UI permission callback, and starts native gateway and Dreamer background components as appropriate.
+    /// After building the provider it registers tools, initializes MCP (fire-and-forget), wires the UI permission callback, and starts Dreamer background components as appropriate.
     /// </remarks>
     /// <returns>The built <see cref="ServiceProvider"/> containing the registered application services.</returns>
     private static ServiceProvider ConfigureServices()
@@ -571,13 +569,6 @@ public partial class App : Application
             sp.GetRequiredService<IChatClient>(),
             coordinatorStateDir));
 
-        // Native C# gateway — no Python CLI required for Telegram/Discord
-        services.AddSingleton(sp =>
-        {
-            var gatewayConfig = BuildGatewayConfig();
-            return new GatewayService(gatewayConfig, sp.GetRequiredService<ILogger<GatewayService>>());
-        });
-
         // Skill invoker (for slash command support)
         services.AddSingleton(sp => new Hermes.Agent.Skills.SkillInvoker(
             sp.GetRequiredService<Hermes.Agent.Skills.SkillManager>(),
@@ -597,9 +588,6 @@ public partial class App : Application
 
         // Wire permission prompt callback to show a ContentDialog in the UI
         WirePermissionCallback(provider);
-
-        // Start native C# gateway if platform tokens are configured
-        StartNativeGateway(provider);
 
         StartDreamerBackground(provider, hermesHome, projectDir);
 
@@ -650,7 +638,6 @@ public partial class App : Application
                 CreateWalkClient,
                 CreateEchoClient,
                 provider.GetRequiredService<TranscriptStore>(),
-                provider.GetRequiredService<GatewayService>(),
                 provider.GetRequiredService<InsightsService>(),
                 provider.GetRequiredService<DreamerStatus>(),
                 rss,
@@ -746,41 +733,12 @@ public partial class App : Application
     {
         var agent = services.GetRequiredService<Agent>();
         var toolRegistry = services.GetRequiredService<IToolRegistry>();
-        var httpClient = services.GetRequiredService<HttpClient>();
         var chatClient = services.GetRequiredService<IChatClient>();
-
-        // File system tools (no constructor dependencies)
-        RegisterAndTrack(agent, toolRegistry, new ReadFileTool());
-        RegisterAndTrack(agent, toolRegistry, new WriteFileTool());
-        RegisterAndTrack(agent, toolRegistry, new EditFileTool());
-        RegisterAndTrack(agent, toolRegistry, new GlobTool());
-        RegisterAndTrack(agent, toolRegistry, new GrepTool());
-
-        // Shell execution tools
-        RegisterAndTrack(agent, toolRegistry, new BashTool());
-        RegisterAndTrack(agent, toolRegistry, new TerminalTool());
-
-        // Web tools — pull provider + API keys from HermesEnvironment so the user's
-        // configured search provider in config.yaml is honored. Hardcoding "duckduckgo"
-        // here was the v2.4.0 regression that silently ignored Google/Bing config.
-        RegisterAndTrack(agent, toolRegistry, new WebFetchTool(httpClient));
-        RegisterAndTrack(agent, toolRegistry, new WebSearchTool(
-            new WebSearchConfig
-            {
-                Provider = HermesEnvironment.WebSearchProvider,
-                GoogleApiKey = HermesEnvironment.WebSearchGoogleApiKey,
-                GoogleSearchEngineId = HermesEnvironment.WebSearchGoogleEngineId,
-                BingApiKey = HermesEnvironment.WebSearchBingApiKey,
-            },
-            httpClient));
 
         // Task management
         RegisterAndTrack(agent, toolRegistry, new TodoWriteTool());
         RegisterAndTrack(agent, toolRegistry, new ScheduleCronTool(
             services.GetRequiredService<ICronScheduler>()));
-
-        // LSP tool (optional config)
-        RegisterAndTrack(agent, toolRegistry, new LspTool());
 
         // Agent tool (subagent spawning — needs chat client and tool registry)
         RegisterAndTrack(agent, toolRegistry, new AgentTool(chatClient, toolRegistry));
@@ -806,19 +764,9 @@ public partial class App : Application
         RegisterAndTrack(agent, toolRegistry, new SkillManageTool(skillManager));
         RegisterAndTrack(agent, toolRegistry, new SkillInvokeTool(skillManager));
 
-        // Send message tool (wired to native C# gateway)
-        var gateway = services.GetRequiredService<GatewayService>();
-        RegisterAndTrack(agent, toolRegistry, new SendMessageTool(gateway));
-
-        // Code sandbox tool
-        RegisterAndTrack(agent, toolRegistry, new CodeSandboxTool());
-
         // Checkpoint tool
         var checkpointDir = Path.Combine(HermesEnvironment.HermesHomePath, "checkpoints");
         RegisterAndTrack(agent, toolRegistry, new CheckpointTool(checkpointDir));
-
-        // Patch tool
-        RegisterAndTrack(agent, toolRegistry, new PatchTool());
     }
 
     /// <summary>Register a tool with both the Agent and the shared IToolRegistry.</summary>
@@ -983,97 +931,6 @@ public partial class App : Application
             {
                 BestEffort.LogFailure(TryGetAppLogger(), ex, "copying bundled skills directory", $"directory={dir}");
             }
-        }
-    }
-
-    /// <summary>
-    /// Build gateway configuration from config.yaml platform tokens.
-    /// </summary>
-    private static GatewayConfig BuildGatewayConfig()
-    {
-        var config = new GatewayConfig();
-
-        var telegramToken = HermesEnvironment.ReadPlatformSetting("telegram", "token");
-        if (!string.IsNullOrWhiteSpace(telegramToken))
-        {
-            config.Platforms[Platform.Telegram] = new PlatformConfig
-            {
-                Enabled = true,
-                Token = telegramToken
-            };
-        }
-
-        var discordToken = HermesEnvironment.ReadPlatformSetting("discord", "token");
-        if (!string.IsNullOrWhiteSpace(discordToken))
-        {
-            config.Platforms[Platform.Discord] = new PlatformConfig
-            {
-                Enabled = true,
-                Token = discordToken
-            };
-        }
-
-        return config;
-    }
-
-    /// <summary>
-    /// Start the native C# gateway in the background if platform tokens are configured.
-    /// Wires the agent as the message handler so incoming Telegram/Discord messages
-    /// are processed by the Hermes agent.
-    /// </summary>
-    private static void StartNativeGateway(IServiceProvider services)
-    {
-        try
-        {
-            var gateway = services.GetRequiredService<GatewayService>();
-            var agent = services.GetRequiredService<Agent>();
-            var logger = services.GetRequiredService<ILogger<App>>();
-
-            // Wire agent as the message handler
-            gateway.SetAgentHandler(async (sessionId, userMessage, platform) =>
-            {
-                var session = new Session { Id = sessionId, Platform = platform };
-                return await agent.ChatAsync(userMessage, session, CancellationToken.None);
-            });
-
-            // Create adapters for configured platforms
-            var adapters = new List<IPlatformAdapter>();
-
-            var tgToken = HermesEnvironment.ReadPlatformSetting("telegram", "token");
-            if (!string.IsNullOrWhiteSpace(tgToken))
-                adapters.Add(new TelegramAdapter(
-                    tgToken,
-                    logger: services.GetRequiredService<ILogger<TelegramAdapter>>()));
-
-            var dcToken = HermesEnvironment.ReadPlatformSetting("discord", "token");
-            if (!string.IsNullOrWhiteSpace(dcToken))
-                adapters.Add(new DiscordAdapter(
-                    dcToken,
-                    logger: services.GetRequiredService<ILogger<DiscordAdapter>>()));
-
-            if (adapters.Count > 0)
-            {
-                logger.LogInformation("Starting native gateway with {Count} platform(s)", adapters.Count);
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await gateway.StartAsync(adapters, CancellationToken.None);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogError(ex, "Native gateway start failed");
-                    }
-                });
-            }
-            else
-            {
-                logger.LogDebug("No platform tokens configured — native gateway not started");
-            }
-        }
-        catch (Exception ex)
-        {
-            BestEffort.LogFailure(TryGetAppLogger(), ex, "initializing native gateway");
         }
     }
 

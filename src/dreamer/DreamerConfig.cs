@@ -18,7 +18,6 @@ public sealed class DreamerConfig
     public string? BuildBaseUrl { get; set; }
     public int WalkIntervalMinutes { get; set; } = 30;
     public IReadOnlyList<string> DigestTimes { get; set; } = new[] { "08:00", "12:00", "20:00" };
-    public string DiscordChannelId { get; set; } = "";
     public double TriggerThreshold { get; set; } = 7.0;
     public int MinWalksToTrigger { get; set; } = 4;
     public string Autonomy { get; set; } = "full"; // full | drafts | ideas
@@ -95,7 +94,6 @@ public sealed class DreamerConfig
             }
             c.DigestTimes = validated;
         }
-        c.DiscordChannelId = Get(kv, "discord_channel_id") ?? "";
         if (double.TryParse(Get(kv, "trigger_threshold"), NumberStyles.Float, CultureInfo.InvariantCulture, out var th))
             c.TriggerThreshold = th;
         if (int.TryParse(Get(kv, "min_walks_to_trigger"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var mwt))

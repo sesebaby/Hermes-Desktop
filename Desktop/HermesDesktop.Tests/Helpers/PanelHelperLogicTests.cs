@@ -4,7 +4,7 @@ namespace HermesDesktop.Tests.Helpers;
 
 /// <summary>
 /// Tests for the pure-C# formatting and mapping logic introduced in the new panels
-/// added by this PR (SessionPanel, MemoryPanel, FileBrowserPanel, SkillsPanel, BuddyPanel).
+/// added by this PR (SessionPanel, MemoryPanel, SkillsPanel, BuddyPanel).
 /// These are extracted copies of private static methods, validated to match the
 /// expected behavior described in each panel's code-behind.
 /// </summary>
@@ -245,109 +245,6 @@ public class MemoryPanelFormatAgeTests
         var result = FormatAge(DateTime.UtcNow.AddSeconds(-30));
 
         Assert.AreEqual("just now", result, "FormatAge does NOT break down to minutes unlike FormatTimeAgo");
-    }
-}
-
-[TestClass]
-public class FileBrowserGetFileIconTests
-{
-    // Mirrors FileBrowserPanel.GetFileIcon (private static)
-    private static string GetFileIcon(string ext) => ext.ToLowerInvariant() switch
-    {
-        ".cs" => "\uE943",
-        ".xaml" => "\uE943",
-        ".json" => "\uE943",
-        ".yaml" or ".yml" => "\uE943",
-        ".md" => "\uE8A5",
-        ".png" or ".jpg" or ".gif" => "\uEB9F",
-        _ => "\uE8A5"
-    };
-
-    [TestMethod]
-    public void GetFileIcon_CsharpFile_ReturnsCodeIcon()
-    {
-        Assert.AreEqual("\uE943", GetFileIcon(".cs"));
-    }
-
-    [TestMethod]
-    public void GetFileIcon_XamlFile_ReturnsCodeIcon()
-    {
-        Assert.AreEqual("\uE943", GetFileIcon(".xaml"));
-    }
-
-    [TestMethod]
-    public void GetFileIcon_JsonFile_ReturnsCodeIcon()
-    {
-        Assert.AreEqual("\uE943", GetFileIcon(".json"));
-    }
-
-    [TestMethod]
-    public void GetFileIcon_YamlFile_ReturnsCodeIcon()
-    {
-        Assert.AreEqual("\uE943", GetFileIcon(".yaml"));
-    }
-
-    [TestMethod]
-    public void GetFileIcon_YmlAlias_ReturnsCodeIcon()
-    {
-        Assert.AreEqual("\uE943", GetFileIcon(".yml"));
-    }
-
-    [TestMethod]
-    public void GetFileIcon_MarkdownFile_ReturnsDocumentIcon()
-    {
-        Assert.AreEqual("\uE8A5", GetFileIcon(".md"));
-    }
-
-    [TestMethod]
-    public void GetFileIcon_PngFile_ReturnsImageIcon()
-    {
-        Assert.AreEqual("\uEB9F", GetFileIcon(".png"));
-    }
-
-    [TestMethod]
-    public void GetFileIcon_JpgFile_ReturnsImageIcon()
-    {
-        Assert.AreEqual("\uEB9F", GetFileIcon(".jpg"));
-    }
-
-    [TestMethod]
-    public void GetFileIcon_GifFile_ReturnsImageIcon()
-    {
-        Assert.AreEqual("\uEB9F", GetFileIcon(".gif"));
-    }
-
-    [TestMethod]
-    public void GetFileIcon_UnknownExtension_ReturnsDocumentIcon()
-    {
-        Assert.AreEqual("\uE8A5", GetFileIcon(".xyz"));
-        Assert.AreEqual("\uE8A5", GetFileIcon(".log"));
-        Assert.AreEqual("\uE8A5", GetFileIcon(".txt"));
-        Assert.AreEqual("\uE8A5", GetFileIcon(".csv"));
-    }
-
-    [TestMethod]
-    public void GetFileIcon_EmptyExtension_ReturnsDocumentIcon()
-    {
-        Assert.AreEqual("\uE8A5", GetFileIcon(""));
-    }
-
-    [TestMethod]
-    public void GetFileIcon_UppercaseExtension_IsTreatedAsCaseInsensitive()
-    {
-        // Method uses .ToLowerInvariant()
-        Assert.AreEqual("\uE943", GetFileIcon(".CS"));
-        Assert.AreEqual("\uE943", GetFileIcon(".JSON"));
-        Assert.AreEqual("\uEB9F", GetFileIcon(".PNG"));
-    }
-
-    [TestMethod]
-    public void GetFileIcon_DefaultIconMatchesFileTreeItemDefault()
-    {
-        // FileTreeItem.Icon defaults to "\uE8A5" (Document icon)
-        // GetFileIcon unknown extension should return the same value
-        const string fileTreeItemDefaultIcon = "\uE8A5";
-        Assert.AreEqual(fileTreeItemDefaultIcon, GetFileIcon(".unknown"));
     }
 }
 

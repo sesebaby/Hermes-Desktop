@@ -84,7 +84,7 @@ public sealed partial class ReplayPanel : UserControl
         {
             // Newest activity is inserted at index 0 so the most recent tool call
             // sits at the top of the panel without the user having to scroll. This
-            // matches conventional dev tool log ordering (terminal scrollback,
+            // matches conventional activity log ordering (oldest first,
             // browser devtools network panel, etc.). PlaybackAsync below iterates
             // the collection in chronological order via OrderBy(Timestamp) so the
             // replay still plays oldest → newest regardless of display order.

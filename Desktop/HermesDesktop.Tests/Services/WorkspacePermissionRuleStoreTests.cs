@@ -34,16 +34,16 @@ public sealed class WorkspacePermissionRuleStoreTests
             var store = CreateStore(root, "/tmp/workspace-a");
             var rules = new[]
             {
-                new PermissionRule { ToolName = "bash" },
-                new PermissionRule { ToolName = "write_file", Pattern = "**/*.md" }
+                new PermissionRule { ToolName = "todo_write" },
+                new PermissionRule { ToolName = "memory", Pattern = "**/*.md" }
             };
 
             store.SaveAlwaysAllowRules(rules);
             var reloaded = store.LoadAlwaysAllowRules();
 
             Assert.AreEqual(2, reloaded.Count);
-            Assert.AreEqual("bash", reloaded[0].ToolName);
-            Assert.AreEqual("write_file", reloaded[1].ToolName);
+            Assert.AreEqual("todo_write", reloaded[0].ToolName);
+            Assert.AreEqual("memory", reloaded[1].ToolName);
             Assert.AreEqual("**/*.md", reloaded[1].Pattern);
         }
         finally
@@ -61,10 +61,10 @@ public sealed class WorkspacePermissionRuleStoreTests
             var store = CreateStore(root, "/tmp/workspace-a");
             var rules = new[]
             {
-                new PermissionRule { ToolName = "bash" },
-                new PermissionRule { ToolName = "BASH" },
-                new PermissionRule { ToolName = "write_file", Pattern = "**/*.md" },
-                new PermissionRule { ToolName = "write_file", Pattern = "  **/*.md  " }
+                new PermissionRule { ToolName = "todo_write" },
+                new PermissionRule { ToolName = "TODO_WRITE" },
+                new PermissionRule { ToolName = "memory", Pattern = "**/*.md" },
+                new PermissionRule { ToolName = "memory", Pattern = "  **/*.md  " }
             };
 
             store.SaveAlwaysAllowRules(rules);
@@ -88,20 +88,20 @@ public sealed class WorkspacePermissionRuleStoreTests
             var workspaceBStore = CreateStore(root, "/tmp/workspace-b");
             workspaceAStore.SaveAlwaysAllowRules(new[]
             {
-                new PermissionRule { ToolName = "bash" }
+                new PermissionRule { ToolName = "todo_write" }
             });
             workspaceBStore.SaveAlwaysAllowRules(new[]
             {
-                new PermissionRule { ToolName = "write_file" }
+                new PermissionRule { ToolName = "memory" }
             });
 
             var rulesA = workspaceAStore.LoadAlwaysAllowRules();
             var rulesB = workspaceBStore.LoadAlwaysAllowRules();
 
             Assert.AreEqual(1, rulesA.Count);
-            Assert.AreEqual("bash", rulesA[0].ToolName);
+            Assert.AreEqual("todo_write", rulesA[0].ToolName);
             Assert.AreEqual(1, rulesB.Count);
-            Assert.AreEqual("write_file", rulesB[0].ToolName);
+            Assert.AreEqual("memory", rulesB[0].ToolName);
         }
         finally
         {
@@ -137,7 +137,7 @@ public sealed class WorkspacePermissionRuleStoreTests
             var store = CreateStore(root, "/tmp/workspace-a");
             store.SaveAlwaysAllowRules(new[]
             {
-                new PermissionRule { ToolName = "bash" }
+                new PermissionRule { ToolName = "todo_write" }
             });
 
             Assert.IsTrue(File.Exists(store.WorkspaceFilePath));

@@ -1,13 +1,12 @@
 namespace Hermes.Agent.Dreamer;
 
 using Hermes.Agent.Analytics;
-using Hermes.Agent.Gateway;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Transcript;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
-/// Background Dreamer: periodic local-model walks, signal scoring, optional digests to Discord,
+/// Background Dreamer: periodic local-model walks, signal scoring, local scheduled digests,
 /// and sandboxed build sprints. Disabled when <c>dreamer.enabled</c> is false in config.yaml.
 /// Started from the desktop host via <see cref="RunForeverAsync"/> (no generic host required).
 /// </summary>
@@ -18,7 +17,6 @@ public sealed class DreamerService
     private readonly Func<DreamerConfig, IChatClient> _walkClientFactory;
     private readonly Func<DreamerConfig, IChatClient> _echoClientFactory;
     private readonly TranscriptStore _transcripts;
-    private readonly GatewayService _gateway;
     private readonly InsightsService _insights;
     private readonly DreamerStatus _status;
     private readonly ILogger<DreamerService> _logger;
@@ -41,7 +39,6 @@ public sealed class DreamerService
         Func<DreamerConfig, IChatClient> walkClientFactory,
         Func<DreamerConfig, IChatClient> echoClientFactory,
         TranscriptStore transcripts,
-        GatewayService gateway,
         InsightsService insights,
         DreamerStatus status,
         RssFetcher? rssFetcher,
@@ -53,7 +50,6 @@ public sealed class DreamerService
         _walkClientFactory = walkClientFactory;
         _echoClientFactory = echoClientFactory;
         _transcripts = transcripts;
-        _gateway = gateway;
         _insights = insights;
         _status = status;
         _rss = rssFetcher;
@@ -203,17 +199,18 @@ public sealed class DreamerService
     }
 
     /// <summary>
-    /// Sends a scheduled Discord digest containing the most recent walk when a configured digest time is due and not already sent for the day.
+    /// Writes a scheduled local digest containing the most recent walk when a configured digest time is due and not already written for the day.
     /// </summary>
-    /// <param name="config">Dreamer configuration providing DiscordChannelId and DigestTimes (each entry formatted as "H:M").</param>
-    /// <param name="lastWalk">Text of the last walk; the message body is truncated to 1500 characters.</param>
+    /// <param name="config">Dreamer configuration providing DigestTimes (each entry formatted as "H:M").</param>
+    /// <param name="lastWalk">Text of the last walk.</param>
     private async Task MaybeSendDigestAsync(DreamerConfig config, string lastWalk, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(config.DiscordChannelId))
+        if (config.DigestTimes.Count == 0)
             return;
 
         var now = DateTime.Now;
         var day = now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        Directory.CreateDirectory(_room.DigestsDir);
 
         foreach (var t in config.DigestTimes)
         {
@@ -243,19 +240,22 @@ public sealed class DreamerService
                 if (delta > TimeSpan.FromMinutes(12))
                     continue;
 
-                var postcard = $"**Hermes Dreamer digest** ({t})\n{lastWalk[..Math.Min(1500, lastWalk.Length)]}";
-                _status.SetPostcardPreview(postcard);
-                var result = await _gateway.SendTextAsync(Platform.Discord, config.DiscordChannelId, postcard, ct);
-                if (result.Success)
-                {
-                    await TryRunRecoverableAsync(
-                        $"recording Dreamer digest slot {slotKey}",
-                        () => File.AppendAllTextAsync(digestPath, slotKey + "\n", ct));
-                    _insights.RecordDreamerDigest();
-                    _logger.LogInformation("Dreamer digest sent for slot {Slot}", t);
-                }
-                else
-                    _logger.LogWarning("Dreamer digest failed: {Error}", result.Error);
+                var safeTime = t.Replace(':', '-');
+                var fileName = $"digest-{day}-{safeTime}.md";
+                var outputPath = Path.Combine(_room.DigestsDir, fileName);
+                var relativePath = Path.Combine("feedback", "digests", fileName);
+                var digest = $"# Hermes Dreamer digest ({t})\n\n{lastWalk.Trim()}\n";
+
+                await TryRunRecoverableAsync(
+                    $"writing Dreamer local digest {outputPath}",
+                    () => File.WriteAllTextAsync(outputPath, digest, ct));
+                await TryRunRecoverableAsync(
+                    $"recording Dreamer digest slot {slotKey}",
+                    () => File.AppendAllTextAsync(digestPath, slotKey + "\n", ct));
+                _status.SetLastLocalDigestHint(relativePath);
+                _status.SetPostcardPreview(digest[..Math.Min(1500, digest.Length)]);
+                _insights.RecordDreamerDigest();
+                _logger.LogInformation("Dreamer local digest written for slot {Slot}", t);
             }
             catch (OperationCanceledException)
             {

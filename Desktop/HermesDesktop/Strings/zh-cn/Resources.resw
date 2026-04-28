@@ -39,12 +39,8 @@
   <data name="ChatInputBox.PlaceholderText" xml:space="preserve">
     <value>请向 Hermes 下达任务。按 Ctrl+Enter 发送。</value>
   </data>
-  <data name="ChatOpenCliButton.Content" xml:space="preserve">
-    <value>打开终端聊天</value>
-  </data>
-  <data name="ChatOpenCliButton.AutomationProperties.Name" xml:space="preserve">
-    <value>打开 Hermes 终端聊天</value>
-  </data>
+  
+  
   <data name="ChatSendButton.Content" xml:space="preserve">
     <value>发送</value>
   </data>
@@ -135,9 +131,7 @@
   <data name="BuddyNavItem.Content" xml:space="preserve">
     <value>伙伴</value>
   </data>
-  <data name="IntegrationsNavItem.Content" xml:space="preserve">
-    <value>集成</value>
-  </data>
+  
   <data name="SettingsNavItem.Content" xml:space="preserve">
     <value>设置</value>
   </data>
@@ -174,9 +168,7 @@
   <data name="DashboardModelLabel.Text" xml:space="preserve">
     <value>默认模型</value>
   </data>
-  <data name="DashboardGatewayLabel.Text" xml:space="preserve">
-    <value>消息收发</value>
-  </data>
+  
   <data name="DashboardPathsSectionTitle.Text" xml:space="preserve">
     <value>实时路径</value>
   </data>
@@ -246,12 +238,8 @@
   <data name="ChatSessionsItem1Body.Text" xml:space="preserve">
     <value>针对您已验证的本地模型端点运行编码与运维任务。</value>
   </data>
-  <data name="ChatSessionsItem2Header.Text" xml:space="preserve">
-    <value>消息升级路径</value>
-  </data>
-  <data name="ChatSessionsItem2Body.Text" xml:space="preserve">
-    <value>将 Discord 或 Telegram 作为轻量入口，同时 Hermes 保持本地运行。</value>
-  </data>
+  
+  
   <data name="ChatSessionsItem3Header.Text" xml:space="preserve">
     <value>桌面优先工作流</value>
   </data>
@@ -276,51 +264,21 @@
   <data name="ChatComposerTextBox.PlaceholderText" xml:space="preserve">
     <value>原生消息撰写区与任务队列将随后提供。</value>
   </data>
-  <data name="IntegrationsEyebrow.Text" xml:space="preserve">
-    <value>消息网关</value>
-  </data>
-  <data name="IntegrationsTitle.Text" xml:space="preserve">
-    <value>Telegram、Discord、Slack、WhatsApp、Matrix 与 Webhook 共用同一 Hermes 网关。</value>
-  </data>
-  <data name="IntegrationsSubtitle.Text" xml:space="preserve">
-    <value>在下方配置各平台令牌。网关从环境变量与 config.yaml 读取配置。</value>
-  </data>
-  <data name="IntegrationsTelegramTitle.Text" xml:space="preserve">
-    <value>Telegram</value>
-  </data>
-  <data name="IntegrationsTelegramDetail.Text" xml:space="preserve">
-    <value>最适合直接、轻量、移动友好的智能体访问。</value>
-  </data>
-  <data name="IntegrationsDiscordTitle.Text" xml:space="preserve">
-    <value>Discord</value>
-  </data>
-  <data name="IntegrationsDiscordDetail.Text" xml:space="preserve">
-    <value>更适合频道工作流、共享机器人与团队运维。</value>
-  </data>
-  <data name="IntegrationsGatewayTitle.Text" xml:space="preserve">
-    <value>网关运维</value>
-  </data>
-  <data name="IntegrationsGatewayLine1.Text" xml:space="preserve">
-    <value>目前将网关作为普通 Windows 后台进程运行。</value>
-  </data>
-  <data name="IntegrationsGatewayLine2.Text" xml:space="preserve">
-    <value>确保 Hermes 指向您已测试过的本地模型端点。</value>
-  </data>
-  <data name="IntegrationsGatewayLine3.Text" xml:space="preserve">
-    <value>在开放公共消息入口之前先添加机器人令牌。</value>
-  </data>
-  <data name="IntegrationsOpenLogsButton.Content" xml:space="preserve">
-    <value>打开日志</value>
-  </data>
-  <data name="IntegrationsOpenLogsButton.AutomationProperties.Name" xml:space="preserve">
-    <value>从集成页打开 Hermes 日志</value>
-  </data>
-  <data name="IntegrationsOpenConfigButton.Content" xml:space="preserve">
-    <value>打开配置</value>
-  </data>
-  <data name="IntegrationsOpenConfigButton.AutomationProperties.Name" xml:space="preserve">
-    <value>从集成页打开 Hermes 配置</value>
-  </data>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <data name="SettingsEyebrow.Text" xml:space="preserve">
     <value>本地设置</value>
   </data>
@@ -328,7 +286,7 @@
     <value>以下为桌面外壳当前读取的运行时值。</value>
   </data>
   <data name="SettingsSubtitle.Text" xml:space="preserve">
-    <value>设置页将承载模型选择、网关控制与工作区管理等能力。</value>
+    <value>设置页承载模型选择、智能体行为、记忆、Dreamer、插件与显示偏好。</value>
   </data>
   <data name="SettingsRuntimeTitle.Text" xml:space="preserve">
     <value>模型与运行时</value>
@@ -342,15 +300,9 @@
   <data name="SettingsModelLabel.Text" xml:space="preserve">
     <value>默认模型</value>
   </data>
-  <data name="SettingsGatewayTitle.Text" xml:space="preserve">
-    <value>网关就绪状态</value>
-  </data>
-  <data name="SettingsGatewayLine1.Text" xml:space="preserve">
-    <value>Telegram 令牌</value>
-  </data>
-  <data name="SettingsGatewayLine2.Text" xml:space="preserve">
-    <value>Discord 令牌</value>
-  </data>
+  
+  
+  
   <data name="SettingsPathsTitle.Text" xml:space="preserve">
     <value>文件与文件夹</value>
   </data>
@@ -411,12 +363,8 @@
   <data name="CliMissingSummary" xml:space="preserve">
     <value>未找到安装</value>
   </data>
-  <data name="MessagingReadySummary" xml:space="preserve">
-    <value>至少有一个机器人令牌可用</value>
-  </data>
-  <data name="MessagingSetupSummary" xml:space="preserve">
-    <value>请接下来添加 Telegram 或 Discord 令牌</value>
-  </data>
+  
+  
   <data name="ChatConnectionCardTitle.Text" xml:space="preserve">
     <value>实时端点</value>
   </data>
@@ -456,9 +404,7 @@
   <data name="ChatGuideLine2.Text" xml:space="preserve">
     <value>运行时卡片显示本页使用的端点、提供商与模型。</value>
   </data>
-  <data name="ChatGuideLine3.Text" xml:space="preserve">
-    <value>若需 Hermes CLI 工具与完整终端工作流，请使用左侧 CLI 按钮。</value>
-  </data>
+  
   <data name="ChatConversationSubtitle.Text" xml:space="preserve">
     <value>在您清除之前，消息将保留在此桌面会话中。</value>
   </data>
@@ -598,14 +544,10 @@
     <value>本地摘要：—</value>
   </data>
   <data name="DashDreamerPostcardInitial.Text" xml:space="preserve">
-    <value>最近明信片：—</value>
+    <value>摘要预览：--</value>
   </data>
-  <data name="DashPlatformsCardTitle.Text" xml:space="preserve">
-    <value>平台与服务</value>
-  </data>
-  <data name="DashPlatformsMessaging.Text" xml:space="preserve">
-    <value>消息平台</value>
-  </data>
+  
+  
   <data name="DashPlatformsServices.Text" xml:space="preserve">
     <value>服务</value>
   </data>
@@ -654,24 +596,12 @@
   <data name="DashInsightsTopTools.Text" xml:space="preserve">
     <value>常用工具</value>
   </data>
-  <data name="BadgeTelegram" xml:space="preserve">
-    <value>Telegram</value>
-  </data>
-  <data name="BadgeDiscord" xml:space="preserve">
-    <value>Discord</value>
-  </data>
-  <data name="BadgeSlack" xml:space="preserve">
-    <value>Slack</value>
-  </data>
-  <data name="BadgeWhatsApp" xml:space="preserve">
-    <value>WhatsApp</value>
-  </data>
-  <data name="BadgeMatrix" xml:space="preserve">
-    <value>Matrix</value>
-  </data>
-  <data name="BadgeWebhook" xml:space="preserve">
-    <value>Webhook</value>
-  </data>
+  
+  
+  
+  
+  
+  
   <data name="BadgeMemory" xml:space="preserve">
     <value>记忆</value>
   </data>
@@ -706,7 +636,7 @@
     <value>本地摘要：{0}</value>
   </data>
   <data name="DashboardDreamerPostcardEmpty" xml:space="preserve">
-    <value>最近明信片：—</value>
+    <value>摘要预览：--</value>
   </data>
   <data name="DashboardTimeAgoNow" xml:space="preserve">
     <value>刚刚</value>
@@ -751,7 +681,7 @@
     <value>配置</value>
   </data>
   <data name="SettingsPageSubtitle.Text" xml:space="preserve">
-    <value>配置模型、代理行为、网关平台、记忆与显示偏好。</value>
+    <value>配置模型、智能体行为、记忆、Dreamer、插件与显示偏好。</value>
   </data>
   <data name="SettingsExpUserProfileHeader.Text" xml:space="preserve">
     <value>用户资料</value>
@@ -957,126 +887,46 @@
   <data name="SettingsSaveAgentBtn.Content" xml:space="preserve">
     <value>保存代理配置</value>
   </data>
-  <data name="SettingsExpGatewayPlatformsHeader.Text" xml:space="preserve">
-    <value>网关与平台</value>
-  </data>
-  <data name="SettingsLblGatewayStatus.Text" xml:space="preserve">
-    <value>网关状态</value>
-  </data>
-  <data name="SettingsGatewayStatusInitial.Text" xml:space="preserve">
-    <value>正在检查…</value>
-  </data>
-  <data name="SettingsGatewayStartBtn.Content" xml:space="preserve">
-    <value>启动</value>
-  </data>
-  <data name="SettingsLblTelegram.Text" xml:space="preserve">
-    <value>TELEGRAM</value>
-  </data>
-  <data name="SettingsTelegramBotTokenLabel.Text" xml:space="preserve">
-    <value>机器人令牌</value>
-  </data>
-  <data name="SettingsDiscordBotTokenLabel.Text" xml:space="preserve">
-    <value>机器人令牌</value>
-  </data>
-  <data name="SettingsSlackBotTokenLabel.Text" xml:space="preserve">
-    <value>机器人令牌</value>
-  </data>
-  <data name="SettingsTelegramBotTokenBox.PlaceholderText" xml:space="preserve">
-    <value>Telegram 机器人令牌</value>
-  </data>
-  <data name="SettingsLblDiscord.Text" xml:space="preserve">
-    <value>DISCORD</value>
-  </data>
-  <data name="SettingsDiscordBotTokenBox.PlaceholderText" xml:space="preserve">
-    <value>Discord 机器人令牌</value>
-  </data>
-  <data name="SettingsLblDiscordRequireMention.Text" xml:space="preserve">
-    <value>需要 @ 提及</value>
-  </data>
-  <data name="SettingsLblDiscordAutoThread.Text" xml:space="preserve">
-    <value>自动线程</value>
-  </data>
-  <data name="SettingsLblDiscordReactions.Text" xml:space="preserve">
-    <value>表情回应</value>
-  </data>
-  <data name="SettingsLblSlack.Text" xml:space="preserve">
-    <value>SLACK</value>
-  </data>
-  <data name="SettingsSlackBotTokenBox.PlaceholderText" xml:space="preserve">
-    <value>xoxb-…</value>
-  </data>
-  <data name="SettingsLblSlackAppToken.Text" xml:space="preserve">
-    <value>应用令牌</value>
-  </data>
-  <data name="SettingsSlackAppTokenBox.PlaceholderText" xml:space="preserve">
-    <value>xapp-…</value>
-  </data>
-  <data name="SettingsLblMatrix.Text" xml:space="preserve">
-    <value>MATRIX</value>
-  </data>
-  <data name="SettingsLblMatrixAccessToken.Text" xml:space="preserve">
-    <value>访问令牌</value>
-  </data>
-  <data name="SettingsMatrixAccessTokenBox.PlaceholderText" xml:space="preserve">
-    <value>Matrix 访问令牌</value>
-  </data>
-  <data name="SettingsLblMatrixHomeserver.Text" xml:space="preserve">
-    <value>Homeserver URL</value>
-  </data>
-  <data name="SettingsMatrixHomeserverBox.PlaceholderText" xml:space="preserve">
-    <value>https://matrix.org</value>
-  </data>
-  <data name="SettingsLblWebhook.Text" xml:space="preserve">
-    <value>WEBHOOK</value>
-  </data>
-  <data name="SettingsLblWebhookEnabled.Text" xml:space="preserve">
-    <value>启用</value>
-  </data>
-  <data name="SettingsLblWebhookPort.Text" xml:space="preserve">
-    <value>端口</value>
-  </data>
-  <data name="SettingsLblWebhookHmac.Text" xml:space="preserve">
-    <value>HMAC 密钥</value>
-  </data>
-  <data name="SettingsWebhookHmacSecretBox.PlaceholderText" xml:space="preserve">
-    <value>可选 HMAC 密钥</value>
-  </data>
-  <data name="SettingsLblEmail.Text" xml:space="preserve">
-    <value>电子邮件</value>
-  </data>
-  <data name="SettingsLblEmailAddress.Text" xml:space="preserve">
-    <value>地址</value>
-  </data>
-  <data name="SettingsEmailAddressBox.PlaceholderText" xml:space="preserve">
-    <value>you@example.com</value>
-  </data>
-  <data name="SettingsLblEmailPassword.Text" xml:space="preserve">
-    <value>密码</value>
-  </data>
-  <data name="SettingsEmailPasswordBox.PlaceholderText" xml:space="preserve">
-    <value>邮箱密码或应用专用密码</value>
-  </data>
-  <data name="SettingsLblEmailImapHost.Text" xml:space="preserve">
-    <value>IMAP 主机</value>
-  </data>
-  <data name="SettingsEmailImapHostBox.PlaceholderText" xml:space="preserve">
-    <value>imap.gmail.com</value>
-  </data>
-  <data name="SettingsLblEmailImapPort.Text" xml:space="preserve">
-    <value>IMAP 端口</value>
-  </data>
-  <data name="SettingsLblEmailSmtpHost.Text" xml:space="preserve">
-    <value>SMTP 主机</value>
-  </data>
-  <data name="SettingsEmailSmtpHostBox.PlaceholderText" xml:space="preserve">
-    <value>smtp.gmail.com</value>
-  </data>
-  <data name="SettingsLblEmailSmtpPort.Text" xml:space="preserve">
-    <value>SMTP 端口</value>
-  </data>
-  <data name="SettingsSaveAllPlatformsBtn.Content" xml:space="preserve">
-    <value>保存全部平台</value>
-  </data>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <data name="SettingsExpMemoryContextHeader.Text" xml:space="preserve">
     <value>记忆与上下文</value>
   </data>
@@ -1105,7 +955,7 @@
     <value>Dreamer</value>
   </data>
   <data name="SettingsDreamerIntro.Text" xml:space="preserve">
-    <value>在本地模型（Ollama）上进行背景自由联想。默认关闭。目录：%LOCALAPPDATA%\hermes\dreamer\ — 定时摘要写入 feedback\digests\，也可同步发到 Discord。</value>
+    <value>在本地模型（Ollama）上进行背景自由联想。默认关闭。目录：%LOCALAPPDATA%\hermes\dreamer\。定时摘要写入 feedback\digests\。</value>
   </data>
   <data name="SettingsDreamerEnabledLabel.Text" xml:space="preserve">
     <value>启用 Dreamer</value>
@@ -1126,7 +976,7 @@
     <value>http://127.0.0.1:11434/v1</value>
   </data>
   <data name="SettingsDreamerDigestTimesLabel.Text" xml:space="preserve">
-    <value>摘要时间（本地与 Discord）</value>
+    <value>摘要时间（本地）</value>
   </data>
   <data name="SettingsDreamerDigestTimesBox.PlaceholderText" xml:space="preserve">
     <value>08:00,12:00,20:00</value>
@@ -1137,12 +987,8 @@
   <data name="SettingsDreamerMinWalksLabel.Text" xml:space="preserve">
     <value>触发前最少游走次数</value>
   </data>
-  <data name="SettingsDreamerDiscordChannelLabel.Text" xml:space="preserve">
-    <value>Discord 频道 ID（明信片）</value>
-  </data>
-  <data name="SettingsDreamerDiscordChannelBox.PlaceholderText" xml:space="preserve">
-    <value>可选数字频道 ID</value>
-  </data>
+  
+  
   <data name="SettingsSaveDreamerBtn.Content" xml:space="preserve">
     <value>保存 Dreamer 配置</value>
   </data>
@@ -1173,54 +1019,22 @@
   <data name="SettingsSaveDisplayBtn.Content" xml:space="preserve">
     <value>保存显示配置</value>
   </data>
-  <data name="SettingsExpExecutionEnvHeader.Text" xml:space="preserve">
-    <value>执行环境</value>
-  </data>
-  <data name="SettingsLblBackend.Text" xml:space="preserve">
-    <value>后端</value>
-  </data>
-  <data name="SettingsExecLocal.Content" xml:space="preserve">
-    <value>本地</value>
-  </data>
-  <data name="SettingsExecDocker.Content" xml:space="preserve">
-    <value>Docker</value>
-  </data>
-  <data name="SettingsExecSsh.Content" xml:space="preserve">
-    <value>SSH</value>
-  </data>
-  <data name="SettingsExecModal.Content" xml:space="preserve">
-    <value>Modal</value>
-  </data>
-  <data name="SettingsExecDaytona.Content" xml:space="preserve">
-    <value>Daytona</value>
-  </data>
-  <data name="SettingsLblWorkingDirectory.Text" xml:space="preserve">
-    <value>工作目录</value>
-  </data>
-  <data name="SettingsExecWorkingDirBox.PlaceholderText" xml:space="preserve">
-    <value>.</value>
-  </data>
-  <data name="SettingsLblExecTimeout.Text" xml:space="preserve">
-    <value>超时（秒）</value>
-  </data>
-  <data name="SettingsLblDockerOptions.Text" xml:space="preserve">
-    <value>Docker 选项</value>
-  </data>
-  <data name="SettingsLblDockerImage.Text" xml:space="preserve">
-    <value>Docker 镜像</value>
-  </data>
-  <data name="SettingsDockerImageBox.PlaceholderText" xml:space="preserve">
-    <value>nikolaik/python-nodejs:python3.11-nodejs20</value>
-  </data>
-  <data name="SettingsLblDockerCpu.Text" xml:space="preserve">
-    <value>容器 CPU</value>
-  </data>
-  <data name="SettingsLblDockerMemory.Text" xml:space="preserve">
-    <value>容器内存（MB）</value>
-  </data>
-  <data name="SettingsSaveExecutionBtn.Content" xml:space="preserve">
-    <value>保存执行配置</value>
-  </data>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <data name="SettingsExpPluginsHeader.Text" xml:space="preserve">
     <value>插件与扩展</value>
   </data>
@@ -1236,48 +1050,20 @@
   <data name="SettingsSavePluginBtn.Content" xml:space="preserve">
     <value>保存插件配置</value>
   </data>
-  <data name="SettingsExpSearchHeader.Text" xml:space="preserve">
-    <value>网络搜索</value>
-  </data>
-  <data name="SearchProviderDuckDuckGoItem.Content" xml:space="preserve">
-    <value>DuckDuckGo（无需密钥）</value>
-  </data>
-  <data name="SearchProviderGoogleItem.Content" xml:space="preserve">
-    <value>Google 自定义搜索</value>
-  </data>
-  <data name="SearchProviderBingItem.Content" xml:space="preserve">
-    <value>Bing 网络搜索</value>
-  </data>
-  <data name="SettingsSearchMissingGoogleKey" xml:space="preserve">
-    <value>Google 搜索需要 API 密钥和引擎 ID。</value>
-  </data>
-  <data name="SettingsSearchMissingBingKey" xml:space="preserve">
-    <value>Bing 搜索需要 API 密钥。</value>
-  </data>
-  <data name="SettingsLblSearchProvider.Text" xml:space="preserve">
-    <value>搜索提供商</value>
-  </data>
-  <data name="SettingsLblSearchGoogleApiKey.Text" xml:space="preserve">
-    <value>GOOGLE API 密钥</value>
-  </data>
-  <data name="SettingsSearchGoogleApiKeyBox.PlaceholderText" xml:space="preserve">
-    <value>Google 自定义搜索所需</value>
-  </data>
-  <data name="SettingsLblSearchGoogleEngineId.Text" xml:space="preserve">
-    <value>GOOGLE 引擎 ID (CX)</value>
-  </data>
-  <data name="SettingsSearchGoogleEngineIdBox.PlaceholderText" xml:space="preserve">
-    <value>自定义搜索引擎标识符</value>
-  </data>
-  <data name="SettingsLblSearchBingApiKey.Text" xml:space="preserve">
-    <value>BING API 密钥</value>
-  </data>
-  <data name="SettingsSearchBingApiKeyBox.PlaceholderText" xml:space="preserve">
-    <value>Bing 网络搜索所需</value>
-  </data>
-  <data name="SettingsSaveSearchBtn.Content" xml:space="preserve">
-    <value>保存搜索配置</value>
-  </data>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <data name="SettingsExpPathsSystemHeader.Text" xml:space="preserve">
     <value>路径与系统</value>
   </data>
@@ -1290,9 +1076,7 @@
   <data name="SettingsSaveSuccessRestart" xml:space="preserve">
     <value>保存成功。请重启以应用。</value>
   </data>
-  <data name="SettingsSaveAllPlatformsSuccess" xml:space="preserve">
-    <value>所有平台已保存。请重启网关以应用。</value>
-  </data>
+  
   <data name="SettingsDreamerSaved" xml:space="preserve">
     <value>已保存。请重启应用以刷新 Dreamer 的 LLM 客户端。</value>
   </data>
@@ -1320,16 +1104,8 @@
   <data name="SettingsModelComboItemFormat" xml:space="preserve">
     <value>{0}  （{1}）</value>
   </data>
-  <data name="SettingsGatewayStatusRunning" xml:space="preserve">
-    <value>运行中</value>
-  </data>
-  <data name="SettingsGatewayStatusStopped" xml:space="preserve">
-    <value>已停止</value>
-  </data>
-  <data name="SettingsGatewayStart" xml:space="preserve">
-    <value>启动</value>
-  </data>
-  <data name="SettingsGatewayStop" xml:space="preserve">
-    <value>停止</value>
-  </data>
+  
+  
+  
+  
 </root>

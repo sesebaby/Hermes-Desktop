@@ -32,14 +32,6 @@ public sealed partial class SettingsPage : Page
     public string HermesLogsPath => HermesEnvironment.DisplayHermesLogsPath;
     public string HermesWorkspacePath => HermesEnvironment.DisplayHermesWorkspacePath;
 
-    public string TelegramStatus => HermesEnvironment.TelegramConfigured
-        ? ResourceLoader.GetString("StatusDetected")
-        : ResourceLoader.GetString("StatusNotDetected");
-
-    public string DiscordStatus => HermesEnvironment.DiscordConfigured
-        ? ResourceLoader.GetString("StatusDetected")
-        : ResourceLoader.GetString("StatusNotDetected");
-
     private bool _suppressModelComboEvent;
 
     // ═══════════════════════════════════════════
@@ -54,14 +46,10 @@ public sealed partial class SettingsPage : Page
         LoadUserProfile();
         LoadModelSettings();
         LoadAgentSettings();
-        LoadGatewayStatus();
-        LoadPlatformSettings();
         LoadMemorySettings();
         LoadDisplaySettings();
-        LoadExecutionSettings();
         LoadPluginSettings();
         LoadDreamerSettings();
-        LoadSearchSettings();
         await RefreshRuntimeStatusAsync();
     }
 
@@ -240,60 +228,6 @@ This file is a living document about the human I work with. It helps me provide 
         var timeout = HermesEnvironment.ReadConfigSetting("agent", "approval_timeout");
         if (double.TryParse(timeout, NumberStyles.Integer, CultureInfo.InvariantCulture, out var to))
             ApprovalTimeoutBox.Value = to;
-    }
-
-    // ── Gateway ──
-    private void LoadGatewayStatus()
-    {
-        RefreshGatewayStatus();
-    }
-
-    private void RefreshGatewayStatus()
-    {
-        bool running = HermesEnvironment.IsGatewayRunning();
-        GatewayStatusText.Text = running
-            ? ResourceLoader.GetString("SettingsGatewayStatusRunning")
-            : ResourceLoader.GetString("SettingsGatewayStatusStopped");
-        GatewayToggleBtn.Content = running
-            ? ResourceLoader.GetString("SettingsGatewayStop")
-            : ResourceLoader.GetString("SettingsGatewayStart");
-    }
-
-    // ── Platforms ──
-    private void LoadPlatformSettings()
-    {
-        TelegramBotTokenBox.Password = HermesEnvironment.ReadPlatformSetting("telegram", "token") ?? "";
-        DiscordBotTokenBox.Password = HermesEnvironment.ReadPlatformSetting("discord", "token") ?? "";
-        DiscordRequireMentionToggle.IsOn = string.Equals(
-            HermesEnvironment.ReadPlatformSetting("discord", "require_mention"), "true", StringComparison.OrdinalIgnoreCase);
-        DiscordAutoThreadToggle.IsOn = string.Equals(
-            HermesEnvironment.ReadPlatformSetting("discord", "auto_thread"), "true", StringComparison.OrdinalIgnoreCase);
-        DiscordReactionsToggle.IsOn = string.Equals(
-            HermesEnvironment.ReadPlatformSetting("discord", "reactions"), "true", StringComparison.OrdinalIgnoreCase);
-
-        SlackBotTokenBox.Password = HermesEnvironment.ReadPlatformSetting("slack", "token") ?? "";
-        SlackAppTokenBox.Password = HermesEnvironment.ReadPlatformSetting("slack", "app_token") ?? "";
-
-        MatrixAccessTokenBox.Password = HermesEnvironment.ReadPlatformSetting("matrix", "token") ?? "";
-        MatrixHomeserverBox.Text = HermesEnvironment.ReadPlatformSetting("matrix", "homeserver") ?? "";
-
-        WebhookEnabledToggle.IsOn = string.Equals(
-            HermesEnvironment.ReadPlatformSetting("webhook", "enabled"), "true", StringComparison.OrdinalIgnoreCase);
-        var webhookPort = HermesEnvironment.ReadPlatformSetting("webhook", "port");
-        if (double.TryParse(webhookPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var wp))
-            WebhookPortBox.Value = wp;
-        WebhookHmacSecretBox.Password = HermesEnvironment.ReadPlatformSetting("webhook", "secret") ?? "";
-
-        EmailAddressBox.Text = HermesEnvironment.ReadPlatformSetting("email", "address") ?? "";
-        EmailPasswordBox.Password = HermesEnvironment.ReadPlatformSetting("email", "password") ?? "";
-        EmailImapHostBox.Text = HermesEnvironment.ReadPlatformSetting("email", "imap_host") ?? "";
-        var imapPort = HermesEnvironment.ReadPlatformSetting("email", "imap_port");
-        if (double.TryParse(imapPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var ip))
-            EmailImapPortBox.Value = ip;
-        EmailSmtpHostBox.Text = HermesEnvironment.ReadPlatformSetting("email", "smtp_host") ?? "";
-        var smtpPort = HermesEnvironment.ReadPlatformSetting("email", "smtp_port");
-        if (double.TryParse(smtpPort, NumberStyles.Integer, CultureInfo.InvariantCulture, out var sp))
-            EmailSmtpPortBox.Value = sp;
     }
 
     // ── Memory ──
@@ -538,50 +472,6 @@ This file is a living document about the human I work with. It helps me provide 
         }
     }
 
-    private async void SavePlatformConfig_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            // Telegram — always persist so clearing a token actually takes effect
-            await HermesEnvironment.SavePlatformSettingAsync("telegram", "token", TelegramBotTokenBox.Password.Trim());
-
-            // Discord
-            await HermesEnvironment.SavePlatformSettingAsync("discord", "token", DiscordBotTokenBox.Password.Trim());
-            await HermesEnvironment.SavePlatformSettingAsync("discord", "require_mention", DiscordRequireMentionToggle.IsOn.ToString().ToLowerInvariant());
-            await HermesEnvironment.SavePlatformSettingAsync("discord", "auto_thread", DiscordAutoThreadToggle.IsOn.ToString().ToLowerInvariant());
-            await HermesEnvironment.SavePlatformSettingAsync("discord", "reactions", DiscordReactionsToggle.IsOn.ToString().ToLowerInvariant());
-
-            // Slack
-            await HermesEnvironment.SavePlatformSettingAsync("slack", "token", SlackBotTokenBox.Password.Trim());
-            await HermesEnvironment.SavePlatformSettingAsync("slack", "app_token", SlackAppTokenBox.Password.Trim());
-
-            // Matrix
-            await HermesEnvironment.SavePlatformSettingAsync("matrix", "token", MatrixAccessTokenBox.Password.Trim());
-            await HermesEnvironment.SavePlatformSettingAsync("matrix", "homeserver", MatrixHomeserverBox.Text.Trim());
-
-            // Webhook
-            await HermesEnvironment.SavePlatformSettingAsync("webhook", "enabled", WebhookEnabledToggle.IsOn.ToString().ToLowerInvariant());
-            await HermesEnvironment.SavePlatformSettingAsync("webhook", "port", ((int)WebhookPortBox.Value).ToString(CultureInfo.InvariantCulture));
-            await HermesEnvironment.SavePlatformSettingAsync("webhook", "secret", WebhookHmacSecretBox.Password.Trim());
-
-            // Email
-            await HermesEnvironment.SavePlatformSettingAsync("email", "address", EmailAddressBox.Text.Trim());
-            await HermesEnvironment.SavePlatformSettingAsync("email", "password", EmailPasswordBox.Password.Trim());
-            await HermesEnvironment.SavePlatformSettingAsync("email", "imap_host", EmailImapHostBox.Text.Trim());
-            await HermesEnvironment.SavePlatformSettingAsync("email", "imap_port", ((int)EmailImapPortBox.Value).ToString(CultureInfo.InvariantCulture));
-            await HermesEnvironment.SavePlatformSettingAsync("email", "smtp_host", EmailSmtpHostBox.Text.Trim());
-            await HermesEnvironment.SavePlatformSettingAsync("email", "smtp_port", ((int)EmailSmtpPortBox.Value).ToString(CultureInfo.InvariantCulture));
-
-            PlatformSaveStatus.Text = ResourceLoader.GetString("SettingsSaveAllPlatformsSuccess");
-            PlatformSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOnlineBrush"];
-        }
-        catch (Exception ex)
-        {
-            PlatformSaveStatus.Text = string.Format(CultureInfo.CurrentCulture, ResourceLoader.GetString("SettingsErrorFormat"), ex.Message);
-            PlatformSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOfflineBrush"];
-        }
-    }
-
     private async void SaveMemoryConfig_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -635,102 +525,12 @@ This file is a living document about the human I work with. It helps me provide 
     }
 
     // ═══════════════════════════════════════════
-    //  Gateway control
-    // ═══════════════════════════════════════════
-    private void GatewayToggle_Click(object sender, RoutedEventArgs e)
-    {
-        if (HermesEnvironment.IsGatewayRunning())
-        {
-            HermesEnvironment.StopGateway();
-        }
-        else
-        {
-            HermesEnvironment.StartGateway();
-        }
-
-        // Slight delay before refresh — gateway needs a moment
-        DispatcherQueue.TryEnqueue(async () =>
-        {
-            await System.Threading.Tasks.Task.Delay(1500);
-            RefreshGatewayStatus();
-        });
-    }
-
-    // ═══════════════════════════════════════════
     //  Path buttons (preserved from original)
     // ═══════════════════════════════════════════
     private void OpenHome_Click(object sender, RoutedEventArgs e) => HermesEnvironment.OpenHermesHome();
     private void OpenConfig_Click(object sender, RoutedEventArgs e) => HermesEnvironment.OpenConfig();
     private void OpenLogs_Click(object sender, RoutedEventArgs e) => HermesEnvironment.OpenLogs();
     private void OpenWorkspace_Click(object sender, RoutedEventArgs e) => HermesEnvironment.OpenWorkspace();
-
-    // ═══════════════════════════════════════════
-    //  Execution Environment
-    // ═══════════════════════════════════════════
-
-    private void LoadExecutionSettings()
-    {
-        SelectComboByTag(ExecBackendCombo,
-            HermesEnvironment.ReadConfigSetting("terminal", "backend") ?? "local");
-
-        ExecWorkingDirBox.Text = HermesEnvironment.ReadConfigSetting("terminal", "working_directory") ?? ".";
-
-        var timeout = HermesEnvironment.ReadConfigSetting("terminal", "timeout");
-        if (double.TryParse(timeout, NumberStyles.Integer, CultureInfo.InvariantCulture, out var to))
-            ExecTimeoutBox.Value = to;
-
-        DockerImageBox.Text = HermesEnvironment.ReadConfigSetting("terminal", "docker_image")
-            ?? "nikolaik/python-nodejs:python3.11-nodejs20";
-
-        var cpu = HermesEnvironment.ReadConfigSetting("terminal", "container_cpu");
-        if (double.TryParse(cpu, NumberStyles.Integer, CultureInfo.InvariantCulture, out var c))
-            DockerCpuBox.Value = c;
-
-        var mem = HermesEnvironment.ReadConfigSetting("terminal", "container_memory");
-        if (double.TryParse(mem, NumberStyles.Integer, CultureInfo.InvariantCulture, out var m))
-            DockerMemoryBox.Value = m;
-
-        UpdateDockerVisibility();
-    }
-
-    private void ExecBackendCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        UpdateDockerVisibility();
-    }
-
-    private void UpdateDockerVisibility()
-    {
-        if (DockerOptionsPanel is null) return;
-        var tag = (ExecBackendCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "local";
-        DockerOptionsPanel.Visibility = string.Equals(tag, "docker", StringComparison.OrdinalIgnoreCase)
-            ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private async void SaveExecutionConfig_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var settings = new Dictionary<string, string>
-            {
-                ["backend"] = (ExecBackendCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "local",
-                ["working_directory"] = ExecWorkingDirBox.Text.Trim(),
-                ["timeout"] = ((int)ExecTimeoutBox.Value).ToString(CultureInfo.InvariantCulture),
-                ["docker_image"] = DockerImageBox.Text.Trim(),
-                ["container_cpu"] = ((int)DockerCpuBox.Value).ToString(CultureInfo.InvariantCulture),
-                ["container_memory"] = ((int)DockerMemoryBox.Value).ToString(CultureInfo.InvariantCulture),
-            };
-
-            await HermesEnvironment.SaveConfigSectionAsync("terminal", settings);
-
-            ExecutionSaveStatus.Text = ResourceLoader.GetString("SettingsSaveSuccessRestart");
-            ExecutionSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOnlineBrush"];
-        }
-        catch (Exception ex)
-        {
-            ExecutionSaveStatus.Text = string.Format(CultureInfo.CurrentCulture, ResourceLoader.GetString("SettingsErrorFormat"), ex.Message);
-            ExecutionSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOfflineBrush"];
-        }
-    }
 
     // ═══════════════════════════════════════════
     //  Plugins & Extensions
@@ -763,72 +563,6 @@ This file is a living document about the human I work with. It helps me provide 
         {
             PluginSaveStatus.Text = string.Format(CultureInfo.CurrentCulture, ResourceLoader.GetString("SettingsErrorFormat"), ex.Message);
             PluginSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOfflineBrush"];
-        }
-    }
-
-    // ── Web Search ──
-    private void LoadSearchSettings()
-    {
-        SelectComboByTag(SearchProviderCombo, HermesEnvironment.WebSearchProvider, fallbackIndex: 0);
-        SearchGoogleApiKeyBox.Password = HermesEnvironment.WebSearchGoogleApiKey ?? "";
-        SearchGoogleEngineIdBox.Text = HermesEnvironment.WebSearchGoogleEngineId ?? "";
-        SearchBingApiKeyBox.Password = HermesEnvironment.WebSearchBingApiKey ?? "";
-        UpdateSearchFieldState((SearchProviderCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString());
-    }
-
-    private void SearchProvider_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        UpdateSearchFieldState((SearchProviderCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString());
-    }
-
-    private void UpdateSearchFieldState(string? provider)
-    {
-        var p = (provider ?? "duckduckgo").ToLowerInvariant();
-        SearchGoogleApiKeyBox.IsEnabled = p == "google";
-        SearchGoogleEngineIdBox.IsEnabled = p == "google";
-        SearchBingApiKeyBox.IsEnabled = p == "bing";
-    }
-
-    private async void SaveSearchConfig_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var provider = (SearchProviderCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "duckduckgo";
-            var googleKey = SearchGoogleApiKeyBox.Password.Trim();
-            var googleEngineId = SearchGoogleEngineIdBox.Text.Trim();
-            var bingKey = SearchBingApiKeyBox.Password.Trim();
-
-            if (provider == "google" && (string.IsNullOrEmpty(googleKey) || string.IsNullOrEmpty(googleEngineId)))
-            {
-                SearchSaveStatus.Text = ResourceLoader.GetString("SettingsSearchMissingGoogleKey");
-                SearchSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOfflineBrush"];
-                return;
-            }
-
-            if (provider == "bing" && string.IsNullOrEmpty(bingKey))
-            {
-                SearchSaveStatus.Text = ResourceLoader.GetString("SettingsSearchMissingBingKey");
-                SearchSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOfflineBrush"];
-                return;
-            }
-
-            var settings = new Dictionary<string, string>
-            {
-                ["provider"] = provider,
-                ["google_api_key"] = googleKey,
-                ["google_engine_id"] = googleEngineId,
-                ["bing_api_key"] = bingKey,
-            };
-
-            await HermesEnvironment.SaveConfigSectionAsync("search", settings);
-
-            SearchSaveStatus.Text = ResourceLoader.GetString("SettingsSaveSuccessRestart");
-            SearchSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOnlineBrush"];
-        }
-        catch (Exception ex)
-        {
-            SearchSaveStatus.Text = string.Format(CultureInfo.CurrentCulture, ResourceLoader.GetString("SettingsErrorFormat"), ex.Message);
-            SearchSaveStatus.Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["ConnectionOfflineBrush"];
         }
     }
 
@@ -915,7 +649,6 @@ This file is a living document about the human I work with. It helps me provide 
         DreamerDigestTimesBox.Text = string.Join(", ", c.DigestTimes);
         DreamerTriggerThresholdBox.Value = c.TriggerThreshold;
         DreamerMinWalksToTriggerBox.Value = c.MinWalksToTrigger;
-        DreamerDiscordChannelBox.Text = c.DiscordChannelId;
     }
 
     /// <summary>
@@ -941,7 +674,6 @@ This file is a living document about the human I work with. It helps me provide 
                 ["build_model"] = cur.BuildModel,
                 ["walk_interval_minutes"] = ((int)DreamerWalkIntervalBox.Value).ToString(CultureInfo.InvariantCulture),
                 ["digest_times"] = digest,
-                ["discord_channel_id"] = DreamerDiscordChannelBox.Text.Trim(),
                 ["trigger_threshold"] = DreamerTriggerThresholdBox.Value.ToString(CultureInfo.InvariantCulture),
                 ["min_walks_to_trigger"] = ((int)DreamerMinWalksToTriggerBox.Value).ToString(CultureInfo.InvariantCulture),
                 ["autonomy"] = cur.Autonomy,

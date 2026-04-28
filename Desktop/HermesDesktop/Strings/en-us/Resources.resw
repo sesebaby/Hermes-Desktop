@@ -39,12 +39,8 @@
   <data name="ChatInputBox.PlaceholderText" xml:space="preserve">
     <value>Ask Hermes to do something. Press Ctrl+Enter to send.</value>
   </data>
-  <data name="ChatOpenCliButton.Content" xml:space="preserve">
-    <value>Open terminal chat</value>
-  </data>
-  <data name="ChatOpenCliButton.AutomationProperties.Name" xml:space="preserve">
-    <value>Open Hermes terminal chat</value>
-  </data>
+  
+  
   <data name="ChatSendButton.Content" xml:space="preserve">
     <value>Send</value>
   </data>
@@ -135,9 +131,7 @@
   <data name="BuddyNavItem.Content" xml:space="preserve">
     <value>Buddy</value>
   </data>
-  <data name="IntegrationsNavItem.Content" xml:space="preserve">
-    <value>Integrations</value>
-  </data>
+  
   <data name="SettingsNavItem.Content" xml:space="preserve">
     <value>Settings</value>
   </data>
@@ -174,9 +168,7 @@
   <data name="DashboardModelLabel.Text" xml:space="preserve">
     <value>Default model</value>
   </data>
-  <data name="DashboardGatewayLabel.Text" xml:space="preserve">
-    <value>Messaging</value>
-  </data>
+  
   <data name="DashboardPathsSectionTitle.Text" xml:space="preserve">
     <value>Live paths</value>
   </data>
@@ -246,12 +238,8 @@
   <data name="ChatSessionsItem1Body.Text" xml:space="preserve">
     <value>Run coding and ops tasks against the local model endpoint you already verified.</value>
   </data>
-  <data name="ChatSessionsItem2Header.Text" xml:space="preserve">
-    <value>Messaging escalation</value>
-  </data>
-  <data name="ChatSessionsItem2Body.Text" xml:space="preserve">
-    <value>Keep Discord or Telegram as light-touch entry points while Hermes stays local.</value>
-  </data>
+  
+  
   <data name="ChatSessionsItem3Header.Text" xml:space="preserve">
     <value>Desktop-first workflows</value>
   </data>
@@ -276,51 +264,21 @@
   <data name="ChatComposerTextBox.PlaceholderText" xml:space="preserve">
     <value>Native message composer and task queue will land here next.</value>
   </data>
-  <data name="IntegrationsEyebrow.Text" xml:space="preserve">
-    <value>Messaging gateways</value>
-  </data>
-  <data name="IntegrationsTitle.Text" xml:space="preserve">
-    <value>Telegram, Discord, Slack, WhatsApp, Matrix, and Webhook all share the same Hermes gateway.</value>
-  </data>
-  <data name="IntegrationsSubtitle.Text" xml:space="preserve">
-    <value>Configure platform tokens below. The gateway reads from environment variables and config.yaml.</value>
-  </data>
-  <data name="IntegrationsTelegramTitle.Text" xml:space="preserve">
-    <value>Telegram</value>
-  </data>
-  <data name="IntegrationsTelegramDetail.Text" xml:space="preserve">
-    <value>Best for direct, lightweight, mobile-friendly access to the agent.</value>
-  </data>
-  <data name="IntegrationsDiscordTitle.Text" xml:space="preserve">
-    <value>Discord</value>
-  </data>
-  <data name="IntegrationsDiscordDetail.Text" xml:space="preserve">
-    <value>Better for channel workflows, shared bots, and team operations.</value>
-  </data>
-  <data name="IntegrationsGatewayTitle.Text" xml:space="preserve">
-    <value>Gateway operations</value>
-  </data>
-  <data name="IntegrationsGatewayLine1.Text" xml:space="preserve">
-    <value>Run the gateway as a normal Windows background process for now.</value>
-  </data>
-  <data name="IntegrationsGatewayLine2.Text" xml:space="preserve">
-    <value>Keep Hermes pointed at the local model endpoint you already tested.</value>
-  </data>
-  <data name="IntegrationsGatewayLine3.Text" xml:space="preserve">
-    <value>Add bot tokens before you expose public message entry points.</value>
-  </data>
-  <data name="IntegrationsOpenLogsButton.Content" xml:space="preserve">
-    <value>Open logs</value>
-  </data>
-  <data name="IntegrationsOpenLogsButton.AutomationProperties.Name" xml:space="preserve">
-    <value>Open Hermes logs from the integrations page</value>
-  </data>
-  <data name="IntegrationsOpenConfigButton.Content" xml:space="preserve">
-    <value>Open config</value>
-  </data>
-  <data name="IntegrationsOpenConfigButton.AutomationProperties.Name" xml:space="preserve">
-    <value>Open Hermes config from the integrations page</value>
-  </data>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <data name="SettingsEyebrow.Text" xml:space="preserve">
     <value>Local setup</value>
   </data>
@@ -328,7 +286,7 @@
     <value>These are the runtime values the desktop shell is reading right now.</value>
   </data>
   <data name="SettingsSubtitle.Text" xml:space="preserve">
-    <value>The settings page is where model selection, gateway controls, and workspace management should live next.</value>
+    <value>The settings page is where model selection, agent behavior, memory, Dreamer, plugins, and display preferences live.</value>
   </data>
   <data name="SettingsRuntimeTitle.Text" xml:space="preserve">
     <value>Model and runtime</value>
@@ -342,15 +300,9 @@
   <data name="SettingsModelLabel.Text" xml:space="preserve">
     <value>Default model</value>
   </data>
-  <data name="SettingsGatewayTitle.Text" xml:space="preserve">
-    <value>Gateway readiness</value>
-  </data>
-  <data name="SettingsGatewayLine1.Text" xml:space="preserve">
-    <value>Telegram token</value>
-  </data>
-  <data name="SettingsGatewayLine2.Text" xml:space="preserve">
-    <value>Discord token</value>
-  </data>
+  
+  
+  
   <data name="SettingsPathsTitle.Text" xml:space="preserve">
     <value>Files and folders</value>
   </data>
@@ -411,12 +363,8 @@
   <data name="CliMissingSummary" xml:space="preserve">
     <value>Install not found</value>
   </data>
-  <data name="MessagingReadySummary" xml:space="preserve">
-    <value>At least one bot token is available</value>
-  </data>
-  <data name="MessagingSetupSummary" xml:space="preserve">
-    <value>Add Telegram or Discord tokens next</value>
-  </data>
+  
+  
   <data name="ChatConnectionCardTitle.Text" xml:space="preserve">
     <value>Live endpoint</value>
   </data>
@@ -456,9 +404,7 @@
   <data name="ChatGuideLine2.Text" xml:space="preserve">
     <value>The runtime card shows the exact endpoint, provider, and model the page is using.</value>
   </data>
-  <data name="ChatGuideLine3.Text" xml:space="preserve">
-    <value>If you want Hermes CLI tools and the full terminal workflow, jump to the CLI button on the left.</value>
-  </data>
+  
   <data name="ChatConversationSubtitle.Text" xml:space="preserve">
     <value>Messages stay in this desktop session until you clear them.</value>
   </data>
@@ -610,14 +556,10 @@
     <value>Local digest: —</value>
   </data>
   <data name="DashDreamerPostcardInitial.Text" xml:space="preserve">
-    <value>Last postcard: —</value>
+    <value>Digest preview: --</value>
   </data>
-  <data name="DashPlatformsCardTitle.Text" xml:space="preserve">
-    <value>Platforms &amp; Services</value>
-  </data>
-  <data name="DashPlatformsMessaging.Text" xml:space="preserve">
-    <value>Messaging</value>
-  </data>
+  
+  
   <data name="DashPlatformsServices.Text" xml:space="preserve">
     <value>Services</value>
   </data>
@@ -666,24 +608,12 @@
   <data name="DashInsightsTopTools.Text" xml:space="preserve">
     <value>Top Tools</value>
   </data>
-  <data name="BadgeTelegram" xml:space="preserve">
-    <value>Telegram</value>
-  </data>
-  <data name="BadgeDiscord" xml:space="preserve">
-    <value>Discord</value>
-  </data>
-  <data name="BadgeSlack" xml:space="preserve">
-    <value>Slack</value>
-  </data>
-  <data name="BadgeWhatsApp" xml:space="preserve">
-    <value>WhatsApp</value>
-  </data>
-  <data name="BadgeMatrix" xml:space="preserve">
-    <value>Matrix</value>
-  </data>
-  <data name="BadgeWebhook" xml:space="preserve">
-    <value>Webhook</value>
-  </data>
+  
+  
+  
+  
+  
+  
   <data name="BadgeMemory" xml:space="preserve">
     <value>Memory</value>
   </data>
@@ -718,7 +648,7 @@
     <value>Local digest: {0}</value>
   </data>
   <data name="DashboardDreamerPostcardEmpty" xml:space="preserve">
-    <value>Last postcard: —</value>
+    <value>Digest preview: --</value>
   </data>
   <data name="DashboardTimeAgoNow" xml:space="preserve">
     <value>now</value>
@@ -763,7 +693,7 @@
     <value>Configuration</value>
   </data>
   <data name="SettingsPageSubtitle.Text" xml:space="preserve">
-    <value>Configure model, agent behavior, gateway platforms, memory, and display preferences.</value>
+    <value>Configure model, agent behavior, memory, Dreamer, plugins, and display preferences.</value>
   </data>
   <data name="SettingsExpUserProfileHeader.Text" xml:space="preserve">
     <value>User Profile</value>
@@ -969,126 +899,46 @@
   <data name="SettingsSaveAgentBtn.Content" xml:space="preserve">
     <value>Save Agent Config</value>
   </data>
-  <data name="SettingsExpGatewayPlatformsHeader.Text" xml:space="preserve">
-    <value>Gateway &amp; Platforms</value>
-  </data>
-  <data name="SettingsLblGatewayStatus.Text" xml:space="preserve">
-    <value>GATEWAY STATUS</value>
-  </data>
-  <data name="SettingsGatewayStatusInitial.Text" xml:space="preserve">
-    <value>Checking...</value>
-  </data>
-  <data name="SettingsGatewayStartBtn.Content" xml:space="preserve">
-    <value>Start</value>
-  </data>
-  <data name="SettingsLblTelegram.Text" xml:space="preserve">
-    <value>TELEGRAM</value>
-  </data>
-  <data name="SettingsTelegramBotTokenLabel.Text" xml:space="preserve">
-    <value>Bot Token</value>
-  </data>
-  <data name="SettingsDiscordBotTokenLabel.Text" xml:space="preserve">
-    <value>Bot Token</value>
-  </data>
-  <data name="SettingsSlackBotTokenLabel.Text" xml:space="preserve">
-    <value>Bot Token</value>
-  </data>
-  <data name="SettingsTelegramBotTokenBox.PlaceholderText" xml:space="preserve">
-    <value>Telegram bot token</value>
-  </data>
-  <data name="SettingsLblDiscord.Text" xml:space="preserve">
-    <value>DISCORD</value>
-  </data>
-  <data name="SettingsDiscordBotTokenBox.PlaceholderText" xml:space="preserve">
-    <value>Discord bot token</value>
-  </data>
-  <data name="SettingsLblDiscordRequireMention.Text" xml:space="preserve">
-    <value>Require Mention</value>
-  </data>
-  <data name="SettingsLblDiscordAutoThread.Text" xml:space="preserve">
-    <value>Auto Thread</value>
-  </data>
-  <data name="SettingsLblDiscordReactions.Text" xml:space="preserve">
-    <value>Reactions</value>
-  </data>
-  <data name="SettingsLblSlack.Text" xml:space="preserve">
-    <value>SLACK</value>
-  </data>
-  <data name="SettingsSlackBotTokenBox.PlaceholderText" xml:space="preserve">
-    <value>xoxb-...</value>
-  </data>
-  <data name="SettingsLblSlackAppToken.Text" xml:space="preserve">
-    <value>App Token</value>
-  </data>
-  <data name="SettingsSlackAppTokenBox.PlaceholderText" xml:space="preserve">
-    <value>xapp-...</value>
-  </data>
-  <data name="SettingsLblMatrix.Text" xml:space="preserve">
-    <value>MATRIX</value>
-  </data>
-  <data name="SettingsLblMatrixAccessToken.Text" xml:space="preserve">
-    <value>Access Token</value>
-  </data>
-  <data name="SettingsMatrixAccessTokenBox.PlaceholderText" xml:space="preserve">
-    <value>Matrix access token</value>
-  </data>
-  <data name="SettingsLblMatrixHomeserver.Text" xml:space="preserve">
-    <value>Homeserver URL</value>
-  </data>
-  <data name="SettingsMatrixHomeserverBox.PlaceholderText" xml:space="preserve">
-    <value>https://matrix.org</value>
-  </data>
-  <data name="SettingsLblWebhook.Text" xml:space="preserve">
-    <value>WEBHOOK</value>
-  </data>
-  <data name="SettingsLblWebhookEnabled.Text" xml:space="preserve">
-    <value>Enabled</value>
-  </data>
-  <data name="SettingsLblWebhookPort.Text" xml:space="preserve">
-    <value>Port</value>
-  </data>
-  <data name="SettingsLblWebhookHmac.Text" xml:space="preserve">
-    <value>HMAC Secret</value>
-  </data>
-  <data name="SettingsWebhookHmacSecretBox.PlaceholderText" xml:space="preserve">
-    <value>Optional HMAC secret</value>
-  </data>
-  <data name="SettingsLblEmail.Text" xml:space="preserve">
-    <value>EMAIL</value>
-  </data>
-  <data name="SettingsLblEmailAddress.Text" xml:space="preserve">
-    <value>Address</value>
-  </data>
-  <data name="SettingsEmailAddressBox.PlaceholderText" xml:space="preserve">
-    <value>you@example.com</value>
-  </data>
-  <data name="SettingsLblEmailPassword.Text" xml:space="preserve">
-    <value>Password</value>
-  </data>
-  <data name="SettingsEmailPasswordBox.PlaceholderText" xml:space="preserve">
-    <value>Email password or app password</value>
-  </data>
-  <data name="SettingsLblEmailImapHost.Text" xml:space="preserve">
-    <value>IMAP Host</value>
-  </data>
-  <data name="SettingsEmailImapHostBox.PlaceholderText" xml:space="preserve">
-    <value>imap.gmail.com</value>
-  </data>
-  <data name="SettingsLblEmailImapPort.Text" xml:space="preserve">
-    <value>IMAP Port</value>
-  </data>
-  <data name="SettingsLblEmailSmtpHost.Text" xml:space="preserve">
-    <value>SMTP Host</value>
-  </data>
-  <data name="SettingsEmailSmtpHostBox.PlaceholderText" xml:space="preserve">
-    <value>smtp.gmail.com</value>
-  </data>
-  <data name="SettingsLblEmailSmtpPort.Text" xml:space="preserve">
-    <value>SMTP Port</value>
-  </data>
-  <data name="SettingsSaveAllPlatformsBtn.Content" xml:space="preserve">
-    <value>Save All Platforms</value>
-  </data>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <data name="SettingsExpMemoryContextHeader.Text" xml:space="preserve">
     <value>Memory &amp; Context</value>
   </data>
@@ -1117,7 +967,7 @@
     <value>Dreamer</value>
   </data>
   <data name="SettingsDreamerIntro.Text" xml:space="preserve">
-    <value>Background free-association on a local model (Ollama). Off by default. Room: %LOCALAPPDATA%\hermes\dreamer\ — scheduled digests save under feedback\digests\ and can also post to Discord.</value>
+    <value>Background free-association on a local model (Ollama). Off by default. Room: %LOCALAPPDATA%\hermes\dreamer\. Scheduled digests save under feedback\digests\.</value>
   </data>
   <data name="SettingsDreamerEnabledLabel.Text" xml:space="preserve">
     <value>ENABLE DREAMER</value>
@@ -1138,7 +988,7 @@
     <value>http://127.0.0.1:11434/v1</value>
   </data>
   <data name="SettingsDreamerDigestTimesLabel.Text" xml:space="preserve">
-    <value>DIGEST TIMES (LOCAL + DISCORD)</value>
+    <value>DIGEST TIMES (LOCAL)</value>
   </data>
   <data name="SettingsDreamerDigestTimesBox.PlaceholderText" xml:space="preserve">
     <value>08:00,12:00,20:00</value>
@@ -1149,12 +999,8 @@
   <data name="SettingsDreamerMinWalksLabel.Text" xml:space="preserve">
     <value>MIN WALKS BEFORE BUILD</value>
   </data>
-  <data name="SettingsDreamerDiscordChannelLabel.Text" xml:space="preserve">
-    <value>DISCORD CHANNEL ID (postcards)</value>
-  </data>
-  <data name="SettingsDreamerDiscordChannelBox.PlaceholderText" xml:space="preserve">
-    <value>optional numeric channel id</value>
-  </data>
+  
+  
   <data name="SettingsSaveDreamerBtn.Content" xml:space="preserve">
     <value>Save Dreamer Config</value>
   </data>
@@ -1185,54 +1031,22 @@
   <data name="SettingsSaveDisplayBtn.Content" xml:space="preserve">
     <value>Save Display Config</value>
   </data>
-  <data name="SettingsExpExecutionEnvHeader.Text" xml:space="preserve">
-    <value>Execution Environment</value>
-  </data>
-  <data name="SettingsLblBackend.Text" xml:space="preserve">
-    <value>BACKEND</value>
-  </data>
-  <data name="SettingsExecLocal.Content" xml:space="preserve">
-    <value>Local</value>
-  </data>
-  <data name="SettingsExecDocker.Content" xml:space="preserve">
-    <value>Docker</value>
-  </data>
-  <data name="SettingsExecSsh.Content" xml:space="preserve">
-    <value>SSH</value>
-  </data>
-  <data name="SettingsExecModal.Content" xml:space="preserve">
-    <value>Modal</value>
-  </data>
-  <data name="SettingsExecDaytona.Content" xml:space="preserve">
-    <value>Daytona</value>
-  </data>
-  <data name="SettingsLblWorkingDirectory.Text" xml:space="preserve">
-    <value>WORKING DIRECTORY</value>
-  </data>
-  <data name="SettingsExecWorkingDirBox.PlaceholderText" xml:space="preserve">
-    <value>.</value>
-  </data>
-  <data name="SettingsLblExecTimeout.Text" xml:space="preserve">
-    <value>TIMEOUT (SECONDS)</value>
-  </data>
-  <data name="SettingsLblDockerOptions.Text" xml:space="preserve">
-    <value>DOCKER OPTIONS</value>
-  </data>
-  <data name="SettingsLblDockerImage.Text" xml:space="preserve">
-    <value>DOCKER IMAGE</value>
-  </data>
-  <data name="SettingsDockerImageBox.PlaceholderText" xml:space="preserve">
-    <value>nikolaik/python-nodejs:python3.11-nodejs20</value>
-  </data>
-  <data name="SettingsLblDockerCpu.Text" xml:space="preserve">
-    <value>CONTAINER CPU</value>
-  </data>
-  <data name="SettingsLblDockerMemory.Text" xml:space="preserve">
-    <value>CONTAINER MEMORY (MB)</value>
-  </data>
-  <data name="SettingsSaveExecutionBtn.Content" xml:space="preserve">
-    <value>Save Execution Config</value>
-  </data>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <data name="SettingsExpPluginsHeader.Text" xml:space="preserve">
     <value>Plugins &amp; Extensions</value>
   </data>
@@ -1248,48 +1062,20 @@
   <data name="SettingsSavePluginBtn.Content" xml:space="preserve">
     <value>Save Plugin Config</value>
   </data>
-  <data name="SettingsExpSearchHeader.Text" xml:space="preserve">
-    <value>Web Search</value>
-  </data>
-  <data name="SearchProviderDuckDuckGoItem.Content" xml:space="preserve">
-    <value>DuckDuckGo (no key required)</value>
-  </data>
-  <data name="SearchProviderGoogleItem.Content" xml:space="preserve">
-    <value>Google Custom Search</value>
-  </data>
-  <data name="SearchProviderBingItem.Content" xml:space="preserve">
-    <value>Bing Web Search</value>
-  </data>
-  <data name="SettingsSearchMissingGoogleKey" xml:space="preserve">
-    <value>Google search requires both API key and Engine ID.</value>
-  </data>
-  <data name="SettingsSearchMissingBingKey" xml:space="preserve">
-    <value>Bing search requires an API key.</value>
-  </data>
-  <data name="SettingsLblSearchProvider.Text" xml:space="preserve">
-    <value>SEARCH PROVIDER</value>
-  </data>
-  <data name="SettingsLblSearchGoogleApiKey.Text" xml:space="preserve">
-    <value>GOOGLE API KEY</value>
-  </data>
-  <data name="SettingsSearchGoogleApiKeyBox.PlaceholderText" xml:space="preserve">
-    <value>Required for Google Custom Search</value>
-  </data>
-  <data name="SettingsLblSearchGoogleEngineId.Text" xml:space="preserve">
-    <value>GOOGLE ENGINE ID (CX)</value>
-  </data>
-  <data name="SettingsSearchGoogleEngineIdBox.PlaceholderText" xml:space="preserve">
-    <value>Custom Search Engine identifier</value>
-  </data>
-  <data name="SettingsLblSearchBingApiKey.Text" xml:space="preserve">
-    <value>BING API KEY</value>
-  </data>
-  <data name="SettingsSearchBingApiKeyBox.PlaceholderText" xml:space="preserve">
-    <value>Required for Bing Web Search</value>
-  </data>
-  <data name="SettingsSaveSearchBtn.Content" xml:space="preserve">
-    <value>Save Search Config</value>
-  </data>
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   <data name="SettingsExpPathsSystemHeader.Text" xml:space="preserve">
     <value>Paths &amp; System</value>
   </data>
@@ -1302,9 +1088,7 @@
   <data name="SettingsSaveSuccessRestart" xml:space="preserve">
     <value>Saved successfully. Restart to apply.</value>
   </data>
-  <data name="SettingsSaveAllPlatformsSuccess" xml:space="preserve">
-    <value>All platforms saved. Restart gateway to apply.</value>
-  </data>
+  
   <data name="SettingsDreamerSaved" xml:space="preserve">
     <value>Saved. Restart app to refresh Dreamer LLM clients.</value>
   </data>
@@ -1332,16 +1116,8 @@
   <data name="SettingsModelComboItemFormat" xml:space="preserve">
     <value>{0}  ({1})</value>
   </data>
-  <data name="SettingsGatewayStatusRunning" xml:space="preserve">
-    <value>Running</value>
-  </data>
-  <data name="SettingsGatewayStatusStopped" xml:space="preserve">
-    <value>Stopped</value>
-  </data>
-  <data name="SettingsGatewayStart" xml:space="preserve">
-    <value>Start</value>
-  </data>
-  <data name="SettingsGatewayStop" xml:space="preserve">
-    <value>Stop</value>
-  </data>
+  
+  
+  
+  
 </root>

@@ -18,7 +18,6 @@ public sealed partial class MainWindow : Window
         ["skills"] = typeof(SkillsPage),
         ["memory"] = typeof(MemoryPage),
         ["buddy"] = typeof(BuddyPage),
-        ["integrations"] = typeof(IntegrationsPage),
         ["settings"] = typeof(SettingsPage),
     };
 

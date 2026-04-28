@@ -975,21 +975,18 @@ Write the USER.md content now (markdown format, start with # User Profile):";
         if (sender is not Button btn || btn.Tag is not string tag) return;
 
         SessionPanelView.Visibility = Visibility.Collapsed;
-        FileBrowserPanelView.Visibility = Visibility.Collapsed;
         TaskPanelView.Visibility = Visibility.Collapsed;
         ReplayPanelView.Visibility = Visibility.Collapsed;
 
         var accent = GetBrush("AppAccentTextBrush");
         var muted = GetBrush("AppTextSecondaryBrush");
         TabSessions.Foreground = muted;
-        TabFiles.Foreground = muted;
         TabTasks.Foreground = muted;
         TabReplay.Foreground = muted;
 
         switch (tag)
         {
             case "sessions": SessionPanelView.Visibility = Visibility.Visible; TabSessions.Foreground = accent; break;
-            case "files": FileBrowserPanelView.Visibility = Visibility.Visible; TabFiles.Foreground = accent; break;
             case "tasks": TaskPanelView.Visibility = Visibility.Visible; TabTasks.Foreground = accent; break;
             case "replay": ReplayPanelView.Visibility = Visibility.Visible; TabReplay.Foreground = accent; break;
         }

@@ -70,7 +70,7 @@ public sealed partial class DashboardPage : Page
     private async void OnPageLoaded(object sender, RoutedEventArgs e)
     {
         LoadStats();
-        LoadPlatformBadges();
+        LoadServiceBadges();
         LoadInsights();
         await LoadRecentSessionsAsync();
         await RefreshRuntimeStatusAsync();
@@ -150,22 +150,12 @@ public sealed partial class DashboardPage : Page
             ?? ResourceLoader.GetString("DashboardSoulDefaultProfile");
     }
 
-    // ── Platform Badges ──
+    // ── Service Badges ──
 
-    private void LoadPlatformBadges()
+    private void LoadServiceBadges()
     {
-        PlatformBadges.Children.Clear();
         ServiceBadges.Children.Clear();
 
-        // Messaging platforms
-        AddBadge(PlatformBadges, ResourceLoader.GetString("BadgeTelegram"), HermesEnvironment.TelegramConfigured, "#2AABEE");
-        AddBadge(PlatformBadges, ResourceLoader.GetString("BadgeDiscord"), HermesEnvironment.DiscordConfigured, "#5865F2");
-        AddBadge(PlatformBadges, ResourceLoader.GetString("BadgeSlack"), HermesEnvironment.SlackConfigured, "#4A154B");
-        AddBadge(PlatformBadges, ResourceLoader.GetString("BadgeWhatsApp"), HermesEnvironment.WhatsAppConfigured, "#25D366");
-        AddBadge(PlatformBadges, ResourceLoader.GetString("BadgeMatrix"), HermesEnvironment.MatrixConfigured, "#0DBD8B");
-        AddBadge(PlatformBadges, ResourceLoader.GetString("BadgeWebhook"), HermesEnvironment.WebhookConfigured, "#F59E0B");
-
-        // Services
         AddBadge(ServiceBadges, ResourceLoader.GetString("BadgeMemory"), true, "#6BCB77");
         AddBadge(ServiceBadges, ResourceLoader.GetString("BadgeSkills"), (App.Services?.GetService<SkillManager>()?.ListSkills().Count ?? 0) > 0, "#818CF8");
         AddBadge(ServiceBadges, ResourceLoader.GetString("BadgeDream"), true, "#C084FC");

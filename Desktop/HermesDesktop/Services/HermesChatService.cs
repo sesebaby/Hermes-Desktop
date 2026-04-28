@@ -130,7 +130,7 @@ internal sealed class HermesChatService : IDisposable
                 switch (evt)
                 {
                     case Hermes.Agent.LLM.StreamEvent.TokenDelta td:
-                        // Tool-calling status messages (e.g. "[Calling tool: bash]") are
+                        // Tool-calling status messages (e.g. "[Calling tool: todo_write]") are
                         // informational — show in UI but don't accumulate into the saved response
                         if (td.Text.StartsWith("\n[Calling tool:") && td.Text.TrimEnd().EndsWith("]"))
                         {

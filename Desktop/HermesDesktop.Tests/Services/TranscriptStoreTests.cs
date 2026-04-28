@@ -335,7 +335,7 @@ public class TranscriptStoreTests
         var store = CreateStore();
         await store.SaveMessageAsync("s2", new Message { Role = "user", Content = "hi" }, CancellationToken.None);
         await store.SaveMessageAsync("s2", new Message { Role = "assistant", Content = "hey" }, CancellationToken.None);
-        await store.SaveMessageAsync("s2", new Message { Role = "tool", Content = "result", ToolCallId = "c1", ToolName = "bash" }, CancellationToken.None);
+        await store.SaveMessageAsync("s2", new Message { Role = "tool", Content = "result", ToolCallId = "c1", ToolName = "todo_write" }, CancellationToken.None);
 
         var loaded = await store.LoadSessionAsync("s2", CancellationToken.None);
 
@@ -343,7 +343,7 @@ public class TranscriptStoreTests
         Assert.AreEqual("assistant", loaded[1].Role);
         Assert.AreEqual("tool", loaded[2].Role);
         Assert.AreEqual("c1", loaded[2].ToolCallId);
-        Assert.AreEqual("bash", loaded[2].ToolName);
+        Assert.AreEqual("todo_write", loaded[2].ToolName);
     }
 
     [TestMethod]

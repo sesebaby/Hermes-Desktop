@@ -47,16 +47,13 @@ public sealed class Agent : IAgent
     private const int MaxParallelWorkers = 8;
 
     /// <summary>
-    /// Read-only tools safe for concurrent execution.
+    /// Tools safe for concurrent execution.
     /// Names must match the runtime <see cref="ITool.Name"/> values registered with the agent —
-    /// not human-readable variants. The web tools register as "webfetch"/"websearch"
-    /// (no underscore), so any underscore variants would be silently bypassed by
-    /// <see cref="ShouldParallelize"/> and never benefit from parallelization.
+    /// not human-readable variants.
     /// </summary>
     private static readonly HashSet<string> ParallelSafeTools = new(StringComparer.OrdinalIgnoreCase)
     {
-        "read_file", "glob", "grep", "webfetch", "websearch",
-        "session_search", "skill_invoke", "skills_list", "skill_view", "memory", "lsp"
+        "session_search", "skill_invoke", "skills_list", "skill_view", "memory"
     };
 
     /// <summary>Tools that must never run in parallel.</summary>
@@ -78,9 +75,7 @@ public sealed class Agent : IAgent
     /// Optional callback for interactive permission prompts.
     /// When PermissionBehavior.Ask is returned, this callback is invoked with
     /// (toolName, message, toolArguments). The third argument is the raw JSON
-    /// arguments string the model passed to the tool — for the bash tool that
-    /// is the actual shell command about to run, for read/write/edit it is the
-    /// path and contents, etc. Surfacing it in the prompt UI lets technical
+    /// arguments string the model passed to the tool. Surfacing it in the prompt UI lets technical
     /// users audit exactly what the agent is about to execute *before*
     /// approving it, instead of only seeing it after the fact in the activity
     /// log. May be null if the host did not capture the arguments.

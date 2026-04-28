@@ -87,38 +87,38 @@ public sealed class AgentTool : ITool
         {
             "researcher" => new AgentDefinition(
                 "Researcher",
-                "You are a research specialist. Find and synthesize information from multiple sources. Be thorough and cite sources.",
-                new[] { "webfetch", "websearch", "read_file", "glob", "grep" }
+                "You are a research specialist. Synthesize available local context and prior session memory. Be clear about evidence and uncertainty.",
+                new[] { "session_search", "skills_list", "skill_view", "memory" }
             ),
             
             "coder" => new AgentDefinition(
                 "Coder",
-                "You are a coding specialist. Write clean, efficient, well-documented code. Follow best practices and test your solutions.",
-                new[] { "read_file", "write_file", "edit_file", "glob", "grep", "bash" }
+                "You are an implementation planning specialist. Break work into concrete, verifiable steps using the retained local agent tools.",
+                new[] { "session_search", "todo_write", "memory", "skills_list", "skill_view" }
             ),
             
             "analyst" => new AgentDefinition(
                 "Analyst",
                 "You are an analysis specialist. Break down complex problems, identify patterns, and provide actionable insights.",
-                new[] { "read_file", "glob", "grep", "bash" }
+                new[] { "session_search", "memory", "skills_list", "skill_view" }
             ),
             
             "planner" => new AgentDefinition(
                 "Planner",
                 "You are a planning specialist. Create detailed, actionable plans with clear steps, dependencies, and success criteria.",
-                new[] { "read_file", "glob", "grep" }
+                new[] { "session_search", "todo_write", "memory" }
             ),
             
             "reviewer" => new AgentDefinition(
                 "Reviewer",
                 "You are a code review specialist. Identify issues, suggest improvements, and ensure code quality and security.",
-                new[] { "read_file", "glob", "grep", "bash" }
+                new[] { "session_search", "memory", "skills_list", "skill_view" }
             ),
             
             _ => new AgentDefinition(
                 "General",
                 "You are a helpful assistant. Complete the task efficiently and accurately.",
-                new[] { "read_file", "write_file", "edit_file", "glob", "grep", "bash", "webfetch", "websearch" }
+                new[] { "session_search", "todo_write", "schedule_cron", "ask_user", "memory", "skills_list", "skill_view", "skill_invoke" }
             )
         };
     }

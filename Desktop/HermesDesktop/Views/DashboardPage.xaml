@@ -91,25 +91,17 @@
                 </StackPanel>
             </Border>
 
-            <!-- ═══ Platforms & Model Row ═══ -->
+            <!-- ═══ Services & Model Row ═══ -->
             <Grid ColumnSpacing="20">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="2*"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Platforms & Services -->
+                <!-- Services -->
                 <Border Style="{StaticResource SurfaceCardStyle}">
                     <StackPanel Spacing="14">
-                        <TextBlock x:Uid="DashPlatformsCardTitle" FontSize="16" FontWeight="SemiBold"/>
-
-                        <!-- Platform badges -->
-                        <StackPanel Spacing="4">
-                            <TextBlock x:Uid="DashPlatformsMessaging" FontSize="12" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                            <StackPanel x:Name="PlatformBadges" Orientation="Horizontal" Spacing="8">
-                                <!-- Populated in code-behind -->
-                            </StackPanel>
-                        </StackPanel>
+                        <TextBlock Text="Services" FontSize="16" FontWeight="SemiBold"/>
 
                         <!-- Services -->
                         <StackPanel Spacing="4">

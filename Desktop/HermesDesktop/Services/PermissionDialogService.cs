@@ -27,8 +27,7 @@ public enum PermissionPromptDecision
 /// Responsibilities:
 /// <list type="number">
 ///   <item>Marshal to the UI thread via the owning window's DispatcherQueue.</item>
-///   <item>Format the raw tool arguments for human review (bash command
-///         extraction + JSON pretty-print fallback).</item>
+///   <item>Format the raw tool arguments for human review.</item>
 ///   <item>Build the ContentDialog body with a selectable monospace command
 ///         block so technical users can audit (and Ctrl-C) what the agent
 ///         is about to run before approving.</item>
@@ -74,16 +73,14 @@ public sealed class PermissionDialogService
     /// Comes from <c>PermissionDecision.Message</c> on the agent side.
     /// </param>
     /// <param name="toolName">
-    /// The tool the agent wants to invoke (e.g. <c>"bash"</c>, <c>"write_file"</c>).
+    /// The tool the agent wants to invoke (e.g. <c>"todo_write"</c>, <c>"session_search"</c>).
     /// Surfaced in both the dialog title and passed to
-    /// <see cref="FormatToolArgumentsForPrompt"/> for tool-specific formatting.
+    /// <see cref="FormatToolArgumentsForPrompt"/> for formatting.
     /// </param>
     /// <param name="toolArguments">
-    /// The raw JSON arguments string from the model's tool call. For the
-    /// bash tool that is <c>{"command":"whoami"}</c>; the Command section
-    /// of the dialog will surface the literal <c>whoami</c> instead of the
-    /// JSON wrapper. May be null/empty if the host doesn't have it, in
-    /// which case the Command section is omitted entirely.
+    /// The raw JSON arguments string from the model's tool call. May be
+    /// null/empty if the host doesn't have it, in which case the Arguments
+    /// section is omitted entirely.
     /// </param>
     public Task<PermissionPromptDecision> ShowPermissionDecisionAsync(
         string message,
@@ -147,7 +144,7 @@ public sealed class PermissionDialogService
     /// <summary>
     /// Build the ContentDialog body. Vertical StackPanel containing the
     /// human-readable message followed (when args are present) by a
-    /// "Command" header and a read-only monospace TextBox the user can
+    /// "Arguments" header and a read-only monospace TextBox the user can
     /// Ctrl-A / Ctrl-C from. DefaultButton is Close so an accidental Enter
     /// keypress on the dialog denies rather than approves — never let
     /// muscle memory grant permissions.
@@ -166,12 +163,12 @@ public sealed class PermissionDialogService
             IsTextSelectionEnabled = true
         });
 
-        var formattedCommand = FormatToolArgumentsForPrompt(toolName, toolArguments);
-        if (!string.IsNullOrEmpty(formattedCommand))
+        var formattedArguments = FormatToolArgumentsForPrompt(toolName, toolArguments);
+        if (!string.IsNullOrEmpty(formattedArguments))
         {
             body.Children.Add(new TextBlock
             {
-                Text = "Command",
+                Text = "Arguments",
                 FontSize = 11,
                 FontWeight = FontWeights.SemiBold,
                 Opacity = 0.7,
@@ -183,7 +180,7 @@ public sealed class PermissionDialogService
             // and scrolls gracefully when the command is long.
             body.Children.Add(new TextBox
             {
-                Text = formattedCommand,
+                Text = formattedArguments,
                 IsReadOnly = true,
                 AcceptsReturn = true,
                 TextWrapping = TextWrapping.Wrap,
@@ -207,12 +204,10 @@ public sealed class PermissionDialogService
     }
 
     /// <summary>
-    /// Format raw tool arguments for display in the permission dialog. For
-    /// the bash tool, parse the JSON and surface the literal command string
-    /// so the user sees <c>whoami</c> rather than <c>{"command":"whoami"}</c>.
-    /// For other tools, pretty-print the JSON. Returns an empty string when
-    /// there is nothing useful to display so the caller can omit the Command
-    /// section entirely.
+    /// Format raw tool arguments for display in the permission dialog. Parse
+    /// JSON when possible and pretty-print it for readability. Returns an
+    /// empty string when there is nothing useful to display so the caller can
+    /// omit the Arguments section entirely.
     /// </summary>
     /// <remarks>
     /// Internal so it can be unit-tested. Static so it has no instance state
@@ -226,24 +221,10 @@ public sealed class PermissionDialogService
         try
         {
             using var doc = JsonDocument.Parse(toolArguments);
-            var root = doc.RootElement;
-
-            // bash tool: surface the actual shell command verbatim so the user
-            // sees what will run, not the JSON wrapper around it.
-            if (string.Equals(toolName, "bash", StringComparison.OrdinalIgnoreCase) &&
-                root.ValueKind == JsonValueKind.Object &&
-                root.TryGetProperty("command", out var commandProp) &&
-                commandProp.ValueKind == JsonValueKind.String)
-            {
-                return commandProp.GetString() ?? string.Empty;
-            }
-
-            // Everything else: pretty-print the JSON for readability.
-            return JsonSerializer.Serialize(root, new JsonSerializerOptions { WriteIndented = true });
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
         }
         catch (JsonException)
         {
-            // Not JSON — show the raw string verbatim. Better than hiding it.
             return toolArguments;
         }
     }

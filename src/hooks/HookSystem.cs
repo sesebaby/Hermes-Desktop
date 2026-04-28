@@ -308,7 +308,7 @@ public sealed record HookExecutionResult(
     long DurationMs);
 
 /// <summary>
-/// SSRF guard for HTTP hooks (shared with WebFetchTool).
+/// SSRF guard for HTTP hooks.
 /// </summary>
 public sealed class SsrfGuard
 {

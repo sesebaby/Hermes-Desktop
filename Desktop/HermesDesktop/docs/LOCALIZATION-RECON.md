@@ -11,9 +11,8 @@ This document is a **reconnaissance and research summary** for migrating Hermes 
 | Area | Mechanism |
 |------|-----------|
 | `MainWindow.xaml` nav | `x:Uid` → `Strings/en-us/Resources.resw` (+ `zh-cn` satellite) |
-| `IntegrationsPage.xaml` (partial) | `x:Uid` |
 | `SettingsPage.xaml` (small footer block) | `x:Uid` for path-related buttons/labels |
-| `ChatPage.xaml.cs`, `DashboardPage.xaml.cs`, `SettingsPage.xaml.cs`, `IntegrationsPage.xaml.cs`, `MainWindow.xaml.cs` | `ResourceLoader.GetString(...)` for some runtime strings |
+| `ChatPage.xaml.cs`, `DashboardPage.xaml.cs`, `SettingsPage.xaml.cs`, `MainWindow.xaml.cs` | `ResourceLoader.GetString(...)` for some runtime strings |
 
 ### Heavily hardcoded (high volume)
 
@@ -22,7 +21,7 @@ This document is a **reconnaissance and research summary** for migrating Hermes 
 | **`SettingsPage.xaml`** | **Largest surface** (~160+ `Text="` / `Content="` / `PlaceholderText="` hits). Labels, section titles, `ComboBoxItem` labels, helper copy, buttons. |
 | **`DashboardPage.xaml`** | KPI cards, section headers, buttons (`Test Connection`, `Open Chat`), empty state, system paths section. |
 | **`ChatPage.xaml`** | Header (`Hermes Agent`, `New Chat`), `Reasoning` expander label, thinking line, input chrome. **DataTemplate** contains `Text="Reasoning"` — special case (below). |
-| **Other pages / panels** | `AgentPage`, `MemoryPage`, `BuddyPage`, `SkillsPage`, `SessionPanel`, `AgentPanel`, `TaskPanel`, `ReplayPanel`, `MemoryPanel`, `SkillsPanel`, `FileBrowserPanel`, `BuddyPanel`, `ToolCallCard`, `ApprovalCard`, `PermissionDialog`, `CodeBlockView`, `IntegrationsPage` (remainder). |
+| **Other pages / panels** | `AgentPage`, `MemoryPage`, `BuddyPage`, `SkillsPage`, `SessionPanel`, `AgentPanel`, `TaskPanel`, `ReplayPanel`, `MemoryPanel`, `SkillsPanel`, `BuddyPanel`, `ToolCallCard`, `ApprovalCard`, `PermissionDialog`, `CodeBlockView` (remainder). |
 
 ### Hardcoded in code-behind (must move to `ResourceLoader` or stay format-only)
 
@@ -101,7 +100,7 @@ Avoid sharing one `x:Uid` across multiple items.
 ### E. Runtime overrides vs `x:Uid`
 
 - **MRT applies at load.** If code sets **`SomeBlock.Text = "..."`** after load, it **replaces** the localized value until set again.  
-- For controls that **toggle** text (e.g. gateway **Start/Stop**), either:  
+- For controls that **toggle** text (e.g. **Start/Stop**), either:  
   - set text from **`ResourceLoader` in both states**, or  
   - use **two** resource keys and swap between them.
 
@@ -125,7 +124,7 @@ Avoid sharing one `x:Uid` across multiple items.
 
 ## Suggested migration order (low risk → high risk)
 
-1. **Small pages / controls:** `PermissionDialog`, `CodeBlockView`, `IntegrationsPage` gaps, `ChatPage` header + thinking line (visible, few strings).  
+1. **Small pages / controls:** `PermissionDialog`, `CodeBlockView`, `ChatPage` header + thinking line (visible, few strings).  
 2. **`DashboardPage.xaml`** + **`DashboardPage.xaml.cs`** status strings together.  
 3. **Remaining panels** (`AgentPanel`, `MemoryPanel`, …).  
 4. **`SettingsPage.xaml` + `.cs` last** — largest; do in **vertical slices** (e.g. “User Profile” section + its code-behind messages in one PR).

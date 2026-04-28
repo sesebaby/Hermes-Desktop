@@ -285,7 +285,7 @@ public sealed class MemoryParityTests
         await store.SaveMessageAsync("summary-tool-session", new Message
         {
             Role = "tool",
-            ToolName = "bash",
+            ToolName = "todo_write",
             Content = "TOOL SECRET should not surface in summary"
         }, CancellationToken.None);
         await store.SaveMessageAsync("summary-tool-session", new Message
@@ -397,7 +397,8 @@ public sealed class MemoryParityTests
         StringAssert.Contains(prompt, "Write memories as declarative facts");
         StringAssert.Contains(prompt, "use session_search to recall it before asking them to repeat themselves");
         StringAssert.Contains(prompt, "Never answer current time, date, timezone");
-        StringAssert.Contains(prompt, "Get-Date -Format");
+        StringAssert.Contains(prompt, "available live-environment integration");
+        StringAssert.Contains(prompt, "Do not use interactive `date` prompts");
     }
 
     [TestMethod]

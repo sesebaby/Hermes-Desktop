@@ -105,7 +105,7 @@ public class SessionTests
             Role = "tool",
             Content = "result content",
             ToolCallId = "call-001",
-            ToolName = "bash"
+            ToolName = "todo_write"
         };
 
         session.AddMessage(toolMsg);
@@ -113,7 +113,7 @@ public class SessionTests
         var stored = session.Messages[0];
         Assert.AreEqual("tool", stored.Role);
         Assert.AreEqual("call-001", stored.ToolCallId);
-        Assert.AreEqual("bash", stored.ToolName);
+        Assert.AreEqual("todo_write", stored.ToolName);
     }
 
     // ── State dictionary ──
@@ -173,11 +173,11 @@ public class MessageTests
             Role = "tool",
             Content = "result",
             ToolCallId = "call-42",
-            ToolName = "read_file"
+            ToolName = "session_search"
         };
 
         Assert.AreEqual("call-42", msg.ToolCallId);
-        Assert.AreEqual("read_file", msg.ToolName);
+        Assert.AreEqual("session_search", msg.ToolName);
     }
 
     [TestMethod]
@@ -185,7 +185,7 @@ public class MessageTests
     {
         var toolCalls = new List<ToolCall>
         {
-            new() { Id = "tc1", Name = "bash", Arguments = "{\"command\":\"ls\"}" }
+            new() { Id = "tc1", Name = "todo_write", Arguments = "{\"items\":[]}" }
         };
 
         var msg = new Message
@@ -197,7 +197,7 @@ public class MessageTests
 
         Assert.IsNotNull(msg.ToolCalls);
         Assert.AreEqual(1, msg.ToolCalls.Count);
-        Assert.AreEqual("bash", msg.ToolCalls[0].Name);
+        Assert.AreEqual("todo_write", msg.ToolCalls[0].Name);
     }
 
     [TestMethod]
@@ -283,7 +283,7 @@ public class ChatResponseTests
             Content = null,
             ToolCalls = new List<ToolCall>
             {
-                new() { Id = "tc1", Name = "bash", Arguments = "{}" }
+                new() { Id = "tc1", Name = "todo_write", Arguments = "{}" }
             }
         };
 

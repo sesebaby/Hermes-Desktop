@@ -97,14 +97,6 @@
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem
-                    x:Name="IntegrationsNavItem"
-                    x:Uid="IntegrationsNavItem"
-                    Tag="integrations">
-                    <NavigationViewItem.Icon>
-                        <SymbolIcon Symbol="People" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem
                     x:Name="SettingsNavItem"
                     x:Uid="SettingsNavItem"
                     Tag="settings">

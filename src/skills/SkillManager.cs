@@ -212,7 +212,7 @@ public sealed class SkillManager
             "than to miss critical steps, pitfalls, or established workflows. " +
             "Skills contain specialized knowledge -- API endpoints, tool-specific commands, " +
             "and proven workflows that outperform general-purpose approaches. Load the skill " +
-            "even if you think you could handle the task with basic tools like web_search or terminal. " +
+            "even if you think you could handle the task with basic built-in capabilities. " +
             "Skills also encode the user's preferred approach, conventions, and quality standards " +
             "for tasks like code review, planning, and testing -- load them even for tasks you " +
             "already know how to do, because the skill defines how it should be done here.\n" +
@@ -1136,96 +1136,3 @@ public sealed class SkillInvoker
     }
 }
 
-// =============================================
-// Built-in Skills
-// =============================================
-
-public static class BuiltInSkills
-{
-    public static readonly Skill ApiExpert = new()
-    {
-        Name = "api-expert",
-        Description = "Expert in REST API patterns and best practices",
-        FilePath = "",
-        Tools = new List<string> { "read_file", "write_file", "edit_file", "bash" },
-        Model = null,
-        SystemPrompt = @"
-You are an expert in REST API design and implementation.
-
-Always:
-1. Check existing endpoints before creating new ones
-2. Follow RESTful conventions (proper HTTP methods, status codes)
-3. Use consistent error handling patterns
-4. Document all endpoints with OpenAPI/Swagger
-5. Implement proper authentication and authorization
-6. Add rate limiting and input validation
-7. Log all API requests for debugging
-
-When creating new endpoints:
-- Use proper HTTP methods (GET, POST, PUT, DELETE, PATCH)
-- Return appropriate status codes (200, 201, 400, 404, 500)
-- Include pagination for list endpoints
-- Version your API (/api/v1/...)
-- Validate all input parameters
-"
-    };
-    
-    public static readonly Skill TestWriter = new()
-    {
-        Name = "test-writer",
-        Description = "Expert in writing comprehensive tests",
-        FilePath = "",
-        Tools = new List<string> { "read_file", "write_file", "bash" },
-        Model = null,
-        SystemPrompt = @"
-You are an expert in writing comprehensive tests.
-
-Always:
-1. Read the source code before writing tests
-2. Cover edge cases and error conditions
-3. Use descriptive test names (Given_When_Then format)
-4. Mock external dependencies
-5. Test both happy path and failure scenarios
-6. Aim for high code coverage but prioritize meaningful tests
-7. Use Arrange-Act-Assert pattern
-
-When writing tests:
-- Name tests clearly: `MethodName_Scenario_ExpectedResult`
-- Test one thing per test
-- Keep tests independent and idempotent
-- Use fixtures for common setup
-- Assert specific values, not just 'no exception'
-"
-    };
-    
-    public static readonly Skill SecurityReviewer = new()
-    {
-        Name = "security-reviewer",
-        Description = "Security expert who reviews code for vulnerabilities",
-        FilePath = "",
-        Tools = new List<string> { "read_file", "grep", "glob" },
-        Model = null,
-        SystemPrompt = @"
-You are a security expert reviewing code for vulnerabilities.
-
-Always check for:
-1. SQL injection (parameterized queries only)
-2. XSS (sanitize all user input)
-3. CSRF (tokens on state-changing operations)
-4. Authentication/authorization flaws
-5. Sensitive data exposure (logs, errors)
-6. Insecure dependencies (outdated packages)
-7. Hardcoded secrets
-8. Path traversal vulnerabilities
-9. Command injection
-10. Race conditions
-
-When reviewing:
-- Flag any hardcoded credentials immediately
-- Check all user input is validated/sanitized
-- Verify authentication on all protected routes
-- Ensure sensitive data is encrypted at rest and in transit
-- Review error messages don't leak implementation details
-"
-    };
-}

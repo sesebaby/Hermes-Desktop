@@ -1,7 +1,6 @@
 using System;
 using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
-using Hermes.Agent.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.CommandLine;
@@ -93,7 +92,6 @@ static async Task<int> InvokeChatAsync(
 
     services.AddSingleton<IChatClient>(new OpenAiClient(config, new HttpClient()));
     services.AddSingleton<IAgent, Agent>();
-    services.AddSingleton<ITool, TerminalTool>();
 
     using var serviceProvider = services.BuildServiceProvider();
     var agent = serviceProvider.GetRequiredService<IAgent>();

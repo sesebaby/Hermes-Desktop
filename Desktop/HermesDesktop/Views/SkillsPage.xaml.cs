@@ -194,10 +194,6 @@ public sealed partial class SkillsPage : Page
             }
         }
 
-        var tools = string.Join(" ", skill.Tools).ToLower();
-        if (tools.Contains("bash") || tools.Contains("terminal")) return "automation";
-        if (tools.Contains("read_file") && tools.Contains("write_file")) return "code";
-        if (tools.Contains("grep") || tools.Contains("glob")) return "analysis";
         return "general";
     }
 }

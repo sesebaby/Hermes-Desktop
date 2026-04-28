@@ -59,7 +59,7 @@ public sealed class SkillSelfEvolutionParityTests
             ---
             name: build-fixer
             description: Fix build failures with exact commands
-            tools: bash, read_file
+            tools: session_search, todo_write
             ---
 
             Run `dotnet build`.
@@ -110,7 +110,7 @@ public sealed class SkillSelfEvolutionParityTests
             ---
             name: fuzzy-skill
             description: Fuzzy patch test
-            tools: bash
+            tools: session_search
             ---
 
             # Commands
@@ -342,7 +342,7 @@ public sealed class SkillSelfEvolutionParityTests
                         {
                             action = "create",
                             name = "review-created",
-                            content = "---\nname: review-created\ndescription: Created by review\ntools: bash\n---\n\nUse this later."
+                            content = "---\nname: review-created\ndescription: Created by review\ntools: session_search\n---\n\nUse this later."
                         })
                     },
                     new()
@@ -467,7 +467,7 @@ public sealed class SkillSelfEvolutionParityTests
             ---
             name: reset-created
             description: Created in foreground
-            tools: bash
+            tools: session_search
             ---
 
             Use this later.
@@ -517,7 +517,7 @@ public sealed class SkillSelfEvolutionParityTests
             ---
             name: {name}
             description: {description}
-            tools: bash
+            tools: session_search
             ---
 
             Skill instructions for {name}.
