@@ -115,6 +115,8 @@ public sealed class Agent : IAgent
         _fallbackChatClient = fallbackChatClient;
         _credentialPool = credentialPool;
         _memoryReviewService = memoryReviewService;
+        if (_memoryReviewService is not null)
+            _memoryReviewService.BackgroundReviewCompleted += HandleBackgroundReviewCompleted;
     }
 
     /// <summary>
@@ -589,6 +591,7 @@ public sealed class Agent : IAgent
             }
 
             _memoryReviewService?.QueueAfterTurn(
+                session.Id,
                 session.Messages.ToList(),
                 finalResponse,
                 interrupted: !completedTurnSuccessfully,
@@ -1022,6 +1025,7 @@ public sealed class Agent : IAgent
             }
 
             _memoryReviewService?.QueueAfterTurn(
+                session.Id,
                 session.Messages.ToList(),
                 streamedResponse.ToString(),
                 interrupted: !completedTurnSuccessfully,
@@ -1208,6 +1212,46 @@ public sealed class Agent : IAgent
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Completed-turn memory sync failed non-fatally for session {SessionId}", sessionId);
+        }
+    }
+
+    private void HandleBackgroundReviewCompleted(BackgroundReviewNotification notification)
+    {
+        var entry = new ActivityEntry
+        {
+            ToolName = "background_review",
+            InputSummary = DescribeBackgroundReviewScope(notification),
+            OutputSummary = notification.Summary,
+            Status = notification.Success ? ActivityStatus.Success : ActivityStatus.Failed
+        };
+
+        ActivityLog.Add(entry);
+        ActivityEntryAdded?.Invoke(entry);
+
+        if (_transcripts is null)
+            return;
+
+        _ = PersistBackgroundReviewActivityAsync(notification.SessionId, entry);
+    }
+
+    private string DescribeBackgroundReviewScope(BackgroundReviewNotification notification)
+        => (notification.ReviewMemory, notification.ReviewSkills) switch
+        {
+            (true, true) => "memory + skills",
+            (true, false) => "memory",
+            (false, true) => "skills",
+            _ => "background review"
+        };
+
+    private async Task PersistBackgroundReviewActivityAsync(string sessionId, ActivityEntry entry)
+    {
+        try
+        {
+            await _transcripts!.SaveActivityAsync(sessionId, entry, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to persist background review activity for session {SessionId}", sessionId);
         }
     }
 

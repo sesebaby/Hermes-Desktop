@@ -380,6 +380,47 @@ public sealed class SkillSelfEvolutionParityTests
     }
 
     [TestMethod]
+    public async Task MemoryReviewService_QueueAfterTurn_RaisesNotificationWhenNothingSaved()
+    {
+        var reviewClient = new ObservingReviewChatClient();
+        var memoryManager = new MemoryManager(_tempDir, reviewClient, NullLogger<MemoryManager>.Instance);
+        var service = new MemoryReviewService(
+            reviewClient,
+            memoryManager,
+            NullLogger<MemoryReviewService>.Instance,
+            nudgeInterval: 0,
+            skillManager: _skillManager,
+            skillNudgeInterval: 1);
+        var completed = new TaskCompletionSource<BackgroundReviewNotification>(TaskCreationOptions.RunContinuationsAsynchronously);
+        service.BackgroundReviewCompleted += notification => completed.TrySetResult(notification);
+
+        var queued = service.QueueAfterTurn(
+            "queue-session",
+            new[]
+            {
+                new Message { Role = "user", Content = "We used a tool." },
+                new Message { Role = "assistant", Content = "Done." }
+            },
+            finalResponse: "Done.",
+            interrupted: false,
+            toolIterations: 1,
+            skillManageUsed: false);
+
+        Assert.IsTrue(queued);
+
+        var winner = await Task.WhenAny(completed.Task, Task.Delay(1000));
+        Assert.AreSame(completed.Task, winner, "Background review notification should be raised.");
+
+        var notification = await completed.Task;
+        Assert.AreEqual("queue-session", notification.SessionId);
+        Assert.IsTrue(notification.ReviewSkills);
+        Assert.IsFalse(notification.ReviewMemory);
+        Assert.IsTrue(notification.Success);
+        Assert.IsFalse(notification.HasActions);
+        StringAssert.Contains(notification.Summary, "nothing to save");
+    }
+
+    [TestMethod]
     public async Task Agent_SkillReviewNudge_TriggersAfterConfiguredToolIterations()
     {
         var mainClient = new SequenceChatClient(
@@ -412,6 +453,11 @@ public sealed class SkillSelfEvolutionParityTests
         Assert.AreSame(reviewClient.Called.Task, completed, "Skill review should run after configured tool iterations.");
         CollectionAssert.Contains(reviewClient.LastToolNames.ToList(), "skills_list");
         CollectionAssert.Contains(reviewClient.LastToolNames.ToList(), "skill_manage");
+        await WaitForAsync(
+            () => agent.ActivityLog.Any(entry => entry.ToolName == "background_review"),
+            "Background review activity should be recorded.");
+        var reviewEntry = agent.ActivityLog.Last(entry => entry.ToolName == "background_review");
+        StringAssert.Contains(reviewEntry.OutputSummary, "nothing to save");
     }
 
     [TestMethod]
@@ -478,6 +524,20 @@ public sealed class SkillSelfEvolutionParityTests
             """;
 
         await _skillManager.CreateSkillFromContentAsync(name, content, category: null, CancellationToken.None);
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition, string message, int timeoutMs = 1000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition())
+                return;
+
+            await Task.Delay(25);
+        }
+
+        Assert.Fail(message);
     }
 
     private sealed class StubChatClient : IChatClient

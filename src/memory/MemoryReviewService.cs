@@ -14,6 +14,14 @@ public static class MemoryReviewDefaults
     public const int SkillCreationNudgeInterval = 5;
 }
 
+public sealed record BackgroundReviewNotification(
+    string SessionId,
+    bool ReviewMemory,
+    bool ReviewSkills,
+    bool Success,
+    bool HasActions,
+    string Summary);
+
 /// <summary>
 /// Periodic post-response memory review.
 /// Mirrors Python's background memory nudge: after every configured N user
@@ -92,9 +100,10 @@ public sealed class MemoryReviewService
         _skillNudgeInterval = skillNudgeInterval;
     }
 
-    public Action<string>? BackgroundReviewSummaryCallback { get; set; }
+    public event Action<BackgroundReviewNotification>? BackgroundReviewCompleted;
 
     public bool QueueAfterTurn(
+        string sessionId,
         IReadOnlyList<Message> messagesSnapshot,
         string finalResponse,
         bool interrupted,
@@ -105,19 +114,44 @@ public sealed class MemoryReviewService
         if (!due.ReviewMemory && !due.ReviewSkills)
             return false;
 
+        _logger.LogInformation(
+            "Queued background review for session {SessionId} (memory={ReviewMemory}, skills={ReviewSkills})",
+            sessionId,
+            due.ReviewMemory,
+            due.ReviewSkills);
+
         var snapshot = messagesSnapshot.Select(CloneMessage).ToList();
         _ = Task.Run(async () =>
         {
             try
             {
                 var results = await ReviewConversationAsync(snapshot, due.ReviewMemory, due.ReviewSkills, CancellationToken.None);
-                var summary = SummarizeReviewActions(results);
-                if (!string.IsNullOrWhiteSpace(summary))
-                    BackgroundReviewSummaryCallback?.Invoke(summary);
+                var summary = BuildReviewSummary(due.ReviewMemory, due.ReviewSkills, results, out var hasActions);
+                _logger.LogInformation(
+                    "Background review completed for session {SessionId} (memory={ReviewMemory}, skills={ReviewSkills}, actions={HasActions}): {Summary}",
+                    sessionId,
+                    due.ReviewMemory,
+                    due.ReviewSkills,
+                    hasActions,
+                    summary);
+                BackgroundReviewCompleted?.Invoke(new BackgroundReviewNotification(
+                    sessionId,
+                    due.ReviewMemory,
+                    due.ReviewSkills,
+                    Success: true,
+                    HasActions: hasActions,
+                    Summary: summary));
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Background memory review failed non-fatally");
+                _logger.LogWarning(ex, "Background memory review failed non-fatally for session {SessionId}", sessionId);
+                BackgroundReviewCompleted?.Invoke(new BackgroundReviewNotification(
+                    sessionId,
+                    due.ReviewMemory,
+                    due.ReviewSkills,
+                    Success: false,
+                    HasActions: false,
+                    Summary: $"Background review failed: {ex.Message}"));
             }
         });
 
@@ -344,6 +378,32 @@ public sealed class MemoryReviewService
             (true, false) => MemoryReviewPrompt,
             (false, true) => SkillReviewPrompt,
             _ => "Nothing to save."
+        };
+
+    private static string BuildReviewSummary(
+        bool reviewMemory,
+        bool reviewSkills,
+        IEnumerable<ToolResult> results,
+        out bool hasActions)
+    {
+        var actions = SummarizeReviewActions(results);
+        if (!string.IsNullOrWhiteSpace(actions))
+        {
+            hasActions = true;
+            return actions;
+        }
+
+        hasActions = false;
+        return $"Checked {DescribeReviewScope(reviewMemory, reviewSkills)}; nothing to save.";
+    }
+
+    private static string DescribeReviewScope(bool reviewMemory, bool reviewSkills)
+        => (reviewMemory, reviewSkills) switch
+        {
+            (true, true) => "memory and skills",
+            (true, false) => "memory",
+            (false, true) => "skills",
+            _ => "review state"
         };
 
     private static string? SummarizeReviewActions(IEnumerable<ToolResult> results)
