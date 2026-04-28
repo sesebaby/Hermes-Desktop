@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Permissions;
+using Hermes.Agent.Tools;
 using Hermes.Agent.Transcript;
 using Microsoft.Extensions.Logging;
 
@@ -22,6 +23,7 @@ internal sealed class HermesChatService : IDisposable
     private readonly TranscriptStore _transcriptStore;
     private readonly PermissionManager _permissionManager;
     private readonly WorkspacePermissionRuleStore _permissionRuleStore;
+    private readonly ICronScheduler _cronScheduler;
     private readonly ILogger<HermesChatService> _logger;
 
     private Session? _currentSession;
@@ -34,6 +36,7 @@ internal sealed class HermesChatService : IDisposable
         TranscriptStore transcriptStore,
         PermissionManager permissionManager,
         WorkspacePermissionRuleStore permissionRuleStore,
+        ICronScheduler cronScheduler,
         ILogger<HermesChatService> logger)
     {
         _agent = agent;
@@ -41,13 +44,16 @@ internal sealed class HermesChatService : IDisposable
         _transcriptStore = transcriptStore;
         _permissionManager = permissionManager;
         _permissionRuleStore = permissionRuleStore;
+        _cronScheduler = cronScheduler;
         _logger = logger;
         CurrentPermissionMode = _permissionManager.Mode;
+        _cronScheduler.TaskDue += OnCronTaskDue;
     }
 
     public string? CurrentSessionId => _currentSession?.Id;
     public Session? CurrentSession => _currentSession;
     public PermissionMode CurrentPermissionMode { get; private set; } = PermissionMode.Default;
+    public event Action<ScheduledChatMessage>? ScheduledMessageReceived;
 
     // ── Health Check ──
 
@@ -248,11 +254,63 @@ internal sealed class HermesChatService : IDisposable
 
     public void RegisterTool(ITool tool) => _agent.RegisterTool(tool);
 
+    // ── Scheduled reminders ──
+
+    private void OnCronTaskDue(object? sender, CronTaskDueEventArgs e)
+    {
+        _ = HandleCronTaskDueAsync(e.Task);
+    }
+
+    private async Task HandleCronTaskDueAsync(CronTask task)
+    {
+        try
+        {
+            var sessionId = task.SessionId;
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                if (_currentSession is null)
+                {
+                    _logger.LogWarning("Cron task {TaskId} fired without a target session.", task.Id);
+                    return;
+                }
+
+                sessionId = _currentSession.Id;
+            }
+
+            var content = FormatScheduledReminder(task.Prompt);
+            var message = new Message { Role = "assistant", Content = content };
+            var isCurrentSession = _currentSession is not null &&
+                string.Equals(_currentSession.Id, sessionId, StringComparison.OrdinalIgnoreCase);
+
+            if (isCurrentSession)
+                _currentSession!.AddMessage(message);
+
+            await _transcriptStore.SaveMessageAsync(sessionId, message, CancellationToken.None);
+            ScheduledMessageReceived?.Invoke(new ScheduledChatMessage(sessionId, content, isCurrentSession));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to deliver scheduled cron task {TaskId}", task.Id);
+        }
+    }
+
+    private static string FormatScheduledReminder(string prompt)
+    {
+        var trimmed = prompt.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+            return "计划提醒已触发。";
+
+        return trimmed.StartsWith("提醒", StringComparison.OrdinalIgnoreCase)
+            ? trimmed
+            : $"提醒：{trimmed}";
+    }
+
     // ── Dispose ──
 
     public void Dispose()
     {
         if (_disposed) return;
+        _cronScheduler.TaskDue -= OnCronTaskDue;
         try
         {
             Task.Run(() => EndCurrentSessionAsync(CancellationToken.None))
@@ -283,6 +341,7 @@ internal sealed class HermesChatService : IDisposable
     }
 
     internal sealed record HermesChatReply(string Response, string SessionId);
+    internal sealed record ScheduledChatMessage(string SessionId, string Content, bool IsCurrentSession);
 }
 
 // ── Structured stream events for UI consumption ──

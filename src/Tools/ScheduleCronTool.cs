@@ -1,7 +1,7 @@
 namespace Hermes.Agent.Tools;
 
 using Hermes.Agent.Core;
-using System.Text.Json;
+using System.Text.Json.Serialization;
 
 /// <summary>
 /// Tool for scheduling cron-based tasks.
@@ -42,7 +42,8 @@ public sealed class ScheduleCronTool : ITool
                 p.Prompt,
                 DateTimeOffset.UtcNow,
                 p.Recurring,
-                p.Durable
+                p.Durable,
+                p.CurrentSessionId
             );
             
             _scheduler.Schedule(task);
@@ -67,6 +68,8 @@ public sealed class ScheduleCronTool : ITool
 /// </summary>
 public interface ICronScheduler
 {
+    event EventHandler<CronTaskDueEventArgs>? TaskDue;
+
     void Schedule(CronTask task);
     void Cancel(string taskId);
     CronTask? GetTask(string taskId);
@@ -84,7 +87,17 @@ public sealed record CronTask(
     string Prompt,
     DateTimeOffset CreatedAt,
     bool Recurring = true,
-    bool Durable = false);
+    bool Durable = false,
+    string? SessionId = null);
+
+/// <summary>
+/// Raised when a scheduled cron task reaches its next run time.
+/// </summary>
+public sealed class CronTaskDueEventArgs : EventArgs
+{
+    public required CronTask Task { get; init; }
+    public required DateTimeOffset FiredAt { get; init; }
+}
 
 /// <summary>
 /// In-memory cron scheduler using Cronos library.
@@ -93,6 +106,8 @@ public sealed class InMemoryCronScheduler : ICronScheduler
 {
     private readonly Dictionary<string, CronTask> _tasks = new();
     private readonly Dictionary<string, System.Timers.Timer> _timers = new();
+
+    public event EventHandler<CronTaskDueEventArgs>? TaskDue;
     
     public void Schedule(CronTask task)
     {
@@ -108,13 +123,16 @@ public sealed class InMemoryCronScheduler : ICronScheduler
             if (delay > 0)
             {
                 var timer = new System.Timers.Timer(delay);
-                timer.Elapsed += async (s, e) =>
+                timer.Elapsed += (s, e) =>
                 {
                     timer.Dispose();
                     _timers.Remove(task.Id);
-                    
-                    // Execute task (would integrate with agent system)
-                    Console.WriteLine($"[CRON] Executing task: {task.Name}");
+
+                    TaskDue?.Invoke(this, new CronTaskDueEventArgs
+                    {
+                        Task = task,
+                        FiredAt = DateTimeOffset.UtcNow
+                    });
                     
                     // Reschedule if recurring
                     if (task.Recurring)
@@ -158,11 +176,14 @@ public sealed class InMemoryCronScheduler : ICronScheduler
     }
 }
 
-public sealed class ScheduleCronParameters
+public sealed class ScheduleCronParameters : ISessionAwareToolParameters
 {
     public string? Name { get; init; }
     public required string CronExpression { get; init; }
     public required string Prompt { get; init; }
     public bool Recurring { get; init; } = true;
     public bool Durable { get; init; } = false;
+
+    [JsonIgnore]
+    public string? CurrentSessionId { get; set; }
 }

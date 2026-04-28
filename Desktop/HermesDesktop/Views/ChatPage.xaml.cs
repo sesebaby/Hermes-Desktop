@@ -90,6 +90,8 @@ public sealed partial class ChatPage : Page
                 NewChat_Click(this, new RoutedEventArgs());
         };
 
+        _chatService.ScheduledMessageReceived += OnScheduledMessageReceived;
+
         // Wire agent activity tracking → replay panel + screen capture
         _agent.ActivityEntryAdded += async entry =>
         {
@@ -144,6 +146,25 @@ public sealed partial class ChatPage : Page
             AppendWelcomeMessage();
 
         await RefreshConnectionStatusAsync();
+    }
+
+    private void OnScheduledMessageReceived(HermesChatService.ScheduledChatMessage message)
+    {
+        if (!message.IsCurrentSession)
+            return;
+
+        void AppendReminder()
+        {
+            AppendAssistantMessage(message.Content);
+            ScrollToBottom();
+            UpdateSessionFooterLabel();
+            UpdateSessionFooterCopyButton();
+        }
+
+        if (DispatcherQueue.HasThreadAccess)
+            AppendReminder();
+        else
+            DispatcherQueue.TryEnqueue(AppendReminder);
     }
 
     // ── Model Switcher ──

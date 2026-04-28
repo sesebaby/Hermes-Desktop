@@ -406,6 +406,7 @@ public partial class App : Application
         services.AddSingleton(sp => new TaskManager(
             tasksDir,
             sp.GetRequiredService<ILogger<TaskManager>>()));
+        services.AddSingleton<ICronScheduler, InMemoryCronScheduler>();
 
         // Buddy service (persisted to buddy/buddy.json under the project dir)
         var buddyDir = Path.Combine(projectDir, "buddy");
@@ -775,7 +776,8 @@ public partial class App : Application
 
         // Task management
         RegisterAndTrack(agent, toolRegistry, new TodoWriteTool());
-        RegisterAndTrack(agent, toolRegistry, new ScheduleCronTool());
+        RegisterAndTrack(agent, toolRegistry, new ScheduleCronTool(
+            services.GetRequiredService<ICronScheduler>()));
 
         // LSP tool (optional config)
         RegisterAndTrack(agent, toolRegistry, new LspTool());
