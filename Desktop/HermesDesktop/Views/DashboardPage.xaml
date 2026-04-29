@@ -137,16 +137,16 @@
                         </ListView.ItemTemplate>
                     </ListView>
                     <StackPanel Spacing="6">
-                        <TextBlock Text="Manual Stardew test" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                        <TextBlock Text="Debug-only Stardew speak test" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="HaleySpeakButton" Content="Haley Speak" Click="NpcSpeakHaley_Click"
+                            <Button x:Name="HaleySpeakButton" Content="Debug Haley Speak" Click="NpcSpeakHaley_Click"
                                     FontSize="11" Padding="10,4"
                                     Background="{StaticResource AppAccentGradientBrush}" Foreground="#16110D"/>
-                            <Button x:Name="PennySpeakButton" Content="Penny Speak" Click="NpcSpeakPenny_Click"
+                            <Button x:Name="PennySpeakButton" Content="Debug Penny Speak" Click="NpcSpeakPenny_Click"
                                     FontSize="11" Padding="10,4"
                                     Background="{StaticResource AppAccentGradientBrush}" Foreground="#16110D"/>
                         </StackPanel>
-                        <TextBlock x:Name="NpcManualActionResult" Text="Start Stardew with SMAPI, enter a save, then use these buttons."
+                        <TextBlock x:Name="NpcManualActionResult" Text="正式路径：在游戏里点击 Haley，先走原版对话，结束后再进入自定义对话。这里的按钮只用于 debug speak。"
                                    FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource AppTextSecondaryBrush}"/>
                     </StackPanel>
                 </StackPanel>

@@ -5,6 +5,13 @@ using StardewModdingAPI;
 
 public sealed class SmapiBridgeLogger
 {
+    public const string NpcClickObserved = "npc_click_observed";
+    public const string NpcClickRejected = "npc_click_rejected";
+    public const string OriginalDialogueObserved = "original_dialogue_observed";
+    public const string OriginalDialogueCompleted = "original_dialogue_completed";
+    public const string CustomDialogueQueued = "custom_dialogue_queued";
+    public const string CustomDialogueDisplayed = "custom_dialogue_displayed";
+
     private readonly string _logPath;
     private readonly IMonitor _monitor;
     private readonly object _gate = new();

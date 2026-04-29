@@ -392,7 +392,7 @@ public sealed partial class DashboardPage : Page
 
         HaleySpeakButton.IsEnabled = false;
         PennySpeakButton.IsEnabled = false;
-        NpcManualActionResult.Text = $"Sending dialogue to {npcId}...";
+        NpcManualActionResult.Text = $"Sending debug dialogue to {npcId}...";
         NpcManualActionResult.Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"];
 
         try
@@ -401,12 +401,12 @@ public sealed partial class DashboardPage : Page
             var result = await _stardewNpcDebugActions.SpeakAsync(npcId, text, cts.Token);
             if (result.Accepted)
             {
-                NpcManualActionResult.Text = $"{npcId} dialogue sent. Check the game window.";
+                NpcManualActionResult.Text = $"Debug {npcId} dialogue sent. Check the game window.";
                 NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 34, 197, 94));
             }
             else
             {
-                NpcManualActionResult.Text = $"{npcId} dialogue failed: {result.FailureReason ?? "unknown_error"}. Restart SMAPI after rebuilding the mod if this is the first test after this update.";
+                NpcManualActionResult.Text = $"Debug {npcId} dialogue failed: {result.FailureReason ?? "unknown_error"}. Restart SMAPI after rebuilding the mod if this is the first test after this update.";
                 NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68));
             }
 
@@ -414,7 +414,7 @@ public sealed partial class DashboardPage : Page
         }
         catch (Exception ex)
         {
-            NpcManualActionResult.Text = $"{npcId} dialogue failed: {ex.Message}";
+            NpcManualActionResult.Text = $"Debug {npcId} dialogue failed: {ex.Message}";
             NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68));
         }
         finally
