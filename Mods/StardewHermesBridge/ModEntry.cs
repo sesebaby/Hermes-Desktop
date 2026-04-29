@@ -24,6 +24,7 @@ public sealed class ModEntry : Mod
     private SmapiBridgeLogger _bridgeLogger = null!;
     private NpcDialogueClickRouter _clickRouter = null!;
     private NpcDialogueFlowService _dialogueFlow = null!;
+    private NpcOriginalDialogueStarter _originalDialogueStarter = null!;
     private TestTeleportCommand _testTeleportCommand = null!;
     private NpcDialogueFlowState? _pendingDialogueFlow;
 
@@ -36,6 +37,7 @@ public sealed class ModEntry : Mod
         _httpHost = new BridgeHttpHost(_commands, _bridgeLogger);
         _clickRouter = new NpcDialogueClickRouter();
         _dialogueFlow = new NpcDialogueFlowService();
+        _originalDialogueStarter = new NpcOriginalDialogueStarter(helper);
         _testTeleportCommand = new TestTeleportCommand(helper, Monitor);
 
         helper.Events.GameLoop.GameLaunched += OnGameLaunched;
@@ -119,7 +121,8 @@ public sealed class ModEntry : Mod
         if (!Context.IsWorldReady || Game1.currentLocation is null)
             return;
 
-        var clickedNpcName = TryResolveClickedNpcName(e);
+        var clickedNpc = TryResolveClickedNpc(e);
+        var clickedNpcName = clickedNpc?.Name;
         var isActionButton = e.Button.IsActionButton();
         var route = _clickRouter.Route(new NpcDialogueClickRouteRequest(
             isActionButton,
@@ -132,8 +135,14 @@ public sealed class ModEntry : Mod
             return;
         }
 
+        if (clickedNpc is null || !_originalDialogueStarter.TryStart(clickedNpc, e.Button))
+        {
+            _bridgeLogger.Write(SmapiBridgeLogger.NpcClickRejected, clickedNpcName, FormalEntry, FormalEntry, null, "rejected", $"{BuildInputAcceptedDetail(e, isActionButton)};original_start_failed");
+            return;
+        }
+
         _pendingDialogueFlow = _dialogueFlow.BeginFollowUp(route.NpcName!);
-        _bridgeLogger.Write(SmapiBridgeLogger.NpcClickObserved, route.NpcName, FormalEntry, FormalEntry, null, "observed", BuildInputAcceptedDetail(e, isActionButton));
+        _bridgeLogger.Write(SmapiBridgeLogger.NpcClickObserved, route.NpcName, FormalEntry, FormalEntry, null, "observed", $"{BuildInputAcceptedDetail(e, isActionButton)};original_start=true");
     }
 
     private static string BuildInputRejectDetail(ButtonPressedEventArgs e, string reason, bool isActionButton)
@@ -145,24 +154,24 @@ public sealed class ModEntry : Mod
     private static string FormatButtons(IEnumerable<StardewValley.InputButton> buttons)
         => string.Join(",", buttons.Select(button => button.ToString()));
 
-    private string? TryResolveClickedNpcName(ButtonPressedEventArgs e)
+    private NPC? TryResolveClickedNpc(ButtonPressedEventArgs e)
     {
         if (Game1.currentLocation is null)
             return null;
 
         var grabTileNpc = Game1.currentLocation.isCharacterAtTile(Game1.player.GetGrabTile());
         if (grabTileNpc is not null && !grabTileNpc.IsMonster)
-            return grabTileNpc.Name;
+            return grabTileNpc;
 
         foreach (var character in Game1.currentLocation.characters)
         {
             if (!character.IsMonster && character.GetBoundingBox().Contains(e.Cursor.AbsolutePixels))
-                return character.Name;
+                return character;
         }
 
         var npc = Game1.currentLocation.isCharacterAtTile(e.Cursor.Tile + new Vector2(0f, 1f))
                   ?? Game1.currentLocation.isCharacterAtTile(e.Cursor.GrabTile + new Vector2(0f, 1f));
-        return npc?.Name;
+        return npc;
     }
 
     private static string? GetActiveDialogueNpcName()
