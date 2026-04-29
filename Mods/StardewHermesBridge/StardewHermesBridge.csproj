@@ -4,6 +4,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>StardewHermesBridge</AssemblyName>
+    <GamePath Condition="'$(GamePath)' == '' and '$(HERMES_STARDEW_GAME_PATH)' != ''">$(HERMES_STARDEW_GAME_PATH)</GamePath>
+    <GamePath Condition="'$(GamePath)' == ''">D:\Stardew Valley\Stardew Valley.v1.6.15</GamePath>
   </PropertyGroup>
 
   <ItemGroup>

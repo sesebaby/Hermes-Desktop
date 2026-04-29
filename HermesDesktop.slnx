@@ -3,6 +3,9 @@
     <Project Path="Desktop/HermesDesktop.Tests/HermesDesktop.Tests.csproj" />
     <Project Path="Desktop/HermesDesktop/HermesDesktop.csproj" />
   </Folder>
+  <Folder Name="/Mods/">
+    <Project Path="Mods/StardewHermesBridge/StardewHermesBridge.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Hermes.Agent.csproj" />
     <Project Path="src/Hermes.Core.csproj" />

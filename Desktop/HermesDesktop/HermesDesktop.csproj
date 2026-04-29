@@ -72,6 +72,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Hermes.Core.csproj" />
+    <ProjectReference Include="..\..\Mods\StardewHermesBridge\StardewHermesBridge.csproj" ReferenceOutputAssembly="false" Condition="'$(HermesAutoPublishStardewBridge)' != 'false'" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">

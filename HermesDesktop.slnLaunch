@@ -1,0 +1,11 @@
+[
+  {
+    "Name": "HermesDesktop",
+    "Projects": [
+      {
+        "Path": "Desktop\\HermesDesktop\\HermesDesktop.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]
