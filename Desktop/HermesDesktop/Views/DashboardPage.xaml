@@ -91,6 +91,54 @@
                 </StackPanel>
             </Border>
 
+            <!-- NPC Runtime status -->
+            <Border Style="{StaticResource SurfaceCardStyle}">
+                <StackPanel Spacing="10">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <TextBlock Text="NPC Runtime" FontSize="16" FontWeight="SemiBold"/>
+                        <Button Content="Logs" Click="OpenNpcRuntimeLogs_Click" FontSize="11" Padding="10,4"
+                                Background="{StaticResource AppInsetBrush}" BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White"/>
+                    </StackPanel>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="2*"/>
+                            <ColumnDefinition Width="2*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Runtimes" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            <TextBlock x:Name="NpcRuntimeCountText" Text="0" FontSize="22" FontWeight="SemiBold"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="2">
+                            <TextBlock Text="Bridge" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            <TextBlock x:Name="NpcBridgeHealthText" Text="Not connected" FontSize="13" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Spacing="2">
+                            <TextBlock Text="Last Trace" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            <TextBlock x:Name="NpcLastTraceText" Text="-" FontSize="12" FontFamily="Consolas" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="3" Spacing="2">
+                            <TextBlock Text="Last Error" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            <TextBlock x:Name="NpcLastErrorText" Text="-" FontSize="12" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Grid>
+                    <ListView x:Name="NpcRuntimeList" Background="Transparent" SelectionMode="None" MaxHeight="160">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,4" ColumnDefinitions="*,Auto,Auto">
+                                    <TextBlock Text="{Binding DisplayName}" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding State}" FontSize="12"
+                                               Foreground="{StaticResource AppTextSecondaryBrush}" Margin="12,0,0,0"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding LastTraceId}" FontSize="12" FontFamily="Consolas"
+                                               Foreground="{StaticResource AppTextSecondaryBrush}" Margin="12,0,0,0"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </StackPanel>
+            </Border>
+
             <!-- ═══ Services & Model Row ═══ -->
             <Grid ColumnSpacing="20">
                 <Grid.ColumnDefinitions>

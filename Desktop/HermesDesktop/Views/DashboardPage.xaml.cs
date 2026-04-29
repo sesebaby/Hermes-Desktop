@@ -29,6 +29,7 @@ public sealed partial class DashboardPage : Page
 {
     private static readonly ResourceLoader ResourceLoader = new();
     private readonly RuntimeStatusService _runtimeStatusService = App.Services.GetRequiredService<RuntimeStatusService>();
+    private readonly NpcRuntimeWorkspaceService? _npcRuntimeWorkspaceService = App.Services.GetService<NpcRuntimeWorkspaceService>();
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _dreamerTimer;
 
     /// <summary>
@@ -71,6 +72,7 @@ public sealed partial class DashboardPage : Page
     {
         LoadStats();
         LoadServiceBadges();
+        LoadNpcRuntimeStatus();
         LoadInsights();
         await LoadRecentSessionsAsync();
         await RefreshRuntimeStatusAsync();
@@ -125,6 +127,19 @@ public sealed partial class DashboardPage : Page
         {
             DreamerPostcardText.Foreground = secondaryBrush;
         }
+    }
+
+    private void LoadNpcRuntimeStatus()
+    {
+        if (_npcRuntimeWorkspaceService is null)
+            return;
+
+        var snapshot = _npcRuntimeWorkspaceService.GetSnapshot();
+        NpcRuntimeCountText.Text = snapshot.Items.Count.ToString(CultureInfo.CurrentCulture);
+        NpcBridgeHealthText.Text = snapshot.BridgeHealth;
+        NpcLastTraceText.Text = string.IsNullOrWhiteSpace(snapshot.LastTraceId) ? "-" : snapshot.LastTraceId;
+        NpcLastErrorText.Text = string.IsNullOrWhiteSpace(snapshot.LastError) ? "-" : snapshot.LastError;
+        NpcRuntimeList.ItemsSource = snapshot.Items;
     }
 
     // ── KPI Stats ──
@@ -356,6 +371,7 @@ public sealed partial class DashboardPage : Page
 
     private void OpenLogs_Click(object sender, RoutedEventArgs e) => HermesEnvironment.OpenLogs();
     private void OpenConfig_Click(object sender, RoutedEventArgs e) => HermesEnvironment.OpenConfig();
+    private void OpenNpcRuntimeLogs_Click(object sender, RoutedEventArgs e) => _npcRuntimeWorkspaceService?.OpenRuntimeDirectory();
 
     // ── Helpers ──
 

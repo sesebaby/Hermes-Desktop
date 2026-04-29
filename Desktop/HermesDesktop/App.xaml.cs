@@ -20,6 +20,8 @@ using Hermes.Agent.Plugins;
 using Hermes.Agent.Soul;
 using Hermes.Agent.Tools;
 using Hermes.Agent.Dreamer;
+using Hermes.Agent.Game;
+using Hermes.Agent.Runtime;
 using HermesDesktop.Services;
 using System;
 using System.Collections.Generic;
@@ -346,6 +348,22 @@ public partial class App : Application
             transcriptsDir,
             eagerFlush: true,
             sessionStore: sp.GetRequiredService<SessionSearchIndex>()));
+
+        services.AddSingleton<INpcPackLoader, FileSystemNpcPackLoader>();
+        services.AddSingleton<NpcRuntimeSupervisor>();
+        services.AddSingleton<ResourceClaimRegistry>();
+        services.AddSingleton<WorldCoordinationService>();
+        services.AddSingleton<NpcRuntimeTraceIndex>();
+        services.AddSingleton(_ => new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(
+            MaxToolIterations: ReadPositiveConfigInt("stardew", "npc_autonomy_max_tool_iterations", 100),
+            MaxConcurrentLlmRequests: ReadPositiveConfigInt("stardew", "npc_autonomy_max_concurrent_llm_requests", 1),
+            RestartCooldown: TimeSpan.FromSeconds(ReadPositiveConfigInt("stardew", "npc_autonomy_restart_cooldown_seconds", 5)),
+            MaxRestartsPerScene: ReadPositiveConfigInt("stardew", "npc_autonomy_max_restarts_per_scene", 3))));
+        services.AddSingleton(sp => new NpcRuntimeHost(
+            sp.GetRequiredService<INpcPackLoader>(),
+            sp.GetRequiredService<NpcRuntimeSupervisor>(),
+            projectDir));
+        services.AddSingleton<NpcRuntimeWorkspaceService>();
 
         // Memory manager
         var memoryDir = Path.Combine(hermesHome, "memories");
