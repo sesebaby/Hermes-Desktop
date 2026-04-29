@@ -121,7 +121,7 @@ public sealed class ModEntry : Mod
 
         var clickedNpcName = TryResolveClickedNpcName(e);
         var route = _clickRouter.Route(new NpcDialogueClickRouteRequest(
-            e.Button == SButton.MouseLeft,
+            e.Button.IsActionButton(),
             clickedNpcName,
             Game1.activeClickableMenu is not null));
 
@@ -139,6 +139,10 @@ public sealed class ModEntry : Mod
     {
         if (Game1.currentLocation is null)
             return null;
+
+        var grabTileNpc = Game1.currentLocation.isCharacterAtTile(Game1.player.GetGrabTile());
+        if (grabTileNpc is not null && !grabTileNpc.IsMonster)
+            return grabTileNpc.Name;
 
         foreach (var character in Game1.currentLocation.characters)
         {

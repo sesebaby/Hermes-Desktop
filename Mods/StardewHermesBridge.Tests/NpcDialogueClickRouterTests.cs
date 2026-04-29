@@ -7,11 +7,11 @@ namespace StardewHermesBridge.Tests;
 public class NpcDialogueClickRouterTests
 {
     [TestMethod]
-    public void Route_LeftClickOnHaley_AcceptsDialogueRoute()
+    public void Route_ActionButtonOnHaley_AcceptsDialogueRoute()
     {
         var router = new NpcDialogueClickRouter();
 
-        var result = router.Route(new NpcDialogueClickRouteRequest(true, "Haley", false));
+        var result = router.Route(new NpcDialogueClickRouteRequest(IsActionButton: true, "Haley", false));
 
         Assert.IsTrue(result.IsAccepted);
         Assert.AreEqual("Haley", result.NpcName);
@@ -23,7 +23,7 @@ public class NpcDialogueClickRouterTests
     {
         var router = new NpcDialogueClickRouter();
 
-        var result = router.Route(new NpcDialogueClickRouteRequest(true, null, false));
+        var result = router.Route(new NpcDialogueClickRouteRequest(IsActionButton: true, null, false));
 
         Assert.IsFalse(result.IsAccepted);
         Assert.IsNull(result.NpcName);
@@ -31,11 +31,11 @@ public class NpcDialogueClickRouterTests
     }
 
     [TestMethod]
-    public void Route_LeftClickOnPenny_RejectsDialogueRouteBecauseNpcIsNotEnabled()
+    public void Route_ActionButtonOnPenny_RejectsDialogueRouteBecauseNpcIsNotEnabled()
     {
         var router = new NpcDialogueClickRouter();
 
-        var result = router.Route(new NpcDialogueClickRouteRequest(true, "Penny", false));
+        var result = router.Route(new NpcDialogueClickRouteRequest(IsActionButton: true, "Penny", false));
 
         Assert.IsFalse(result.IsAccepted);
         Assert.IsNull(result.NpcName);
@@ -47,7 +47,7 @@ public class NpcDialogueClickRouterTests
     {
         var router = new NpcDialogueClickRouter();
 
-        var result = router.Route(new NpcDialogueClickRouteRequest(true, "Haley", true));
+        var result = router.Route(new NpcDialogueClickRouteRequest(IsActionButton: true, "Haley", true));
 
         Assert.IsFalse(result.IsAccepted);
         Assert.IsNull(result.NpcName);
@@ -55,11 +55,11 @@ public class NpcDialogueClickRouterTests
     }
 
     [TestMethod]
-    public void Route_WhenButtonIsNotPrimary_RejectsDialogueRoute()
+    public void Route_WhenButtonIsNotActionButton_RejectsDialogueRoute()
     {
         var router = new NpcDialogueClickRouter();
 
-        var result = router.Route(new NpcDialogueClickRouteRequest(false, "Haley", false));
+        var result = router.Route(new NpcDialogueClickRouteRequest(IsActionButton: false, "Haley", false));
 
         Assert.IsFalse(result.IsAccepted);
         Assert.IsNull(result.NpcName);

@@ -4,7 +4,7 @@ public sealed class NpcDialogueClickRouter
 {
     public NpcDialogueClickRouteResult Route(NpcDialogueClickRouteRequest request)
     {
-        if (!request.IsPrimaryButton)
+        if (!request.IsActionButton)
             return NpcDialogueClickRouteResult.Rejected("unsupported_button");
 
         if (request.HasActiveMenu)
@@ -21,7 +21,7 @@ public sealed class NpcDialogueClickRouter
 }
 
 public sealed record NpcDialogueClickRouteRequest(
-    bool IsPrimaryButton,
+    bool IsActionButton,
     string? TargetNpcName,
     bool HasActiveMenu);
 

@@ -20,3 +20,4 @@
 7. `E-2026-0007-stale-current-fact-inventory-before-repair.md`
 8. `E-2026-0008-follow-up-proposal-task-gates-collapsed-into-slogans.md`
 9. `E-2026-0009-dialogue-detection-debugged-by-guessing-instead-of-logging.md`
+10. `E-2026-0010-stardew-dialogue-click-bound-to-left-button.md`
