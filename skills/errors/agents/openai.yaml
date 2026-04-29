@@ -1,0 +1,4 @@
+interface:
+  display_name: "Errors"
+  short_description: "Block coding until docs and lessons are grounded"
+  default_prompt: "Use $errors before changing code to force document grounding and historical-lesson checks."
