@@ -3,6 +3,7 @@ namespace StardewHermesBridge;
 using System.Text.Json;
 using Microsoft.Xna.Framework;
 using StardewHermesBridge.Bridge;
+using StardewHermesBridge.Commands;
 using StardewHermesBridge.Dialogue;
 using StardewHermesBridge.Logging;
 using StardewHermesBridge.Ui;
@@ -23,6 +24,7 @@ public sealed class ModEntry : Mod
     private SmapiBridgeLogger _bridgeLogger = null!;
     private NpcDialogueClickRouter _clickRouter = null!;
     private NpcDialogueFlowService _dialogueFlow = null!;
+    private TestTeleportCommand _testTeleportCommand = null!;
     private NpcDialogueFlowState? _pendingDialogueFlow;
 
     public override void Entry(IModHelper helper)
@@ -34,6 +36,7 @@ public sealed class ModEntry : Mod
         _httpHost = new BridgeHttpHost(_commands, _bridgeLogger);
         _clickRouter = new NpcDialogueClickRouter();
         _dialogueFlow = new NpcDialogueFlowService();
+        _testTeleportCommand = new TestTeleportCommand(helper, Monitor);
 
         helper.Events.GameLoop.GameLaunched += OnGameLaunched;
         helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
