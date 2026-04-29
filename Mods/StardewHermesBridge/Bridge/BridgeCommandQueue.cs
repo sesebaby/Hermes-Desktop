@@ -94,9 +94,15 @@ public sealed class BridgeCommandQueue
             return Error<SpeakData>(envelope.TraceId, envelope.RequestId, "world_not_ready", "The Stardew world is not ready.", retryable: true);
         }
 
+        var npc = Game1.getCharacterFromName(envelope.NpcId, mustBeVillager: false, includeEventActors: false);
+        if (npc is null)
+        {
+            _logger.Write("action_speak_failed", envelope.NpcId, "speak", envelope.TraceId, null, "failed", "invalid_target");
+            return Error<SpeakData>(envelope.TraceId, envelope.RequestId, "invalid_target", "NPC was not found.", retryable: false);
+        }
+
         var channel = string.IsNullOrWhiteSpace(envelope.Payload.Channel) ? "player" : envelope.Payload.Channel;
-        var text = $"{envelope.NpcId}: {envelope.Payload.Text}";
-        Game1.drawObjectDialogue(text);
+        Game1.DrawDialogue(npc, envelope.Payload.Text);
         _logger.Write("action_speak_completed", envelope.NpcId, "speak", envelope.TraceId, null, "completed", null);
         return new BridgeResponse<SpeakData>(
             true,
@@ -121,9 +127,37 @@ public sealed class BridgeCommandQueue
             return command.ToStatusData();
         }
 
-        // Phase 1 scaffold: command reaches the game loop and records completion.
-        // Real pathing/NPC displacement will replace this checkpoint without changing the bridge contract.
+        var npc = Game1.getCharacterFromName(command.NpcId, mustBeVillager: false, includeEventActors: false);
+        if (npc is null)
+        {
+            command.Fail("invalid_target");
+            _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", "invalid_target");
+            return command.ToStatusData();
+        }
+
+        var targetLocation = Game1.getLocationFromName(command.LocationName);
+        if (targetLocation is null)
+        {
+            command.Fail("invalid_target");
+            _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", $"location_not_found:{command.LocationName}");
+            return command.ToStatusData();
+        }
+
+        var targetTile = new Microsoft.Xna.Framework.Vector2(command.TargetTile.X, command.TargetTile.Y);
+        if (!targetLocation.isTileLocationOpen(targetTile) || !targetLocation.CanSpawnCharacterHere(targetTile))
+        {
+            command.Fail("invalid_target");
+            _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", $"tile_blocked:{command.LocationName}:{command.TargetTile.X},{command.TargetTile.Y}");
+            return command.ToStatusData();
+        }
+
         command.Start();
+        npc.currentLocation?.characters.Remove(npc);
+        targetLocation.characters.Remove(npc);
+        npc.currentLocation = targetLocation;
+        npc.Halt();
+        npc.setTilePosition(command.TargetTile.X, command.TargetTile.Y);
+        targetLocation.addCharacter(npc);
         command.Complete();
         _logger.Write("task_completed", command.NpcId, "move", command.TraceId, command.CommandId, "completed", null);
         return command.ToStatusData();
