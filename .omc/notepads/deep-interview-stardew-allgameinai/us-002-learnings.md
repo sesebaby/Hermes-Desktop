@@ -1,0 +1,2 @@
+- 2026-04-29 US-002：Mods/StardewHermesBridge 之前没有独立测试项目；最小补齐了 Mods/StardewHermesBridge.Tests MSTest 项目，仅引用目标 mod 项目并新增 NpcDialogueClickRouterTests。
+- 为避免把 SMAPI 依赖直接暴露给测试项目，NpcDialogueClickRouter 最小请求对象改为布尔字段 IsPrimaryButton，而不是直接使用 SButton。

@@ -1,0 +1,1 @@
+代码风格：C# 文件启用 Nullable 与 ImplicitUsings；使用 file-scoped namespace；常用 sealed class / sealed record；测试命名采用 MSTest 的 [TestClass]/[TestMethod]，方法名格式为 Method_WhenCondition_Result。修改时应保持最小 diff，不提前改运行链路。

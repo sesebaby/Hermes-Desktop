@@ -1,0 +1,1 @@
+建议命令：`dotnet sln D:/Projects/Hermes-Desktop/HermesDesktop.sln list` 查看项目；`dotnet build D:/Projects/Hermes-Desktop/Mods/StardewHermesBridge/StardewHermesBridge.csproj` 构建模组；`dotnet test D:/Projects/Hermes-Desktop/Mods/StardewHermesBridge.Tests/Mods.StardewHermesBridge.Tests.csproj` 运行 Stardew bridge 测试；Windows 环境下可用 `ls`, `git`, `python`, `dotnet`。

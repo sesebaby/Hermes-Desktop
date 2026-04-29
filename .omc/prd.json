@@ -1,0 +1,81 @@
+{
+  "stories": [
+    {
+      "id": "US-001",
+      "title": "冻结点击入口合同与日志事件名",
+      "priority": 1,
+      "passes": true,
+      "acceptanceCriteria": [
+        "Mods/StardewHermesBridge/ModEntry.cs 定义正式入口与 debug 入口常量，明确正式链路是 npc_click_then_wait_original_then_custom",
+        "Mods/StardewHermesBridge/Logging/SmapiBridgeLogger.cs 或同文件新增统一事件名，至少包含 npc_click_observed、npc_click_rejected、original_dialogue_observed、original_dialogue_completed、custom_dialogue_queued、custom_dialogue_displayed",
+        "dotnet build Mods/StardewHermesBridge/StardewHermesBridge.csproj 成功"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "建立 NPC 点击路由最小测试与实现",
+      "priority": 2,
+      "passes": true,
+      "acceptanceCriteria": [
+        "存在 Mods/StardewHermesBridge.Tests/NpcDialogueClickRouterTests.cs，覆盖左键命中 Haley 接受、点空地拒绝、已有菜单拒绝、非主键拒绝",
+        "存在 Mods/StardewHermesBridge/Dialogue/NpcDialogueClickRouter.cs，且命中逻辑不直接塞进 ModEntry.cs",
+        "dotnet test Mods/StardewHermesBridge.Tests/Mods.StardewHermesBridge.Tests.csproj --filter FullyQualifiedName~NpcDialogueClickRouterTests 通过"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "建立原版对话结束后才切换自定义对话的判定服务",
+      "priority": 3,
+      "passes": true,
+      "acceptanceCriteria": [
+        "存在 NpcDialogueFollowUpServiceTests，证明原版对话未结束时不能切换，结束后才能切换",
+        "存在 NpcDialogueFollowUpService 与 NpcClickDialogueState 最小实现",
+        "测试不把 transitioning == false 当作唯一完成条件"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "在 ModEntry 中接入点击观测与等待原版结束的推进逻辑",
+      "priority": 4,
+      "passes": true,
+      "acceptanceCriteria": [
+        "ModEntry.OnButtonPressed 记录点击观测与 reject 原因，不直接抢菜单",
+        "ModEntry.OnUpdateTicked 推进原版对话观测与后续自定义对话显示",
+        "日志能区分 npc_click_observed、original_dialogue_observed、original_dialogue_completed、custom_dialogue_displayed"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "把 Phase 1 正式点击路径限制为 Haley",
+      "priority": 5,
+      "passes": true,
+      "acceptanceCriteria": [
+        "NpcDialogueClickRouterTests 覆盖点击 Penny 被拒绝，reject reason 为 npc_not_enabled",
+        "TryResolveClickedNpcName 具备最小 Haley 命中逻辑",
+        "dotnet build Mods/StardewHermesBridge/StardewHermesBridge.csproj 与对应 router tests 通过"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "把桌面 speak 按钮降级为 debug-only",
+      "priority": 6,
+      "passes": true,
+      "acceptanceCriteria": [
+        "DashboardPage.xaml 中按钮文案改为 Debug Haley Speak / Debug Penny Speak 或等价 debug-only 文案",
+        "DashboardPage.xaml 或 code-behind 说明文本明确正式路径是游戏内点击 Haley",
+        "dotnet build Desktop/HermesDesktop/HermesDesktop.csproj 成功"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "保留完整证据链并完成回归验证",
+      "priority": 7,
+      "passes": true,
+      "acceptanceCriteria": [
+        "相关测试通过",
+        "mod 与 desktop 构建通过",
+        "手动验证步骤已固定：点击 Haley -> 先原版对话 -> 原版结束后自定义对话"
+      ]
+    }
+  ]
+}

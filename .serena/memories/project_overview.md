@@ -1,0 +1,1 @@
+项目是一个 C#/.NET 6 代码库，包含桌面端、核心运行时，以及 Stardew Valley 的模组桥接层。主要解法文件为 HermesDesktop.sln，Stardew 相关代码位于 Mods/StardewHermesBridge，测试使用 MSTest。

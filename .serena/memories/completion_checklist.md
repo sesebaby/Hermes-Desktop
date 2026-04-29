@@ -1,0 +1,1 @@
+任务完成后至少执行相关 `dotnet test`，必要时再执行 `dotnet build` 验证生产项目可编译；若改动为多文件或跨模块，补充检查 git status 与无调试残留。当前仓库中 Stardew bridge 的验证以其独立测试项目为主。
