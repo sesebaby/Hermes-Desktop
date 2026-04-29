@@ -10,6 +10,47 @@
 
 ---
 
+## 实施进度快照（2026-04-29）
+
+### 当前停止点
+已按要求停在 **Phase 1 的 Stardew `move` + 对话 / `speak` 检查点**。
+
+这里的“完成”只表示：桌面侧已经能通过统一 typed command contract 把 `move` / `speak` 发到 SMAPI bridge，SMAPI mod 能在游戏内处理这两类动作，并且 Visual Studio 启动桌面项目前会先构建并发布 mod。
+
+这里**不表示**完整自治 loop 已经完成，也不表示已经完成复杂寻路、社交系统、群聊、经济系统、10+ NPC、多进程 host 或完整 replay UI。
+
+### 已提交的实施切片
+- `a1afd789`：固定 game-core / runtime 基础契约、pack loader、NPC namespace、Haley/Penny seed pack、Stardew game skills。
+- `dad377f2`：把 Stardew `move` 接入统一 typed runtime command path，并加入预算、trace/log、resource claim、world coordination seam。
+- `48170eb3`：把 NPC runtime host / supervisor 暴露到桌面端，并在 Dashboard 增加最小 runtime 概览。
+- `e2f7cc5a`：新增 `Mods/StardewHermesBridge` SMAPI bridge 脚手架，包含 loopback HTTP bridge、bearer token、`/task/move`、`/task/status`、`/task/cancel`、F8 overlay、bridge JSONL 日志。
+- `bfb4aa21`：新增 Stardew 对话 / `speak` 通路：`GameActionType.Speak` -> `StardewCommandService` -> `/action/speak` -> SMAPI NPC 对话 UI。
+- `19b4785a`：把 `move` 从“只记录 tick 完成”升级为真实影响游戏内 NPC body：查找 NPC、查找目标地图、检查目标 tile、设置 NPC tile。
+- `b73d9928`：配置 Visual Studio / solution 启动体验：启动 `HermesDesktop` 前先构建并发布 `StardewHermesBridge` 到 `D:\Stardew Valley\Stardew Valley.v1.6.15\Mods\StardewHermesBridge`，再启动桌面程序。
+
+### 当前已经验证
+- `dotnet build Mods\StardewHermesBridge\StardewHermesBridge.csproj`：通过，并成功发布 mod 到 Stardew `Mods\StardewHermesBridge`。
+- `dotnet build Desktop\HermesDesktop\HermesDesktop.csproj`：通过；构建链路会先构建并发布 SMAPI mod，再构建桌面程序。
+- `dotnet build HermesDesktop.slnx`：通过。
+- `dotnet test Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj --filter 'FullyQualifiedName~Runtime|FullyQualifiedName~Stardew|FullyQualifiedName~GameCore'`：26 个测试通过。
+- `git diff --check`：通过。
+
+### 仍未人工确认
+以下内容还没有在 Visual Studio + 真实游戏窗口里人工点一遍：
+- 在 Visual Studio 里按 F5 启动 `HermesDesktop`，确认不会先报错。
+- 启动 Stardew + SMAPI 后，确认游戏内能加载 `Stardew Hermes Bridge`。
+- 进入存档后，按 F8 能看到 Hermes bridge overlay。
+- 通过后续桌面端触发入口或临时调试入口触发 `speak`，确认游戏里真的弹出对应 NPC 的对话框。
+- 通过后续桌面端触发入口或临时调试入口触发 `move`，确认对应 NPC 在游戏里移动/出现在目标 tile。
+
+### 下次继续时不要偏的方向
+- 继续保持参考 `external/hermescraft-main` 的精神：**agent 主动观察、决策、调用工具玩游戏**，不是“游戏事件来了才临时问一次 agent”。
+- 事件只能作为事实、唤醒、暂停、阻塞或优先级输入；driver 必须是 `NpcAutonomyLoop`。
+- `StardewCommandService` 仍然是桌面侧唯一命令源；UI、typed tools、CLI 都不能绕过它直接调用 SMAPI HTTP。
+- 下一步优先补一个从桌面侧可操作的最小调试入口，用来让普通用户手动触发 `speak` 和 `move` 做端到端验证；然后再把它接入真正的 `NpcAutonomyLoop`。
+
+---
+
 ## Final Architecture Decision
 
 ### Frozen boundaries
