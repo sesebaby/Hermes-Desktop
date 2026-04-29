@@ -99,6 +99,9 @@ public sealed class BridgeHttpHost
                 case "/task/cancel":
                     await HandleCancelAsync(context, ct);
                     return;
+                case "/action/speak":
+                    await HandleSpeakAsync(context, ct);
+                    return;
                 default:
                     await WriteJsonAsync(context.Response, HttpStatusCode.NotFound, new { ok = false }, ct);
                     return;
@@ -132,6 +135,13 @@ public sealed class BridgeHttpHost
         await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
     }
 
+    private async Task HandleSpeakAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        var envelope = await ReadJsonAsync<BridgeEnvelope<SpeakPayload>>(context.Request, ct);
+        var response = _commands.Speak(envelope);
+        await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
+    }
+
     private bool IsAuthorized(HttpListenerRequest request)
     {
         var header = request.Headers["Authorization"];
@@ -141,7 +151,8 @@ public sealed class BridgeHttpHost
     private static async Task<T> ReadJsonAsync<T>(HttpListenerRequest request, CancellationToken ct)
     {
         using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
-        var raw = await reader.ReadToEndAsync(ct);
+        ct.ThrowIfCancellationRequested();
+        var raw = await reader.ReadToEndAsync();
         return JsonSerializer.Deserialize<T>(raw, JsonOptions)
             ?? throw new InvalidOperationException("Invalid JSON request.");
     }
@@ -152,7 +163,7 @@ public sealed class BridgeHttpHost
         response.ContentType = "application/json";
         var bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value, JsonOptions));
         response.ContentLength64 = bytes.Length;
-        await response.OutputStream.WriteAsync(bytes, ct);
+        await response.OutputStream.WriteAsync(bytes, 0, bytes.Length, ct);
         response.OutputStream.Close();
     }
 }

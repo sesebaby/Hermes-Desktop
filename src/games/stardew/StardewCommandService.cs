@@ -15,6 +15,9 @@ public sealed class StardewCommandService : IGameCommandService
 
     public async Task<GameCommandResult> SubmitAsync(GameAction action, CancellationToken ct)
     {
+        if (action.Type == GameActionType.Speak)
+            return await SubmitSpeakAsync(action, ct);
+
         if (action.Type != GameActionType.Move)
             return new GameCommandResult(false, "", StardewCommandStatuses.Failed, "unsupported_action", action.TraceId);
 
@@ -37,6 +40,32 @@ public sealed class StardewCommandService : IGameCommandService
 
         var response = await _client.SendAsync<StardewMoveRequest, StardewMoveAcceptedData>(
             StardewBridgeRoutes.TaskMove,
+            envelope,
+            ct);
+
+        return ToCommandResult(response, action.TraceId);
+    }
+
+    private async Task<GameCommandResult> SubmitSpeakAsync(GameAction action, CancellationToken ct)
+    {
+        var text = action.Payload?["text"]?.ToString();
+        if (string.IsNullOrWhiteSpace(text))
+            return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.InvalidTarget, action.TraceId);
+
+        var channel = action.Payload?["channel"]?.ToString();
+        if (string.IsNullOrWhiteSpace(channel))
+            channel = "player";
+
+        var envelope = new StardewBridgeEnvelope<StardewSpeakRequest>(
+            $"req_{Guid.NewGuid():N}",
+            action.TraceId,
+            action.NpcId,
+            _saveId,
+            action.IdempotencyKey,
+            new StardewSpeakRequest(text, channel));
+
+        var response = await _client.SendAsync<StardewSpeakRequest, StardewSpeakData>(
+            StardewBridgeRoutes.ActionSpeak,
             envelope,
             ct);
 

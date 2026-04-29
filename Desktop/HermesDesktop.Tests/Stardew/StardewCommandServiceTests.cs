@@ -1,6 +1,7 @@
 using Hermes.Agent.Game;
 using Hermes.Agent.Games.Stardew;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Text.Json.Nodes;
 
 namespace HermesDesktop.Tests.Stardew;
 
@@ -68,6 +69,48 @@ public class StardewCommandServiceTests
     }
 
     [TestMethod]
+    public async Task SubmitAsync_Speak_PostsTypedSpeakEnvelopeToActionSpeakRoute()
+    {
+        var client = new FakeSmapiClient();
+        client.SpeakResponse = new StardewBridgeResponse<StardewSpeakData>(
+            true,
+            "trace-speak",
+            "req-speak",
+            null,
+            StardewCommandStatuses.Completed,
+            new StardewSpeakData("haley", "Hi there.", "player", true),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var payload = new JsonObject
+        {
+            ["text"] = "Hi there.",
+            ["channel"] = "player"
+        };
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.Speak,
+            "trace-speak",
+            "idem-speak",
+            new GameActionTarget("player"),
+            Payload: payload);
+
+        var result = await service.SubmitAsync(action, CancellationToken.None);
+
+        Assert.IsTrue(result.Accepted);
+        Assert.AreEqual(StardewCommandStatuses.Completed, result.Status);
+        Assert.AreEqual(StardewBridgeRoutes.ActionSpeak, client.LastRoute);
+        Assert.IsInstanceOfType(client.LastEnvelope, typeof(StardewBridgeEnvelope<StardewSpeakRequest>));
+        var envelope = (StardewBridgeEnvelope<StardewSpeakRequest>)client.LastEnvelope!;
+        Assert.AreEqual("haley", envelope.NpcId);
+        Assert.AreEqual("save-1", envelope.SaveId);
+        Assert.AreEqual("idem-speak", envelope.IdempotencyKey);
+        Assert.AreEqual("Hi there.", envelope.Payload.Text);
+        Assert.AreEqual("player", envelope.Payload.Channel);
+    }
+
+    [TestMethod]
     public async Task SubmitAsync_InvalidMoveTargetFailsBeforeBridgeCall()
     {
         var client = new FakeSmapiClient();
@@ -87,12 +130,34 @@ public class StardewCommandServiceTests
         Assert.IsNull(client.LastRoute);
     }
 
+    [TestMethod]
+    public async Task SubmitAsync_InvalidSpeakTextFailsBeforeBridgeCall()
+    {
+        var client = new FakeSmapiClient();
+        var service = new StardewCommandService(client, "save-1");
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.Speak,
+            "trace-speak",
+            "idem-speak",
+            new GameActionTarget("player"),
+            Payload: new JsonObject());
+
+        var result = await service.SubmitAsync(action, CancellationToken.None);
+
+        Assert.IsFalse(result.Accepted);
+        Assert.AreEqual(StardewBridgeErrorCodes.InvalidTarget, result.FailureReason);
+        Assert.IsNull(client.LastRoute);
+    }
+
     private sealed class FakeSmapiClient : ISmapiModApiClient
     {
         public string? LastRoute { get; private set; }
         public object? LastEnvelope { get; private set; }
         public StardewBridgeResponse<StardewMoveAcceptedData>? MoveResponse { get; set; }
         public StardewBridgeResponse<StardewTaskStatusData>? StatusResponse { get; set; }
+        public StardewBridgeResponse<StardewSpeakData>? SpeakResponse { get; set; }
 
         public Task<StardewBridgeResponse<TData>> SendAsync<TPayload, TData>(
             string route,
@@ -107,6 +172,7 @@ public class StardewCommandServiceTests
                 StardewBridgeRoutes.TaskMove => MoveResponse ?? throw new InvalidOperationException("No move response configured."),
                 StardewBridgeRoutes.TaskStatus => StatusResponse ?? throw new InvalidOperationException("No status response configured."),
                 StardewBridgeRoutes.TaskCancel => StatusResponse ?? throw new InvalidOperationException("No cancel response configured."),
+                StardewBridgeRoutes.ActionSpeak => SpeakResponse ?? throw new InvalidOperationException("No speak response configured."),
                 _ => throw new InvalidOperationException($"Unexpected route {route}.")
             };
 

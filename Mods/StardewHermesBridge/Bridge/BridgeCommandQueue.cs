@@ -2,6 +2,7 @@ namespace StardewHermesBridge.Bridge;
 
 using System.Collections.Concurrent;
 using StardewHermesBridge.Logging;
+using StardewModdingAPI;
 using StardewValley;
 
 public sealed class BridgeCommandQueue
@@ -19,7 +20,7 @@ public sealed class BridgeCommandQueue
     public BridgeResponse<MoveAcceptedData> EnqueueMove(BridgeEnvelope<MovePayload> envelope)
     {
         if (string.IsNullOrWhiteSpace(envelope.NpcId))
-            return Error<MoveAcceptedData>(envelope, "invalid_target", "npcId is required.", retryable: false);
+            return Error<MoveAcceptedData>(envelope.TraceId, envelope.RequestId, "invalid_target", "npcId is required.", retryable: false);
 
         if (!string.IsNullOrWhiteSpace(envelope.IdempotencyKey) &&
             _idempotency.TryGetValue(envelope.IdempotencyKey, out var existingCommandId) &&
@@ -48,7 +49,7 @@ public sealed class BridgeCommandQueue
     public BridgeResponse<TaskStatusData> GetStatus(BridgeEnvelope<TaskStatusRequest> envelope)
     {
         if (!_commands.TryGetValue(envelope.Payload.CommandId, out var command))
-            return Error<TaskStatusData>(envelope, "command_not_found", "Command was not found.", retryable: false);
+            return Error<TaskStatusData>(envelope.TraceId, envelope.RequestId, "command_not_found", "Command was not found.", retryable: false);
 
         return new BridgeResponse<TaskStatusData>(
             true,
@@ -64,7 +65,7 @@ public sealed class BridgeCommandQueue
     public BridgeResponse<TaskStatusData> Cancel(BridgeEnvelope<TaskCancelRequest> envelope)
     {
         if (!_commands.TryGetValue(envelope.Payload.CommandId, out var command))
-            return Error<TaskStatusData>(envelope, "command_not_found", "Command was not found.", retryable: false);
+            return Error<TaskStatusData>(envelope.TraceId, envelope.RequestId, "command_not_found", "Command was not found.", retryable: false);
 
         command.Cancel(envelope.Payload.Reason);
         _logger.Write("task_cancelled", command.NpcId, "move", command.TraceId, command.CommandId, "cancelled", envelope.Payload.Reason);
@@ -75,6 +76,35 @@ public sealed class BridgeCommandQueue
             command.CommandId,
             command.Status,
             command.ToStatusData(),
+            null,
+            new { });
+    }
+
+    public BridgeResponse<SpeakData> Speak(BridgeEnvelope<SpeakPayload> envelope)
+    {
+        if (string.IsNullOrWhiteSpace(envelope.NpcId))
+            return Error<SpeakData>(envelope.TraceId, envelope.RequestId, "invalid_target", "npcId is required.", retryable: false);
+
+        if (string.IsNullOrWhiteSpace(envelope.Payload.Text))
+            return Error<SpeakData>(envelope.TraceId, envelope.RequestId, "invalid_target", "text is required.", retryable: false);
+
+        if (!Context.IsWorldReady || Game1.player is null)
+        {
+            _logger.Write("action_speak_failed", envelope.NpcId, "speak", envelope.TraceId, null, "failed", "world_not_ready");
+            return Error<SpeakData>(envelope.TraceId, envelope.RequestId, "world_not_ready", "The Stardew world is not ready.", retryable: true);
+        }
+
+        var channel = string.IsNullOrWhiteSpace(envelope.Payload.Channel) ? "player" : envelope.Payload.Channel;
+        var text = $"{envelope.NpcId}: {envelope.Payload.Text}";
+        Game1.drawObjectDialogue(text);
+        _logger.Write("action_speak_completed", envelope.NpcId, "speak", envelope.TraceId, null, "completed", null);
+        return new BridgeResponse<SpeakData>(
+            true,
+            envelope.TraceId,
+            envelope.RequestId,
+            null,
+            "completed",
+            new SpeakData(envelope.NpcId, envelope.Payload.Text, channel, true),
             null,
             new { });
     }
@@ -125,11 +155,8 @@ public sealed class BridgeCommandQueue
             null,
             new { });
 
-    private static BridgeResponse<TData> Error<TData>(BridgeEnvelope<object> envelope, string code, string message, bool retryable)
-        => new(false, envelope.TraceId, envelope.RequestId, null, "failed", default, new BridgeError(code, message, retryable), new { });
-
-    private static BridgeResponse<TData> Error<TData, TPayload>(BridgeEnvelope<TPayload> envelope, string code, string message, bool retryable)
-        => new(false, envelope.TraceId, envelope.RequestId, null, "failed", default, new BridgeError(code, message, retryable), new { });
+    private static BridgeResponse<TData> Error<TData>(string traceId, string requestId, string code, string message, bool retryable)
+        => new(false, traceId, requestId, null, "failed", default, new BridgeError(code, message, retryable), new { });
 }
 
 public sealed class BridgeMoveCommand
@@ -184,6 +211,7 @@ public sealed class BridgeMoveCommand
     public TaskStatusData ToStatusData()
         => new(
             CommandId,
+            TraceId,
             NpcId,
             "move",
             Status,
