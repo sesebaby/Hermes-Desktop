@@ -7,7 +7,7 @@ using System.Collections.Concurrent;
 
 /// <summary>
 /// Skills System - Markdown-based custom capabilities.
-/// Skills are .md files with YAML frontmatter that define agent behaviors.
+/// Skills are directories containing a SKILL.md file with YAML frontmatter.
 /// </summary>
 public sealed class SkillManager
 {
@@ -36,15 +36,12 @@ public sealed class SkillManager
         if (!Directory.Exists(_skillsDir))
             return;
         
-        var skillFiles = Directory.EnumerateFiles(_skillsDir, "*.md", SearchOption.AllDirectories);
+        var skillFiles = Directory.EnumerateFiles(_skillsDir, "SKILL.md", SearchOption.AllDirectories);
         
         foreach (var file in skillFiles)
         {
             try
             {
-                if (Path.GetFileName(file).Equals("DESCRIPTION.md", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
                 var skill = ParseSkillFile(file);
                 if (skill != null)
                 {

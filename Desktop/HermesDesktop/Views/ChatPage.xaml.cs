@@ -489,7 +489,7 @@ public sealed partial class ChatPage : Page
             }
             else
             {
-                lines.AppendLine("No custom skills installed. Add .md files to your skills directory.");
+                lines.AppendLine("No custom skills installed. Add skill folders containing SKILL.md to your skills directory.");
             }
             AppendSystemMessage(lines.ToString());
             return;

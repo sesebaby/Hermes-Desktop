@@ -11,7 +11,7 @@
   Steps:
     1) Build gate — fast dotnet build to catch compile errors before the slower publish
     2) dotnet publish  (self-contained, trimming OFF, ReadyToRun ON)
-    3) Bundle skills/ into publish output
+    3) Bundle skills/ and souls/ into publish output
     4) Optionally compress to HermesDesktop-portable-{arch}.zip
 
   The output zip is what gets uploaded to GitHub Releases.
@@ -167,6 +167,20 @@ foreach ($skill in $manifest.skills | Where-Object { $_.disposition -eq "retain"
     }
 }
 
+# --- 4. Bundle shipped soul templates into their dedicated runtime root ---
+$bundledSouls = Join-Path $repoRoot "souls"
+$targetSouls = Join-Path $OutputDir "souls"
+if (-not (Test-Path $bundledSouls)) {
+    throw "Bundled soul templates directory not found: $bundledSouls"
+}
+
+if (Test-Path $targetSouls) {
+    Remove-Item -Recurse -Force $targetSouls
+}
+
+New-Item -ItemType Directory -Path $targetSouls -Force | Out-Null
+Copy-Item -Recurse -Force $bundledSouls\* $targetSouls
+
 $exe = Join-Path $OutputDir "HermesDesktop.exe"
 if (-not (Test-Path $exe)) {
     Write-Error "Publish output missing HermesDesktop.exe under $OutputDir"
@@ -178,7 +192,7 @@ Write-Host "  Folder: $OutputDir" -ForegroundColor White
 Write-Host "  Exe:    $exe" -ForegroundColor White
 Write-Host ""
 
-# --- 4. Zip (optional) ---
+# --- 5. Zip (optional) ---
 if ($Zip) {
     $zipName = "HermesDesktop-portable-$($Platform.ToLower()).zip"
     $zipPath = Join-Path (Split-Path $OutputDir) $zipName

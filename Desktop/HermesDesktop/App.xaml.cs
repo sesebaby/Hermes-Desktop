@@ -446,9 +446,8 @@ public partial class App : Application
         // Soul registry (browsable soul templates)
         var soulsSearchPaths = new[]
         {
-            Path.Combine(AppContext.BaseDirectory, "skills", "souls"),       // Shipped with app
-            Path.Combine(projectDir, "souls"),                               // User-installed souls
-            Path.Combine(Path.GetDirectoryName(hermesHome) ?? hermesHome, "hermes-agent", "skills", "souls"), // Hermes CLI souls
+            Path.Combine(AppContext.BaseDirectory, "souls"), // Shipped with app
+            Path.Combine(projectDir, "souls"),               // User-installed souls
         };
         services.AddSingleton(sp => new SoulRegistry(
             soulsSearchPaths,
