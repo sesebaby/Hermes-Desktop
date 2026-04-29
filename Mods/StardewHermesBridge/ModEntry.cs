@@ -120,20 +120,30 @@ public sealed class ModEntry : Mod
             return;
 
         var clickedNpcName = TryResolveClickedNpcName(e);
+        var isActionButton = e.Button.IsActionButton();
         var route = _clickRouter.Route(new NpcDialogueClickRouteRequest(
-            e.Button.IsActionButton(),
+            isActionButton,
             clickedNpcName,
             Game1.activeClickableMenu is not null));
 
         if (!route.IsAccepted)
         {
-            _bridgeLogger.Write(SmapiBridgeLogger.NpcClickRejected, clickedNpcName, FormalEntry, FormalEntry, null, "rejected", route.Reason);
+            _bridgeLogger.Write(SmapiBridgeLogger.NpcClickRejected, clickedNpcName, FormalEntry, FormalEntry, null, "rejected", BuildInputRejectDetail(e, route.Reason, isActionButton));
             return;
         }
 
         _pendingDialogueFlow = _dialogueFlow.BeginFollowUp(route.NpcName!);
-        _bridgeLogger.Write(SmapiBridgeLogger.NpcClickObserved, route.NpcName, FormalEntry, FormalEntry, null, "observed", null);
+        _bridgeLogger.Write(SmapiBridgeLogger.NpcClickObserved, route.NpcName, FormalEntry, FormalEntry, null, "observed", BuildInputAcceptedDetail(e, isActionButton));
     }
+
+    private static string BuildInputRejectDetail(ButtonPressedEventArgs e, string reason, bool isActionButton)
+        => $"{reason};button={e.Button};is_action={isActionButton};is_use_tool={e.Button.IsUseToolButton()};action_bindings={FormatButtons(Game1.options.actionButton)};use_tool_bindings={FormatButtons(Game1.options.useToolButton)}";
+
+    private static string BuildInputAcceptedDetail(ButtonPressedEventArgs e, bool isActionButton)
+        => $"button={e.Button};is_action={isActionButton};is_use_tool={e.Button.IsUseToolButton()}";
+
+    private static string FormatButtons(IEnumerable<StardewValley.InputButton> buttons)
+        => string.Join(",", buttons.Select(button => button.ToString()));
 
     private string? TryResolveClickedNpcName(ButtonPressedEventArgs e)
     {
