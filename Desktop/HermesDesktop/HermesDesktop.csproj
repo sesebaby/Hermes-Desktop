@@ -6,6 +6,7 @@
     <RootNamespace>HermesDesktop</RootNamespace>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64</Platforms>
     <Platform>x64</Platform>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <UseWinUI>true</UseWinUI>
@@ -23,6 +24,13 @@
     <Version>2.4.0</Version>
     <AssemblyVersion>2.4.0.0</AssemblyVersion>
     <FileVersion>2.4.0.0</FileVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(BuildingInsideVisualStudio)' == 'true' and '$(VsInstallRoot)' != '' and !Exists('$(VsInstallRoot)\VC\Tools\MSVC') and Exists('$(VsInstallRoot)\SDK\ScopeCppSDK\vc15\VC\bin\vcmeta.dll')">
+    <!-- VS 18 Insiders may not have the C++ VC Tools workload installed.
+         WinAppSDK's in-proc XAML target only needs vcmeta.dll for this managed WinUI app. -->
+    <VCInstallPath32 Condition="'$(VCInstallPath32)' == ''">$(VsInstallRoot)\SDK\ScopeCppSDK\vc15\VC\bin\vcmeta.dll</VCInstallPath32>
+    <VCInstallPath64 Condition="'$(VCInstallPath64)' == ''">$(VsInstallRoot)\SDK\ScopeCppSDK\vc15\VC\bin\vcmeta.dll</VCInstallPath64>
   </PropertyGroup>
 
   <!-- Set -p:HermesMsixPublish=true (see scripts/publish-msix.ps1) to produce a signed .msix under AppPackages\ -->
