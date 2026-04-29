@@ -1,0 +1,9 @@
+{
+  "Name": "Stardew Hermes Bridge",
+  "Author": "Hermes",
+  "Version": "0.1.0",
+  "Description": "Local loopback bridge for Hermes-controlled Stardew NPC runtime experiments.",
+  "UniqueID": "Hermes.StardewHermesBridge",
+  "EntryDll": "StardewHermesBridge.dll",
+  "MinimumApiVersion": "4.0.0"
+}
