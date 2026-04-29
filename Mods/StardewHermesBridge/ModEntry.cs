@@ -1,5 +1,6 @@
 namespace StardewHermesBridge;
 
+using System.Text.Json;
 using StardewHermesBridge.Bridge;
 using StardewHermesBridge.Logging;
 using StardewHermesBridge.Ui;
@@ -35,6 +36,7 @@ public sealed class ModEntry : Mod
     {
         _httpHost.Start("127.0.0.1", preferredPort: 8745);
         _overlay.SetBridgeOnline(_httpHost.Port, _httpHost.BridgeToken);
+        WriteDiscoveryFile();
     }
 
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
@@ -65,4 +67,40 @@ public sealed class ModEntry : Mod
     {
         _debugMenu.HandleButton(e.Button);
     }
+
+    private void WriteDiscoveryFile()
+    {
+        try
+        {
+            var path = GetDiscoveryFilePath();
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var document = new BridgeDiscoveryDocument(
+                "127.0.0.1",
+                _httpHost.Port,
+                _httpHost.BridgeToken,
+                DateTimeOffset.UtcNow,
+                Environment.ProcessId);
+            File.WriteAllText(path, JsonSerializer.Serialize(document, new JsonSerializerOptions { WriteIndented = true }));
+            _bridgeLogger.Write("bridge_discovery_written", null, "bridge", "bridge", null, "online", path);
+        }
+        catch (Exception ex)
+        {
+            _bridgeLogger.Write("bridge_discovery_failed", null, "bridge", "bridge", null, "failed", ex.Message);
+        }
+    }
+
+    private static string GetDiscoveryFilePath()
+        => Path.Combine(GetHermesHomePath(), "hermes-cs", "stardew-bridge.json");
+
+    private static string GetHermesHomePath()
+        => Environment.GetEnvironmentVariable("HERMES_HOME") is { Length: > 0 } configuredHome
+            ? configuredHome
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "hermes");
+
+    private sealed record BridgeDiscoveryDocument(
+        string Host,
+        int Port,
+        string BridgeToken,
+        DateTimeOffset StartedAtUtc,
+        int ProcessId);
 }

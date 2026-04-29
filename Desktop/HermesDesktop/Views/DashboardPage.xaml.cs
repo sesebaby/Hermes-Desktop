@@ -3,6 +3,7 @@ using HermesDesktop.Services;
 using Hermes.Agent.Analytics;
 using Hermes.Agent.Core;
 using Hermes.Agent.Dreamer;
+using Hermes.Agent.Games.Stardew;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Skills;
 using Hermes.Agent.Soul;
@@ -30,6 +31,7 @@ public sealed partial class DashboardPage : Page
     private static readonly ResourceLoader ResourceLoader = new();
     private readonly RuntimeStatusService _runtimeStatusService = App.Services.GetRequiredService<RuntimeStatusService>();
     private readonly NpcRuntimeWorkspaceService? _npcRuntimeWorkspaceService = App.Services.GetService<NpcRuntimeWorkspaceService>();
+    private readonly StardewNpcDebugActionService? _stardewNpcDebugActions = App.Services.GetService<StardewNpcDebugActionService>();
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _dreamerTimer;
 
     /// <summary>
@@ -372,8 +374,55 @@ public sealed partial class DashboardPage : Page
     private void OpenLogs_Click(object sender, RoutedEventArgs e) => HermesEnvironment.OpenLogs();
     private void OpenConfig_Click(object sender, RoutedEventArgs e) => HermesEnvironment.OpenConfig();
     private void OpenNpcRuntimeLogs_Click(object sender, RoutedEventArgs e) => _npcRuntimeWorkspaceService?.OpenRuntimeDirectory();
+    private async void NpcSpeakHaley_Click(object sender, RoutedEventArgs e)
+        => await SpeakNpcAsync("Haley", "Hi, this is Haley speaking through the Hermes Stardew bridge.");
+
+    private async void NpcSpeakPenny_Click(object sender, RoutedEventArgs e)
+        => await SpeakNpcAsync("Penny", "Hello, this is Penny speaking through the Hermes Stardew bridge.");
 
     // ── Helpers ──
+
+    private async System.Threading.Tasks.Task SpeakNpcAsync(string npcId, string text)
+    {
+        if (_stardewNpcDebugActions is null)
+        {
+            NpcManualActionResult.Text = "Stardew debug actions are not available in this build.";
+            return;
+        }
+
+        HaleySpeakButton.IsEnabled = false;
+        PennySpeakButton.IsEnabled = false;
+        NpcManualActionResult.Text = $"Sending dialogue to {npcId}...";
+        NpcManualActionResult.Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"];
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+            var result = await _stardewNpcDebugActions.SpeakAsync(npcId, text, cts.Token);
+            if (result.Accepted)
+            {
+                NpcManualActionResult.Text = $"{npcId} dialogue sent. Check the game window.";
+                NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 34, 197, 94));
+            }
+            else
+            {
+                NpcManualActionResult.Text = $"{npcId} dialogue failed: {result.FailureReason ?? "unknown_error"}. Restart SMAPI after rebuilding the mod if this is the first test after this update.";
+                NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68));
+            }
+
+            LoadNpcRuntimeStatus();
+        }
+        catch (Exception ex)
+        {
+            NpcManualActionResult.Text = $"{npcId} dialogue failed: {ex.Message}";
+            NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68));
+        }
+        finally
+        {
+            HaleySpeakButton.IsEnabled = true;
+            PennySpeakButton.IsEnabled = true;
+        }
+    }
 
     private string FormatTimeAgo(TimeSpan age)
     {

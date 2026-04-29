@@ -21,6 +21,7 @@ using Hermes.Agent.Soul;
 using Hermes.Agent.Tools;
 using Hermes.Agent.Dreamer;
 using Hermes.Agent.Game;
+using Hermes.Agent.Games.Stardew;
 using Hermes.Agent.Runtime;
 using HermesDesktop.Services;
 using System;
@@ -364,6 +365,10 @@ public partial class App : Application
             sp.GetRequiredService<NpcRuntimeSupervisor>(),
             projectDir));
         services.AddSingleton<NpcRuntimeWorkspaceService>();
+        services.AddSingleton<IStardewBridgeDiscovery>(_ => new FileStardewBridgeDiscovery());
+        services.AddSingleton(sp => new StardewNpcDebugActionService(
+            sp.GetRequiredService<IStardewBridgeDiscovery>(),
+            sp.GetRequiredService<HttpClient>()));
 
         // Memory manager
         var memoryDir = Path.Combine(hermesHome, "memories");

@@ -28,6 +28,7 @@
 - `19b4785a`：把 `move` 从“只记录 tick 完成”升级为真实影响游戏内 NPC body：查找 NPC、查找目标地图、检查目标 tile、设置 NPC tile。
 - `b73d9928`：配置 Visual Studio / solution 启动体验：启动 `HermesDesktop` 前先构建并发布 `StardewHermesBridge` 到 `D:\Stardew Valley\Stardew Valley.v1.6.15\Mods\StardewHermesBridge`，再启动桌面程序。
 - 本次补充修复：根据 Visual Studio 截图修复 F5 构建配置。根因是 VS 18 Insiders 没有 `VC\Tools\MSVC` 目录时，Windows App SDK XAML 目标会在 `GetLatestMSVCVersion` 崩溃；同时 solution 仍暴露 `Any CPU`，会让打包项目用 MSIL 引用 x64 桌面 DLL。当前修复为：桌面项目在 VS 18 缺 VC Tools 时使用 `ScopeCppSDK` 的 `vcmeta.dll` fallback，桌面 / 打包项目和 `.sln` 默认平台固定到 `x64`。
+- 本次补充实现：新增从普通用户可点击的最小桌面调试入口。SMAPI bridge 启动时会写入本机 discovery 文件，包含 loopback 端口和临时 token；Dashboard 的 `Haley Speak` / `Penny Speak` 按钮读取 discovery 文件，然后通过 `StardewNpcDebugActionService -> StardewCommandService -> /action/speak` 触发游戏内 NPC 对话框。这个入口只用于 Phase 1 端到端验证，不代表自治 loop 已完成。
 
 ### 当前已经验证
 - `dotnet build Mods\StardewHermesBridge\StardewHermesBridge.csproj`：通过，并成功发布 mod 到 Stardew `Mods\StardewHermesBridge`。
@@ -35,6 +36,8 @@
 - `dotnet build HermesDesktop.sln -c Debug`：通过；solution 默认 `Debug` 已走 `x64`，不再使用 `Any CPU` 编桌面 / 打包项目。
 - `dotnet build Desktop\HermesDesktop.Package\HermesDesktop.Package.csproj -c Debug`：通过；打包项目默认输出到 `bin\x64\...`。
 - `dotnet build HermesDesktop.slnx`：通过。
+- `dotnet test Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj --filter 'FullyQualifiedName~StardewManualActionServiceTests'`：2 个测试通过，覆盖 discovery 文件读取和 typed `speak` action 提交。
+- `dotnet test Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj --filter 'FullyQualifiedName~Stardew'`：12 个 Stardew 相关测试通过。
 - `dotnet test Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj --filter 'FullyQualifiedName~Runtime|FullyQualifiedName~Stardew|FullyQualifiedName~GameCore'`：26 个测试通过。
 - `git diff --check`：通过。
 
@@ -43,7 +46,7 @@
 - 在 Visual Studio 里按 F5 启动 `HermesDesktop`，确认不会再出现 `GetLatestMSVCVersion` / `MSB3270` 构建错误。
 - 启动 Stardew + SMAPI 后，确认游戏内能加载 `Stardew Hermes Bridge`。
 - 进入存档后，按 F8 能看到 Hermes bridge overlay。
-- 通过后续桌面端触发入口或临时调试入口触发 `speak`，确认游戏里真的弹出对应 NPC 的对话框。
+- 在 Hermes Desktop 的 Dashboard 里点击 `Haley Speak` / `Penny Speak`，确认游戏里真的弹出对应 NPC 的对话框。
 - 通过后续桌面端触发入口或临时调试入口触发 `move`，确认对应 NPC 在游戏里移动/出现在目标 tile。
 
 ### 下次继续时不要偏的方向
