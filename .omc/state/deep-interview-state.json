@@ -1,27 +1,89 @@
 {
-  "active": false,
-  "current_phase": "spec-crystallized",
+  "active": true,
+  "current_phase": "deep-interview",
   "state": {
-    "interview_id": "allgameinai-stack-decision-2026-04-27",
+    "interview_id": "allgameinai-stardew-modification-map-2026-04-29",
     "type": "brownfield",
-    "initial_idea": "手动测试发现当前项目号称的记忆功能没有实现，并怀疑其他能力存在夸大，正在权衡是修复当前项目的记忆功能还是转换技术栈直接改造 external/hermescraft-main。",
-    "rounds": 5,
-    "current_ambiguity": 0.1065,
+    "initial_idea": "基于 Hermes Desktop 接入星露谷并实现多 NPC 村庄，当前要明确现有项目需要做哪些改造。",
+    "current_ambiguity": 0.052,
     "threshold": 0.2,
-    "spec_file": ".omc/specs/deep-interview-stardew-route-decision-2026-04-27.md",
-    "dimensions": {
-      "goal_clarity": 0.93,
-      "constraint_clarity": 0.90,
-      "success_criteria_clarity": 0.88,
-      "context_clarity": 0.82
+    "prior_specs": [
+      ".omc/specs/deep-interview-stardew-allgameinai.md",
+      ".omc/specs/deep-interview-stardew-route-decision-2026-04-27.md"
+    ],
+    "codebase_context": {
+      "desktop_host": "Desktop/HermesDesktop/Services/HermesChatService.cs 当前以单个 _currentSession 驱动 in-process agent 会话。",
+      "profile_model": "src/soul/AgentProfile.cs 当前的多 agent 更像可切换 profile，激活时会把选中的 soul 覆盖到全局 SOUL.md。",
+      "memory_model": "src/memory/MemoryManager.cs 与 src/soul/SoulService.cs 已有记忆与 soul 基础件，但默认是全局/用户导向，不是每 NPC 命名空间。",
+      "session_store": "src/transcript/TranscriptStore.cs 支持多 session 持久化。",
+      "agent_spawn": "src/agents/AgentService.cs 支持子代理/团队，但不是面向长期存活 NPC 的 runtime supervisor。",
+      "dynamic_loading_patterns": "src/soul/SoulRegistry.cs 提供目录扫描模板加载；src/skills/BundledSkillCatalogService.cs 提供 manifest+校验+刷新模式。"
     },
     "user_choices": {
-      "primary_goal": "fastest_mvp",
-      "route_constraint": "no_hard_constraint",
-      "mvp_type": "real_bridge_loop",
-      "minimum_pass_line": "dual_npc_real_isolation",
-      "route_if_current_faster": "continue_current_repo"
+      "npc_runtime_shape": "independent_agent_instances",
+      "cross_game_boundary": "runtime_generic_core_with_game_adapters",
+      "npc_material_delivery": "dynamic_npc_packs_without_core_code_changes"
     },
-    "final_conclusion": "优先继续基于当前 Hermes Desktop 仓库实现 Stardew 双 NPC 真实桥接 MVP；external/hermescraft-main 仅作为架构模式参考。"
+    "architecture_decision": {
+      "status": "frozen",
+      "shape": "core_runtime + game_adapter + npc_packs",
+      "core_dirs": ["src/runtime", "src/game/core"],
+      "game_adapter_dirs": ["src/games/stardew"],
+      "npc_pack_root": "content/npc-packs/<game>/<npc-id>",
+      "rule_same_game_new_npc": "prefer_pack_only",
+      "rule_new_game": "new_adapter_plus_packs",
+      "rule_pack_logic": "content_and_configuration_only",
+      "process_topology": "not_fixed_topology_neutral_core"
+    },
+    "rounds": [
+      {
+        "round": 1,
+        "target": "Goal Clarity",
+        "question": "MVP 里的一个 NPC 在系统里到底是什么？",
+        "answer": "独立 Agent 实例",
+        "ambiguity": 0.0855
+      },
+      {
+        "round": 2,
+        "target": "Constraint Clarity",
+        "question": "跨游戏通用边界应该收敛到哪一层？",
+        "answer": "运行时通用化",
+        "ambiguity": 0.068
+      },
+      {
+        "round": 3,
+        "target": "Success Criteria",
+        "question": "新增一个同游戏 NPC 时是否应避免改代码？",
+        "answer": "是，最好通过资料包动态加载。",
+        "ambiguity": 0.052
+      }
+    ],
+    "challenge_modes_used": [],
+    "ontology_snapshots": [
+      {
+        "round": 1,
+        "entity_count": 6,
+        "new": 6,
+        "changed": 0,
+        "stable": 0,
+        "stability_ratio": null
+      },
+      {
+        "round": 2,
+        "entity_count": 7,
+        "new": 1,
+        "changed": 0,
+        "stable": 6,
+        "stability_ratio": 0.86
+      },
+      {
+        "round": 3,
+        "entity_count": 8,
+        "new": 1,
+        "changed": 0,
+        "stable": 7,
+        "stability_ratio": 0.88
+      }
+    ]
   }
 }
