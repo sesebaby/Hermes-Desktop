@@ -32,6 +32,7 @@ param(
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
+. (Join-Path $repoRoot "scripts\Use-RepoTemp.ps1") -RepoRoot $repoRoot
 
 if (-not (Test-Path $CertificatePath)) {
     Write-Host ""

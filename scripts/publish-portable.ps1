@@ -54,6 +54,7 @@ param(
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
+. (Join-Path $repoRoot "scripts\Use-RepoTemp.ps1") -RepoRoot $repoRoot
 
 $csproj = Join-Path $repoRoot "Desktop\HermesDesktop\HermesDesktop.csproj"
 $rid = if ($Platform -eq "ARM64") { "win-arm64" } else { "win-x64" }

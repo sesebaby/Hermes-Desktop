@@ -34,6 +34,7 @@ param(
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
+. (Join-Path $repoRoot "scripts\Use-RepoTemp.ps1") -RepoRoot $repoRoot
 
 $csproj = Join-Path $repoRoot "Desktop\HermesDesktop\HermesDesktop.csproj"
 $publishAbs = Join-Path $repoRoot "artifacts\publish\HermesDesktop"

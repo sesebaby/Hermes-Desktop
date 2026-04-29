@@ -6,6 +6,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
+. (Join-Path $PSScriptRoot "scripts\Use-RepoTemp.ps1") -RepoRoot $PSScriptRoot
 
 if ($Rebuild) {
     dotnet build HermesDesktop.sln -t:Rebuild

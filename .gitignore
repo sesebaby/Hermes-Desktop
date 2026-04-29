@@ -2,6 +2,7 @@
 bin/
 obj/
 artifacts/
+.tmp/
 # Local MSIX dev signing — see Desktop/HermesDesktop/packaging/README.md and scripts/new-msix-dev-cert.ps1.
 # CI uses an ephemeral cert (.github/workflows/ci-msix.yml); do not commit .pfx material.
 Desktop/HermesDesktop/packaging/dev-msix.pfx

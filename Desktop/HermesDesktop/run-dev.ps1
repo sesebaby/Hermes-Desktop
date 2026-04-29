@@ -7,6 +7,8 @@ param(
 )
 
 $dotnet = "C:\Program Files\dotnet\dotnet.exe"
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+. (Join-Path $repoRoot "scripts\Use-RepoTemp.ps1") -RepoRoot $repoRoot
 $projectFile = Join-Path $PSScriptRoot "HermesDesktop.csproj"
 [xml]$projectXml = Get-Content -Path $projectFile
 $targetFramework = $projectXml.Project.PropertyGroup.TargetFramework | Select-Object -First 1
