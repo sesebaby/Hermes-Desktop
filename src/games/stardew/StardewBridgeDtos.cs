@@ -1,0 +1,82 @@
+namespace Hermes.Agent.Games.Stardew;
+
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
+
+public sealed record StardewBridgeEnvelope<TPayload>(
+    [property: JsonPropertyName("requestId")] string RequestId,
+    [property: JsonPropertyName("traceId")] string TraceId,
+    [property: JsonPropertyName("npcId")] string? NpcId,
+    [property: JsonPropertyName("saveId")] string? SaveId,
+    [property: JsonPropertyName("idempotencyKey")] string? IdempotencyKey,
+    [property: JsonPropertyName("payload")] TPayload Payload);
+
+public sealed record StardewBridgeResponse<TData>(
+    [property: JsonPropertyName("ok")] bool Ok,
+    [property: JsonPropertyName("traceId")] string TraceId,
+    [property: JsonPropertyName("requestId")] string RequestId,
+    [property: JsonPropertyName("commandId")] string? CommandId,
+    [property: JsonPropertyName("status")] string? Status,
+    [property: JsonPropertyName("data")] TData? Data,
+    [property: JsonPropertyName("error")] StardewBridgeError? Error,
+    [property: JsonPropertyName("state")] JsonObject? State);
+
+public sealed record StardewBridgeError(
+    [property: JsonPropertyName("code")] string Code,
+    [property: JsonPropertyName("message")] string Message,
+    [property: JsonPropertyName("retryable")] bool Retryable);
+
+public sealed record StardewTile(
+    [property: JsonPropertyName("x")] int X,
+    [property: JsonPropertyName("y")] int Y);
+
+public sealed record StardewMoveTarget(
+    [property: JsonPropertyName("locationName")] string LocationName,
+    [property: JsonPropertyName("tile")] StardewTile Tile);
+
+public sealed record StardewMoveRequest(
+    [property: JsonPropertyName("target")] StardewMoveTarget Target,
+    [property: JsonPropertyName("reason")] string? Reason);
+
+public sealed record StardewMoveAcceptedData(
+    [property: JsonPropertyName("accepted")] bool Accepted,
+    [property: JsonPropertyName("claim")] StardewMoveClaim Claim);
+
+public sealed record StardewMoveClaim(
+    [property: JsonPropertyName("npcId")] string NpcId,
+    [property: JsonPropertyName("targetTile")] StardewTile TargetTile,
+    [property: JsonPropertyName("interactionTile")] StardewTile? InteractionTile);
+
+public sealed record StardewTaskStatusRequest(
+    [property: JsonPropertyName("commandId")] string CommandId);
+
+public sealed record StardewTaskCancelRequest(
+    [property: JsonPropertyName("commandId")] string CommandId,
+    [property: JsonPropertyName("reason")] string Reason);
+
+public sealed record StardewTaskStatusData(
+    [property: JsonPropertyName("commandId")] string CommandId,
+    [property: JsonPropertyName("npcId")] string NpcId,
+    [property: JsonPropertyName("action")] string Action,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("startedAtUtc")] DateTime? StartedAtUtc,
+    [property: JsonPropertyName("elapsedMs")] long ElapsedMs,
+    [property: JsonPropertyName("progress")] double Progress,
+    [property: JsonPropertyName("blockedReason")] string? BlockedReason,
+    [property: JsonPropertyName("errorCode")] string? ErrorCode);
+
+public sealed record StardewStatusQuery(
+    [property: JsonPropertyName("npcId")] string? NpcId);
+
+public sealed record StardewNpcStatusData(
+    [property: JsonPropertyName("npcId")] string NpcId,
+    [property: JsonPropertyName("smapiName")] string SmapiName,
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("locationName")] string LocationName,
+    [property: JsonPropertyName("tile")] StardewTile Tile,
+    [property: JsonPropertyName("isMoving")] bool IsMoving,
+    [property: JsonPropertyName("isInDialogue")] bool IsInDialogue,
+    [property: JsonPropertyName("isAvailableForControl")] bool IsAvailableForControl,
+    [property: JsonPropertyName("blockedReason")] string? BlockedReason,
+    [property: JsonPropertyName("currentCommandId")] string? CurrentCommandId,
+    [property: JsonPropertyName("lastTraceId")] string? LastTraceId);

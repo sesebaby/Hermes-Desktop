@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "npcId": "haley",
+  "gameId": "stardew-valley",
+  "profileId": "default",
+  "defaultProfileId": "default",
+  "displayName": "Haley",
+  "smapiName": "Haley",
+  "aliases": ["haley", "Haley"],
+  "targetEntityId": "Haley",
+  "adapterId": "stardew",
+  "soulFile": "SOUL.md",
+  "factsFile": "facts.md",
+  "voiceFile": "voice.md",
+  "boundariesFile": "boundaries.md",
+  "skillsFile": "skills.json",
+  "policies": {
+    "schedulePriority": "agent_unless_story_event",
+    "dialogStyle": "social"
+  },
+  "capabilities": ["move", "speak"]
+}

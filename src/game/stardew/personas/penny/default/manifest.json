@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "npcId": "penny",
+  "gameId": "stardew-valley",
+  "profileId": "default",
+  "defaultProfileId": "default",
+  "displayName": "Penny",
+  "smapiName": "Penny",
+  "aliases": ["penny", "Penny"],
+  "targetEntityId": "Penny",
+  "adapterId": "stardew",
+  "soulFile": "SOUL.md",
+  "factsFile": "facts.md",
+  "voiceFile": "voice.md",
+  "boundariesFile": "boundaries.md",
+  "skillsFile": "skills.json",
+  "policies": {
+    "schedulePriority": "agent_unless_story_event",
+    "dialogStyle": "social"
+  },
+  "capabilities": ["move", "speak"]
+}

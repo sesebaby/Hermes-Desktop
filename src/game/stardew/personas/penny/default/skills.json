@@ -1,0 +1,4 @@
+{
+  "required": ["stardew-core", "stardew-social", "stardew-navigation"],
+  "optional": []
+}
