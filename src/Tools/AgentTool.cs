@@ -94,7 +94,7 @@ public sealed class AgentTool : ITool
             "coder" => new AgentDefinition(
                 "Coder",
                 "You are an implementation planning specialist. Break work into concrete, verifiable steps using the retained local agent tools.",
-                new[] { "session_search", "todo_write", "memory", "skills_list", "skill_view" }
+                new[] { "session_search", "todo", "memory", "skills_list", "skill_view" }
             ),
             
             "analyst" => new AgentDefinition(
@@ -106,7 +106,7 @@ public sealed class AgentTool : ITool
             "planner" => new AgentDefinition(
                 "Planner",
                 "You are a planning specialist. Create detailed, actionable plans with clear steps, dependencies, and success criteria.",
-                new[] { "session_search", "todo_write", "memory" }
+                new[] { "session_search", "todo", "memory" }
             ),
             
             "reviewer" => new AgentDefinition(
@@ -118,7 +118,7 @@ public sealed class AgentTool : ITool
             _ => new AgentDefinition(
                 "General",
                 "You are a helpful assistant. Complete the task efficiently and accurately.",
-                new[] { "session_search", "todo_write", "schedule_cron", "ask_user", "memory", "skills_list", "skill_view", "skill_invoke" }
+                new[] { "session_search", "todo", "schedule_cron", "ask_user", "memory", "skills_list", "skill_view", "skill_invoke" }
             )
         };
     }
@@ -148,6 +148,9 @@ public sealed class AgentTool : ITool
     
     private static JsonElement GetToolSchema(ITool tool)
     {
+        if (tool is IToolSchemaProvider schemaProvider)
+            return schemaProvider.GetParameterSchema();
+
         // Basic schema - in production would be more detailed
         return JsonSerializer.SerializeToElement(new
         {

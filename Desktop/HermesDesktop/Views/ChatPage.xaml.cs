@@ -286,6 +286,7 @@ public sealed partial class ChatPage : Page
             ScrollToBottom();
             UpdateSessionFooterLabel();
             UpdateSessionFooterCopyButton();
+            TaskPanelView.Refresh();
             ApplyConnectionState(RuntimeConnectionState.Connected);
 
             // Load activity entries for replay panel
@@ -548,6 +549,7 @@ public sealed partial class ChatPage : Page
         ReplayPanelView.Clear();
         _sessionRecorder.StopRecording();
         Messages.Clear();
+        TaskPanelView.Refresh();
         UpdateSessionFooterLabel();
         UpdateSessionFooterCopyButton();
         _onboarding = OnboardingState.None;

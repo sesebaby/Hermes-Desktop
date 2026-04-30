@@ -73,7 +73,7 @@ public sealed class PermissionDialogService
     /// Comes from <c>PermissionDecision.Message</c> on the agent side.
     /// </param>
     /// <param name="toolName">
-    /// The tool the agent wants to invoke (e.g. <c>"todo_write"</c>, <c>"session_search"</c>).
+    /// The tool the agent wants to invoke (e.g. <c>"todo"</c>, <c>"session_search"</c>).
     /// Surfaced in both the dialog title and passed to
     /// <see cref="FormatToolArgumentsForPrompt"/> for formatting.
     /// </param>

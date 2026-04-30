@@ -345,9 +345,12 @@ public partial class App : Application
         services.AddSingleton(sp => new SessionSearchIndex(
             sessionStateDbPath,
             sp.GetRequiredService<ILogger<SessionSearchIndex>>()));
+        services.AddSingleton<SessionTodoStore>();
+        services.AddSingleton<SessionTaskProjectionService>();
         services.AddSingleton(sp => new TranscriptStore(
             transcriptsDir,
             eagerFlush: true,
+            messageObserver: sp.GetRequiredService<SessionTaskProjectionService>(),
             sessionStore: sp.GetRequiredService<SessionSearchIndex>()));
 
         services.AddSingleton<INpcPackLoader, FileSystemNpcPackLoader>();
@@ -500,7 +503,8 @@ public partial class App : Application
             sp.GetRequiredService<ILogger<ContextManager>>(),
             soulService: sp.GetRequiredService<SoulService>(),
             pluginManager: sp.GetRequiredService<PluginManager>(),
-            memoryOrchestrator: sp.GetRequiredService<HermesMemoryOrchestrator>()));
+            memoryOrchestrator: sp.GetRequiredService<HermesMemoryOrchestrator>(),
+            taskProjectionService: sp.GetRequiredService<SessionTaskProjectionService>()));
         services.AddSingleton(sp => new TranscriptRecallService(
             sp.GetRequiredService<TranscriptStore>(),
             sp.GetRequiredService<ILogger<TranscriptRecallService>>(),
@@ -772,7 +776,9 @@ public partial class App : Application
         var chatClient = services.GetRequiredService<IChatClient>();
 
         // Task management
-        RegisterAndTrack(agent, toolRegistry, new TodoWriteTool());
+        var todoStore = services.GetRequiredService<SessionTodoStore>();
+        RegisterAndTrack(agent, toolRegistry, new TodoTool(todoStore));
+        RegisterAndTrack(agent, toolRegistry, new TodoWriteTool(todoStore));
         RegisterAndTrack(agent, toolRegistry, new ScheduleCronTool(
             services.GetRequiredService<ICronScheduler>()));
 

@@ -166,12 +166,15 @@ public sealed class Agent : IAgent
     /// <summary>Build ToolDefinition list from registered tools for the LLM.</summary>
     public List<ToolDefinition> GetToolDefinitions()
     {
-        return _tools.Values.Select(t => new ToolDefinition
-        {
-            Name = t.Name,
-            Description = t.Description,
-            Parameters = BuildParameterSchema(t)
-        }).ToList();
+        return _tools.Values
+            .Where(t => t is not ILegacyToolAlias)
+            .Select(t => new ToolDefinition
+            {
+                Name = t.Name,
+                Description = t.Description,
+                Parameters = BuildParameterSchema(t)
+            })
+            .ToList();
     }
 
     /// <summary>

@@ -60,7 +60,8 @@ public sealed class PromptBuilder
             SessionStateJson = stateJson,
             RetrievedContext = request.RetrievedContext,
             RecentTurns = request.RecentTurns,
-            CurrentUserMessage = request.CurrentUserMessage
+            CurrentUserMessage = request.CurrentUserMessage,
+            ActiveTaskContext = request.ActiveTaskContext
         };
     }
 
@@ -114,13 +115,23 @@ public sealed class PromptBuilder
             });
         }
 
-        // Layer 4: Recent conversation turns (sliding window)
+        // Layer 4: Active task context (session-scoped, active-only)
+        if (!string.IsNullOrWhiteSpace(packet.ActiveTaskContext))
+        {
+            messages.Add(new Message
+            {
+                Role = "system",
+                Content = packet.ActiveTaskContext
+            });
+        }
+
+        // Layer 5: Recent conversation turns (sliding window)
         if (packet.RecentTurns is { Count: > 0 })
         {
             messages.AddRange(packet.RecentTurns);
         }
 
-        // Layer 5: Current user message
+        // Layer 6: Current user message
         messages.Add(new Message
         {
             Role = "user",
@@ -161,6 +172,9 @@ public sealed class BuildRequest
 
     /// <summary>Optional plugin-provided system context, such as frozen builtin memory snapshots.</summary>
     public string? PluginSystemContext { get; init; }
+
+    /// <summary>Optional active task context generated from the session todo projection.</summary>
+    public string? ActiveTaskContext { get; init; }
 }
 
 /// <summary>Assembled prompt ready for conversion to provider message format.</summary>
@@ -180,6 +194,9 @@ public sealed class PromptPacket
 
     /// <summary>Plugin-provided system context, such as frozen builtin memory snapshots.</summary>
     public string? PluginSystemContext { get; init; }
+
+    /// <summary>Active pending/in-progress task context for the current session.</summary>
+    public string? ActiveTaskContext { get; init; }
 
     /// <summary>Recent conversation turns from the sliding window.</summary>
     public List<Message> RecentTurns { get; init; } = new();

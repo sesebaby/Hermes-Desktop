@@ -125,6 +125,18 @@ public class AgentTests
         Assert.AreEqual("Does things", defs[0].Description);
     }
 
+    [TestMethod]
+    public void GetToolDefinitions_ExcludesLegacyToolAliases()
+    {
+        _agent.RegisterTool(CreateMockTool("todo").Object);
+        _agent.RegisterTool(new LegacyAliasTool());
+
+        var defs = _agent.GetToolDefinitions();
+
+        Assert.AreEqual(1, defs.Count);
+        Assert.AreEqual("todo", defs[0].Name);
+    }
+
     // ── ChatAsync — no tools ──
 
     [TestMethod]
@@ -341,6 +353,15 @@ public class AgentTests
 
     /// <summary>Minimal parameter type used to satisfy Agent's schema builder.</summary>
     private sealed class EmptyParams { }
+
+    private sealed class LegacyAliasTool : ITool, ILegacyToolAlias
+    {
+        public string Name => "todo_write";
+        public string Description => "Legacy alias";
+        public Type ParametersType => typeof(EmptyParams);
+        public string CanonicalName => "todo";
+        public Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct) => Task.FromResult(ToolResult.Ok("{}"));
+    }
 }
 
 /// <summary>

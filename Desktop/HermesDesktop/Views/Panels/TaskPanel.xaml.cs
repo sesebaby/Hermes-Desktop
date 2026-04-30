@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Linq;
 using Hermes.Agent.Tasks;
-using TaskStatus = Hermes.Agent.Tasks.TaskStatus;
+using HermesDesktop.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
@@ -24,37 +24,46 @@ public sealed class TaskListItem
 
 public sealed partial class TaskPanel : UserControl
 {
-    private readonly TaskManager _taskManager;
+    private readonly SessionTaskPanelModel _model;
     public ObservableCollection<TaskListItem> Tasks { get; } = new();
 
     public TaskPanel()
     {
         InitializeComponent();
-        _taskManager = App.Services.GetRequiredService<TaskManager>();
+        var taskProjectionService = App.Services.GetRequiredService<SessionTaskProjectionService>();
+        var chatService = App.Services.GetRequiredService<HermesChatService>();
+        _model = new SessionTaskPanelModel(taskProjectionService, () => chatService.CurrentSessionId);
+        _model.Changed += OnModelChanged;
         Loaded += (_, _) => Refresh();
+        Unloaded += (_, _) =>
+        {
+            _model.Changed -= OnModelChanged;
+            _model.Dispose();
+        };
     }
 
-    public void Refresh()
+    public void Refresh() => _model.Refresh();
+
+    private void ApplyModel()
     {
         Tasks.Clear();
-        foreach (var task in _taskManager.GetOrderedTasks())
+        foreach (var task in _model.Tasks)
         {
             Tasks.Add(new TaskListItem
             {
                 TaskId = task.TaskId,
                 Description = task.Description,
-                StatusLabel = task.Status.ToString(),
-                PriorityLabel = $"{task.Priority}",
-                DueLabel = task.DueDate?.ToLocalTime().ToString("MMM d") ?? "",
+                StatusLabel = task.StatusLabel,
+                PriorityLabel = task.PriorityLabel,
+                DueLabel = "",
                 StatusColor = GetStatusColor(task.Status),
-                DescriptionBrush = task.Status == TaskStatus.Completed
+                DescriptionBrush = task.Status is "completed" or "cancelled"
                     ? new SolidColorBrush(ColorHelper.FromArgb(255, 100, 120, 100))
                     : new SolidColorBrush(ColorHelper.FromArgb(255, 232, 238, 247)),
-                DueBrush = task.IsOverdue
-                    ? new SolidColorBrush(ColorHelper.FromArgb(255, 255, 100, 100))
-                    : new SolidColorBrush(ColorHelper.FromArgb(255, 149, 162, 177))
+                DueBrush = new SolidColorBrush(ColorHelper.FromArgb(255, 149, 162, 177))
             });
         }
+
         TaskList.ItemsSource = Tasks;
         EmptyState.Visibility = Tasks.Count == 0
             ? Visibility.Visible
@@ -63,13 +72,21 @@ public sealed partial class TaskPanel : UserControl
 
     private void Refresh_Click(object sender, RoutedEventArgs e) => Refresh();
 
-    private static SolidColorBrush GetStatusColor(TaskStatus status) => status switch
+    private void OnModelChanged(object? sender, EventArgs e)
     {
-        TaskStatus.Pending => new SolidColorBrush(ColorHelper.FromArgb(255, 120, 120, 120)),
-        TaskStatus.InProgress => new SolidColorBrush(ColorHelper.FromArgb(255, 80, 140, 220)),
-        TaskStatus.Completed => new SolidColorBrush(ColorHelper.FromArgb(255, 80, 180, 80)),
-        TaskStatus.Failed => new SolidColorBrush(ColorHelper.FromArgb(255, 220, 80, 80)),
-        TaskStatus.Blocked => new SolidColorBrush(ColorHelper.FromArgb(255, 220, 160, 60)),
+        if (DispatcherQueue.HasThreadAccess)
+            ApplyModel();
+        else
+            DispatcherQueue.TryEnqueue(ApplyModel);
+    }
+
+    private static SolidColorBrush GetStatusColor(string status) => status switch
+    {
+        "pending" => new SolidColorBrush(ColorHelper.FromArgb(255, 120, 120, 120)),
+        "in_progress" => new SolidColorBrush(ColorHelper.FromArgb(255, 80, 140, 220)),
+        "completed" => new SolidColorBrush(ColorHelper.FromArgb(255, 80, 180, 80)),
+        "cancelled" => new SolidColorBrush(ColorHelper.FromArgb(255, 160, 110, 70)),
         _ => new SolidColorBrush(Colors.Gray)
     };
+
 }

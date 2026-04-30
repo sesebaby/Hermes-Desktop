@@ -58,6 +58,15 @@ public interface IToolSchemaProvider
 }
 
 /// <summary>
+/// Marker for executable compatibility aliases that should not be advertised
+/// as model-callable tools.
+/// </summary>
+public interface ILegacyToolAlias
+{
+    string CanonicalName { get; }
+}
+
+/// <summary>
 /// Tool parameter objects can implement this to receive runtime session context
 /// that should not be exposed as model-callable schema.
 /// </summary>

@@ -4,6 +4,7 @@ using Hermes.Agent.LLM;
 using Hermes.Agent.Memory;
 using Hermes.Agent.Plugins;
 using Hermes.Agent.Soul;
+using Hermes.Agent.Tasks;
 using Hermes.Agent.Transcript;
 using Microsoft.Extensions.Logging;
 
@@ -26,6 +27,7 @@ public sealed class ContextManager
     private readonly SoulService? _soulService;
     private readonly PluginManager? _pluginManager;
     private readonly HermesMemoryOrchestrator? _memoryOrchestrator;
+    private readonly SessionTaskProjectionService? _taskProjectionService;
 
     private readonly ConcurrentDictionary<string, SessionState> _sessionStates = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = new();
@@ -41,7 +43,8 @@ public sealed class ContextManager
         ILogger<ContextManager> logger,
         SoulService? soulService = null,
         PluginManager? pluginManager = null,
-        HermesMemoryOrchestrator? memoryOrchestrator = null)
+        HermesMemoryOrchestrator? memoryOrchestrator = null,
+        SessionTaskProjectionService? taskProjectionService = null)
     {
         _transcripts = transcripts;
         _chatClient = chatClient;
@@ -51,6 +54,7 @@ public sealed class ContextManager
         _soulService = soulService;
         _pluginManager = pluginManager;
         _memoryOrchestrator = memoryOrchestrator;
+        _taskProjectionService = taskProjectionService;
     }
 
     /// <summary>
@@ -189,7 +193,8 @@ public sealed class ContextManager
                 RecentTurns = recentTurns,
                 RetrievedContext = retrievedContext,
                 SoulContext = soulContext,
-                PluginSystemContext = pluginSystemContext
+                PluginSystemContext = pluginSystemContext,
+                ActiveTaskContext = _taskProjectionService?.FormatActiveTasksForInjection(sessionId)
             });
 
             return _promptBuilder.ToOpenAiMessages(packet);

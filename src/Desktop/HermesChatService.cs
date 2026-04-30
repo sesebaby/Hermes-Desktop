@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Permissions;
+using Hermes.Agent.Tasks;
 using Hermes.Agent.Tools;
 using Hermes.Agent.Transcript;
 using Microsoft.Extensions.Logging;
@@ -16,7 +17,7 @@ namespace HermesDesktop.Services;
 /// Pure C# chat service — bridges the WinUI frontend to the Hermes Agent core.
 /// No Python sidecar. Direct in-process agent execution.
 /// </summary>
-internal sealed class HermesChatService : IDisposable
+public sealed class HermesChatService : IDisposable
 {
     private readonly Agent _agent;
     private readonly IChatClient _chatClient;
@@ -24,6 +25,7 @@ internal sealed class HermesChatService : IDisposable
     private readonly PermissionManager _permissionManager;
     private readonly WorkspacePermissionRuleStore _permissionRuleStore;
     private readonly ICronScheduler _cronScheduler;
+    private readonly SessionTaskProjectionService _taskProjectionService;
     private readonly ILogger<HermesChatService> _logger;
 
     private Session? _currentSession;
@@ -37,6 +39,7 @@ internal sealed class HermesChatService : IDisposable
         PermissionManager permissionManager,
         WorkspacePermissionRuleStore permissionRuleStore,
         ICronScheduler cronScheduler,
+        SessionTaskProjectionService taskProjectionService,
         ILogger<HermesChatService> logger)
     {
         _agent = agent;
@@ -45,6 +48,7 @@ internal sealed class HermesChatService : IDisposable
         _permissionManager = permissionManager;
         _permissionRuleStore = permissionRuleStore;
         _cronScheduler = cronScheduler;
+        _taskProjectionService = taskProjectionService;
         _logger = logger;
         CurrentPermissionMode = _permissionManager.Mode;
         _cronScheduler.TaskDue += OnCronTaskDue;
@@ -130,7 +134,7 @@ internal sealed class HermesChatService : IDisposable
                 switch (evt)
                 {
                     case Hermes.Agent.LLM.StreamEvent.TokenDelta td:
-                        // Tool-calling status messages (e.g. "[Calling tool: todo_write]") are
+                        // Tool-calling status messages (e.g. "[Calling tool: todo]") are
                         // informational — show in UI but don't accumulate into the saved response
                         if (td.Text.StartsWith("\n[Calling tool:") && td.Text.TrimEnd().EndsWith("]"))
                         {
@@ -218,13 +222,17 @@ internal sealed class HermesChatService : IDisposable
         };
         foreach (var msg in messages)
             _currentSession.AddMessage(msg);
+        await _taskProjectionService.HydrateSessionAsync(sessionId, messages, ct);
 
         _logger.LogInformation("Loaded session {SessionId} with {Count} messages", sessionId, messages.Count);
     }
 
     public async Task ResetConversationAsync(CancellationToken ct = default)
     {
+        var oldSessionId = _currentSession?.Id;
         await EndCurrentSessionAsync(ct);
+        if (!string.IsNullOrWhiteSpace(oldSessionId))
+            _taskProjectionService.ClearSession(oldSessionId);
         _currentSession = null;
         _streamCts?.Cancel();
         _streamCts?.Dispose();
@@ -340,17 +348,17 @@ internal sealed class HermesChatService : IDisposable
         }
     }
 
-    internal sealed record HermesChatReply(string Response, string SessionId);
-    internal sealed record ScheduledChatMessage(string SessionId, string Content, bool IsCurrentSession);
+    public sealed record HermesChatReply(string Response, string SessionId);
+    public sealed record ScheduledChatMessage(string SessionId, string Content, bool IsCurrentSession);
 }
 
 // ── Structured stream events for UI consumption ──
 
-internal enum ChatStreamEventType
+public enum ChatStreamEventType
 {
     Token,
     Thinking,
     Error
 }
 
-internal sealed record ChatStreamEvent(ChatStreamEventType Type, string Text);
+public sealed record ChatStreamEvent(ChatStreamEventType Type, string Text);

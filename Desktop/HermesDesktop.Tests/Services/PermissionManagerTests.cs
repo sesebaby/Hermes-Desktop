@@ -43,7 +43,7 @@ public class PermissionManagerTests
         var manager = CreateManager(PermissionMode.BypassPermissions);
         const string input = "{\"path\":\"/tmp/file.txt\"}";
 
-        var decision = await manager.CheckPermissionsAsync("todo_write", input, CancellationToken.None);
+        var decision = await manager.CheckPermissionsAsync("todo", input, CancellationToken.None);
 
         Assert.AreEqual(PermissionBehavior.Allow, decision.Behavior);
         Assert.AreEqual(input, decision.UpdatedInput);
@@ -67,7 +67,7 @@ public class PermissionManagerTests
     {
         var manager = CreateManager(PermissionMode.Plan);
 
-        var decision = await manager.CheckPermissionsAsync("todo_write", "{\"items\":[]}", CancellationToken.None);
+        var decision = await manager.CheckPermissionsAsync("todo", "{\"items\":[]}", CancellationToken.None);
 
         Assert.AreEqual(PermissionBehavior.Deny, decision.Behavior);
         Assert.AreEqual("Cannot modify files in plan mode", decision.Message);
@@ -78,9 +78,9 @@ public class PermissionManagerTests
     public async Task CheckPermissionsAsync_AlwaysAllowRule_OverridesDefaultAskBehavior()
     {
         var manager = CreateManager(PermissionMode.Default, context =>
-            context.AlwaysAllow.Add(PermissionRule.AllowAll("todo_write")));
+            context.AlwaysAllow.Add(PermissionRule.AllowAll("todo")));
 
-        var decision = await manager.CheckPermissionsAsync("todo_write", "{\"items\":[]}", CancellationToken.None);
+        var decision = await manager.CheckPermissionsAsync("todo", "{\"items\":[]}", CancellationToken.None);
 
         Assert.AreEqual(PermissionBehavior.Allow, decision.Behavior);
     }
@@ -89,9 +89,9 @@ public class PermissionManagerTests
     public async Task CheckPermissionsAsync_AlwaysDenyRule_BlocksMatchingTool()
     {
         var manager = CreateManager(PermissionMode.Default, context =>
-            context.AlwaysDeny.Add(PermissionRule.DenyAll("todo_write")));
+            context.AlwaysDeny.Add(PermissionRule.DenyAll("todo")));
 
-        var decision = await manager.CheckPermissionsAsync("todo_write", "{\"items\":[]}", CancellationToken.None);
+        var decision = await manager.CheckPermissionsAsync("todo", "{\"items\":[]}", CancellationToken.None);
 
         Assert.AreEqual(PermissionBehavior.Deny, decision.Behavior);
         Assert.AreEqual("Blocked by permission rule", decision.Message);
@@ -102,11 +102,11 @@ public class PermissionManagerTests
     {
         var manager = CreateManager(PermissionMode.Default, context =>
         {
-            context.AlwaysAllow.Add(PermissionRule.AllowAll("todo_write"));
-            context.AlwaysDeny.Add(PermissionRule.DenyAll("todo_write"));
+            context.AlwaysAllow.Add(PermissionRule.AllowAll("todo"));
+            context.AlwaysDeny.Add(PermissionRule.DenyAll("todo"));
         });
 
-        var decision = await manager.CheckPermissionsAsync("todo_write", "{\"items\":[]}", CancellationToken.None);
+        var decision = await manager.CheckPermissionsAsync("todo", "{\"items\":[]}", CancellationToken.None);
 
         Assert.AreEqual(PermissionBehavior.Allow, decision.Behavior);
     }
@@ -115,12 +115,12 @@ public class PermissionManagerTests
     public async Task CheckPermissionsAsync_AlwaysAskRule_ForcesPrompt()
     {
         var manager = CreateManager(PermissionMode.Auto, context =>
-            context.AlwaysAsk.Add(PermissionRule.AllowAll("todo_write")));
+            context.AlwaysAsk.Add(PermissionRule.AllowAll("todo")));
 
-        var decision = await manager.CheckPermissionsAsync("todo_write", "{\"items\":[]}", CancellationToken.None);
+        var decision = await manager.CheckPermissionsAsync("todo", "{\"items\":[]}", CancellationToken.None);
 
         Assert.AreEqual(PermissionBehavior.Ask, decision.Behavior);
-        Assert.AreEqual("Requires permission: todo_write", decision.Message);
+        Assert.AreEqual("Requires permission: todo", decision.Message);
         Assert.IsTrue(decision.NeedsUserInput);
     }
 
@@ -140,7 +140,7 @@ public class PermissionManagerTests
     {
         var manager = CreateManager(PermissionMode.Auto);
 
-        var decision = await manager.CheckPermissionsAsync("todo_write", "{\"items\":[]}", CancellationToken.None);
+        var decision = await manager.CheckPermissionsAsync("todo", "{\"items\":[]}", CancellationToken.None);
 
         Assert.AreEqual(PermissionBehavior.Ask, decision.Behavior);
         Assert.AreEqual("Modify operation requires permission", decision.Message);
@@ -196,9 +196,9 @@ public class PermissionManagerTests
     public async Task AddAlwaysAllowRule_DefaultMode_PreventsFuturePermissionPrompts()
     {
         var manager = CreateManager(PermissionMode.Default);
-        var added = manager.AddAlwaysAllowRule("todo_write");
+        var added = manager.AddAlwaysAllowRule("todo");
 
-        var decision = await manager.CheckPermissionsAsync("todo_write", "{\"items\":[]}", CancellationToken.None);
+        var decision = await manager.CheckPermissionsAsync("todo", "{\"items\":[]}", CancellationToken.None);
 
         Assert.IsTrue(added);
         Assert.AreEqual(PermissionBehavior.Allow, decision.Behavior);
@@ -209,8 +209,8 @@ public class PermissionManagerTests
     {
         var manager = CreateManager(PermissionMode.Default);
 
-        var first = manager.AddAlwaysAllowRule("todo_write");
-        var second = manager.AddAlwaysAllowRule("todo_write");
+        var first = manager.AddAlwaysAllowRule("todo");
+        var second = manager.AddAlwaysAllowRule("todo");
 
         Assert.IsTrue(first);
         Assert.IsFalse(second);
@@ -228,21 +228,21 @@ public class PermissionManagerTests
     public void HasAlwaysAllowRule_RespectsCaseInsensitiveRuleMatching()
     {
         var manager = CreateManager(PermissionMode.Default);
-        manager.AddAlwaysAllowRule("todo_write");
+        manager.AddAlwaysAllowRule("todo");
 
-        Assert.IsTrue(manager.HasAlwaysAllowRule("TODO_WRITE"));
+        Assert.IsTrue(manager.HasAlwaysAllowRule("TODO"));
     }
 
     [TestMethod]
     public void ClearAlwaysAllowRules_RemovesAllRememberedRules()
     {
         var manager = CreateManager(PermissionMode.Default);
-        manager.AddAlwaysAllowRule("todo_write");
+        manager.AddAlwaysAllowRule("todo");
         manager.AddAlwaysAllowRule("memory");
 
         manager.ClearAlwaysAllowRules();
 
-        Assert.IsFalse(manager.HasAlwaysAllowRule("todo_write"));
+        Assert.IsFalse(manager.HasAlwaysAllowRule("todo"));
         Assert.IsFalse(manager.HasAlwaysAllowRule("memory"));
         Assert.AreEqual(0, manager.GetAlwaysAllowRulesSnapshot().Count);
     }

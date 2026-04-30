@@ -1,146 +1,126 @@
 namespace Hermes.Agent.Tools;
 
-using Hermes.Agent.Core;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Hermes.Agent.Core;
+using Hermes.Agent.Tasks;
 
 /// <summary>
-/// Tool for managing a todo list during task execution.
+/// Reference-faithful session todo tool. `todo_write` remains as a compatibility alias.
 /// </summary>
-public sealed class TodoWriteTool : ITool
+public class TodoTool : ITool, IToolSchemaProvider
 {
-    private readonly ITodoStore _store;
-    
-    public string Name => "todo_write";
-    public string Description => "Create, update, or manage a todo list for tracking task progress";
-    public Type ParametersType => typeof(TodoWriteParameters);
-    
-    public TodoWriteTool(ITodoStore? store = null)
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        _store = store ?? new InMemoryTodoStore();
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
+    private readonly SessionTodoStore _store;
+
+    public TodoTool(SessionTodoStore store)
+    {
+        _store = store;
     }
-    
+
+    public virtual string Name => "todo";
+
+    public string Description =>
+        "Manage your task list for the current session. Call with no parameters to read. " +
+        "Provide todos to write; merge=false replaces the list, merge=true updates by id and appends new items. " +
+        "Statuses: pending, in_progress, completed, cancelled. Always returns the full current list.";
+
+    public Type ParametersType => typeof(TodoToolParameters);
+
+    public JsonElement GetParameterSchema()
+    {
+        var schema = new
+        {
+            type = "object",
+            properties = new Dictionary<string, object>
+            {
+                ["todos"] = new
+                {
+                    type = "array",
+                    description = "Task items to write. Omit to read current list.",
+                    items = new
+                    {
+                        type = "object",
+                        properties = new Dictionary<string, object>
+                        {
+                            ["id"] = new { type = "string", description = "Unique item identifier." },
+                            ["content"] = new { type = "string", description = "Task description." },
+                            ["status"] = new
+                            {
+                                type = "string",
+                                @enum = new[] { "pending", "in_progress", "completed", "cancelled" },
+                                description = "Current status."
+                            }
+                        },
+                        required = new[] { "id", "content", "status" }
+                    }
+                },
+                ["merge"] = new
+                {
+                    type = "boolean",
+                    description = "true: update existing items by id and add new ones. false: replace the entire list.",
+                    @default = false
+                }
+            },
+            required = Array.Empty<string>()
+        };
+
+        return JsonDocument.Parse(JsonSerializer.Serialize(schema, JsonOptions)).RootElement.Clone();
+    }
+
     public Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
     {
-        var p = (TodoWriteParameters)parameters;
-        
+        ct.ThrowIfCancellationRequested();
+        var p = (TodoToolParameters)parameters;
+
         try
         {
-            var todos = p.Todos.Select(t => new TodoItem(
-                t.Id ?? Guid.NewGuid().ToString(),
-                t.Content,
-                Enum.Parse<TodoStatus>(t.Status ?? "pending", true),
-                Enum.Parse<TodoPriority>(t.Priority ?? "medium", true)
-            )).ToList();
-            
-            _store.SetTodos(todos);
-            
-            var summary = FormatTodoList(todos);
-            return Task.FromResult(ToolResult.Ok(summary));
+            var snapshot = p.Todos is null
+                ? _store.Read(p.CurrentSessionId)
+                : _store.Write(
+                    p.CurrentSessionId,
+                    p.Todos.Select(t => new SessionTodoInput(t.Id, t.Content, t.Status)),
+                    p.Merge);
+
+            return Task.FromResult(ToolResult.Ok(JsonSerializer.Serialize(snapshot, JsonOptions)));
         }
         catch (Exception ex)
         {
-            return Task.FromResult(ToolResult.Fail($"Failed to update todos: {ex.Message}", ex));
+            var error = JsonSerializer.Serialize(new { error = $"Failed to update todos: {ex.Message}" }, JsonOptions);
+            return Task.FromResult(ToolResult.Fail(error, ex));
         }
     }
-    
-    private static string FormatTodoList(IReadOnlyList<TodoItem> todos)
+}
+
+public sealed class TodoWriteTool : TodoTool, ILegacyToolAlias
+{
+    public TodoWriteTool(SessionTodoStore store) : base(store)
     {
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("Todo list updated:");
-        
-        foreach (var todo in todos)
-        {
-            var status = todo.Status switch
-            {
-                TodoStatus.Completed => "✓",
-                TodoStatus.InProgress => "►",
-                _ => "○"
-            };
-            
-            var priority = todo.Priority switch
-            {
-                TodoPriority.High => " [HIGH]",
-                TodoPriority.Low => " [low]",
-                _ => ""
-            };
-            
-            sb.AppendLine($"  {status} {todo.Content}{priority}");
-        }
-        
-        var completed = todos.Count(t => t.Status == TodoStatus.Completed);
-        var total = todos.Count;
-        sb.AppendLine($"\nProgress: {completed}/{total} completed");
-        
-        return sb.ToString();
     }
+
+    public override string Name => "todo_write";
+
+    public string CanonicalName => "todo";
 }
 
-/// <summary>
-/// Todo item storage interface.
-/// </summary>
-public interface ITodoStore
+public sealed class TodoToolParameters : ISessionAwareToolParameters
 {
-    IReadOnlyList<TodoItem> GetTodos();
-    void SetTodos(IReadOnlyList<TodoItem> todos);
-    void AddTodo(TodoItem item);
-    void UpdateTodo(string id, TodoStatus status);
-}
+    [JsonIgnore]
+    public string? CurrentSessionId { get; set; }
 
-/// <summary>
-/// In-memory todo store implementation.
-/// </summary>
-public sealed class InMemoryTodoStore : ITodoStore
-{
-    private List<TodoItem> _todos = new();
-    
-    public IReadOnlyList<TodoItem> GetTodos() => _todos;
-    
-    public void SetTodos(IReadOnlyList<TodoItem> todos) => _todos = todos.ToList();
-    
-    public void AddTodo(TodoItem item) => _todos.Add(item);
-    
-    public void UpdateTodo(string id, TodoStatus status)
-    {
-        var index = _todos.FindIndex(t => t.Id == id);
-        if (index >= 0)
-        {
-            _todos[index] = _todos[index] with { Status = status };
-        }
-    }
-}
+    public IReadOnlyList<TodoItemInput>? Todos { get; init; }
 
-/// <summary>
-/// Todo item.
-/// </summary>
-public sealed record TodoItem(
-    string Id,
-    string Content,
-    TodoStatus Status = TodoStatus.Pending,
-    TodoPriority Priority = TodoPriority.Medium);
-
-public enum TodoStatus
-{
-    Pending,
-    InProgress,
-    Completed
-}
-
-public enum TodoPriority
-{
-    High,
-    Medium,
-    Low
-}
-
-public sealed class TodoWriteParameters
-{
-    public IReadOnlyList<TodoItemInput> Todos { get; init; } = Array.Empty<TodoItemInput>();
+    public bool Merge { get; init; }
 }
 
 public sealed class TodoItemInput
 {
     public string? Id { get; init; }
-    public required string Content { get; init; }
+    public string? Content { get; init; }
     public string? Status { get; init; }
-    public string? Priority { get; init; }
 }

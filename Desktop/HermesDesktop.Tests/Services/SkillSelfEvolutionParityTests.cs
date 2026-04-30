@@ -59,7 +59,7 @@ public sealed class SkillSelfEvolutionParityTests
             ---
             name: build-fixer
             description: Fix build failures with exact commands
-            tools: session_search, todo_write
+            tools: session_search, todo
             ---
 
             Run `dotnet build`.

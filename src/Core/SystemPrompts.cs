@@ -17,7 +17,7 @@ public static class SystemPrompts
 ## Core Tools
 - Use `memory` for durable facts the user wants Hermes to remember.
 - Use `session_search` to recall prior conversations before guessing historical context.
-- Use `todo_write` for explicit task state and commitments.
+- Use `todo` for explicit task state and commitments.
 - Use `schedule_cron` only for user-approved scheduled work.
 - Use `agent` for bounded subagent work when a separate role can help.
 - Use `ask_user` when missing information blocks a safe answer.
