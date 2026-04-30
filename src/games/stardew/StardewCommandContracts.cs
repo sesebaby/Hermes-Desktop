@@ -10,6 +10,7 @@ public static class StardewBridgeRoutes
     public const string TaskStatus = "/task/status";
     public const string TaskCancel = "/task/cancel";
     public const string ActionSpeak = "/action/speak";
+    public const string ActionOpenPrivateChat = "/action/open_private_chat";
 }
 
 public static class StardewCommandStatuses

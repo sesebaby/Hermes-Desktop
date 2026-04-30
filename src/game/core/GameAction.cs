@@ -5,7 +5,8 @@ using System.Text.Json.Nodes;
 public enum GameActionType
 {
     Move,
-    Speak
+    Speak,
+    OpenPrivateChat
 }
 
 public sealed record GameAction(
@@ -32,7 +33,8 @@ public sealed record GameCommandResult(
     string CommandId,
     string Status,
     string? FailureReason,
-    string TraceId);
+    string TraceId,
+    bool Retryable = false);
 
 public sealed record GameCommandStatus(
     string CommandId,

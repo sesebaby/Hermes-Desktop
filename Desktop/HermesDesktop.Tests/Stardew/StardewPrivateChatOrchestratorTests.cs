@@ -1,0 +1,395 @@
+using Hermes.Agent.Game;
+using Hermes.Agent.Games.Stardew;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Text.Json.Nodes;
+
+namespace HermesDesktop.Tests.Stardew;
+
+[TestClass]
+public class StardewPrivateChatOrchestratorTests
+{
+    [TestMethod]
+    public async Task ProcessNextAsync_HaleyVanillaDialogueCompleted_SubmitsOpenPrivateChat()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."));
+        var commands = new FakeCommandService();
+        var agent = new FakePrivateChatAgentRunner();
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            agent,
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, commands.Submitted.Count);
+        Assert.AreEqual(GameActionType.OpenPrivateChat, commands.Submitted[0].Type);
+        Assert.AreEqual("Haley", commands.Submitted[0].NpcId);
+        Assert.AreEqual("pc_evt-1", commands.Submitted[0].Payload?["conversationId"]?.GetValue<string>());
+        Assert.AreEqual(0, agent.Requests.Count);
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_OtherNpcDialogueCompleted_DoesNotOpenPrivateChat()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Penny",
+                DateTime.UtcNow,
+                "Penny vanilla dialogue completed."));
+        var commands = new FakeCommandService();
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            new FakePrivateChatAgentRunner(),
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, commands.Submitted.Count);
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_DuplicateDialogueEvent_OpensPrivateChatOnce()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."),
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."));
+        var commands = new FakeCommandService();
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            new FakePrivateChatAgentRunner(),
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, commands.Submitted.Count);
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_PlayerPrivateMessageSubmitted_RoutesTextToAgentAndSpeaksReply()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."),
+            new GameEventRecord(
+                "evt-2",
+                "player_private_message_submitted",
+                "Haley",
+                DateTime.UtcNow,
+                "Player submitted a private chat message.",
+                "pc_evt-1",
+                new JsonObject
+                {
+                    ["conversationId"] = "pc_evt-1",
+                    ["text"] = "hi Haley"
+                }));
+        var commands = new FakeCommandService();
+        var agent = new FakePrivateChatAgentRunner { ReplyText = "Oh. Hi." };
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            agent,
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, agent.Requests.Count);
+        Assert.AreEqual("hi Haley", agent.Requests[0].PlayerText);
+        Assert.AreEqual("pc_evt-1", agent.Requests[0].ConversationId);
+        Assert.AreEqual(2, commands.Submitted.Count);
+        Assert.AreEqual(GameActionType.Speak, commands.Submitted[1].Type);
+        Assert.AreEqual("Oh. Hi.", commands.Submitted[1].Payload?["text"]?.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_OpenPrivateChatRetryableFailure_RetriesPendingOpenOnNextTick()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."));
+        var commands = new FakeCommandService();
+        commands.Results.Enqueue(new GameCommandResult(
+            false,
+            "",
+            StardewCommandStatuses.Failed,
+            StardewBridgeErrorCodes.MenuBlocked,
+            "trace-open-1",
+            Retryable: true));
+        commands.Results.Enqueue(new GameCommandResult(
+            true,
+            "",
+            StardewCommandStatuses.Completed,
+            null,
+            "trace-open-2"));
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            new FakePrivateChatAgentRunner(),
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(2, commands.Submitted.Count);
+        Assert.IsTrue(commands.Submitted.All(action => action.Type == GameActionType.OpenPrivateChat));
+        Assert.AreEqual(StardewPrivateChatState.AwaitingPlayerInput, orchestrator.State);
+        Assert.AreEqual("pc_evt-1", orchestrator.ConversationId);
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_WorldNotReadyOpenFailure_RetriesByErrorCode()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."));
+        var commands = new FakeCommandService();
+        commands.Results.Enqueue(new GameCommandResult(
+            false,
+            "",
+            StardewCommandStatuses.Failed,
+            StardewBridgeErrorCodes.WorldNotReady,
+            "trace-open-1"));
+        commands.Results.Enqueue(new GameCommandResult(
+            true,
+            "",
+            StardewCommandStatuses.Completed,
+            null,
+            "trace-open-2"));
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            new FakePrivateChatAgentRunner(),
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(2, commands.Submitted.Count);
+        Assert.AreEqual(StardewPrivateChatState.AwaitingPlayerInput, orchestrator.State);
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_PrivateChatReplyClosed_ReopensAfterReplyInsteadOfImmediately()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."),
+            new GameEventRecord(
+                "evt-2",
+                "player_private_message_submitted",
+                "Haley",
+                DateTime.UtcNow,
+                "Player submitted a private chat message.",
+                "pc_evt-1",
+                new JsonObject
+                {
+                    ["conversationId"] = "pc_evt-1",
+                    ["text"] = "hi Haley"
+                }));
+        var commands = new FakeCommandService();
+        var agent = new FakePrivateChatAgentRunner { ReplyText = "Oh. Hi." };
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            agent,
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.OnceAfterReply, MaxTurnsPerSession: 2));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(2, commands.Submitted.Count);
+        Assert.AreEqual(GameActionType.OpenPrivateChat, commands.Submitted[0].Type);
+        Assert.AreEqual(GameActionType.Speak, commands.Submitted[1].Type);
+        Assert.AreEqual(StardewPrivateChatState.WaitingReplyDismissal, orchestrator.State);
+
+        events.Add(new GameEventRecord(
+            "evt-3",
+            "private_chat_reply_closed",
+            "Haley",
+            DateTime.UtcNow,
+            "Haley private chat reply closed.",
+            "pc_evt-1",
+            new JsonObject { ["conversationId"] = "pc_evt-1" }));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(3, commands.Submitted.Count);
+        Assert.AreEqual(GameActionType.OpenPrivateChat, commands.Submitted[2].Type);
+        Assert.AreEqual("pc_evt-1_turn2", commands.Submitted[2].Payload?["conversationId"]?.GetValue<string>());
+        Assert.AreEqual(StardewPrivateChatState.AwaitingPlayerInput, orchestrator.State);
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_PlayerPrivateMessageCancelled_EndsSession()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."),
+            new GameEventRecord(
+                "evt-2",
+                "player_private_message_cancelled",
+                "Haley",
+                DateTime.UtcNow,
+                "Player cancelled private chat.",
+                "pc_evt-1",
+                new JsonObject { ["conversationId"] = "pc_evt-1" }));
+        var commands = new FakeCommandService();
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            new FakePrivateChatAgentRunner(),
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.OnceAfterReply));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(StardewPrivateChatState.Idle, orchestrator.State);
+        Assert.IsNull(orchestrator.ConversationId);
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_OrdinaryEvent_DoesNotCallAgent()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "proximity",
+                "Haley",
+                DateTime.UtcNow,
+                "The farmer entered Haley's proximity."));
+        var commands = new FakeCommandService();
+        var agent = new FakePrivateChatAgentRunner();
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            agent,
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, commands.Submitted.Count);
+        Assert.AreEqual(0, agent.Requests.Count);
+    }
+
+    [TestMethod]
+    public async Task DrainExistingEventsAsync_AdvancesCursorWithoutOpeningStaleChat()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."));
+        var commands = new FakeCommandService();
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            new FakePrivateChatAgentRunner(),
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never));
+
+        await orchestrator.DrainExistingEventsAsync(CancellationToken.None);
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, commands.Submitted.Count);
+    }
+
+    private sealed class FakeEventSource : IGameEventSource
+    {
+        private readonly List<GameEventRecord> _records;
+
+        public FakeEventSource(params GameEventRecord[] records)
+        {
+            _records = records.ToList();
+        }
+
+        public void Add(params GameEventRecord[] records)
+        {
+            _records.AddRange(records);
+        }
+
+        public Task<IReadOnlyList<GameEventRecord>> PollAsync(GameEventCursor cursor, CancellationToken ct)
+        {
+            var start = 0;
+            if (!string.IsNullOrWhiteSpace(cursor.Since))
+            {
+                var index = _records.ToList().FindIndex(record => string.Equals(record.EventId, cursor.Since, StringComparison.OrdinalIgnoreCase));
+                start = index < 0 ? _records.Count : index + 1;
+            }
+
+            return Task.FromResult<IReadOnlyList<GameEventRecord>>(_records.Skip(start).ToArray());
+        }
+    }
+
+    private sealed class FakeCommandService : IGameCommandService
+    {
+        public List<GameAction> Submitted { get; } = new();
+
+        public Queue<GameCommandResult> Results { get; } = new();
+
+        public Task<GameCommandResult> SubmitAsync(GameAction action, CancellationToken ct)
+        {
+            Submitted.Add(action);
+            if (Results.TryDequeue(out var result))
+                return Task.FromResult(result);
+
+            return Task.FromResult(new GameCommandResult(true, "", StardewCommandStatuses.Completed, null, action.TraceId));
+        }
+
+        public Task<GameCommandStatus> GetStatusAsync(string commandId, CancellationToken ct)
+            => Task.FromResult(new GameCommandStatus(commandId, "Haley", "private_chat", StardewCommandStatuses.Completed, 1, null, null));
+
+        public Task<GameCommandStatus> CancelAsync(string commandId, string reason, CancellationToken ct)
+            => Task.FromResult(new GameCommandStatus(commandId, "Haley", "private_chat", StardewCommandStatuses.Cancelled, 1, reason, null));
+    }
+
+    private sealed class FakePrivateChatAgentRunner : INpcPrivateChatAgentRunner
+    {
+        public List<NpcPrivateChatRequest> Requests { get; } = new();
+        public string ReplyText { get; init; } = "Hello.";
+
+        public Task<NpcPrivateChatReply> ReplyAsync(NpcPrivateChatRequest request, CancellationToken ct)
+        {
+            Requests.Add(request);
+            return Task.FromResult(new NpcPrivateChatReply(ReplyText));
+        }
+    }
+}

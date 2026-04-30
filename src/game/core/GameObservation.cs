@@ -1,5 +1,7 @@
 namespace Hermes.Agent.Game;
 
+using System.Text.Json.Nodes;
+
 public sealed record GameObservation(
     string NpcId,
     string GameId,
@@ -27,4 +29,6 @@ public sealed record GameEventRecord(
     string EventType,
     string? NpcId,
     DateTime TimestampUtc,
-    string Summary);
+    string Summary,
+    string? CorrelationId = null,
+    JsonObject? Payload = null);

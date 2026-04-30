@@ -39,5 +39,5 @@ public sealed class StardewEventSource : IGameEventSource
     }
 
     private static GameEventRecord ToGameEventRecord(StardewEventData data)
-        => new(data.EventId, data.EventType, data.NpcId, data.TimestampUtc, data.Summary);
+        => new(data.EventId, data.EventType, data.NpcId, data.TimestampUtc, data.Summary, data.CorrelationId, data.Payload);
 }

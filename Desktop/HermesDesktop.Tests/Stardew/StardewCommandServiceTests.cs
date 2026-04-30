@@ -85,7 +85,8 @@ public class StardewCommandServiceTests
         var payload = new JsonObject
         {
             ["text"] = "Hi there.",
-            ["channel"] = "player"
+            ["channel"] = "player",
+            ["conversationId"] = "pc_evt_000000000001"
         };
         var action = new GameAction(
             "haley",
@@ -108,6 +109,108 @@ public class StardewCommandServiceTests
         Assert.AreEqual("idem-speak", envelope.IdempotencyKey);
         Assert.AreEqual("Hi there.", envelope.Payload.Text);
         Assert.AreEqual("player", envelope.Payload.Channel);
+        Assert.AreEqual("pc_evt_000000000001", envelope.Payload.ConversationId);
+    }
+
+    [TestMethod]
+    public async Task SubmitAsync_OpenPrivateChat_PostsTypedEnvelopeToActionOpenPrivateChatRoute()
+    {
+        var client = new FakeSmapiClient();
+        client.OpenPrivateChatResponse = new StardewBridgeResponse<StardewOpenPrivateChatData>(
+            true,
+            "trace-private-chat",
+            "req-private-chat",
+            null,
+            StardewCommandStatuses.Completed,
+            new StardewOpenPrivateChatData("haley", true),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var payload = new JsonObject
+        {
+            ["prompt"] = "Want to keep chatting?",
+            ["conversationId"] = "pc_evt_000000000001"
+        };
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.OpenPrivateChat,
+            "trace-private-chat",
+            "idem-private-chat",
+            new GameActionTarget("player"),
+            Payload: payload);
+
+        var result = await service.SubmitAsync(action, CancellationToken.None);
+
+        Assert.IsTrue(result.Accepted);
+        Assert.AreEqual(StardewCommandStatuses.Completed, result.Status);
+        Assert.AreEqual(StardewBridgeRoutes.ActionOpenPrivateChat, client.LastRoute);
+        Assert.IsInstanceOfType(client.LastEnvelope, typeof(StardewBridgeEnvelope<StardewOpenPrivateChatRequest>));
+        var envelope = (StardewBridgeEnvelope<StardewOpenPrivateChatRequest>)client.LastEnvelope!;
+        Assert.AreEqual("haley", envelope.NpcId);
+        Assert.AreEqual("save-1", envelope.SaveId);
+        Assert.AreEqual("idem-private-chat", envelope.IdempotencyKey);
+        Assert.AreEqual("Want to keep chatting?", envelope.Payload.Prompt);
+        Assert.AreEqual("pc_evt_000000000001", envelope.Payload.ConversationId);
+    }
+
+    [TestMethod]
+    public async Task SubmitAsync_OpenPrivateChat_NotOpenedFailsCommandResult()
+    {
+        var client = new FakeSmapiClient();
+        client.OpenPrivateChatResponse = new StardewBridgeResponse<StardewOpenPrivateChatData>(
+            true,
+            "trace-private-chat",
+            "req-private-chat",
+            null,
+            StardewCommandStatuses.Completed,
+            new StardewOpenPrivateChatData("haley", false),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.OpenPrivateChat,
+            "trace-private-chat",
+            "idem-private-chat",
+            new GameActionTarget("player"),
+            Payload: new JsonObject { ["conversationId"] = "pc_evt_1" });
+
+        var result = await service.SubmitAsync(action, CancellationToken.None);
+
+        Assert.IsFalse(result.Accepted);
+        Assert.AreEqual("open_private_chat_not_opened", result.FailureReason);
+    }
+
+    [TestMethod]
+    public async Task SubmitAsync_OpenPrivateChat_RetryableBridgeErrorIsPreserved()
+    {
+        var client = new FakeSmapiClient();
+        client.OpenPrivateChatResponse = new StardewBridgeResponse<StardewOpenPrivateChatData>(
+            false,
+            "trace-private-chat",
+            "req-private-chat",
+            null,
+            StardewCommandStatuses.Failed,
+            null,
+            new StardewBridgeError(StardewBridgeErrorCodes.MenuBlocked, "A Stardew menu is already open.", true),
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.OpenPrivateChat,
+            "trace-private-chat",
+            "idem-private-chat",
+            new GameActionTarget("player"),
+            Payload: new JsonObject { ["conversationId"] = "pc_evt_1" });
+
+        var result = await service.SubmitAsync(action, CancellationToken.None);
+
+        Assert.IsFalse(result.Accepted);
+        Assert.AreEqual(StardewBridgeErrorCodes.MenuBlocked, result.FailureReason);
+        Assert.IsTrue(result.Retryable);
     }
 
     [TestMethod]
@@ -158,6 +261,7 @@ public class StardewCommandServiceTests
         public StardewBridgeResponse<StardewMoveAcceptedData>? MoveResponse { get; set; }
         public StardewBridgeResponse<StardewTaskStatusData>? StatusResponse { get; set; }
         public StardewBridgeResponse<StardewSpeakData>? SpeakResponse { get; set; }
+        public StardewBridgeResponse<StardewOpenPrivateChatData>? OpenPrivateChatResponse { get; set; }
 
         public Task<StardewBridgeResponse<TData>> SendAsync<TPayload, TData>(
             string route,
@@ -173,6 +277,7 @@ public class StardewCommandServiceTests
                 StardewBridgeRoutes.TaskStatus => StatusResponse ?? throw new InvalidOperationException("No status response configured."),
                 StardewBridgeRoutes.TaskCancel => StatusResponse ?? throw new InvalidOperationException("No cancel response configured."),
                 StardewBridgeRoutes.ActionSpeak => SpeakResponse ?? throw new InvalidOperationException("No speak response configured."),
+                StardewBridgeRoutes.ActionOpenPrivateChat => OpenPrivateChatResponse ?? throw new InvalidOperationException("No open private chat response configured."),
                 _ => throw new InvalidOperationException($"Unexpected route {route}.")
             };
 

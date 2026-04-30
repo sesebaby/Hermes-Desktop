@@ -145,8 +145,11 @@
                             <Button x:Name="PennySpeakButton" Content="Debug Penny Speak" Click="NpcSpeakPenny_Click"
                                     FontSize="11" Padding="10,4"
                                     Background="{StaticResource AppAccentGradientBrush}" Foreground="#16110D"/>
+                            <Button x:Name="HaleyTickButton" Content="Run Haley Tick" Click="NpcTickHaley_Click"
+                                    FontSize="11" Padding="10,4"
+                                    Background="{StaticResource AppInsetBrush}" BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White"/>
                         </StackPanel>
-                        <TextBlock x:Name="NpcManualActionResult" Text="正式路径：在游戏里点击 Haley，先走原版对话，结束后再进入自定义对话。这里的按钮只用于 debug speak。"
+                        <TextBlock x:Name="NpcManualActionResult" Text="正式路径：在游戏里点击 Haley 只记录对话完成事实；Run Haley Tick 会让 Desktop/core 的 Haley runtime 自己观察并决定下一步。"
                                    FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource AppTextSecondaryBrush}"/>
                     </StackPanel>
                 </StackPanel>

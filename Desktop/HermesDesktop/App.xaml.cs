@@ -93,6 +93,7 @@ public partial class App : Application
     {
         var logger = TryGetAppLogger();
         TryCancelAndDisposeDreamerCts(logger, "process exit");
+        TryStopStardewPrivateChatBackground(logger, "process exit");
         TryDisposeDreamerHttpClients(logger, "process exit");
     }
 
@@ -372,6 +373,21 @@ public partial class App : Application
         services.AddSingleton(sp => new StardewNpcDebugActionService(
             sp.GetRequiredService<IStardewBridgeDiscovery>(),
             sp.GetRequiredService<HttpClient>()));
+        services.AddSingleton(sp => new StardewAutonomyTickDebugService(
+            sp.GetRequiredService<IStardewBridgeDiscovery>(),
+            sp.GetRequiredService<HttpClient>(),
+            sp.GetRequiredService<IChatClient>(),
+            sp.GetRequiredService<ILoggerFactory>(),
+            projectDir));
+        services.AddSingleton<INpcPrivateChatAgentRunner>(sp => new StardewNpcPrivateChatAgentRunner(
+            sp.GetRequiredService<IChatClient>(),
+            sp.GetRequiredService<ILoggerFactory>(),
+            projectDir));
+        services.AddSingleton(sp => new StardewPrivateChatBackgroundService(
+            sp.GetRequiredService<IStardewBridgeDiscovery>(),
+            sp.GetRequiredService<HttpClient>(),
+            sp.GetRequiredService<INpcPrivateChatAgentRunner>(),
+            sp.GetRequiredService<ILogger<StardewPrivateChatBackgroundService>>()));
 
         // Memory manager
         var memoryDir = Path.Combine(hermesHome, "memories");
@@ -630,8 +646,40 @@ public partial class App : Application
         WirePermissionCallback(provider);
 
         StartDreamerBackground(provider, hermesHome, projectDir);
+        StartStardewPrivateChatBackground(provider);
 
         return provider;
+    }
+
+    private static void StartStardewPrivateChatBackground(IServiceProvider provider)
+    {
+        var logger = provider.GetService<ILogger<App>>();
+        try
+        {
+            provider.GetRequiredService<StardewPrivateChatBackgroundService>().Start();
+        }
+        catch (Exception ex)
+        {
+            if (logger is not null)
+                logger.LogWarning(ex, "Stardew private-chat background start failed");
+            else
+                BestEffort.LogFailure(null, ex, "starting Stardew private-chat background service");
+        }
+    }
+
+    private static void TryStopStardewPrivateChatBackground(ILogger? logger, string reason)
+    {
+        if (ReferenceEquals(Services, UninitializedAppServiceProvider.Instance))
+            return;
+
+        try
+        {
+            Services.GetService<StardewPrivateChatBackgroundService>()?.Stop();
+        }
+        catch (Exception ex)
+        {
+            BestEffort.LogFailure(logger, ex, "stopping Stardew private-chat background service", $"reason={reason}");
+        }
     }
 
     /// <summary>

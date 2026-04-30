@@ -19,11 +19,12 @@ public class NpcDialogueFlowServiceTests
 
         Assert.IsTrue(result.OriginalDialogueObserved);
         Assert.IsFalse(result.OriginalDialogueCompleted);
+        Assert.IsFalse(result.ShouldRecordVanillaDialogueCompleted);
         Assert.IsFalse(result.ShouldDisplayCustomDialogue);
     }
 
     [TestMethod]
-    public void Advance_WhenObservedDialogueClosesEvenIfStillTransitioning_DisplaysCustomDialogue()
+    public void Advance_WhenObservedDialogueCloses_RecordsVanillaCompletionFactInsteadOfDisplayingCustomDialogue()
     {
         var service = new NpcDialogueFlowService();
         var started = service.BeginFollowUp("Haley");
@@ -40,11 +41,12 @@ public class NpcDialogueFlowServiceTests
 
         Assert.IsFalse(result.OriginalDialogueObserved);
         Assert.IsTrue(result.OriginalDialogueCompleted);
-        Assert.IsTrue(result.ShouldDisplayCustomDialogue);
+        Assert.IsTrue(result.ShouldRecordVanillaDialogueCompleted);
+        Assert.IsFalse(result.ShouldDisplayCustomDialogue);
     }
 
     [TestMethod]
-    public void Advance_WhenStartedFromAlreadyOpenOriginalDialogueAndMenuCloses_DisplaysCustomDialogue()
+    public void Advance_WhenStartedFromAlreadyOpenOriginalDialogueAndMenuCloses_RecordsVanillaCompletionFact()
     {
         var service = new NpcDialogueFlowService();
         var started = service.BeginObservedOriginal("Haley");
@@ -57,11 +59,12 @@ public class NpcDialogueFlowServiceTests
 
         Assert.IsFalse(result.OriginalDialogueObserved);
         Assert.IsTrue(result.OriginalDialogueCompleted);
-        Assert.IsTrue(result.ShouldDisplayCustomDialogue);
+        Assert.IsTrue(result.ShouldRecordVanillaDialogueCompleted);
+        Assert.IsFalse(result.ShouldDisplayCustomDialogue);
     }
 
     [TestMethod]
-    public void Advance_WhenCustomDialogueAlreadyDisplayed_DoesNotDisplayAgain()
+    public void Advance_WhenVanillaCompletionAlreadyRecorded_DoesNotRecordAgain()
     {
         var service = new NpcDialogueFlowService();
         var started = service.BeginFollowUp("Haley");
@@ -82,6 +85,7 @@ public class NpcDialogueFlowServiceTests
             isDialogueTransitioning: false));
 
         Assert.IsFalse(result.ShouldDisplayCustomDialogue);
+        Assert.IsFalse(result.ShouldRecordVanillaDialogueCompleted);
     }
 
     [TestMethod]
@@ -101,6 +105,7 @@ public class NpcDialogueFlowServiceTests
             isDialogueTransitioning: false));
 
         Assert.IsFalse(result.OriginalDialogueCompleted);
+        Assert.IsFalse(result.ShouldRecordVanillaDialogueCompleted);
         Assert.IsFalse(result.ShouldDisplayCustomDialogue);
     }
 

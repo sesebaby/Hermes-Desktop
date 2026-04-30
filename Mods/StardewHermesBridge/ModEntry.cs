@@ -18,6 +18,7 @@ public sealed class ModEntry : Mod
     public const string DebugEntry = "npc_click_debug";
 
     private BridgeCommandQueue _commands = null!;
+    private BridgeEventBuffer _events = null!;
     private BridgeHttpHost _httpHost = null!;
     private BridgeStatusOverlay _overlay = null!;
     private BridgeDebugMenu _debugMenu = null!;
@@ -31,14 +32,22 @@ public sealed class ModEntry : Mod
     private int _pendingDialogueTicks;
     private SButton? _pendingOriginalStartButton;
     private bool _originalStartRetryAttempted;
+    private string? _privateChatReplyNpcName;
+    private string? _privateChatReplyConversationId;
 
     public override void Entry(IModHelper helper)
     {
         _bridgeLogger = new SmapiBridgeLogger(helper.DirectoryPath, Monitor);
-        _commands = new BridgeCommandQueue(_bridgeLogger);
+        _events = new BridgeEventBuffer();
         _overlay = new BridgeStatusOverlay();
+        _commands = new BridgeCommandQueue(
+            _bridgeLogger,
+            _events,
+            _ => _overlay.ClearPrivateChatPending(),
+            npcName => _overlay.SetPrivateChatThinking(npcName),
+            MarkPrivateChatReplyDisplayed);
         _debugMenu = new BridgeDebugMenu(_overlay);
-        _httpHost = new BridgeHttpHost(_commands, _bridgeLogger);
+        _httpHost = new BridgeHttpHost(_commands, _events, _bridgeLogger);
         _clickRouter = new NpcDialogueClickRouter();
         _dialogueFlow = new NpcDialogueFlowService();
         _menuGuard = new NpcDialogueMenuGuard();
@@ -86,6 +95,13 @@ public sealed class ModEntry : Mod
         if (result.OriginalDialogueCompleted)
             _bridgeLogger.Write(SmapiBridgeLogger.OriginalDialogueCompleted, _pendingDialogueFlow.NpcName, FormalEntry, FormalEntry, null, "completed", request.IsDialogueTransitioning ? "transitioning" : null);
 
+        if (result.ShouldRecordVanillaDialogueCompleted)
+        {
+            RecordVanillaDialogueCompleted(_pendingDialogueFlow.NpcName, null);
+            ClearPendingDialogueFlow();
+            return;
+        }
+
         if (!result.ShouldDisplayCustomDialogue)
         {
             if (TryStartOriginalDialogueIfNeeded())
@@ -95,14 +111,14 @@ public sealed class ModEntry : Mod
             {
                 var npcName = _pendingDialogueFlow.NpcName;
                 _bridgeLogger.Write(SmapiBridgeLogger.OriginalDialogueCompleted, npcName, FormalEntry, FormalEntry, null, "timeout", "original_not_observed_timeout");
-                DisplayCustomDialogue(npcName, "original_not_observed_timeout");
+                RecordDialogueFollowUpUnavailable(npcName, "original_not_observed_timeout");
                 ClearPendingDialogueFlow();
             }
 
             return;
         }
 
-        DisplayCustomDialogue(_pendingDialogueFlow.NpcName, null);
+        RecordVanillaDialogueCompleted(_pendingDialogueFlow.NpcName, "legacy_custom_display_suppressed");
         ClearPendingDialogueFlow();
     }
 
@@ -110,6 +126,8 @@ public sealed class ModEntry : Mod
     {
         _commands.Drain("day_transition");
         _overlay.SetBlockedReason("day_transition");
+        _overlay.ClearPrivateChatPending();
+        ClearPrivateChatReplyTracking();
         ClearPendingDialogueFlow();
         ClearCustomDialogueGuards();
     }
@@ -118,6 +136,8 @@ public sealed class ModEntry : Mod
     {
         _commands.Clear();
         _overlay.SetBlockedReason("returned_to_title");
+        _overlay.ClearPrivateChatPending();
+        ClearPrivateChatReplyTracking();
         ClearPendingDialogueFlow();
         ClearCustomDialogueGuards();
     }
@@ -134,6 +154,8 @@ public sealed class ModEntry : Mod
 
         var oldDialogueNpcName = GetDialogueNpcName(e.OldMenu);
         var newDialogueNpcName = GetDialogueNpcName(e.NewMenu);
+        TryRecordPrivateChatReplyClosed(oldDialogueNpcName, newDialogueNpcName);
+
         if (_menuGuard.ConsumeMenuChange(oldDialogueNpcName, newDialogueNpcName) is not NpcDialogueMenuGuardResult.Unhandled)
             return;
 
@@ -207,6 +229,62 @@ public sealed class ModEntry : Mod
         _bridgeLogger.Write(SmapiBridgeLogger.CustomDialogueDisplayed, npc.Name, FormalEntry, FormalEntry, null, "displayed", detail);
     }
 
+    private void RecordVanillaDialogueCompleted(string npcName, string? detail)
+    {
+        var suffix = string.IsNullOrWhiteSpace(detail) ? "" : $" ({detail})";
+        _overlay.SetPrivateChatPending(npcName);
+        _events.Record(
+            "vanilla_dialogue_completed",
+            npcName,
+            $"{npcName} vanilla dialogue completed{suffix}.");
+        _bridgeLogger.Write("vanilla_dialogue_completed_fact", npcName, FormalEntry, FormalEntry, null, "recorded", detail);
+    }
+
+    private void RecordDialogueFollowUpUnavailable(string npcName, string detail)
+    {
+        _events.Record(
+            "vanilla_dialogue_unavailable",
+            npcName,
+            $"{npcName} vanilla dialogue follow-up was unavailable ({detail}).");
+        _bridgeLogger.Write("vanilla_dialogue_unavailable_fact", npcName, FormalEntry, FormalEntry, null, "recorded", detail);
+    }
+
+    private void MarkPrivateChatReplyDisplayed(string npcName, string conversationId)
+    {
+        _overlay.ClearPrivateChatPending();
+        _privateChatReplyNpcName = npcName;
+        _privateChatReplyConversationId = conversationId;
+    }
+
+    private void TryRecordPrivateChatReplyClosed(string? oldDialogueNpcName, string? newDialogueNpcName)
+    {
+        if (string.IsNullOrWhiteSpace(_privateChatReplyNpcName) ||
+            string.IsNullOrWhiteSpace(_privateChatReplyConversationId) ||
+            string.IsNullOrWhiteSpace(oldDialogueNpcName) ||
+            !string.Equals(oldDialogueNpcName, _privateChatReplyNpcName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(newDialogueNpcName, _privateChatReplyNpcName, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var npcName = _privateChatReplyNpcName;
+        var conversationId = _privateChatReplyConversationId;
+        ClearPrivateChatReplyTracking();
+        _events.Record(
+            "private_chat_reply_closed",
+            npcName,
+            $"{npcName} private chat reply closed.",
+            conversationId,
+            new System.Text.Json.Nodes.JsonObject { ["conversationId"] = conversationId });
+        _bridgeLogger.Write("private_chat_reply_closed_fact", npcName, FormalEntry, FormalEntry, null, "recorded", conversationId);
+    }
+
+    private void ClearPrivateChatReplyTracking()
+    {
+        _privateChatReplyNpcName = null;
+        _privateChatReplyConversationId = null;
+    }
+
     private bool TryStartOriginalDialogueIfNeeded()
     {
         if (_pendingDialogueFlow is not { } pending ||
@@ -224,7 +302,7 @@ public sealed class ModEntry : Mod
         if (npc is null)
         {
             _bridgeLogger.Write(SmapiBridgeLogger.NpcClickRejected, pending.NpcName, FormalEntry, FormalEntry, null, "rejected", "manual_original_start_failed;npc_not_found;fallback_custom=true");
-            DisplayCustomDialogue(pending.NpcName, "manual_original_start_failed;npc_not_found");
+            RecordDialogueFollowUpUnavailable(pending.NpcName, "manual_original_start_failed;npc_not_found");
             ClearPendingDialogueFlow();
             return true;
         }
@@ -232,7 +310,7 @@ public sealed class ModEntry : Mod
         if (!_originalDialogueStarter.TryStart(npc, triggerButton))
         {
             _bridgeLogger.Write(SmapiBridgeLogger.NpcClickRejected, pending.NpcName, FormalEntry, FormalEntry, null, "rejected", "manual_original_start_failed;fallback_custom=true");
-            DisplayCustomDialogue(pending.NpcName, "manual_original_start_failed");
+            RecordDialogueFollowUpUnavailable(pending.NpcName, "manual_original_start_failed");
             ClearPendingDialogueFlow();
             return true;
         }

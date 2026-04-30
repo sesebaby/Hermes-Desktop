@@ -18,6 +18,9 @@ public sealed class StardewCommandService : IGameCommandService
         if (action.Type == GameActionType.Speak)
             return await SubmitSpeakAsync(action, ct);
 
+        if (action.Type == GameActionType.OpenPrivateChat)
+            return await SubmitOpenPrivateChatAsync(action, ct);
+
         if (action.Type != GameActionType.Move)
             return new GameCommandResult(false, "", StardewCommandStatuses.Failed, "unsupported_action", action.TraceId);
 
@@ -46,6 +49,29 @@ public sealed class StardewCommandService : IGameCommandService
         return ToCommandResult(response, action.TraceId);
     }
 
+    private async Task<GameCommandResult> SubmitOpenPrivateChatAsync(GameAction action, CancellationToken ct)
+    {
+        var prompt = action.Payload?["prompt"]?.ToString();
+        var conversationId = action.Payload?["conversationId"]?.ToString();
+        var envelope = new StardewBridgeEnvelope<StardewOpenPrivateChatRequest>(
+            $"req_{Guid.NewGuid():N}",
+            action.TraceId,
+            action.NpcId,
+            _saveId,
+            action.IdempotencyKey,
+            new StardewOpenPrivateChatRequest(prompt, conversationId));
+
+        var response = await _client.SendAsync<StardewOpenPrivateChatRequest, StardewOpenPrivateChatData>(
+            StardewBridgeRoutes.ActionOpenPrivateChat,
+            envelope,
+            ct);
+
+        if (response.Ok && response.Data?.Opened is not true)
+            return new GameCommandResult(false, response.CommandId ?? "", StardewCommandStatuses.Failed, "open_private_chat_not_opened", action.TraceId);
+
+        return ToCommandResult(response, action.TraceId);
+    }
+
     private async Task<GameCommandResult> SubmitSpeakAsync(GameAction action, CancellationToken ct)
     {
         var text = action.Payload?["text"]?.ToString();
@@ -56,13 +82,14 @@ public sealed class StardewCommandService : IGameCommandService
         if (string.IsNullOrWhiteSpace(channel))
             channel = "player";
 
+        var conversationId = action.Payload?["conversationId"]?.ToString();
         var envelope = new StardewBridgeEnvelope<StardewSpeakRequest>(
             $"req_{Guid.NewGuid():N}",
             action.TraceId,
             action.NpcId,
             _saveId,
             action.IdempotencyKey,
-            new StardewSpeakRequest(text, channel));
+            new StardewSpeakRequest(text, channel, conversationId));
 
         var response = await _client.SendAsync<StardewSpeakRequest, StardewSpeakData>(
             StardewBridgeRoutes.ActionSpeak,
@@ -116,7 +143,8 @@ public sealed class StardewCommandService : IGameCommandService
             response.CommandId ?? "",
             response.Status ?? (response.Ok ? StardewCommandStatuses.Queued : StardewCommandStatuses.Failed),
             response.Error?.Code,
-            string.IsNullOrWhiteSpace(response.TraceId) ? fallbackTraceId : response.TraceId);
+            string.IsNullOrWhiteSpace(response.TraceId) ? fallbackTraceId : response.TraceId,
+            response.Error?.Retryable == true);
 
     private static GameCommandStatus ToCommandStatus(StardewBridgeResponse<StardewTaskStatusData> response, string fallbackCommandId)
     {

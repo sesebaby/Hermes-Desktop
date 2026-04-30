@@ -32,6 +32,7 @@ public sealed partial class DashboardPage : Page
     private readonly RuntimeStatusService _runtimeStatusService = App.Services.GetRequiredService<RuntimeStatusService>();
     private readonly NpcRuntimeWorkspaceService? _npcRuntimeWorkspaceService = App.Services.GetService<NpcRuntimeWorkspaceService>();
     private readonly StardewNpcDebugActionService? _stardewNpcDebugActions = App.Services.GetService<StardewNpcDebugActionService>();
+    private readonly StardewAutonomyTickDebugService? _stardewAutonomyTickDebug = App.Services.GetService<StardewAutonomyTickDebugService>();
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _dreamerTimer;
 
     /// <summary>
@@ -380,6 +381,9 @@ public sealed partial class DashboardPage : Page
     private async void NpcSpeakPenny_Click(object sender, RoutedEventArgs e)
         => await SpeakNpcAsync("Penny", "Hello, this is Penny speaking through the Hermes Stardew bridge.");
 
+    private async void NpcTickHaley_Click(object sender, RoutedEventArgs e)
+        => await RunNpcTickAsync("haley");
+
     // ── Helpers ──
 
     private async System.Threading.Tasks.Task SpeakNpcAsync(string npcId, string text)
@@ -392,6 +396,7 @@ public sealed partial class DashboardPage : Page
 
         HaleySpeakButton.IsEnabled = false;
         PennySpeakButton.IsEnabled = false;
+        HaleyTickButton.IsEnabled = false;
         NpcManualActionResult.Text = $"Sending debug dialogue to {npcId}...";
         NpcManualActionResult.Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"];
 
@@ -421,6 +426,52 @@ public sealed partial class DashboardPage : Page
         {
             HaleySpeakButton.IsEnabled = true;
             PennySpeakButton.IsEnabled = true;
+            HaleyTickButton.IsEnabled = true;
+        }
+    }
+
+    private async System.Threading.Tasks.Task RunNpcTickAsync(string npcId)
+    {
+        if (_stardewAutonomyTickDebug is null)
+        {
+            NpcManualActionResult.Text = "Stardew autonomy tick debug is not available in this build.";
+            return;
+        }
+
+        HaleySpeakButton.IsEnabled = false;
+        PennySpeakButton.IsEnabled = false;
+        HaleyTickButton.IsEnabled = false;
+        NpcManualActionResult.Text = $"Running one {npcId} autonomy tick...";
+        NpcManualActionResult.Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"];
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+            var result = await _stardewAutonomyTickDebug.RunOneTickAsync(npcId, cts.Token);
+            if (result.Success)
+            {
+                NpcManualActionResult.Text =
+                    $"Tick completed: trace={result.TraceId}, observations={result.ObservationFacts}, events={result.EventFacts}.";
+                NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 34, 197, 94));
+            }
+            else
+            {
+                NpcManualActionResult.Text = $"Tick failed: {result.FailureReason ?? "unknown_error"}.";
+                NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68));
+            }
+
+            LoadNpcRuntimeStatus();
+        }
+        catch (Exception ex)
+        {
+            NpcManualActionResult.Text = $"Tick failed: {ex.Message}";
+            NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68));
+        }
+        finally
+        {
+            HaleySpeakButton.IsEnabled = true;
+            PennySpeakButton.IsEnabled = true;
+            HaleyTickButton.IsEnabled = true;
         }
     }
 

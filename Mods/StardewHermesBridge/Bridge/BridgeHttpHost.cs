@@ -5,6 +5,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using StardewHermesBridge.Logging;
+using StardewModdingAPI;
+using StardewValley;
+using StardewValley.Menus;
 
 public sealed class BridgeHttpHost
 {
@@ -15,13 +18,15 @@ public sealed class BridgeHttpHost
     };
 
     private readonly BridgeCommandQueue _commands;
+    private readonly BridgeEventBuffer _events;
     private readonly SmapiBridgeLogger _logger;
     private HttpListener? _listener;
     private CancellationTokenSource? _cts;
 
-    public BridgeHttpHost(BridgeCommandQueue commands, SmapiBridgeLogger logger)
+    public BridgeHttpHost(BridgeCommandQueue commands, BridgeEventBuffer events, SmapiBridgeLogger logger)
     {
         _commands = commands;
+        _events = events;
         _logger = logger;
     }
 
@@ -102,6 +107,18 @@ public sealed class BridgeHttpHost
                 case "/action/speak":
                     await HandleSpeakAsync(context, ct);
                     return;
+                case "/action/open_private_chat":
+                    await HandleOpenPrivateChatAsync(context, ct);
+                    return;
+                case "/query/status":
+                    await HandleQueryStatusAsync(context, ct);
+                    return;
+                case "/query/world_snapshot":
+                    await HandleQueryWorldSnapshotAsync(context, ct);
+                    return;
+                case "/events/poll":
+                    await HandleEventsPollAsync(context, ct);
+                    return;
                 default:
                     await WriteJsonAsync(context.Response, HttpStatusCode.NotFound, new { ok = false }, ct);
                     return;
@@ -142,6 +159,67 @@ public sealed class BridgeHttpHost
         await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
     }
 
+    private async Task HandleOpenPrivateChatAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        var envelope = await ReadJsonAsync<BridgeEnvelope<OpenPrivateChatPayload>>(context.Request, ct);
+        var response = _commands.OpenPrivateChat(envelope);
+        await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
+    }
+
+    private async Task HandleQueryStatusAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        var envelope = await ReadJsonAsync<BridgeEnvelope<StatusQuery>>(context.Request, ct);
+        var response = BuildStatusResponse(envelope);
+        await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
+    }
+
+    private async Task HandleQueryWorldSnapshotAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        var envelope = await ReadJsonAsync<BridgeEnvelope<WorldSnapshotQuery>>(context.Request, ct);
+        var npcId = envelope.Payload.NpcId ?? envelope.NpcId;
+        var entities = new List<WorldEntityData>();
+        if (!string.IsNullOrWhiteSpace(npcId))
+        {
+            var npc = Context.IsWorldReady
+                ? Game1.getCharacterFromName(npcId, mustBeVillager: false, includeEventActors: false)
+                : null;
+            if (npc is not null)
+                entities.Add(new WorldEntityData(npc.Name.ToLowerInvariant(), npc.Name, npc.displayName, "stardew"));
+        }
+
+        var response = new BridgeResponse<WorldSnapshotData>(
+            true,
+            envelope.TraceId,
+            envelope.RequestId,
+            null,
+            "completed",
+            new WorldSnapshotData(
+                "stardew-valley",
+                string.IsNullOrWhiteSpace(envelope.SaveId) ? "unknown-save" : envelope.SaveId!,
+                DateTime.UtcNow,
+                entities,
+                BuildWorldFacts()),
+            null,
+            new { });
+        await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
+    }
+
+    private async Task HandleEventsPollAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        var envelope = await ReadJsonAsync<BridgeEnvelope<EventPollQuery>>(context.Request, ct);
+        var events = _events.Poll(envelope.Payload.Since, envelope.Payload.NpcId ?? envelope.NpcId);
+        var response = new BridgeResponse<EventPollData>(
+            true,
+            envelope.TraceId,
+            envelope.RequestId,
+            null,
+            "completed",
+            new EventPollData(events),
+            null,
+            new { });
+        await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
+    }
+
     private bool IsAuthorized(HttpListenerRequest request)
     {
         var header = request.Headers["Authorization"];
@@ -165,5 +243,73 @@ public sealed class BridgeHttpHost
         response.ContentLength64 = bytes.Length;
         await response.OutputStream.WriteAsync(bytes, 0, bytes.Length, ct);
         response.OutputStream.Close();
+    }
+
+    private BridgeResponse<NpcStatusData> BuildStatusResponse(BridgeEnvelope<StatusQuery> envelope)
+    {
+        var requestedNpc = envelope.Payload.NpcId ?? envelope.NpcId;
+        if (!Context.IsWorldReady || Game1.player is null)
+            return Error<StatusQuery, NpcStatusData>(envelope, "world_not_ready", "The Stardew world is not ready.", retryable: true);
+
+        if (string.IsNullOrWhiteSpace(requestedNpc))
+            return Error<StatusQuery, NpcStatusData>(envelope, "invalid_target", "npcId is required.", retryable: false);
+
+        var npc = Game1.getCharacterFromName(requestedNpc, mustBeVillager: false, includeEventActors: false);
+        if (npc is null)
+            return Error<StatusQuery, NpcStatusData>(envelope, "invalid_target", "NPC was not found.", retryable: false);
+
+        var isInDialogue = Game1.activeClickableMenu is DialogueBox dialogueBox &&
+                           string.Equals(dialogueBox.characterDialogue?.speaker?.Name ?? Game1.currentSpeaker?.Name, npc.Name, StringComparison.OrdinalIgnoreCase);
+        var blockedReason = BuildBlockedReason();
+        var data = new NpcStatusData(
+            npc.Name.ToLowerInvariant(),
+            npc.Name,
+            npc.displayName,
+            npc.currentLocation?.NameOrUniqueName ?? npc.currentLocation?.Name ?? "unknown",
+            new TileDto((int)npc.Tile.X, (int)npc.Tile.Y),
+            npc.isMoving(),
+            isInDialogue,
+            blockedReason is null,
+            blockedReason,
+            null,
+            null);
+
+        return new BridgeResponse<NpcStatusData>(
+            true,
+            envelope.TraceId,
+            envelope.RequestId,
+            null,
+            "completed",
+            data,
+            null,
+            new { });
+    }
+
+    private static BridgeResponse<TData> Error<TPayload, TData>(BridgeEnvelope<TPayload> envelope, string code, string message, bool retryable)
+        => new(false, envelope.TraceId, envelope.RequestId, null, "failed", default, new BridgeError(code, message, retryable), new { });
+
+    private static string? BuildBlockedReason()
+    {
+        if (Game1.eventUp)
+            return "event_active";
+        if (Game1.activeClickableMenu is not null)
+            return "menu_open";
+        return null;
+    }
+
+    private static IReadOnlyList<string> BuildWorldFacts()
+    {
+        if (!Context.IsWorldReady)
+            return new[] { "world_not_ready" };
+
+        var facts = new List<string>
+        {
+            $"location={Game1.currentLocation?.NameOrUniqueName ?? Game1.currentLocation?.Name ?? "unknown"}"
+        };
+        if (Game1.activeClickableMenu is not null)
+            facts.Add($"activeMenu={Game1.activeClickableMenu.GetType().Name}");
+        if (Game1.eventUp)
+            facts.Add("event_active");
+        return facts;
     }
 }

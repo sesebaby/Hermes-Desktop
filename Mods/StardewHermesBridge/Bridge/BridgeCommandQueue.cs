@@ -1,6 +1,7 @@
 namespace StardewHermesBridge.Bridge;
 
 using System.Collections.Concurrent;
+using System.Text.Json.Nodes;
 using StardewHermesBridge.Dialogue;
 using StardewHermesBridge.Logging;
 using StardewModdingAPI;
@@ -12,10 +13,23 @@ public sealed class BridgeCommandQueue
     private readonly ConcurrentDictionary<string, BridgeMoveCommand> _commands = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _idempotency = new(StringComparer.OrdinalIgnoreCase);
     private readonly SmapiBridgeLogger _logger;
+    private readonly BridgeEventBuffer _events;
+    private readonly Action<string>? _privateChatOpened;
+    private readonly Action<string>? _privateChatSubmitted;
+    private readonly Action<string, string>? _privateChatReplyDisplayed;
 
-    public BridgeCommandQueue(SmapiBridgeLogger logger)
+    public BridgeCommandQueue(
+        SmapiBridgeLogger logger,
+        BridgeEventBuffer? events = null,
+        Action<string>? privateChatOpened = null,
+        Action<string>? privateChatSubmitted = null,
+        Action<string, string>? privateChatReplyDisplayed = null)
     {
         _logger = logger;
+        _events = events ?? new BridgeEventBuffer();
+        _privateChatOpened = privateChatOpened;
+        _privateChatSubmitted = privateChatSubmitted;
+        _privateChatReplyDisplayed = privateChatReplyDisplayed;
     }
 
     public BridgeResponse<MoveAcceptedData> EnqueueMove(BridgeEnvelope<MovePayload> envelope)
@@ -104,6 +118,19 @@ public sealed class BridgeCommandQueue
 
         var channel = string.IsNullOrWhiteSpace(envelope.Payload.Channel) ? "player" : envelope.Payload.Channel;
         NpcRawDialogueRenderer.Display(npc, envelope.Payload.Text);
+        if (string.Equals(channel, "private_chat", StringComparison.OrdinalIgnoreCase))
+        {
+            var conversationId = string.IsNullOrWhiteSpace(envelope.Payload.ConversationId)
+                ? envelope.RequestId
+                : envelope.Payload.ConversationId;
+            _events.Record(
+                "private_chat_reply_displayed",
+                npc.Name,
+                $"{npc.Name} private chat reply displayed.",
+                conversationId,
+                new JsonObject { ["conversationId"] = conversationId });
+            _privateChatReplyDisplayed?.Invoke(npc.Name, conversationId);
+        }
         _logger.Write("action_speak_completed", envelope.NpcId, "speak", envelope.TraceId, null, "completed", null);
         return new BridgeResponse<SpeakData>(
             true,
@@ -112,6 +139,96 @@ public sealed class BridgeCommandQueue
             null,
             "completed",
             new SpeakData(envelope.NpcId, envelope.Payload.Text, channel, true),
+            null,
+            new { });
+    }
+
+    public BridgeResponse<OpenPrivateChatData> OpenPrivateChat(BridgeEnvelope<OpenPrivateChatPayload> envelope)
+    {
+        if (string.IsNullOrWhiteSpace(envelope.NpcId))
+            return Error<OpenPrivateChatData>(envelope.TraceId, envelope.RequestId, "invalid_target", "npcId is required.", retryable: false);
+
+        if (!Context.IsWorldReady || Game1.player is null)
+        {
+            _logger.Write("action_open_private_chat_failed", envelope.NpcId, "open_private_chat", envelope.TraceId, null, "failed", "world_not_ready");
+            return Error<OpenPrivateChatData>(envelope.TraceId, envelope.RequestId, "world_not_ready", "The Stardew world is not ready.", retryable: true);
+        }
+
+        if (Game1.activeClickableMenu is not null)
+        {
+            _logger.Write("action_open_private_chat_failed", envelope.NpcId, "open_private_chat", envelope.TraceId, null, "failed", "menu_blocked");
+            return Error<OpenPrivateChatData>(envelope.TraceId, envelope.RequestId, "menu_blocked", "A Stardew menu is already open.", retryable: true);
+        }
+
+        var npc = Game1.getCharacterFromName(envelope.NpcId, mustBeVillager: false, includeEventActors: false);
+        if (npc is null)
+        {
+            _logger.Write("action_open_private_chat_failed", envelope.NpcId, "open_private_chat", envelope.TraceId, null, "failed", "invalid_target");
+            return Error<OpenPrivateChatData>(envelope.TraceId, envelope.RequestId, "invalid_target", "NPC was not found.", retryable: false);
+        }
+
+        var conversationId = string.IsNullOrWhiteSpace(envelope.Payload.ConversationId)
+            ? envelope.RequestId
+            : envelope.Payload.ConversationId;
+        var textBox = new StardewValley.Menus.TextBox(null, null, Game1.dialogueFont, Game1.textColor)
+        {
+            Width = Math.Min(700, Game1.uiViewport.Width - 160),
+            limitWidth = false,
+            Selected = true
+        };
+        textBox.OnEnterPressed += _ =>
+        {
+            var submitted = SanitizePrivateChatText(textBox.Text);
+            if (!string.IsNullOrWhiteSpace(submitted))
+            {
+                _events.Record(
+                    "player_private_message_submitted",
+                    npc.Name,
+                    "Player submitted a private chat message.",
+                    conversationId,
+                    new JsonObject
+                    {
+                        ["conversationId"] = conversationId,
+                        ["text"] = submitted,
+                        ["submittedAtUtc"] = DateTime.UtcNow
+                    });
+                _privateChatSubmitted?.Invoke(npc.Name);
+                _logger.Write("private_chat_message_submitted", npc.Name, "private_chat", envelope.TraceId, null, "recorded", null);
+            }
+            else
+            {
+                _events.Record(
+                    "player_private_message_cancelled",
+                    npc.Name,
+                    "Player cancelled private chat.",
+                    conversationId,
+                    new JsonObject { ["conversationId"] = conversationId });
+                _logger.Write("private_chat_message_cancelled", npc.Name, "private_chat", envelope.TraceId, null, "recorded", null);
+            }
+
+            Game1.exitActiveMenu();
+        };
+
+        _events.Record(
+            "private_chat_opened",
+            npc.Name,
+            $"{npc.Name} private chat input opened.",
+            conversationId,
+            new JsonObject
+            {
+                ["conversationId"] = conversationId,
+                ["prompt"] = envelope.Payload.Prompt
+            });
+        Game1.showTextEntry(textBox);
+        _privateChatOpened?.Invoke(npc.Name);
+        _logger.Write("action_open_private_chat_completed", npc.Name, "open_private_chat", envelope.TraceId, null, "completed", null);
+        return new BridgeResponse<OpenPrivateChatData>(
+            true,
+            envelope.TraceId,
+            envelope.RequestId,
+            null,
+            "completed",
+            new OpenPrivateChatData(npc.Name, true),
             null,
             new { });
     }
@@ -192,6 +309,12 @@ public sealed class BridgeCommandQueue
 
     private static BridgeResponse<TData> Error<TData>(string traceId, string requestId, string code, string message, bool retryable)
         => new(false, traceId, requestId, null, "failed", default, new BridgeError(code, message, retryable), new { });
+
+    private static string SanitizePrivateChatText(string value)
+    {
+        var normalized = value.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal).Trim();
+        return normalized.Length <= 240 ? normalized : normalized[..240];
+    }
 }
 
 public sealed class BridgeMoveCommand

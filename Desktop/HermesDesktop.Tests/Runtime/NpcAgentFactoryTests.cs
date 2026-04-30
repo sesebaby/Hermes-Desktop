@@ -48,7 +48,7 @@ public class NpcAgentFactoryTests
             maxToolIterations: 4);
 
         CollectionAssert.AreEqual(
-            new[] { "stardew_status", "stardew_move", "stardew_speak", "stardew_task_status" },
+            new[] { "stardew_status", "stardew_move", "stardew_speak", "stardew_open_private_chat", "stardew_task_status" },
             agent.GetToolDefinitions().Select(tool => tool.Name).ToArray());
         Assert.AreEqual(4, agent.MaxToolIterations);
         Assert.IsFalse(agent.GetToolDefinitions().Any(tool => tool.Name is "agent" or "todo" or "memory" or "ask_user" or "schedule_cron"));

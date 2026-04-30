@@ -18,7 +18,7 @@ public class StardewNpcToolFactoryTests
             CreateDescriptor("haley"));
 
         CollectionAssert.AreEqual(
-            new[] { "stardew_status", "stardew_move", "stardew_speak", "stardew_task_status" },
+            new[] { "stardew_status", "stardew_move", "stardew_speak", "stardew_open_private_chat", "stardew_task_status" },
             tools.Select(tool => tool.Name).ToArray());
 
         Assert.IsFalse(tools.Any(tool => tool.Name is "agent" or "todo" or "memory" or "ask_user" or "schedule_cron"));
@@ -87,6 +87,31 @@ public class StardewNpcToolFactoryTests
         Assert.AreEqual("Hi.", commands.LastAction.Payload?["text"]?.ToString());
         Assert.AreEqual("player", commands.LastAction.Payload?["channel"]?.ToString());
         Assert.AreEqual("cmd-1", JsonDocument.Parse(result.Content).RootElement.GetProperty("commandId").GetString());
+    }
+
+    [TestMethod]
+    public async Task OpenPrivateChatTool_BindsRuntimeIdentityAndSubmitsThroughCommandService()
+    {
+        var commands = new CapturingCommandService();
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"),
+            traceIdFactory: () => "trace-private-chat",
+            idempotencyKeyFactory: () => "idem-private-chat");
+        var tool = tools.Single(tool => tool.Name == "stardew_open_private_chat");
+
+        var result = await tool.ExecuteAsync(new StardewOpenPrivateChatToolParameters
+        {
+            Prompt = "Want to keep chatting?"
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.IsNotNull(commands.LastAction);
+        Assert.AreEqual("haley", commands.LastAction.NpcId);
+        Assert.AreEqual(GameActionType.OpenPrivateChat, commands.LastAction.Type);
+        Assert.AreEqual("trace-private-chat", commands.LastAction.TraceId);
+        Assert.AreEqual("idem-private-chat", commands.LastAction.IdempotencyKey);
+        Assert.AreEqual("Want to keep chatting?", commands.LastAction.Payload?["prompt"]?.ToString());
     }
 
     [TestMethod]

@@ -56,13 +56,22 @@ public sealed record StardewTaskCancelRequest(
 
 public sealed record StardewSpeakRequest(
     [property: JsonPropertyName("text")] string Text,
-    [property: JsonPropertyName("channel")] string Channel);
+    [property: JsonPropertyName("channel")] string Channel,
+    [property: JsonPropertyName("conversationId")] string? ConversationId = null);
 
 public sealed record StardewSpeakData(
     [property: JsonPropertyName("npcId")] string NpcId,
     [property: JsonPropertyName("text")] string Text,
     [property: JsonPropertyName("channel")] string Channel,
     [property: JsonPropertyName("displayed")] bool Displayed);
+
+public sealed record StardewOpenPrivateChatRequest(
+    [property: JsonPropertyName("prompt")] string? Prompt,
+    [property: JsonPropertyName("conversationId")] string? ConversationId);
+
+public sealed record StardewOpenPrivateChatData(
+    [property: JsonPropertyName("npcId")] string NpcId,
+    [property: JsonPropertyName("opened")] bool Opened);
 
 public sealed record StardewTaskStatusData(
     [property: JsonPropertyName("commandId")] string CommandId,
@@ -116,7 +125,9 @@ public sealed record StardewEventData(
     [property: JsonPropertyName("eventType")] string EventType,
     [property: JsonPropertyName("npcId")] string? NpcId,
     [property: JsonPropertyName("timestampUtc")] DateTime TimestampUtc,
-    [property: JsonPropertyName("summary")] string Summary);
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("correlationId")] string? CorrelationId = null,
+    [property: JsonPropertyName("payload")] JsonObject? Payload = null);
 
 public sealed record StardewEventPollData(
     [property: JsonPropertyName("events")] IReadOnlyList<StardewEventData> Events);

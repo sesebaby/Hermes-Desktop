@@ -1,6 +1,7 @@
 using Hermes.Agent.Game;
 using Hermes.Agent.Games.Stardew;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Text.Json.Nodes;
 
 namespace HermesDesktop.Tests.Stardew;
 
@@ -20,7 +21,18 @@ public class StardewEventSourceTests
             null,
             new StardewEventPollData(
                 [
-                    new StardewEventData("evt-2", "proximity", "haley", at, "The farmer entered Haley's proximity."),
+                    new StardewEventData(
+                        "evt-2",
+                        "player_private_message_submitted",
+                        "haley",
+                        at,
+                        "Player submitted a private chat message.",
+                        "pc_evt_000000000001",
+                        new JsonObject
+                        {
+                            ["conversationId"] = "pc_evt_000000000001",
+                            ["text"] = "hi"
+                        }),
                     new StardewEventData("evt-3", "time_changed", null, at.AddMinutes(10), "The clock advanced to 9:10.")
                 ]),
             null,
@@ -39,8 +51,10 @@ public class StardewEventSourceTests
 
         Assert.AreEqual(2, records.Count);
         Assert.AreEqual("evt-2", records[0].EventId);
-        Assert.AreEqual("proximity", records[0].EventType);
+        Assert.AreEqual("player_private_message_submitted", records[0].EventType);
         Assert.AreEqual("haley", records[0].NpcId);
+        Assert.AreEqual("pc_evt_000000000001", records[0].CorrelationId);
+        Assert.AreEqual("hi", records[0].Payload?["text"]?.GetValue<string>());
         Assert.AreEqual("time_changed", records[1].EventType);
         Assert.IsNull(records[1].NpcId);
     }

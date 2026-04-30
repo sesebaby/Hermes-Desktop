@@ -23,6 +23,7 @@ public static class StardewNpcToolFactory
             new StardewStatusTool(adapter.Queries, descriptor),
             new StardewMoveTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls),
             new StardewSpeakTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory),
+            new StardewOpenPrivateChatTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory),
             new StardewTaskStatusTool(adapter.Commands)
         ];
     }
@@ -218,6 +219,53 @@ public sealed class StardewTaskStatusTool : ITool, IToolSchemaProvider
     }
 }
 
+public sealed class StardewOpenPrivateChatTool : ITool, IToolSchemaProvider
+{
+    private readonly IGameCommandService _commands;
+    private readonly NpcRuntimeDescriptor _descriptor;
+    private readonly Func<string> _traceIdFactory;
+    private readonly Func<string> _idempotencyKeyFactory;
+
+    public StardewOpenPrivateChatTool(
+        IGameCommandService commands,
+        NpcRuntimeDescriptor descriptor,
+        Func<string> traceIdFactory,
+        Func<string> idempotencyKeyFactory)
+    {
+        _commands = commands;
+        _descriptor = descriptor;
+        _traceIdFactory = traceIdFactory;
+        _idempotencyKeyFactory = idempotencyKeyFactory;
+    }
+
+    public string Name => "stardew_open_private_chat";
+
+    public string Description => "Open an in-game private chat input for this NPC so the player can type a message. Use this only when the observed facts make private chat appropriate.";
+
+    public Type ParametersType => typeof(StardewOpenPrivateChatToolParameters);
+
+    public JsonElement GetParameterSchema() => StardewNpcToolSchemas.OpenPrivateChat();
+
+    public async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+    {
+        var p = (StardewOpenPrivateChatToolParameters)parameters;
+        var payload = new JsonObject
+        {
+            ["prompt"] = p.Prompt
+        };
+        var action = new GameAction(
+            _descriptor.NpcId,
+            _descriptor.GameId,
+            GameActionType.OpenPrivateChat,
+            _traceIdFactory(),
+            _idempotencyKeyFactory(),
+            new GameActionTarget("player"),
+            Payload: payload);
+
+        return ToolResult.Ok(StardewNpcToolJson.Serialize(await _commands.SubmitAsync(action, ct)));
+    }
+}
+
 public sealed class StardewStatusToolParameters
 {
 }
@@ -243,6 +291,11 @@ public sealed class StardewSpeakToolParameters
 public sealed class StardewTaskStatusToolParameters
 {
     public required string CommandId { get; init; }
+}
+
+public sealed class StardewOpenPrivateChatToolParameters
+{
+    public string? Prompt { get; init; }
 }
 
 internal sealed record StardewNpcActionToolResult(
@@ -306,6 +359,14 @@ internal static class StardewNpcToolSchemas
                 ["commandId"] = new { type = "string", description = "Command id returned by stardew_move or stardew_speak." }
             },
             ["commandId"]);
+
+    public static JsonElement OpenPrivateChat()
+        => Schema(
+            new Dictionary<string, object>
+            {
+                ["prompt"] = new { type = "string", description = "Optional short prompt shown or logged with the private chat request." }
+            },
+            []);
 
     private static JsonElement Schema(Dictionary<string, object> properties, string[] required)
         => JsonSerializer.SerializeToElement(new

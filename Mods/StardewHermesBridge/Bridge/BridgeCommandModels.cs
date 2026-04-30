@@ -1,5 +1,7 @@
 namespace StardewHermesBridge.Bridge;
 
+using System.Text.Json.Nodes;
+
 public sealed record BridgeEnvelope<TPayload>(
     string RequestId,
     string TraceId,
@@ -34,9 +36,13 @@ public sealed record TaskStatusRequest(string CommandId);
 
 public sealed record TaskCancelRequest(string CommandId, string Reason);
 
-public sealed record SpeakPayload(string Text, string? Channel);
+public sealed record SpeakPayload(string Text, string? Channel, string? ConversationId = null);
 
 public sealed record SpeakData(string NpcId, string Text, string Channel, bool Displayed);
+
+public sealed record OpenPrivateChatPayload(string? Prompt, string? ConversationId);
+
+public sealed record OpenPrivateChatData(string NpcId, bool Opened);
 
 public sealed record TaskStatusData(
     string CommandId,
@@ -49,3 +55,46 @@ public sealed record TaskStatusData(
     double Progress,
     string? BlockedReason,
     string? ErrorCode);
+
+public sealed record StatusQuery(string? NpcId);
+
+public sealed record WorldSnapshotQuery(string? NpcId);
+
+public sealed record NpcStatusData(
+    string NpcId,
+    string SmapiName,
+    string DisplayName,
+    string LocationName,
+    TileDto Tile,
+    bool IsMoving,
+    bool IsInDialogue,
+    bool IsAvailableForControl,
+    string? BlockedReason,
+    string? CurrentCommandId,
+    string? LastTraceId);
+
+public sealed record WorldEntityData(
+    string NpcId,
+    string TargetEntityId,
+    string DisplayName,
+    string AdapterId);
+
+public sealed record WorldSnapshotData(
+    string GameId,
+    string SaveId,
+    DateTime TimestampUtc,
+    IReadOnlyList<WorldEntityData> Entities,
+    IReadOnlyList<string> Facts);
+
+public sealed record EventPollQuery(string? Since, string? NpcId);
+
+public sealed record BridgeEventData(
+    string EventId,
+    string EventType,
+    string? NpcId,
+    DateTime TimestampUtc,
+    string Summary,
+    string? CorrelationId = null,
+    JsonObject? Payload = null);
+
+public sealed record EventPollData(IReadOnlyList<BridgeEventData> Events);
