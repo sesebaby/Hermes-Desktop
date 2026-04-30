@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Linq;
 using Hermes.Agent.Tasks;
 using HermesDesktop.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -88,5 +87,4 @@ public sealed partial class TaskPanel : UserControl
         "cancelled" => new SolidColorBrush(ColorHelper.FromArgb(255, 160, 110, 70)),
         _ => new SolidColorBrush(Colors.Gray)
     };
-
 }

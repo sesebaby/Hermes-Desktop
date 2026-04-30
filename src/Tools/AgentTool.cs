@@ -151,7 +151,7 @@ public sealed class AgentTool : ITool
         if (tool is IToolSchemaProvider schemaProvider)
             return schemaProvider.GetParameterSchema();
 
-        // Basic schema - in production would be more detailed
+        // Fallback schema for tools without a custom model-facing contract.
         return JsonSerializer.SerializeToElement(new
         {
             type = "object",
