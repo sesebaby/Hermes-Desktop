@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Hermes.Agent.Game;
 using Hermes.Agent.Runtime;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -45,6 +46,38 @@ public class NpcAutonomyLoopTests
         Assert.IsTrue(facts.Any(fact => fact.SourceId == "evt-2"));
         Assert.IsTrue(facts.Any(fact => fact.SourceId == "evt-3"));
         Assert.IsFalse(facts.Any(fact => fact.SourceId == "evt-4"));
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_ObservesBeforeAgentDecision()
+    {
+        var steps = new List<string>();
+        var at = new DateTime(2026, 4, 30, 10, 0, 0, DateTimeKind.Utc);
+        var descriptor = CreateDescriptor("haley");
+        var factStore = new NpcObservationFactStore();
+        var commands = new CountingCommandService();
+        var queries = new FakeQueryService(new GameObservation(
+            "haley",
+            "stardew-valley",
+            at,
+            "Haley is at the fountain.",
+            ["location=Town"]));
+        queries.OnObserve = () => steps.Add("observe");
+        var events = new FakeEventSource(
+            [new GameEventRecord("evt-2", "time_changed", null, at.AddMinutes(10), "The clock advanced.")]);
+        events.OnPoll = () => steps.Add("poll");
+        var agent = new FakeAgent(() => steps.Add("decide"));
+        var adapter = new FakeGameAdapter(commands, queries, events);
+        var loop = new NpcAutonomyLoop(adapter, factStore, agent);
+
+        var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor("evt-1"), CancellationToken.None);
+
+        CollectionAssert.AreEqual(new[] { "observe", "poll", "decide" }, steps);
+        Assert.AreEqual(1, agent.ChatCalls);
+        Assert.IsTrue(agent.LastMessage?.Contains("location=Town", StringComparison.Ordinal) ?? false);
+        Assert.IsTrue(agent.LastMessage?.Contains("evt-2", StringComparison.Ordinal) ?? false);
+        Assert.AreEqual("wait", result.DecisionResponse);
+        Assert.AreEqual(0, commands.SubmitCalls);
     }
 
     private static NpcRuntimeDescriptor CreateDescriptor(string npcId)
@@ -112,8 +145,11 @@ public class NpcAutonomyLoopTests
 
         public string? LastNpcId { get; private set; }
 
+        public Action? OnObserve { get; set; }
+
         public Task<GameObservation> ObserveAsync(string npcId, CancellationToken ct)
         {
+            OnObserve?.Invoke();
             LastNpcId = npcId;
             return Task.FromResult(_observation);
         }
@@ -133,10 +169,48 @@ public class NpcAutonomyLoopTests
 
         public GameEventCursor? LastCursor { get; private set; }
 
+        public Action? OnPoll { get; set; }
+
         public Task<IReadOnlyList<GameEventRecord>> PollAsync(GameEventCursor cursor, CancellationToken ct)
         {
+            OnPoll?.Invoke();
             LastCursor = cursor;
             return Task.FromResult(_records);
+        }
+    }
+
+    private sealed class FakeAgent : Hermes.Agent.Core.IAgent
+    {
+        private readonly Action _onChat;
+
+        public FakeAgent(Action onChat)
+        {
+            _onChat = onChat;
+        }
+
+        public int ChatCalls { get; private set; }
+
+        public string? LastMessage { get; private set; }
+
+        public Task<string> ChatAsync(string message, Hermes.Agent.Core.Session session, CancellationToken ct)
+        {
+            _onChat();
+            ChatCalls++;
+            LastMessage = message;
+            return Task.FromResult("wait");
+        }
+
+        public async IAsyncEnumerable<Hermes.Agent.LLM.StreamEvent> StreamChatAsync(
+            string message,
+            Hermes.Agent.Core.Session session,
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public void RegisterTool(Hermes.Agent.Core.ITool tool)
+        {
         }
     }
 }
