@@ -52,8 +52,6 @@
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <TextBlock Text="{x:Bind PriorityLabel, Mode=OneWay}" FontSize="11"
                                            Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                                <TextBlock Text="{x:Bind DueLabel, Mode=OneWay}" FontSize="11"
-                                           Foreground="{x:Bind DueBrush, Mode=OneWay}"/>
                             </StackPanel>
                         </StackPanel>
                     </Grid>

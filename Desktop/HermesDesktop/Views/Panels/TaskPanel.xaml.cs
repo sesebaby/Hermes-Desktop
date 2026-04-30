@@ -19,10 +19,8 @@ public sealed class TaskListItem
     public string Description { get; set; } = "";
     public string StatusLabel { get; set; } = "";
     public string PriorityLabel { get; set; } = "";
-    public string DueLabel { get; set; } = "";
     public SolidColorBrush StatusColor { get; set; } = new(Colors.Gray);
     public SolidColorBrush DescriptionBrush { get; set; } = new(ColorHelper.FromArgb(255, 232, 238, 247));
-    public SolidColorBrush DueBrush { get; set; } = new(ColorHelper.FromArgb(255, 149, 162, 177));
 }
 
 public sealed class TaskArchiveListItem
@@ -106,12 +104,10 @@ public sealed partial class TaskPanel : UserControl
                 Description = task.Description,
                 StatusLabel = task.StatusLabel,
                 PriorityLabel = task.PriorityLabel,
-                DueLabel = "",
                 StatusColor = GetStatusColor(task.Status),
                 DescriptionBrush = task.Status is "completed" or "cancelled"
                     ? new SolidColorBrush(ColorHelper.FromArgb(255, 100, 120, 100))
-                    : new SolidColorBrush(ColorHelper.FromArgb(255, 232, 238, 247)),
-                DueBrush = new SolidColorBrush(ColorHelper.FromArgb(255, 149, 162, 177))
+                    : new SolidColorBrush(ColorHelper.FromArgb(255, 232, 238, 247))
             });
         }
 
