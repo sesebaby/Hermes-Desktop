@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Hermes.Agent.Game;
 using Hermes.Agent.Runtime;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -78,6 +79,50 @@ public class NpcAutonomyLoopTests
         Assert.IsTrue(agent.LastMessage?.Contains("evt-2", StringComparison.Ordinal) ?? false);
         Assert.AreEqual("wait", result.DecisionResponse);
         Assert.AreEqual(0, commands.SubmitCalls);
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithRuntimeInstance_WritesActivityLogAndUpdatesTrace()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-trace-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var factStore = new NpcObservationFactStore();
+            var adapter = new FakeGameAdapter(
+                new CountingCommandService(),
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Haley is idle.",
+                    ["location=Town"])),
+                new FakeEventSource([]));
+            var loop = new NpcAutonomyLoop(
+                adapter,
+                factStore,
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                traceIdFactory: () => "trace-1");
+
+            var result = await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.AreEqual("trace-1", result.TraceId);
+            Assert.AreEqual("trace-1", instance.Snapshot().LastTraceId);
+            var line = File.ReadAllLines(logPath).Single();
+            using var doc = JsonDocument.Parse(line);
+            Assert.AreEqual("trace-1", doc.RootElement.GetProperty("traceId").GetString());
+            Assert.AreEqual("haley", doc.RootElement.GetProperty("npcId").GetString());
+            Assert.AreEqual("completed", doc.RootElement.GetProperty("stage").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
     }
 
     private static NpcRuntimeDescriptor CreateDescriptor(string npcId)
