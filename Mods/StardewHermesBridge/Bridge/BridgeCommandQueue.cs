@@ -17,6 +17,8 @@ public sealed class BridgeCommandQueue
     private readonly Action<string>? _privateChatOpened;
     private readonly Action<string>? _privateChatSubmitted;
     private readonly Action<string, string>? _privateChatReplyDisplayed;
+    private readonly object _privateChatInputGate = new();
+    private BridgePrivateChatInput? _privateChatInput;
 
     public BridgeCommandQueue(
         SmapiBridgeLogger logger,
@@ -170,6 +172,7 @@ public sealed class BridgeCommandQueue
         var conversationId = string.IsNullOrWhiteSpace(envelope.Payload.ConversationId)
             ? envelope.RequestId
             : envelope.Payload.ConversationId;
+        MarkPrivateChatInputOpened(npc.Name, conversationId, envelope.TraceId);
         var textBox = new StardewValley.Menus.TextBox(null, null, Game1.dialogueFont, Game1.textColor)
         {
             Width = Math.Min(700, Game1.uiViewport.Width - 160),
@@ -179,6 +182,7 @@ public sealed class BridgeCommandQueue
         textBox.OnEnterPressed += _ =>
         {
             var submitted = SanitizePrivateChatText(textBox.Text);
+            ClearPrivateChatInput(conversationId);
             if (!string.IsNullOrWhiteSpace(submitted))
             {
                 _events.Record(
@@ -231,6 +235,31 @@ public sealed class BridgeCommandQueue
             new OpenPrivateChatData(npc.Name, true),
             null,
             new { });
+    }
+
+    public void RecordPrivateChatInputClosedWithoutSubmit()
+    {
+        BridgePrivateChatInput? input;
+        lock (_privateChatInputGate)
+        {
+            input = _privateChatInput;
+            _privateChatInput = null;
+        }
+
+        if (input is null)
+            return;
+
+        _events.Record(
+            "player_private_message_cancelled",
+            input.NpcName,
+            "Player closed private chat without submitting.",
+            input.ConversationId,
+            new JsonObject
+            {
+                ["conversationId"] = input.ConversationId,
+                ["reason"] = "closed_without_submit"
+            });
+        _logger.Write("private_chat_input_closed_without_submit", input.NpcName, "private_chat", input.TraceId, null, "recorded", null);
     }
 
     public TaskStatusData? PumpOneTick()
@@ -291,6 +320,7 @@ public sealed class BridgeCommandQueue
     {
         _commands.Clear();
         _idempotency.Clear();
+        ClearPrivateChatInput(null);
         while (_pending.TryDequeue(out _))
         {
         }
@@ -315,7 +345,27 @@ public sealed class BridgeCommandQueue
         var normalized = value.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal).Trim();
         return normalized.Length <= 240 ? normalized : normalized[..240];
     }
+
+    private void MarkPrivateChatInputOpened(string npcName, string conversationId, string traceId)
+    {
+        lock (_privateChatInputGate)
+            _privateChatInput = new BridgePrivateChatInput(npcName, conversationId, traceId);
+    }
+
+    private void ClearPrivateChatInput(string? conversationId)
+    {
+        lock (_privateChatInputGate)
+        {
+            if (conversationId is null ||
+                string.Equals(_privateChatInput?.ConversationId, conversationId, StringComparison.OrdinalIgnoreCase))
+            {
+                _privateChatInput = null;
+            }
+        }
+    }
 }
+
+internal sealed record BridgePrivateChatInput(string NpcName, string ConversationId, string TraceId);
 
 public sealed class BridgeMoveCommand
 {

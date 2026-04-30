@@ -58,6 +58,31 @@ public class StardewPrivateChatOrchestratorTests
     }
 
     [TestMethod]
+    public async Task ProcessNextAsync_HaleyDialogueUnavailable_SubmitsOpenPrivateChat()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_unavailable",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue follow-up was unavailable."));
+        var commands = new FakeCommandService();
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            new FakePrivateChatAgentRunner(),
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, commands.Submitted.Count);
+        Assert.AreEqual(GameActionType.OpenPrivateChat, commands.Submitted[0].Type);
+        Assert.AreEqual("pc_evt-1", commands.Submitted[0].Payload?["conversationId"]?.GetValue<string>());
+        Assert.AreEqual(StardewPrivateChatState.AwaitingPlayerInput, orchestrator.State);
+    }
+
+    [TestMethod]
     public async Task ProcessNextAsync_DuplicateDialogueEvent_OpensPrivateChatOnce()
     {
         var events = new FakeEventSource(
@@ -283,6 +308,46 @@ public class StardewPrivateChatOrchestratorTests
 
         Assert.AreEqual(StardewPrivateChatState.Idle, orchestrator.State);
         Assert.IsNull(orchestrator.ConversationId);
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_PlayerPrivateMessageCancelled_AllowsUnavailableClickToOpenNewChat()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."),
+            new GameEventRecord(
+                "evt-2",
+                "player_private_message_cancelled",
+                "Haley",
+                DateTime.UtcNow,
+                "Player closed private chat without submitting.",
+                "pc_evt-1",
+                new JsonObject { ["conversationId"] = "pc_evt-1" }),
+            new GameEventRecord(
+                "evt-3",
+                "vanilla_dialogue_unavailable",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue follow-up was unavailable."));
+        var commands = new FakeCommandService();
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            new FakePrivateChatAgentRunner(),
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.OnceAfterReply));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(2, commands.Submitted.Count);
+        Assert.AreEqual(GameActionType.OpenPrivateChat, commands.Submitted[0].Type);
+        Assert.AreEqual(GameActionType.OpenPrivateChat, commands.Submitted[1].Type);
+        Assert.AreEqual("pc_evt-3", commands.Submitted[1].Payload?["conversationId"]?.GetValue<string>());
+        Assert.AreEqual(StardewPrivateChatState.AwaitingPlayerInput, orchestrator.State);
     }
 
     [TestMethod]

@@ -1,71 +1,71 @@
-# Test Spec: Single NPC Agent-Driven Stardew Autonomy Loop
+# 测试规格：单个 NPC 驱动的 Stardew 自主循环
 
-## Strategy
+## 策略
 
-Use test-first delivery. Tests must prove autonomy, isolation, and typed bridge behavior without requiring Stardew Valley, SMAPI, or a live bridge.
+采用先测试后交付。测试必须在不需要 Stardew Valley、SMAPI 或真实桥接的前提下，证明自主性、隔离性和 typed bridge 行为。
 
-The most important negative test: events are facts only. No event ingestion path may call the LLM or issue a Stardew command.
+最重要的负向测试是：事件只是事实。任何事件摄取路径都不能调用 LLM，也不能发出 Stardew 命令。
 
-## Required Tests
+## 必需测试
 
 1. `NpcAutonomyLoop_RunOneTick_ObservesBeforeDecision`
-   - Arrange fake observer, fake LLM/agent, fake command service.
-   - Assert observation is called before any decision/tool action.
+   - 组装假的观察器、假的 LLM/agent、假的命令服务。
+   - 断言 observation 在任何 decision/tool 动作之前被调用。
 
 2. `NpcAutonomyLoop_EventFact_DoesNotDriveAgent`
-   - Inject a fake bridge/game event.
-   - Assert no LLM completion, no `Agent.ChatAsync`, no `StardewCommandService.SubmitAsync`, no move, and no speak.
-   - Assert the event is available as an observation fact for the next tick.
+   - 注入一个假的桥接/游戏事件。
+   - 断言不会发生 LLM completion、不会调用 `Agent.ChatAsync`、不会调用 `StardewCommandService.SubmitAsync`、不会移动，也不会说话。
+   - 断言该事件会作为下一 tick 的 observation fact 可用。
 
 3. `NpcAutonomyLoop_UsesRuntimeLocalContextManagerAndPromptBuilder`
-   - Build a Haley runtime namespace.
-   - Assert context preparation goes through runtime-local `ContextManager` / `PromptBuilder`.
-   - Assert no custom Stardew prompt assembler is required or used.
+   - 构建一个 Haley 运行时命名空间。
+   - 断言上下文准备通过运行时本地的 `ContextManager` / `PromptBuilder` 完成。
+   - 断言不需要也不会使用自定义的 Stardew prompt assembler。
 
 4. `NpcAutonomyLoop_LoadsHaleyPersonaFromPackAndNamespace`
-   - Use Haley default persona pack.
-   - Assert `SOUL.md`, facts, voice/boundaries, and skills are resolved into the NPC-local context path.
+   - 使用 Haley 默认 persona pack。
+   - 断言 `SOUL.md`、facts、voice/boundaries 和 skills 会被解析进 NPC 本地上下文路径。
 
 5. `NpcAutonomyLoop_RegistersOnlyNpcSafeTools`
-   - Inspect tool definitions available to the NPC agent.
-   - Assert global desktop tools are absent.
-   - Assert only allowed Stardew/NPC-local tools are present.
+   - 检查 NPC agent 可用的工具定义。
+   - 断言全局桌面工具不存在。
+   - 断言只存在允许的 Stardew / NPC 本地工具。
 
 6. `NpcAutonomyLoop_MoveDecision_UsesStardewCommandService`
-   - Fake model requests move.
-   - Assert `GameActionType.Move` is submitted through `StardewCommandService`.
-   - Assert `commandId`, `traceId`, and idempotency context are recorded.
+   - 模拟模型请求移动。
+   - 断言 `GameActionType.Move` 通过 `StardewCommandService` 提交。
+   - 断言记录了 `commandId`、`traceId` 和幂等性上下文。
 
 7. `NpcAutonomyLoop_SpeakDecision_UsesStardewCommandService`
-   - Fake model requests speak.
-   - Assert `GameActionType.Speak` is submitted through `StardewCommandService`.
-   - Assert the result is recorded.
+   - 模拟模型请求说话。
+   - 断言 `GameActionType.Speak` 通过 `StardewCommandService` 提交。
+   - 断言结果被记录。
 
 8. `NpcAutonomyLoop_PollsLongRunningCommandUntilTerminalOrLimit`
-   - Fake status sequence: queued -> running -> completed.
-   - Assert polling stops at terminal status.
-   - Add failure/blocked variant if implementation supports it in the same slice.
+   - 模拟状态序列：queued -> running -> completed。
+   - 断言轮询会在终态停止。
+   - 如果实现允许，在同一切片里再补一个 failure/blocked 变体。
 
 9. `NpcAutonomyLoop_BridgeUnavailable_WritesNoOpTrace`
-   - Fake discovery/observer unavailable.
-   - Assert no action command is submitted.
-   - Assert no-op/paused trace is written with failure reason.
+   - 模拟 discovery/observer 不可用。
+   - 断言不会提交任何 action command。
+   - 断言会写入带失败原因的 no-op/paused trace。
 
 10. `NpcAutonomyLoop_CompletedTick_WritesTraceActivityAndMemory`
-   - Fake successful meaningful action.
-   - Assert trace/log entry is under the NPC namespace.
-   - Assert `LastTraceId` is updated.
-   - Assert NPC-local memory write is attempted or completed.
+   - 模拟一次成功且有意义的动作。
+   - 断言 trace/log 条目位于 NPC 命名空间下。
+   - 断言 `LastTraceId` 被更新。
+   - 断言 NPC 本地记忆写入被尝试或完成。
 
 11. `NpcAutonomyLoop_EnforcesBudgetAndToolIterationLimit`
-   - Use `NpcAutonomyBudget`.
-   - Assert iteration/concurrency limit prevents runaway behavior.
+   - 使用 `NpcAutonomyBudget`。
+   - 断言迭代/并发限制可以阻止失控行为。
 
 12. `NpcRuntimeSupervisor_StartStop_PreservesSnapshotSemantics`
-   - Extend existing supervisor tests.
-   - Assert lifecycle state and trace id remain visible through snapshots.
+   - 扩展现有 supervisor 测试。
+   - 断言生命周期状态和 trace id 仍能通过快照看到。
 
-## Regression Tests
+## 回归测试
 
 - `Desktop/HermesDesktop.Tests/Runtime/NpcRuntimeSupervisorTests.cs`
 - `Desktop/HermesDesktop.Tests/Runtime/NpcAutonomyBudgetTests.cs`
@@ -75,21 +75,21 @@ The most important negative test: events are facts only. No event ingestion path
 - `Desktop/HermesDesktop.Tests/GameCore/NpcPackLoaderTests.cs`
 - `Desktop/HermesDesktop.Tests/GameCore/NpcPackManifestTests.cs`
 
-## Verification Commands
+## 验证命令
 
-Targeted:
+目标命令：
 
 ```powershell
 dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug -p:Platform=x64 --filter "FullyQualifiedName~NpcAutonomyLoop|FullyQualifiedName~AutonomyBoundary|FullyQualifiedName~EventFact"
 ```
 
-Runtime and Stardew regression:
+运行时和 Stardew 回归：
 
 ```powershell
 dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug -p:Platform=x64 --filter "FullyQualifiedName~Runtime|FullyQualifiedName~Stardew|FullyQualifiedName~GameCore"
 ```
 
-Final:
+最终：
 
 ```powershell
 dotnet build .\Desktop\HermesDesktop\HermesDesktop.csproj -c Debug -p:Platform=x64

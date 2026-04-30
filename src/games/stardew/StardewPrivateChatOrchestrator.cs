@@ -66,7 +66,7 @@ public sealed class StardewPrivateChatOrchestrator
         if (!IsTargetNpc(record.NpcId))
             return;
 
-        if (string.Equals(record.EventType, "vanilla_dialogue_completed", StringComparison.OrdinalIgnoreCase))
+        if (IsPrivateChatOpenTrigger(record.EventType))
         {
             await TryOpenAfterVanillaDialogueAsync(record, ct);
             return;
@@ -270,6 +270,10 @@ public sealed class StardewPrivateChatOrchestrator
     private bool IsTargetNpc(string? npcId)
         => !string.IsNullOrWhiteSpace(npcId) &&
            string.Equals(npcId, _options.NpcId, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPrivateChatOpenTrigger(string eventType)
+        => string.Equals(eventType, "vanilla_dialogue_completed", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(eventType, "vanilla_dialogue_unavailable", StringComparison.OrdinalIgnoreCase);
 
     private bool ShouldEndAfterReply()
         => _options.ReopenPolicy is PrivateChatReopenPolicy.Never ||

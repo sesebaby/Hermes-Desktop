@@ -154,6 +154,9 @@ public sealed class ModEntry : Mod
 
         var oldDialogueNpcName = GetDialogueNpcName(e.OldMenu);
         var newDialogueNpcName = GetDialogueNpcName(e.NewMenu);
+        if (e.OldMenu is not null && !ReferenceEquals(e.OldMenu, e.NewMenu))
+            _commands.RecordPrivateChatInputClosedWithoutSubmit();
+
         TryRecordPrivateChatReplyClosed(oldDialogueNpcName, newDialogueNpcName);
 
         if (_menuGuard.ConsumeMenuChange(oldDialogueNpcName, newDialogueNpcName) is not NpcDialogueMenuGuardResult.Unhandled)

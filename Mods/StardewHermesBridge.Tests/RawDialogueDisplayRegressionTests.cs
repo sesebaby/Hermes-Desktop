@@ -151,6 +151,30 @@ public class RawDialogueDisplayRegressionTests
     }
 
     [TestMethod]
+    public void PrivateChatInputCloseWithoutEnterRecordsCancellation()
+    {
+        var modEntry = ReadRepositoryFile("Mods", "StardewHermesBridge", "ModEntry.cs");
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(
+            modEntry,
+            "_commands.RecordPrivateChatInputClosedWithoutSubmit()",
+            "Closing Stardew's text-entry menu without pressing Enter must release the Desktop/core private-chat session.");
+        StringAssert.Contains(
+            commandQueue,
+            "RecordPrivateChatInputClosedWithoutSubmit",
+            "BridgeCommandQueue should own the private-chat cancellation event because it owns the opened conversation id.");
+        StringAssert.Contains(
+            commandQueue,
+            "private_chat_input_closed_without_submit",
+            "The bridge log needs a distinct marker for diagnosing abandoned private-chat input.");
+        StringAssert.Contains(
+            commandQueue,
+            "player_private_message_cancelled",
+            "Closing the input without Enter should emit the same cancellation event consumed by Desktop/core.");
+    }
+
+    [TestMethod]
     public void PrivateChatReplyCloseIsRecordedBeforeOptionalReopen()
     {
         var modEntry = ReadRepositoryFile("Mods", "StardewHermesBridge", "ModEntry.cs");
