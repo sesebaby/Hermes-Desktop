@@ -78,6 +78,9 @@ public sealed record StardewTaskStatusData(
 public sealed record StardewStatusQuery(
     [property: JsonPropertyName("npcId")] string? NpcId);
 
+public sealed record StardewWorldSnapshotQuery(
+    [property: JsonPropertyName("npcId")] string? NpcId);
+
 public sealed record StardewNpcStatusData(
     [property: JsonPropertyName("npcId")] string NpcId,
     [property: JsonPropertyName("smapiName")] string SmapiName,
@@ -90,3 +93,16 @@ public sealed record StardewNpcStatusData(
     [property: JsonPropertyName("blockedReason")] string? BlockedReason,
     [property: JsonPropertyName("currentCommandId")] string? CurrentCommandId,
     [property: JsonPropertyName("lastTraceId")] string? LastTraceId);
+
+public sealed record StardewWorldEntityData(
+    [property: JsonPropertyName("npcId")] string NpcId,
+    [property: JsonPropertyName("targetEntityId")] string TargetEntityId,
+    [property: JsonPropertyName("displayName")] string DisplayName,
+    [property: JsonPropertyName("adapterId")] string AdapterId);
+
+public sealed record StardewWorldSnapshotData(
+    [property: JsonPropertyName("gameId")] string GameId,
+    [property: JsonPropertyName("saveId")] string SaveId,
+    [property: JsonPropertyName("timestampUtc")] DateTime TimestampUtc,
+    [property: JsonPropertyName("entities")] IReadOnlyList<StardewWorldEntityData> Entities,
+    [property: JsonPropertyName("facts")] IReadOnlyList<string> Facts);
