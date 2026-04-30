@@ -221,4 +221,19 @@ public sealed class TodoToolTests
         Assert.IsFalse(text!.Contains("Done", StringComparison.Ordinal));
         Assert.IsFalse(text.Contains("Abandoned", StringComparison.Ordinal));
     }
+
+    [TestMethod]
+    public void SessionTodoStore_FormatActiveTasksForInjection_ReturnsNullWhenOnlyCompletedOrCancelledTodosExist()
+    {
+        var store = new SessionTodoStore();
+        store.Write("session-a",
+        [
+            new SessionTodoInput("1", "Done", "completed"),
+            new SessionTodoInput("2", "Abandoned", "cancelled")
+        ]);
+
+        var text = store.FormatActiveTasksForInjection("session-a");
+
+        Assert.IsNull(text);
+    }
 }

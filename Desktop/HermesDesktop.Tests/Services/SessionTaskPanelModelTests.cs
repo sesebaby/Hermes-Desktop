@@ -55,5 +55,8 @@ public sealed class SessionTaskPanelModelTests
         CollectionAssert.AreEqual(
             new[] { "1", "2", "3" },
             model.Tasks.Select(t => t.TaskId).ToArray());
+        CollectionAssert.AreEqual(
+            new[] { "#1", "#2", "#3" },
+            model.Tasks.Select(t => t.PriorityLabel).ToArray());
     }
 }

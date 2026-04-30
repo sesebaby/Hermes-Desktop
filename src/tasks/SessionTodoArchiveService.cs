@@ -3,10 +3,17 @@ namespace Hermes.Agent.Tasks;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Hermes.Agent.Core;
 
 public static class SessionTodoArchiveService
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
     public static IReadOnlyList<SessionTodoArchiveEntry> BuildArchive(
         string sessionId,
         IEnumerable<Message> messages)
@@ -23,10 +30,7 @@ public static class SessionTodoArchiveService
                 if (TryParseSnapshot(message.Content, out var snapshot))
                 {
                     pendingSnapshot = snapshot;
-                    pendingSnapshotHash = HashParts(
-                        message.ToolCallId ?? "",
-                        message.ToolName ?? "",
-                        message.Content);
+                    pendingSnapshotHash = HashParts(JsonSerializer.Serialize(snapshot, JsonOptions));
                 }
 
                 continue;
@@ -34,9 +38,15 @@ public static class SessionTodoArchiveService
 
             if (!IsAssistantBoundary(message) ||
                 pendingSnapshot is null ||
-                pendingSnapshot.Todos.Count == 0 ||
                 string.IsNullOrEmpty(pendingSnapshotHash))
             {
+                continue;
+            }
+
+            if (pendingSnapshot.Todos.Count == 0)
+            {
+                pendingSnapshot = null;
+                pendingSnapshotHash = null;
                 continue;
             }
 
@@ -58,7 +68,8 @@ public static class SessionTodoArchiveService
 
     private static bool IsTodoToolResult(Message message)
         => string.Equals(message.Role, "tool", StringComparison.OrdinalIgnoreCase) &&
-           string.Equals(message.ToolName, "todo", StringComparison.OrdinalIgnoreCase);
+           (string.Equals(message.ToolName, "todo", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(message.ToolName, "todo_write", StringComparison.OrdinalIgnoreCase));
 
     private static bool IsAssistantBoundary(Message message)
         => string.Equals(message.Role, "assistant", StringComparison.OrdinalIgnoreCase) &&
@@ -89,7 +100,7 @@ public static class SessionTodoArchiveService
             }
 
             snapshot = new SessionTodoStore().Write("__archive__", inputs);
-            return snapshot.Todos.Count > 0;
+            return true;
         }
         catch (JsonException)
         {
