@@ -1,5 +1,6 @@
 namespace Hermes.Agent.Memory;
 
+using Hermes.Agent.Core;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
@@ -8,13 +9,16 @@ using Microsoft.Extensions.Logging;
 public sealed class HermesMemoryOrchestrator
 {
     private readonly IReadOnlyList<IMemoryProvider> _providers;
+    private readonly IReadOnlyList<IMemoryCompressionParticipant> _compressionParticipants;
     private readonly ILogger<HermesMemoryOrchestrator> _logger;
 
     public HermesMemoryOrchestrator(
         IEnumerable<IMemoryProvider> providers,
-        ILogger<HermesMemoryOrchestrator> logger)
+        ILogger<HermesMemoryOrchestrator> logger,
+        IEnumerable<IMemoryCompressionParticipant>? compressionParticipants = null)
     {
         _providers = providers.ToList();
+        _compressionParticipants = compressionParticipants?.ToList() ?? new List<IMemoryCompressionParticipant>();
         _logger = logger;
     }
 
@@ -100,6 +104,25 @@ public sealed class HermesMemoryOrchestrator
         }
     }
 
+    public async Task PreCompressAllAsync(IReadOnlyList<Message> messages, string sessionId, CancellationToken ct)
+    {
+        foreach (var participant in _compressionParticipants)
+        {
+            try
+            {
+                await participant.OnPreCompressAsync(messages, sessionId, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Memory participant {Participant} OnPreCompress failed non-fatally", participant.Name);
+            }
+        }
+    }
+
     public async Task SyncCompletedTurnAsync(
         string userContent,
         string assistantContent,
@@ -117,4 +140,3 @@ public sealed class HermesMemoryOrchestrator
         await QueuePrefetchAllAsync(userContent, sessionId, ct);
     }
 }
-

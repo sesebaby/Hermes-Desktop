@@ -499,17 +499,25 @@ public partial class App : Application
             sp.GetRequiredService<PromptBuilder>(),
             sp.GetRequiredService<ILogger<ContextManager>>(),
             soulService: sp.GetRequiredService<SoulService>(),
-            pluginManager: sp.GetRequiredService<PluginManager>()));
+            pluginManager: sp.GetRequiredService<PluginManager>(),
+            memoryOrchestrator: sp.GetRequiredService<HermesMemoryOrchestrator>()));
         services.AddSingleton(sp => new TranscriptRecallService(
             sp.GetRequiredService<TranscriptStore>(),
             sp.GetRequiredService<ILogger<TranscriptRecallService>>(),
             sp.GetRequiredService<SessionSearchIndex>(),
             sp.GetRequiredService<IChatClient>()));
+        services.AddSingleton(sp => new CuratedMemoryLifecycleProvider(
+            sp.GetRequiredService<MemoryManager>(),
+            includeMemory: memoryEnabled,
+            includeUser: userProfileEnabled));
+        services.AddSingleton<IMemoryProvider>(sp => sp.GetRequiredService<CuratedMemoryLifecycleProvider>());
+        services.AddSingleton<IMemoryCompressionParticipant>(sp => sp.GetRequiredService<CuratedMemoryLifecycleProvider>());
         services.AddSingleton<IMemoryProvider>(sp => new TranscriptMemoryProvider(
             sp.GetRequiredService<TranscriptRecallService>()));
         services.AddSingleton(sp => new HermesMemoryOrchestrator(
             sp.GetServices<IMemoryProvider>(),
-            sp.GetRequiredService<ILogger<HermesMemoryOrchestrator>>()));
+            sp.GetRequiredService<ILogger<HermesMemoryOrchestrator>>(),
+            sp.GetServices<IMemoryCompressionParticipant>()));
         services.AddSingleton(sp => new TurnMemoryCoordinator(
             sp.GetRequiredService<ContextManager>(),
             sp.GetRequiredService<HermesMemoryOrchestrator>(),

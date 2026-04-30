@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
+using Hermes.Agent.Memory;
 using Hermes.Agent.Plugins;
 using Hermes.Agent.Soul;
 using Hermes.Agent.Transcript;
@@ -24,6 +25,7 @@ public sealed class ContextManager
     private readonly ILogger<ContextManager> _logger;
     private readonly SoulService? _soulService;
     private readonly PluginManager? _pluginManager;
+    private readonly HermesMemoryOrchestrator? _memoryOrchestrator;
 
     private readonly ConcurrentDictionary<string, SessionState> _sessionStates = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = new();
@@ -38,7 +40,8 @@ public sealed class ContextManager
         PromptBuilder promptBuilder,
         ILogger<ContextManager> logger,
         SoulService? soulService = null,
-        PluginManager? pluginManager = null)
+        PluginManager? pluginManager = null,
+        HermesMemoryOrchestrator? memoryOrchestrator = null)
     {
         _transcripts = transcripts;
         _chatClient = chatClient;
@@ -47,6 +50,7 @@ public sealed class ContextManager
         _logger = logger;
         _soulService = soulService;
         _pluginManager = pluginManager;
+        _memoryOrchestrator = memoryOrchestrator;
     }
 
     /// <summary>
@@ -126,6 +130,9 @@ public sealed class ContextManager
 
             if (shouldSummarizeEvicted)
             {
+                if (_memoryOrchestrator is not null)
+                    await _memoryOrchestrator.PreCompressAllAsync(evictedMessages, sessionId, ct);
+
                 if (_pluginManager is not null)
                     await _pluginManager.OnPreCompressAsync(evictedMessages, ct);
 

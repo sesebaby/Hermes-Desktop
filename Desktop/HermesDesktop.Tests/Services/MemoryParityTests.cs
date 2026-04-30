@@ -285,7 +285,7 @@ public sealed class MemoryParityTests
         await store.SaveMessageAsync("summary-tool-session", new Message
         {
             Role = "tool",
-            ToolName = "todo_write",
+            ToolName = "todo",
             Content = "TOOL SECRET should not surface in summary"
         }, CancellationToken.None);
         await store.SaveMessageAsync("summary-tool-session", new Message
@@ -490,6 +490,116 @@ public sealed class MemoryParityTests
         Assert.IsTrue(calls.Contains("healthy:prefetch:session-b:query"));
         Assert.IsTrue(calls.Contains("healthy:sync:session-b:user=>assistant"));
         Assert.IsTrue(calls.Contains("healthy:queue_prefetch:session-b:user"));
+    }
+
+    [TestMethod]
+    public async Task HermesMemoryOrchestrator_PreCompressAll_CallsParticipantsInOrder()
+    {
+        var calls = new List<string>();
+        var first = new RecordingCompressionParticipant("first", calls);
+        var second = new RecordingCompressionParticipant("second", calls);
+        var orchestrator = new HermesMemoryOrchestrator(
+            Array.Empty<IMemoryProvider>(),
+            NullLogger<HermesMemoryOrchestrator>.Instance,
+            new IMemoryCompressionParticipant[] { first, second });
+        var evicted = new List<Message>
+        {
+            new() { Role = "user", Content = "old memory-bearing turn" }
+        };
+
+        await orchestrator.PreCompressAllAsync(evicted, "session-compress", CancellationToken.None);
+
+        CollectionAssert.AreEqual(new[]
+        {
+            "first:pre_compress:session-compress:1:old memory-bearing turn",
+            "second:pre_compress:session-compress:1:old memory-bearing turn"
+        }, calls);
+    }
+
+    [TestMethod]
+    public async Task HermesMemoryOrchestrator_PreCompressAll_ParticipantFailuresAreNonFatal()
+    {
+        var calls = new List<string>();
+        var failing = new RecordingCompressionParticipant("failing", calls) { ThrowOnPreCompress = true };
+        var healthy = new RecordingCompressionParticipant("healthy", calls);
+        var orchestrator = new HermesMemoryOrchestrator(
+            Array.Empty<IMemoryProvider>(),
+            NullLogger<HermesMemoryOrchestrator>.Instance,
+            new IMemoryCompressionParticipant[] { failing, healthy });
+
+        await orchestrator.PreCompressAllAsync(
+            new[] { new Message { Role = "assistant", Content = "compress me" } },
+            "session-safe",
+            CancellationToken.None);
+
+        Assert.IsTrue(calls.Contains("failing:pre_compress:session-safe:1:compress me"));
+        Assert.IsTrue(calls.Contains("healthy:pre_compress:session-safe:1:compress me"));
+    }
+
+    [TestMethod]
+    public async Task CuratedMemoryLifecycleProvider_Prefetch_IsInert()
+    {
+        var client = new RecordingChatClient();
+        var memoryManager = CreateMemoryManager(client);
+        var memoryTool = new MemoryTool(memoryManager);
+        await memoryTool.ExecuteAsync(new MemoryToolParameters
+        {
+            Action = "add",
+            Target = "memory",
+            Content = "Curated marker must not enter dynamic recall amber-codex."
+        }, CancellationToken.None);
+        var provider = new CuratedMemoryLifecycleProvider(memoryManager);
+
+        var result = await provider.PrefetchAsync("amber-codex", "session-curated", CancellationToken.None);
+
+        Assert.IsTrue(string.IsNullOrWhiteSpace(result),
+            "Curated memory participates in lifecycle/handoff only; it must not inject MEMORY.md through PrefetchAsync.");
+    }
+
+    [TestMethod]
+    public async Task TurnMemoryCoordinator_DoesNotInjectCuratedMemoryThroughDynamicRecall()
+    {
+        var transcripts = await CreateTranscriptsWithPriorMemoryAsync(
+            "prior-dynamic",
+            "Prior transcript recall marker river-quartz.");
+        var client = new RecordingChatClient { CompleteResponse = "ok" };
+        var memoryManager = CreateMemoryManager(client);
+        var memoryTool = new MemoryTool(memoryManager);
+        await memoryTool.ExecuteAsync(new MemoryToolParameters
+        {
+            Action = "add",
+            Target = "memory",
+            Content = "Curated snapshot marker amber-codex."
+        }, CancellationToken.None);
+        var contextManager = new ContextManager(
+            transcripts,
+            client,
+            new TokenBudget(maxTokens: 8000, recentTurnWindow: 6),
+            new PromptBuilder("stable system"),
+            NullLogger<ContextManager>.Instance);
+        var orchestrator = new HermesMemoryOrchestrator(
+            new IMemoryProvider[]
+            {
+                new CuratedMemoryLifecycleProvider(memoryManager),
+                new TranscriptMemoryProvider(new TranscriptRecallService(transcripts, NullLogger<TranscriptRecallService>.Instance))
+            },
+            NullLogger<HermesMemoryOrchestrator>.Instance);
+        var coordinator = new TurnMemoryCoordinator(
+            contextManager,
+            orchestrator,
+            NullLogger<TurnMemoryCoordinator>.Instance);
+
+        var prepared = await coordinator.PrepareFirstCallAsync(
+            "current-curated-dedupe",
+            "What prior marker should I remember?",
+            baseMessages: null,
+            TurnMemoryMode.Complete,
+            CancellationToken.None);
+
+        var lastUser = prepared.Messages.Last(m => string.Equals(m.Role, "user", StringComparison.OrdinalIgnoreCase));
+        StringAssert.Contains(lastUser.Content, "river-quartz");
+        Assert.IsFalse(lastUser.Content.Contains("amber-codex", StringComparison.Ordinal),
+            "Curated memory must not be duplicated through the dynamic <memory-context> provider lane.");
     }
 
     [TestMethod]
@@ -796,6 +906,57 @@ public sealed class MemoryParityTests
         Assert.AreEqual(1, plugin.PreCompressCalls);
         Assert.AreEqual(1, client.CompleteCalls.Count,
             "The fixture must trigger summarization so the pre-compress hook is tied to a real compression path.");
+    }
+
+    [TestMethod]
+    public async Task ContextManager_PreCompressesMemoryBeforePluginsAndSummarizingEvictedMessages()
+    {
+        var calls = new List<string>();
+        var transcripts = new TranscriptStore(_tempDir);
+        await transcripts.SaveMessageAsync("compress-memory-session", new Message { Role = "user", Content = "old memory handoff turn" }, CancellationToken.None);
+        await transcripts.SaveMessageAsync("compress-memory-session", new Message { Role = "assistant", Content = "old memory handoff response" }, CancellationToken.None);
+        await transcripts.SaveMessageAsync("compress-memory-session", new Message { Role = "user", Content = "recent turn stays" }, CancellationToken.None);
+
+        var pluginManager = new PluginManager(NullLogger<PluginManager>.Instance);
+        pluginManager.Register(new RecordingPreCompressPlugin(calls));
+        var orchestrator = new HermesMemoryOrchestrator(
+            Array.Empty<IMemoryProvider>(),
+            NullLogger<HermesMemoryOrchestrator>.Instance,
+            new IMemoryCompressionParticipant[] { new RecordingCompressionParticipant("memory", calls) });
+        var client = new SequencedSummaryChatClient(calls);
+        var contextManager = new ContextManager(
+            transcripts,
+            client,
+            new TokenBudget(maxTokens: 8000, recentTurnWindow: 1),
+            new PromptBuilder("stable system"),
+            NullLogger<ContextManager>.Instance,
+            pluginManager: pluginManager,
+            memoryOrchestrator: orchestrator);
+
+        await contextManager.PrepareContextAsync(
+            "compress-memory-session",
+            "current question",
+            retrievedContext: null,
+            CancellationToken.None);
+
+        CollectionAssert.AreEqual(new[]
+        {
+            "memory:pre_compress:compress-memory-session:2:old memory handoff turn",
+            "plugin:pre_compress:2",
+            "chat:summary"
+        }, calls);
+    }
+
+    [TestMethod]
+    public void DesktopStartup_DoesNotRegisterAutoDreamServiceByDefault()
+    {
+        var appSourcePath = FindSourceFile("HermesDesktop", "App.xaml.cs");
+        var appSource = File.ReadAllText(appSourcePath);
+
+        StringAssert.Contains(appSource, "StartDreamerBackground");
+        StringAssert.Contains(appSource, "DreamerService");
+        Assert.IsFalse(appSource.Contains("AutoDreamService", StringComparison.Ordinal),
+            "AutoDreamService must remain dormant unless a separate scoped task explicitly enables it.");
     }
 
     [TestMethod]
@@ -1134,8 +1295,50 @@ public sealed class MemoryParityTests
         }
     }
 
+    private sealed class RecordingCompressionParticipant : IMemoryCompressionParticipant
+    {
+        private readonly List<string> _calls;
+
+        public RecordingCompressionParticipant(string name, List<string> calls)
+        {
+            Name = name;
+            _calls = calls;
+        }
+
+        public string Name { get; }
+        public bool ThrowOnPreCompress { get; init; }
+
+        public Task OnPreCompressAsync(IReadOnlyList<Message> messages, string sessionId, CancellationToken ct)
+        {
+            _calls.Add($"{Name}:pre_compress:{sessionId}:{messages.Count}:{messages[0].Content}");
+            if (ThrowOnPreCompress)
+                throw new InvalidOperationException($"{Name} pre-compress failed");
+            return Task.CompletedTask;
+        }
+    }
+
+    private static string FindSourceFile(params string[] relativeParts)
+    {
+        var relativePath = Path.Combine(relativeParts);
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, relativePath);
+            if (File.Exists(candidate))
+                return candidate;
+        }
+
+        throw new FileNotFoundException("Could not find source file from test output directory.", relativePath);
+    }
+
     private sealed class RecordingPreCompressPlugin : PluginBase
     {
+        private readonly List<string>? _calls;
+
+        public RecordingPreCompressPlugin(List<string>? calls = null)
+        {
+            _calls = calls;
+        }
+
         public override string Name => "recording-pre-compress";
         public override string Category => "memory";
         public int PreCompressCalls { get; private set; }
@@ -1143,7 +1346,48 @@ public sealed class MemoryParityTests
         public override Task OnPreCompressAsync(IReadOnlyList<Message> messages, CancellationToken ct)
         {
             PreCompressCalls++;
+            _calls?.Add($"plugin:pre_compress:{messages.Count}");
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class SequencedSummaryChatClient : IChatClient
+    {
+        private readonly List<string> _calls;
+
+        public SequencedSummaryChatClient(List<string> calls)
+        {
+            _calls = calls;
+        }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+        {
+            _calls.Add("chat:summary");
+            return Task.FromResult("compressed summary");
+        }
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+            => throw new NotSupportedException();
+
+        public async IAsyncEnumerable<string> StreamAsync(
+            IEnumerable<Message> messages,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
         }
     }
 
