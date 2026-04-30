@@ -89,6 +89,35 @@ public class StardewNpcToolFactoryTests
         Assert.AreEqual("cmd-1", JsonDocument.Parse(result.Content).RootElement.GetProperty("commandId").GetString());
     }
 
+    [TestMethod]
+    public async Task MoveTool_PollsTaskStatusUntilTerminal()
+    {
+        var commands = new CapturingCommandService(
+            [
+                new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null),
+                new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Completed, 1, null, null)
+            ]);
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"),
+            traceIdFactory: () => "trace-move",
+            idempotencyKeyFactory: () => "idem-move");
+        var moveTool = tools.Single(tool => tool.Name == "stardew_move");
+
+        var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
+        {
+            LocationName = "Town",
+            X = 42,
+            Y = 17
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual(2, commands.StatusCalls);
+        using var doc = JsonDocument.Parse(result.Content);
+        Assert.AreEqual("cmd-1", doc.RootElement.GetProperty("commandId").GetString());
+        Assert.AreEqual(StardewCommandStatuses.Completed, doc.RootElement.GetProperty("finalStatus").GetProperty("status").GetString());
+    }
+
     private static NpcRuntimeDescriptor CreateDescriptor(string npcId)
         => new(
             npcId,
@@ -120,7 +149,16 @@ public class StardewNpcToolFactoryTests
 
     private sealed class CapturingCommandService : IGameCommandService
     {
+        private readonly Queue<GameCommandStatus> _statusSequence;
+
+        public CapturingCommandService(IReadOnlyList<GameCommandStatus>? statusSequence = null)
+        {
+            _statusSequence = new Queue<GameCommandStatus>(statusSequence ?? []);
+        }
+
         public GameAction? LastAction { get; private set; }
+
+        public int StatusCalls { get; private set; }
 
         public Task<GameCommandResult> SubmitAsync(GameAction action, CancellationToken ct)
         {
@@ -129,7 +167,12 @@ public class StardewNpcToolFactoryTests
         }
 
         public Task<GameCommandStatus> GetStatusAsync(string commandId, CancellationToken ct)
-            => Task.FromResult(new GameCommandStatus(commandId, "haley", "move", StardewCommandStatuses.Running, 0.5, null, null));
+        {
+            StatusCalls++;
+            return Task.FromResult(_statusSequence.Count > 0
+                ? _statusSequence.Dequeue()
+                : new GameCommandStatus(commandId, "haley", "move", StardewCommandStatuses.Running, 0.5, null, null));
+        }
 
         public Task<GameCommandStatus> CancelAsync(string commandId, string reason, CancellationToken ct)
             => Task.FromResult(new GameCommandStatus(commandId, "haley", "move", StardewCommandStatuses.Cancelled, 0, reason, null));

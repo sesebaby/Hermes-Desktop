@@ -12,7 +12,8 @@ public static class StardewNpcToolFactory
         IGameAdapter adapter,
         NpcRuntimeDescriptor descriptor,
         Func<string>? traceIdFactory = null,
-        Func<string>? idempotencyKeyFactory = null)
+        Func<string>? idempotencyKeyFactory = null,
+        int maxStatusPolls = 3)
     {
         traceIdFactory ??= () => $"trace_{descriptor.NpcId}_{Guid.NewGuid():N}";
         idempotencyKeyFactory ??= () => $"idem_{descriptor.NpcId}_{Guid.NewGuid():N}";
@@ -20,7 +21,7 @@ public static class StardewNpcToolFactory
         return
         [
             new StardewStatusTool(adapter.Queries, descriptor),
-            new StardewMoveTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory),
+            new StardewMoveTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls),
             new StardewSpeakTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory),
             new StardewTaskStatusTool(adapter.Commands)
         ];
@@ -56,17 +57,20 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
     private readonly NpcRuntimeDescriptor _descriptor;
     private readonly Func<string> _traceIdFactory;
     private readonly Func<string> _idempotencyKeyFactory;
+    private readonly int _maxStatusPolls;
 
     public StardewMoveTool(
         IGameCommandService commands,
         NpcRuntimeDescriptor descriptor,
         Func<string> traceIdFactory,
-        Func<string> idempotencyKeyFactory)
+        Func<string> idempotencyKeyFactory,
+        int maxStatusPolls)
     {
         _commands = commands;
         _descriptor = descriptor;
         _traceIdFactory = traceIdFactory;
         _idempotencyKeyFactory = idempotencyKeyFactory;
+        _maxStatusPolls = Math.Max(0, maxStatusPolls);
     }
 
     public string Name => "stardew_move";
@@ -92,8 +96,47 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
             new GameActionTarget("tile", p.LocationName, new GameTile(p.X, p.Y)),
             p.Reason);
 
-        return ToolResult.Ok(StardewNpcToolJson.Serialize(await _commands.SubmitAsync(action, ct)));
+        var commandResult = await _commands.SubmitAsync(action, ct);
+        var statusPolls = await PollUntilTerminalAsync(commandResult, ct);
+        var finalStatus = statusPolls.Count > 0 ? statusPolls[^1] : null;
+
+        return ToolResult.Ok(StardewNpcToolJson.Serialize(new StardewNpcActionToolResult(
+            commandResult.Accepted,
+            commandResult.CommandId,
+            commandResult.Status,
+            commandResult.FailureReason,
+            commandResult.TraceId,
+            finalStatus,
+            statusPolls)));
     }
+
+    private async Task<IReadOnlyList<GameCommandStatus>> PollUntilTerminalAsync(GameCommandResult commandResult, CancellationToken ct)
+    {
+        if (!commandResult.Accepted ||
+            string.IsNullOrWhiteSpace(commandResult.CommandId) ||
+            IsTerminal(commandResult.Status))
+        {
+            return [];
+        }
+
+        var statuses = new List<GameCommandStatus>();
+        for (var i = 0; i < _maxStatusPolls; i++)
+        {
+            var status = await _commands.GetStatusAsync(commandResult.CommandId, ct);
+            statuses.Add(status);
+            if (IsTerminal(status.Status))
+                break;
+        }
+
+        return statuses;
+    }
+
+    private static bool IsTerminal(string? status)
+        => string.Equals(status, StardewCommandStatuses.Completed, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Failed, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Cancelled, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Blocked, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Expired, StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class StardewSpeakTool : ITool, IToolSchemaProvider
@@ -201,6 +244,15 @@ public sealed class StardewTaskStatusToolParameters
 {
     public required string CommandId { get; init; }
 }
+
+internal sealed record StardewNpcActionToolResult(
+    bool Accepted,
+    string CommandId,
+    string Status,
+    string? FailureReason,
+    string TraceId,
+    GameCommandStatus? FinalStatus,
+    IReadOnlyList<GameCommandStatus> StatusPolls);
 
 internal static class StardewNpcToolJson
 {
