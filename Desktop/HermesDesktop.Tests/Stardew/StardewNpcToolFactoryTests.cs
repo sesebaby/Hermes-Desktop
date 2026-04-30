@@ -1,0 +1,152 @@
+using System.Text.Json;
+using Hermes.Agent.Core;
+using Hermes.Agent.Game;
+using Hermes.Agent.Games.Stardew;
+using Hermes.Agent.Runtime;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace HermesDesktop.Tests.Stardew;
+
+[TestClass]
+public class StardewNpcToolFactoryTests
+{
+    [TestMethod]
+    public void CreateDefault_ReturnsOnlyNpcSafeStardewTools()
+    {
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"));
+
+        CollectionAssert.AreEqual(
+            new[] { "stardew_status", "stardew_move", "stardew_speak", "stardew_task_status" },
+            tools.Select(tool => tool.Name).ToArray());
+
+        Assert.IsFalse(tools.Any(tool => tool.Name is "agent" or "todo" or "memory" or "ask_user" or "schedule_cron"));
+
+        var moveSchema = ((IToolSchemaProvider)tools.Single(tool => tool.Name == "stardew_move")).GetParameterSchema().GetRawText();
+        Assert.IsFalse(moveSchema.Contains("npcId", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(moveSchema.Contains("saveId", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(moveSchema.Contains("traceId", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(moveSchema.Contains("idempotencyKey", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task MoveTool_BindsRuntimeIdentityAndSubmitsThroughCommandService()
+    {
+        var commands = new CapturingCommandService();
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"),
+            traceIdFactory: () => "trace-move",
+            idempotencyKeyFactory: () => "idem-move");
+        var moveTool = tools.Single(tool => tool.Name == "stardew_move");
+
+        var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
+        {
+            LocationName = "Town",
+            X = 42,
+            Y = 17,
+            Reason = "inspect the town board"
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.IsNotNull(commands.LastAction);
+        Assert.AreEqual("haley", commands.LastAction.NpcId);
+        Assert.AreEqual("stardew-valley", commands.LastAction.GameId);
+        Assert.AreEqual(GameActionType.Move, commands.LastAction.Type);
+        Assert.AreEqual("trace-move", commands.LastAction.TraceId);
+        Assert.AreEqual("idem-move", commands.LastAction.IdempotencyKey);
+        Assert.AreEqual("Town", commands.LastAction.Target.LocationName);
+        Assert.AreEqual(42, commands.LastAction.Target.Tile?.X);
+        Assert.AreEqual("cmd-1", JsonDocument.Parse(result.Content).RootElement.GetProperty("commandId").GetString());
+    }
+
+    [TestMethod]
+    public async Task SpeakTool_BindsRuntimeIdentityAndSubmitsThroughCommandService()
+    {
+        var commands = new CapturingCommandService();
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"),
+            traceIdFactory: () => "trace-speak",
+            idempotencyKeyFactory: () => "idem-speak");
+        var speakTool = tools.Single(tool => tool.Name == "stardew_speak");
+
+        var result = await speakTool.ExecuteAsync(new StardewSpeakToolParameters
+        {
+            Text = "Hi.",
+            Channel = "player"
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.IsNotNull(commands.LastAction);
+        Assert.AreEqual("haley", commands.LastAction.NpcId);
+        Assert.AreEqual(GameActionType.Speak, commands.LastAction.Type);
+        Assert.AreEqual("trace-speak", commands.LastAction.TraceId);
+        Assert.AreEqual("idem-speak", commands.LastAction.IdempotencyKey);
+        Assert.AreEqual("Hi.", commands.LastAction.Payload?["text"]?.ToString());
+        Assert.AreEqual("player", commands.LastAction.Payload?["channel"]?.ToString());
+        Assert.AreEqual("cmd-1", JsonDocument.Parse(result.Content).RootElement.GetProperty("commandId").GetString());
+    }
+
+    private static NpcRuntimeDescriptor CreateDescriptor(string npcId)
+        => new(
+            npcId,
+            npcId,
+            "stardew-valley",
+            "save-1",
+            "default",
+            "stardew",
+            "pack-root",
+            $"sdv_save-1_{npcId}_default");
+
+    private sealed class FakeGameAdapter : IGameAdapter
+    {
+        public FakeGameAdapter(IGameCommandService commands, IGameQueryService queries, IGameEventSource events)
+        {
+            Commands = commands;
+            Queries = queries;
+            Events = events;
+        }
+
+        public string AdapterId => "stardew";
+
+        public IGameCommandService Commands { get; }
+
+        public IGameQueryService Queries { get; }
+
+        public IGameEventSource Events { get; }
+    }
+
+    private sealed class CapturingCommandService : IGameCommandService
+    {
+        public GameAction? LastAction { get; private set; }
+
+        public Task<GameCommandResult> SubmitAsync(GameAction action, CancellationToken ct)
+        {
+            LastAction = action;
+            return Task.FromResult(new GameCommandResult(true, "cmd-1", StardewCommandStatuses.Queued, null, action.TraceId));
+        }
+
+        public Task<GameCommandStatus> GetStatusAsync(string commandId, CancellationToken ct)
+            => Task.FromResult(new GameCommandStatus(commandId, "haley", "move", StardewCommandStatuses.Running, 0.5, null, null));
+
+        public Task<GameCommandStatus> CancelAsync(string commandId, string reason, CancellationToken ct)
+            => Task.FromResult(new GameCommandStatus(commandId, "haley", "move", StardewCommandStatuses.Cancelled, 0, reason, null));
+    }
+
+    private sealed class FakeQueryService : IGameQueryService
+    {
+        public Task<GameObservation> ObserveAsync(string npcId, CancellationToken ct)
+            => Task.FromResult(new GameObservation(npcId, "stardew-valley", DateTime.UtcNow, "status", []));
+
+        public Task<WorldSnapshot> GetWorldSnapshotAsync(string npcId, CancellationToken ct)
+            => Task.FromResult(new WorldSnapshot("stardew-valley", "save-1", DateTime.UtcNow, [], []));
+    }
+
+    private sealed class FakeEventSource : IGameEventSource
+    {
+        public Task<IReadOnlyList<GameEventRecord>> PollAsync(GameEventCursor cursor, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<GameEventRecord>>([]);
+    }
+}
