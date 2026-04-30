@@ -106,3 +106,17 @@ public sealed record StardewWorldSnapshotData(
     [property: JsonPropertyName("timestampUtc")] DateTime TimestampUtc,
     [property: JsonPropertyName("entities")] IReadOnlyList<StardewWorldEntityData> Entities,
     [property: JsonPropertyName("facts")] IReadOnlyList<string> Facts);
+
+public sealed record StardewEventPollQuery(
+    [property: JsonPropertyName("since")] string? Since,
+    [property: JsonPropertyName("npcId")] string? NpcId);
+
+public sealed record StardewEventData(
+    [property: JsonPropertyName("eventId")] string EventId,
+    [property: JsonPropertyName("eventType")] string EventType,
+    [property: JsonPropertyName("npcId")] string? NpcId,
+    [property: JsonPropertyName("timestampUtc")] DateTime TimestampUtc,
+    [property: JsonPropertyName("summary")] string Summary);
+
+public sealed record StardewEventPollData(
+    [property: JsonPropertyName("events")] IReadOnlyList<StardewEventData> Events);
