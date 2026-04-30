@@ -1,7 +1,11 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Hermes.Agent.Core;
 using Hermes.Agent.Game;
+using Hermes.Agent.LLM;
+using Hermes.Agent.Memory;
 using Hermes.Agent.Runtime;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace HermesDesktop.Tests.Runtime;
@@ -125,6 +129,48 @@ public class NpcAutonomyLoopTests
         }
     }
 
+    [TestMethod]
+    public async Task RunOneTickAsync_WithDecisionResponse_WritesNpcLocalMemory()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-memory-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            ns.EnsureDirectories();
+            var memoryManager = ns.CreateMemoryManager(new FakeChatClient(), NullLogger<MemoryManager>.Instance);
+            var factStore = new NpcObservationFactStore();
+            var adapter = new FakeGameAdapter(
+                new CountingCommandService(),
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Haley is idle.",
+                    ["location=Town"])),
+                new FakeEventSource([]));
+            var agent = new FakeAgent(() => { }, "I will wait near the fountain.");
+            var loop = new NpcAutonomyLoop(
+                adapter,
+                factStore,
+                agent,
+                memoryManager: memoryManager,
+                traceIdFactory: () => "trace-memory");
+
+            await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+            var entries = await memoryManager.ReadEntriesAsync("memory", CancellationToken.None);
+            Assert.AreEqual(1, entries.Count);
+            Assert.IsTrue(entries[0].Contains("trace-memory", StringComparison.Ordinal));
+            Assert.IsTrue(entries[0].Contains("I will wait near the fountain.", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
     private static NpcRuntimeDescriptor CreateDescriptor(string npcId)
         => new(
             npcId,
@@ -228,9 +274,12 @@ public class NpcAutonomyLoopTests
     {
         private readonly Action _onChat;
 
-        public FakeAgent(Action onChat)
+        private readonly string _response;
+
+        public FakeAgent(Action onChat, string response = "wait")
         {
             _onChat = onChat;
+            _response = response;
         }
 
         public int ChatCalls { get; private set; }
@@ -242,7 +291,7 @@ public class NpcAutonomyLoopTests
             _onChat();
             ChatCalls++;
             LastMessage = message;
-            return Task.FromResult("wait");
+            return Task.FromResult(_response);
         }
 
         public async IAsyncEnumerable<Hermes.Agent.LLM.StreamEvent> StreamChatAsync(
@@ -256,6 +305,34 @@ public class NpcAutonomyLoopTests
 
         public void RegisterTool(Hermes.Agent.Core.ITool tool)
         {
+        }
+    }
+
+    private sealed class FakeChatClient : IChatClient
+    {
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("summary");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+            => Task.FromResult(new ChatResponse { Content = "ok", FinishReason = "stop" });
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
         }
     }
 }

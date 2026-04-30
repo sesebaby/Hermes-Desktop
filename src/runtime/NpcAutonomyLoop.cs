@@ -1,4 +1,5 @@
 using Hermes.Agent.Game;
+using Hermes.Agent.Memory;
 
 namespace Hermes.Agent.Runtime;
 
@@ -8,6 +9,7 @@ public sealed class NpcAutonomyLoop
     private readonly NpcObservationFactStore _factStore;
     private readonly Hermes.Agent.Core.IAgent? _agent;
     private readonly NpcRuntimeLogWriter? _logWriter;
+    private readonly MemoryManager? _memoryManager;
     private readonly Func<string> _traceIdFactory;
 
     public NpcAutonomyLoop(
@@ -15,12 +17,14 @@ public sealed class NpcAutonomyLoop
         NpcObservationFactStore factStore,
         Hermes.Agent.Core.IAgent? agent = null,
         NpcRuntimeLogWriter? logWriter = null,
+        MemoryManager? memoryManager = null,
         Func<string>? traceIdFactory = null)
     {
         _adapter = adapter;
         _factStore = factStore;
         _agent = agent;
         _logWriter = logWriter;
+        _memoryManager = memoryManager;
         _traceIdFactory = traceIdFactory ?? (() => $"trace_{Guid.NewGuid():N}");
     }
 
@@ -74,6 +78,7 @@ public sealed class NpcAutonomyLoop
         }
 
         await WriteActivityAsync(descriptor, traceId, eventFacts, decisionResponse, ct);
+        await WriteMemoryAsync(traceId, decisionResponse, ct);
 
         return new NpcAutonomyTickResult(descriptor.NpcId, traceId, 1, eventFacts, decisionResponse);
     }
@@ -115,6 +120,20 @@ public sealed class NpcAutonomyLoop
             "completed",
             decisionResponse ?? $"observed:{eventFacts + 1}"), ct);
     }
+
+    private async Task WriteMemoryAsync(string traceId, string? decisionResponse, CancellationToken ct)
+    {
+        if (_memoryManager is null || string.IsNullOrWhiteSpace(decisionResponse))
+            return;
+
+        await _memoryManager.AddAsync(
+            "memory",
+            $"Autonomy tick {traceId}: {Truncate(decisionResponse, 300)}",
+            ct);
+    }
+
+    private static string Truncate(string value, int maxLength)
+        => value.Length <= maxLength ? value : value[..maxLength];
 }
 
 public sealed record NpcAutonomyTickResult(
