@@ -147,6 +147,43 @@ public sealed class TodoToolTests
     }
 
     [TestMethod]
+    public async Task ExecuteAsync_MissingIdAndContent_NormalizesLikeReferenceTool()
+    {
+        var store = new SessionTodoStore();
+        var tool = new TodoTool(store);
+
+        var result = await tool.ExecuteAsync(new TodoToolParameters
+        {
+            CurrentSessionId = "session-a",
+            Todos =
+            [
+                new TodoItemInput { Status = "pending" }
+            ]
+        }, CancellationToken.None);
+
+        using var json = JsonDocument.Parse(result.Content);
+        var todo = json.RootElement.GetProperty("todos")[0];
+        Assert.AreEqual("?", todo.GetProperty("id").GetString());
+        Assert.AreEqual("(no description)", todo.GetProperty("content").GetString());
+        Assert.AreEqual("pending", todo.GetProperty("status").GetString());
+    }
+
+    [TestMethod]
+    public void Description_IncludesReferenceBehavioralGuidance()
+    {
+        var description = new TodoTool(new SessionTodoStore()).Description;
+
+        StringAssert.Contains(description, "complex tasks");
+        StringAssert.Contains(description, "3+ steps");
+        StringAssert.Contains(description, "Call with no parameters to read");
+        StringAssert.Contains(description, "List order is priority");
+        StringAssert.Contains(description, "Only ONE item in_progress");
+        StringAssert.Contains(description, "Mark items completed immediately");
+        StringAssert.Contains(description, "cancel");
+        StringAssert.Contains(description, "Always returns the full current list");
+    }
+
+    [TestMethod]
     public void GetParameterSchema_DescribesReferenceTodoItemStatusEnum()
     {
         var schema = new TodoTool(new SessionTodoStore()).GetParameterSchema();

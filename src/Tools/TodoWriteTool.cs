@@ -26,9 +26,13 @@ public class TodoTool : ITool, IToolSchemaProvider
     public virtual string Name => "todo";
 
     public string Description =>
-        "Manage your task list for the current session. Call with no parameters to read. " +
-        "Provide todos to write; merge=false replaces the list, merge=true updates by id and appends new items. " +
-        "Statuses: pending, in_progress, completed, cancelled. Always returns the full current list.";
+        "Manage your task list for the current session. Use for complex tasks with 3+ steps or when the user provides multiple tasks. " +
+        "Call with no parameters to read the current list. Provide a todos array to create/update items. " +
+        "merge=false replaces the entire list with a fresh plan; merge=true updates existing items by id and adds new ones. " +
+        "Each item has id, content, and status: pending, in_progress, completed, or cancelled. " +
+        "List order is priority. Only ONE item in_progress at a time. " +
+        "Mark items completed immediately when done. If something fails, cancel it and add a revised item. " +
+        "Always returns the full current list.";
 
     public Type ParametersType => typeof(TodoToolParameters);
 

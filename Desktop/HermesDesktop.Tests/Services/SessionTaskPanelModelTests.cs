@@ -33,4 +33,27 @@ public sealed class SessionTaskPanelModelTests
         Assert.AreEqual("Panel task", model.Tasks[0].Description);
         Assert.AreEqual("In progress", model.Tasks[0].StatusLabel);
     }
+
+    [TestMethod]
+    public async Task TranscriptTodoResult_PreservesTodoSourceOrderAsPriorityOrder()
+    {
+        var projection = new SessionTaskProjectionService(new SessionTodoStore());
+        var currentSessionId = "panel-session";
+        var model = new SessionTaskPanelModel(projection, () => currentSessionId);
+        var transcripts = new TranscriptStore(
+            Path.Combine(Path.GetTempPath(), $"hermes-panel-order-{Guid.NewGuid():N}"),
+            messageObserver: projection);
+
+        await transcripts.SaveMessageAsync(currentSessionId, new Message
+        {
+            Role = "tool",
+            ToolName = "todo",
+            ToolCallId = "call-1",
+            Content = "{\"todos\":[{\"id\":\"1\",\"content\":\"First done\",\"status\":\"completed\"},{\"id\":\"2\",\"content\":\"Second active\",\"status\":\"in_progress\"},{\"id\":\"3\",\"content\":\"Third pending\",\"status\":\"pending\"}]}"
+        }, CancellationToken.None);
+
+        CollectionAssert.AreEqual(
+            new[] { "1", "2", "3" },
+            model.Tasks.Select(t => t.TaskId).ToArray());
+    }
 }

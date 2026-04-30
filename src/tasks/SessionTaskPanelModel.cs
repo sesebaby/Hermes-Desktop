@@ -49,10 +49,15 @@ public sealed class SessionTaskPanelModel : IDisposable
     private void ApplySnapshot(SessionTodoSnapshot snapshot)
     {
         Tasks.Clear();
+        if (snapshot.Todos.Count > 0 &&
+            snapshot.Todos.All(t => t.Status is "completed" or "cancelled"))
+        {
+            Changed?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
         var index = 0;
-        foreach (var task in snapshot.Todos
-                     .OrderBy(t => t.Status is "completed" or "cancelled" ? 1 : 0)
-                     .ThenBy(t => t.Status == "in_progress" ? 0 : 1))
+        foreach (var task in snapshot.Todos)
         {
             index++;
             Tasks.Add(new SessionTaskPanelItem(
