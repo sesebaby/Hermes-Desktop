@@ -286,7 +286,7 @@ public sealed partial class ChatPage : Page
             ScrollToBottom();
             UpdateSessionFooterLabel();
             UpdateSessionFooterCopyButton();
-            TaskPanelView.Refresh();
+            await TaskPanelView.RefreshAllAsync();
             ApplyConnectionState(RuntimeConnectionState.Connected);
 
             // Load activity entries for replay panel
@@ -461,6 +461,7 @@ public sealed partial class ChatPage : Page
             SetBusy(false);
             UpdateSessionFooterLabel();
             UpdateSessionFooterCopyButton();
+            await TaskPanelView.RefreshAllAsync();
             PromptTextBox.Focus(FocusState.Programmatic);
         }
     }
@@ -549,7 +550,7 @@ public sealed partial class ChatPage : Page
         ReplayPanelView.Clear();
         _sessionRecorder.StopRecording();
         Messages.Clear();
-        TaskPanelView.Refresh();
+        await TaskPanelView.RefreshAllAsync();
         UpdateSessionFooterLabel();
         UpdateSessionFooterCopyButton();
         _onboarding = OnboardingState.None;

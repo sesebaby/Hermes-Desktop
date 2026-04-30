@@ -1116,6 +1116,42 @@
   <data name="SettingsModelComboItemFormat" xml:space="preserve">
     <value>{0}  ({1})</value>
   </data>
+  <data name="TaskPanelTitle.Text" xml:space="preserve">
+    <value>Tasks</value>
+  </data>
+  <data name="TaskPanelRefreshButton.Content" xml:space="preserve">
+    <value>↻</value>
+  </data>
+  <data name="TaskPanelRefreshButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Refresh tasks and task archive</value>
+  </data>
+  <data name="TaskPanelLiveTitle.Text" xml:space="preserve">
+    <value>Current</value>
+  </data>
+  <data name="TaskPanelEmptyState.Text" xml:space="preserve">
+    <value>No active tasks yet.&#x0a;Tasks appear while Hermes works.</value>
+  </data>
+  <data name="TaskPanelLiveList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Current task list</value>
+  </data>
+  <data name="TaskPanelArchiveTitle.Text" xml:space="preserve">
+    <value>Archive</value>
+  </data>
+  <data name="TaskPanelArchiveEmptyState.Text" xml:space="preserve">
+    <value>No archived todo turns yet.</value>
+  </data>
+  <data name="TaskPanelArchiveList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Archived todo turns</value>
+  </data>
+  <data name="TaskPanelArchiveComplete" xml:space="preserve">
+    <value>Complete</value>
+  </data>
+  <data name="TaskPanelArchiveIncompleteFormat" xml:space="preserve">
+    <value>{0} open</value>
+  </data>
+  <data name="TaskPanelArchiveTurnFormat" xml:space="preserve">
+    <value>Turn {0}</value>
+  </data>
   
   
   

@@ -1104,6 +1104,42 @@
   <data name="SettingsModelComboItemFormat" xml:space="preserve">
     <value>{0}  （{1}）</value>
   </data>
+  <data name="TaskPanelTitle.Text" xml:space="preserve">
+    <value>任务</value>
+  </data>
+  <data name="TaskPanelRefreshButton.Content" xml:space="preserve">
+    <value>↻</value>
+  </data>
+  <data name="TaskPanelRefreshButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>刷新任务和任务归档</value>
+  </data>
+  <data name="TaskPanelLiveTitle.Text" xml:space="preserve">
+    <value>当前</value>
+  </data>
+  <data name="TaskPanelEmptyState.Text" xml:space="preserve">
+    <value>暂无活动任务。&#x0a;Hermes 工作时会在这里显示任务。</value>
+  </data>
+  <data name="TaskPanelLiveList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>当前任务列表</value>
+  </data>
+  <data name="TaskPanelArchiveTitle.Text" xml:space="preserve">
+    <value>归档</value>
+  </data>
+  <data name="TaskPanelArchiveEmptyState.Text" xml:space="preserve">
+    <value>暂无已归档的 todo 回合。</value>
+  </data>
+  <data name="TaskPanelArchiveList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>已归档的 todo 回合</value>
+  </data>
+  <data name="TaskPanelArchiveComplete" xml:space="preserve">
+    <value>已完成</value>
+  </data>
+  <data name="TaskPanelArchiveIncompleteFormat" xml:space="preserve">
+    <value>{0} 个未完成</value>
+  </data>
+  <data name="TaskPanelArchiveTurnFormat" xml:space="preserve">
+    <value>第 {0} 轮</value>
+  </data>
   
   
   
