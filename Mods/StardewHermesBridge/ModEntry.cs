@@ -24,9 +24,13 @@ public sealed class ModEntry : Mod
     private SmapiBridgeLogger _bridgeLogger = null!;
     private NpcDialogueClickRouter _clickRouter = null!;
     private NpcDialogueFlowService _dialogueFlow = null!;
+    private NpcDialogueMenuGuard _menuGuard = null!;
     private NpcOriginalDialogueStarter _originalDialogueStarter = null!;
     private TestTeleportCommand _testTeleportCommand = null!;
     private NpcDialogueFlowState? _pendingDialogueFlow;
+    private int _pendingDialogueTicks;
+    private SButton? _pendingOriginalStartButton;
+    private bool _originalStartRetryAttempted;
 
     public override void Entry(IModHelper helper)
     {
@@ -37,6 +41,7 @@ public sealed class ModEntry : Mod
         _httpHost = new BridgeHttpHost(_commands, _bridgeLogger);
         _clickRouter = new NpcDialogueClickRouter();
         _dialogueFlow = new NpcDialogueFlowService();
+        _menuGuard = new NpcDialogueMenuGuard();
         _originalDialogueStarter = new NpcOriginalDialogueStarter(helper);
         _testTeleportCommand = new TestTeleportCommand(helper, Monitor);
 
@@ -45,6 +50,7 @@ public sealed class ModEntry : Mod
         helper.Events.GameLoop.DayEnding += OnWorldDraining;
         helper.Events.GameLoop.Saving += OnWorldDraining;
         helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
+        helper.Events.Display.MenuChanged += OnMenuChanged;
         helper.Events.Display.RenderedHud += OnRenderedHud;
         helper.Events.Input.ButtonPressed += OnButtonPressed;
     }
@@ -68,9 +74,11 @@ public sealed class ModEntry : Mod
         var request = new NpcDialogueAdvanceRequest(
             GetActiveDialogueNpcName(),
             Game1.activeClickableMenu is DialogueBox,
+            Game1.activeClickableMenu is not null,
             Game1.activeClickableMenu is DialogueBox { transitioning: true });
         var result = _dialogueFlow.Advance(_pendingDialogueFlow, request);
         _pendingDialogueFlow = result.State;
+        _pendingDialogueTicks++;
 
         if (result.OriginalDialogueObserved)
             _bridgeLogger.Write(SmapiBridgeLogger.OriginalDialogueObserved, _pendingDialogueFlow.NpcName, FormalEntry, FormalEntry, null, "observed", request.IsDialogueTransitioning ? "transitioning" : null);
@@ -79,39 +87,67 @@ public sealed class ModEntry : Mod
             _bridgeLogger.Write(SmapiBridgeLogger.OriginalDialogueCompleted, _pendingDialogueFlow.NpcName, FormalEntry, FormalEntry, null, "completed", request.IsDialogueTransitioning ? "transitioning" : null);
 
         if (!result.ShouldDisplayCustomDialogue)
-            return;
-
-        var npc = Game1.getCharacterFromName(_pendingDialogueFlow.NpcName, mustBeVillager: false, includeEventActors: false);
-        if (npc is null)
         {
-            _bridgeLogger.Write(SmapiBridgeLogger.CustomDialogueQueued, _pendingDialogueFlow.NpcName, FormalEntry, FormalEntry, null, "failed", "npc_not_found");
-            _pendingDialogueFlow = null;
+            if (TryStartOriginalDialogueIfNeeded())
+                return;
+
+            if (!_pendingDialogueFlow.OriginalDialogueObserved && _pendingDialogueTicks > 30 && Game1.activeClickableMenu is null)
+            {
+                var npcName = _pendingDialogueFlow.NpcName;
+                _bridgeLogger.Write(SmapiBridgeLogger.OriginalDialogueCompleted, npcName, FormalEntry, FormalEntry, null, "timeout", "original_not_observed_timeout");
+                DisplayCustomDialogue(npcName, "original_not_observed_timeout");
+                ClearPendingDialogueFlow();
+            }
+
             return;
         }
 
-        _bridgeLogger.Write(SmapiBridgeLogger.CustomDialogueQueued, npc.Name, FormalEntry, FormalEntry, null, "queued", null);
-        Game1.DrawDialogue(npc, BuildCustomDialogueText(npc.Name));
-        _bridgeLogger.Write(SmapiBridgeLogger.CustomDialogueDisplayed, npc.Name, FormalEntry, FormalEntry, null, "displayed", null);
-        _pendingDialogueFlow = null;
+        DisplayCustomDialogue(_pendingDialogueFlow.NpcName, null);
+        ClearPendingDialogueFlow();
     }
 
     private void OnWorldDraining(object? sender, EventArgs e)
     {
         _commands.Drain("day_transition");
         _overlay.SetBlockedReason("day_transition");
-        _pendingDialogueFlow = null;
+        ClearPendingDialogueFlow();
+        ClearCustomDialogueGuards();
     }
 
     private void OnReturnedToTitle(object? sender, ReturnedToTitleEventArgs e)
     {
         _commands.Clear();
         _overlay.SetBlockedReason("returned_to_title");
-        _pendingDialogueFlow = null;
+        ClearPendingDialogueFlow();
+        ClearCustomDialogueGuards();
     }
 
     private void OnRenderedHud(object? sender, RenderedHudEventArgs e)
     {
         _overlay.Draw(e.SpriteBatch);
+    }
+
+    private void OnMenuChanged(object? sender, MenuChangedEventArgs e)
+    {
+        if (!Context.IsWorldReady || Game1.eventUp)
+            return;
+
+        var oldDialogueNpcName = GetDialogueNpcName(e.OldMenu);
+        var newDialogueNpcName = GetDialogueNpcName(e.NewMenu);
+        if (_menuGuard.ConsumeMenuChange(oldDialogueNpcName, newDialogueNpcName) is not NpcDialogueMenuGuardResult.Unhandled)
+            return;
+
+        if (_pendingDialogueFlow is null)
+            return;
+
+        if (!string.Equals(newDialogueNpcName, _pendingDialogueFlow.NpcName, StringComparison.OrdinalIgnoreCase) ||
+            !IsEnabledDialogueNpc(newDialogueNpcName))
+        {
+            return;
+        }
+
+        BeginOrObserveOriginalDialogue(newDialogueNpcName!, "menu_changed_open");
+        _bridgeLogger.Write(SmapiBridgeLogger.OriginalDialogueObserved, newDialogueNpcName, FormalEntry, FormalEntry, null, "observed", "source=menu_changed_open");
     }
 
     private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
@@ -124,32 +160,130 @@ public sealed class ModEntry : Mod
         var clickedNpc = TryResolveClickedNpc(e);
         var clickedNpcName = clickedNpc?.Name;
         var isActionButton = e.Button.IsActionButton();
+        var isUseToolButton = e.Button.IsUseToolButton();
+        var isMouseButton = IsMouseButton(e.Button);
+        var isDialogueBoxOpen = Game1.activeClickableMenu is DialogueBox;
+        var activeDialogueNpcName = GetActiveDialogueNpcName();
+        if (_menuGuard.IsCustomDialogue(activeDialogueNpcName))
+            return;
+
         var route = _clickRouter.Route(new NpcDialogueClickRouteRequest(
             isActionButton,
+            isUseToolButton,
+            isMouseButton,
             clickedNpcName,
-            Game1.activeClickableMenu is not null));
+            Game1.activeClickableMenu is not null,
+            isDialogueBoxOpen,
+            activeDialogueNpcName));
 
         if (!route.IsAccepted)
         {
-            _bridgeLogger.Write(SmapiBridgeLogger.NpcClickRejected, clickedNpcName, FormalEntry, FormalEntry, null, "rejected", BuildInputRejectDetail(e, route.Reason, isActionButton));
+            _bridgeLogger.Write(SmapiBridgeLogger.NpcClickRejected, clickedNpcName, FormalEntry, FormalEntry, null, "rejected", BuildInputRejectDetail(e, route.Reason, isActionButton, isUseToolButton, isMouseButton, activeDialogueNpcName));
             return;
         }
 
-        if (clickedNpc is null || !_originalDialogueStarter.TryStart(clickedNpc, e.Button))
-        {
-            _bridgeLogger.Write(SmapiBridgeLogger.NpcClickRejected, clickedNpcName, FormalEntry, FormalEntry, null, "rejected", $"{BuildInputAcceptedDetail(e, isActionButton)};original_start_failed");
-            return;
-        }
-
-        _pendingDialogueFlow = _dialogueFlow.BeginFollowUp(route.NpcName!);
-        _bridgeLogger.Write(SmapiBridgeLogger.NpcClickObserved, route.NpcName, FormalEntry, FormalEntry, null, "observed", $"{BuildInputAcceptedDetail(e, isActionButton)};original_start=true");
+        BeginOrObserveOriginalDialogue(route.NpcName!, isDialogueBoxOpen ? "already_open" : "vanilla_pending", isDialogueBoxOpen ? null : e.Button);
+        _bridgeLogger.Write(SmapiBridgeLogger.NpcClickObserved, route.NpcName, FormalEntry, FormalEntry, null, "observed", $"{BuildInputAcceptedDetail(e, isActionButton, isUseToolButton, isMouseButton)};original_start={(isDialogueBoxOpen ? "already_open" : "vanilla_pending")}");
     }
 
-    private static string BuildInputRejectDetail(ButtonPressedEventArgs e, string reason, bool isActionButton)
-        => $"{reason};button={e.Button};is_action={isActionButton};is_use_tool={e.Button.IsUseToolButton()};action_bindings={FormatButtons(Game1.options.actionButton)};use_tool_bindings={FormatButtons(Game1.options.useToolButton)}";
+    private static string BuildInputRejectDetail(ButtonPressedEventArgs e, string reason, bool isActionButton, bool isUseToolButton, bool isMouseButton, string? activeDialogueNpcName)
+        => $"{reason};button={e.Button};is_action={isActionButton};is_use_tool={isUseToolButton};is_mouse={isMouseButton};active_menu={Game1.activeClickableMenu?.GetType().Name ?? "-"};active_dialogue_npc={activeDialogueNpcName ?? "-"};action_bindings={FormatButtons(Game1.options.actionButton)};use_tool_bindings={FormatButtons(Game1.options.useToolButton)}";
 
-    private static string BuildInputAcceptedDetail(ButtonPressedEventArgs e, bool isActionButton)
-        => $"button={e.Button};is_action={isActionButton};is_use_tool={e.Button.IsUseToolButton()}";
+    private static string BuildInputAcceptedDetail(ButtonPressedEventArgs e, bool isActionButton, bool isUseToolButton, bool isMouseButton)
+        => $"button={e.Button};is_action={isActionButton};is_use_tool={isUseToolButton};is_mouse={isMouseButton}";
+
+    private void DisplayCustomDialogue(string npcName, string? detail)
+    {
+        var npc = Game1.getCharacterFromName(npcName, mustBeVillager: false, includeEventActors: false);
+        if (npc is null)
+        {
+            _bridgeLogger.Write(SmapiBridgeLogger.CustomDialogueQueued, npcName, FormalEntry, FormalEntry, null, "failed", AppendDetail(detail, "npc_not_found"));
+            return;
+        }
+
+        _bridgeLogger.Write(SmapiBridgeLogger.CustomDialogueQueued, npc.Name, FormalEntry, FormalEntry, null, "queued", detail);
+        _menuGuard.MarkCustomDialogueOpening(npc.Name);
+        NpcRawDialogueRenderer.Display(npc, BuildCustomDialogueText(npc.Name));
+        _bridgeLogger.Write(SmapiBridgeLogger.CustomDialogueDisplayed, npc.Name, FormalEntry, FormalEntry, null, "displayed", detail);
+    }
+
+    private bool TryStartOriginalDialogueIfNeeded()
+    {
+        if (_pendingDialogueFlow is not { } pending ||
+            pending.OriginalDialogueObserved ||
+            _originalStartRetryAttempted ||
+            _pendingOriginalStartButton is not { } triggerButton ||
+            _pendingDialogueTicks < 2 ||
+            Game1.activeClickableMenu is not null)
+        {
+            return false;
+        }
+
+        _originalStartRetryAttempted = true;
+        var npc = Game1.getCharacterFromName(pending.NpcName, mustBeVillager: false, includeEventActors: false);
+        if (npc is null)
+        {
+            _bridgeLogger.Write(SmapiBridgeLogger.NpcClickRejected, pending.NpcName, FormalEntry, FormalEntry, null, "rejected", "manual_original_start_failed;npc_not_found;fallback_custom=true");
+            DisplayCustomDialogue(pending.NpcName, "manual_original_start_failed;npc_not_found");
+            ClearPendingDialogueFlow();
+            return true;
+        }
+
+        if (!_originalDialogueStarter.TryStart(npc, triggerButton))
+        {
+            _bridgeLogger.Write(SmapiBridgeLogger.NpcClickRejected, pending.NpcName, FormalEntry, FormalEntry, null, "rejected", "manual_original_start_failed;fallback_custom=true");
+            DisplayCustomDialogue(pending.NpcName, "manual_original_start_failed");
+            ClearPendingDialogueFlow();
+            return true;
+        }
+
+        _bridgeLogger.Write(SmapiBridgeLogger.NpcClickObserved, pending.NpcName, FormalEntry, FormalEntry, null, "observed", "original_start=manual_check_action");
+
+        if (Game1.activeClickableMenu is DialogueBox && string.Equals(GetActiveDialogueNpcName(), pending.NpcName, StringComparison.OrdinalIgnoreCase))
+        {
+            _pendingDialogueFlow = _dialogueFlow.BeginObservedOriginal(pending.NpcName);
+            _bridgeLogger.Write(SmapiBridgeLogger.OriginalDialogueObserved, pending.NpcName, FormalEntry, FormalEntry, null, "observed", "source=manual_check_action");
+        }
+
+        return true;
+    }
+
+    private void BeginOrObserveOriginalDialogue(string npcName, string source, SButton? triggerButton = null)
+    {
+        if (_pendingDialogueFlow is { } pending && string.Equals(pending.NpcName, npcName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (source is "already_open" or "menu_changed_open" && !pending.OriginalDialogueObserved)
+                _pendingDialogueFlow = _dialogueFlow.BeginObservedOriginal(npcName);
+
+            return;
+        }
+
+        _pendingDialogueFlow = source is "already_open" or "menu_changed_open"
+            ? _dialogueFlow.BeginObservedOriginal(npcName)
+            : _dialogueFlow.BeginFollowUp(npcName);
+        _pendingDialogueTicks = 0;
+        _pendingOriginalStartButton = source is "vanilla_pending" ? triggerButton : null;
+        _originalStartRetryAttempted = false;
+    }
+
+    private void ClearPendingDialogueFlow()
+    {
+        _pendingDialogueFlow = null;
+        _pendingDialogueTicks = 0;
+        _pendingOriginalStartButton = null;
+        _originalStartRetryAttempted = false;
+    }
+
+    private void ClearCustomDialogueGuards()
+    {
+        _menuGuard.Clear();
+    }
+
+    private static string? AppendDetail(string? detail, string suffix)
+        => string.IsNullOrWhiteSpace(detail) ? suffix : $"{detail};{suffix}";
+
+    private static bool IsMouseButton(SButton button)
+        => button is SButton.MouseLeft or SButton.MouseRight or SButton.MouseMiddle or SButton.MouseX1 or SButton.MouseX2;
 
     private static string FormatButtons(IEnumerable<StardewValley.InputButton> buttons)
         => string.Join(",", buttons.Select(button => button.ToString()));
@@ -174,9 +308,15 @@ public sealed class ModEntry : Mod
         return npc;
     }
 
+    private static bool IsEnabledDialogueNpc(string? npcName)
+        => string.Equals(npcName, "Haley", StringComparison.OrdinalIgnoreCase);
+
     private static string? GetActiveDialogueNpcName()
-        => Game1.activeClickableMenu is DialogueBox && Game1.currentSpeaker is not null
-            ? Game1.currentSpeaker.Name
+        => GetDialogueNpcName(Game1.activeClickableMenu);
+
+    private static string? GetDialogueNpcName(IClickableMenu? menu)
+        => menu is DialogueBox dialogueBox
+            ? dialogueBox.characterDialogue?.speaker?.Name ?? Game1.currentSpeaker?.Name
             : null;
 
     private static string BuildCustomDialogueText(string npcName)

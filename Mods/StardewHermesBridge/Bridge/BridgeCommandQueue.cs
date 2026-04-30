@@ -1,6 +1,7 @@
 namespace StardewHermesBridge.Bridge;
 
 using System.Collections.Concurrent;
+using StardewHermesBridge.Dialogue;
 using StardewHermesBridge.Logging;
 using StardewModdingAPI;
 using StardewValley;
@@ -102,7 +103,7 @@ public sealed class BridgeCommandQueue
         }
 
         var channel = string.IsNullOrWhiteSpace(envelope.Payload.Channel) ? "player" : envelope.Payload.Channel;
-        Game1.DrawDialogue(npc, envelope.Payload.Text);
+        NpcRawDialogueRenderer.Display(npc, envelope.Payload.Text);
         _logger.Write("action_speak_completed", envelope.NpcId, "speak", envelope.TraceId, null, "completed", null);
         return new BridgeResponse<SpeakData>(
             true,

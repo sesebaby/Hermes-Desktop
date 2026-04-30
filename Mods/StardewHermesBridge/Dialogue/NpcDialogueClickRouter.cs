@@ -4,34 +4,44 @@ public sealed class NpcDialogueClickRouter
 {
     public NpcDialogueClickRouteResult Route(NpcDialogueClickRouteRequest request)
     {
-        if (!request.IsActionButton)
+        if (!request.IsActionButton && !(request.IsUseToolButton && request.IsMouseButton))
             return NpcDialogueClickRouteResult.Rejected("unsupported_button");
 
-        if (request.HasActiveMenu)
+        if (request.HasActiveMenu && !request.IsDialogueBoxOpen)
             return NpcDialogueClickRouteResult.Rejected("menu_open");
 
-        if (string.IsNullOrWhiteSpace(request.TargetNpcName))
+        var targetNpcName = request.IsDialogueBoxOpen
+            ? request.ActiveDialogueNpcName
+            : request.TargetNpcName;
+
+        if (string.IsNullOrWhiteSpace(targetNpcName))
             return NpcDialogueClickRouteResult.Rejected("no_npc_hit");
 
-        if (!string.Equals(request.TargetNpcName, "Haley", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(targetNpcName, "Haley", StringComparison.OrdinalIgnoreCase))
             return NpcDialogueClickRouteResult.Rejected("npc_not_enabled");
 
-        return NpcDialogueClickRouteResult.Accepted(request.TargetNpcName);
+        return NpcDialogueClickRouteResult.Accepted(
+            targetNpcName,
+            request.IsDialogueBoxOpen ? "accepted_active_dialogue" : "accepted");
     }
 }
 
 public sealed record NpcDialogueClickRouteRequest(
     bool IsActionButton,
+    bool IsUseToolButton,
+    bool IsMouseButton,
     string? TargetNpcName,
-    bool HasActiveMenu);
+    bool HasActiveMenu,
+    bool IsDialogueBoxOpen,
+    string? ActiveDialogueNpcName);
 
 public sealed record NpcDialogueClickRouteResult(
     bool IsAccepted,
     string? NpcName,
     string Reason)
 {
-    public static NpcDialogueClickRouteResult Accepted(string? npcName)
-        => new(true, npcName, "accepted");
+    public static NpcDialogueClickRouteResult Accepted(string? npcName, string reason = "accepted")
+        => new(true, npcName, reason);
 
     public static NpcDialogueClickRouteResult Rejected(string reason)
         => new(false, null, reason);

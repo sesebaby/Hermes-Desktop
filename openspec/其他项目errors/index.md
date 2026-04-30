@@ -21,3 +21,5 @@
 8. `E-2026-0008-follow-up-proposal-task-gates-collapsed-into-slogans.md`
 9. `E-2026-0009-dialogue-detection-debugged-by-guessing-instead-of-logging.md`
 10. `E-2026-0010-stardew-dialogue-click-bound-to-left-button.md`
+11. `E-2026-0011-raw-dialogue-text-passed-as-translation-key.md`
+12. `E-2026-0012-active-dialogue-menu-misrouted-as-menu-open.md`

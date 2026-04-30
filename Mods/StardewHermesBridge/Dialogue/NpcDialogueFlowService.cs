@@ -5,6 +5,9 @@ public sealed class NpcDialogueFlowService
     public NpcDialogueFlowState BeginFollowUp(string npcName)
         => new(npcName, false, false, false);
 
+    public NpcDialogueFlowState BeginObservedOriginal(string npcName)
+        => new(npcName, true, false, false);
+
     public NpcDialogueFlowAdvanceResult Advance(NpcDialogueFlowState state, NpcDialogueAdvanceRequest request)
     {
         if (state.CustomDialogueDisplayed)
@@ -12,11 +15,12 @@ public sealed class NpcDialogueFlowService
 
         if (request.IsDialogueBoxOpen && string.Equals(request.ActiveDialogueNpcName, state.NpcName, StringComparison.OrdinalIgnoreCase))
         {
+            var wasAlreadyObserved = state.OriginalDialogueObserved;
             var observedState = state with { OriginalDialogueObserved = true };
-            return new(observedState, true, false, false);
+            return new(observedState, !wasAlreadyObserved, false, false);
         }
 
-        if (state.OriginalDialogueObserved && !request.IsDialogueBoxOpen)
+        if (state.OriginalDialogueObserved && !request.HasActiveMenu)
         {
             var completedState = state with { OriginalDialogueCompleted = true, CustomDialogueDisplayed = true };
             return new(completedState, false, true, true);
@@ -35,6 +39,7 @@ public sealed record NpcDialogueFlowState(
 public sealed record NpcDialogueAdvanceRequest(
     string? ActiveDialogueNpcName,
     bool IsDialogueBoxOpen,
+    bool HasActiveMenu,
     bool IsDialogueTransitioning);
 
 public sealed record NpcDialogueFlowAdvanceResult(
