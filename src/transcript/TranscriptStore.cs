@@ -50,16 +50,14 @@ public sealed class TranscriptStore
         try
         {
             _sessionStore.SaveMessage(sessionId, message, _sessionSource);
+            _cache.AddOrUpdate(sessionId,
+                _ => _sessionStore.LoadMessages(sessionId),
+                (_, list) => { list.Add(message); return list; });
         }
         finally
         {
             _writeLock.Release();
         }
-
-        // NOW update in-memory cache
-        _cache.AddOrUpdate(sessionId,
-            _ => new List<Message> { message },
-            (_, list) => { list.Add(message); return list; });
 
         if (_messageObserver is not null)
         {

@@ -50,6 +50,9 @@ public sealed record StardewMoveClaim(
 public sealed record StardewTaskStatusRequest(
     [property: JsonPropertyName("commandId")] string CommandId);
 
+public sealed record StardewTaskLookupRequest(
+    [property: JsonPropertyName("idempotencyKey")] string IdempotencyKey);
+
 public sealed record StardewTaskCancelRequest(
     [property: JsonPropertyName("commandId")] string CommandId,
     [property: JsonPropertyName("reason")] string Reason);
@@ -82,7 +85,9 @@ public sealed record StardewTaskStatusData(
     [property: JsonPropertyName("elapsedMs")] long ElapsedMs,
     [property: JsonPropertyName("progress")] double Progress,
     [property: JsonPropertyName("blockedReason")] string? BlockedReason,
-    [property: JsonPropertyName("errorCode")] string? ErrorCode);
+    [property: JsonPropertyName("errorCode")] string? ErrorCode,
+    [property: JsonPropertyName("updatedAtUtc")] DateTime? UpdatedAtUtc = null,
+    [property: JsonPropertyName("retryAfterUtc")] DateTime? RetryAfterUtc = null);
 
 public sealed record StardewStatusQuery(
     [property: JsonPropertyName("npcId")] string? NpcId);
@@ -118,7 +123,8 @@ public sealed record StardewWorldSnapshotData(
 
 public sealed record StardewEventPollQuery(
     [property: JsonPropertyName("since")] string? Since,
-    [property: JsonPropertyName("npcId")] string? NpcId);
+    [property: JsonPropertyName("npcId")] string? NpcId,
+    [property: JsonPropertyName("seq")] long? Sequence = null);
 
 public sealed record StardewEventData(
     [property: JsonPropertyName("eventId")] string EventId,
@@ -127,7 +133,9 @@ public sealed record StardewEventData(
     [property: JsonPropertyName("timestampUtc")] DateTime TimestampUtc,
     [property: JsonPropertyName("summary")] string Summary,
     [property: JsonPropertyName("correlationId")] string? CorrelationId = null,
-    [property: JsonPropertyName("payload")] JsonObject? Payload = null);
+    [property: JsonPropertyName("payload")] JsonObject? Payload = null,
+    [property: JsonPropertyName("seq")] long? Sequence = null);
 
 public sealed record StardewEventPollData(
-    [property: JsonPropertyName("events")] IReadOnlyList<StardewEventData> Events);
+    [property: JsonPropertyName("events")] IReadOnlyList<StardewEventData> Events,
+    [property: JsonPropertyName("next_seq")] long? NextSequence = null);

@@ -13,17 +13,26 @@ public static class StardewNpcToolFactory
         NpcRuntimeDescriptor descriptor,
         Func<string>? traceIdFactory = null,
         Func<string>? idempotencyKeyFactory = null,
-        int maxStatusPolls = 3)
+        int maxStatusPolls = 3,
+        NpcRuntimeDriver? runtimeDriver = null,
+        WorldCoordinationService? worldCoordination = null,
+        Func<DateTime>? nowUtc = null,
+        TimeSpan? actionTimeout = null)
     {
         traceIdFactory ??= () => $"trace_{descriptor.NpcId}_{Guid.NewGuid():N}";
         idempotencyKeyFactory ??= () => $"idem_{descriptor.NpcId}_{Guid.NewGuid():N}";
+        var runtimeActions = new StardewRuntimeActionController(
+            runtimeDriver,
+            worldCoordination,
+            nowUtc,
+            actionTimeout);
 
         return
         [
             new StardewStatusTool(adapter.Queries, descriptor),
-            new StardewMoveTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls),
-            new StardewSpeakTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory),
-            new StardewOpenPrivateChatTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory),
+            new StardewMoveTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
+            new StardewSpeakTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
+            new StardewOpenPrivateChatTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewTaskStatusTool(adapter.Commands)
         ];
     }
@@ -59,19 +68,22 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
     private readonly Func<string> _traceIdFactory;
     private readonly Func<string> _idempotencyKeyFactory;
     private readonly int _maxStatusPolls;
+    private readonly StardewRuntimeActionController _runtimeActions;
 
-    public StardewMoveTool(
+    internal StardewMoveTool(
         IGameCommandService commands,
         NpcRuntimeDescriptor descriptor,
         Func<string> traceIdFactory,
         Func<string> idempotencyKeyFactory,
-        int maxStatusPolls)
+        int maxStatusPolls,
+        StardewRuntimeActionController runtimeActions)
     {
         _commands = commands;
         _descriptor = descriptor;
         _traceIdFactory = traceIdFactory;
         _idempotencyKeyFactory = idempotencyKeyFactory;
         _maxStatusPolls = Math.Max(0, maxStatusPolls);
+        _runtimeActions = runtimeActions;
     }
 
     public string Name => "stardew_move";
@@ -97,7 +109,21 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
             new GameActionTarget("tile", p.LocationName, new GameTile(p.X, p.Y)),
             p.Reason);
 
+        var preparedAction = await _runtimeActions.TryBeginAsync(action, ct);
+        if (preparedAction?.BlockedResult is not null)
+        {
+            return ToolResult.Ok(StardewNpcToolJson.Serialize(new StardewNpcActionToolResult(
+                preparedAction.BlockedResult.Accepted,
+                preparedAction.BlockedResult.CommandId,
+                preparedAction.BlockedResult.Status,
+                preparedAction.BlockedResult.FailureReason,
+                preparedAction.BlockedResult.TraceId,
+                FinalStatus: null,
+                StatusPolls: [])));
+        }
+
         var commandResult = await _commands.SubmitAsync(action, ct);
+        await _runtimeActions.RecordSubmitResultAsync(preparedAction, commandResult, ct);
         var statusPolls = await PollUntilTerminalAsync(commandResult, ct);
         var finalStatus = statusPolls.Count > 0 ? statusPolls[^1] : null;
 
@@ -115,7 +141,7 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
     {
         if (!commandResult.Accepted ||
             string.IsNullOrWhiteSpace(commandResult.CommandId) ||
-            IsTerminal(commandResult.Status))
+            StardewRuntimeActionController.IsTerminalStatus(commandResult.Status))
         {
             return [];
         }
@@ -125,19 +151,14 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
         {
             var status = await _commands.GetStatusAsync(commandResult.CommandId, ct);
             statuses.Add(status);
-            if (IsTerminal(status.Status))
+            await _runtimeActions.RecordStatusAsync(status, ct);
+
+            if (StardewRuntimeActionController.IsTerminalStatus(status.Status))
                 break;
         }
 
         return statuses;
     }
-
-    private static bool IsTerminal(string? status)
-        => string.Equals(status, StardewCommandStatuses.Completed, StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(status, StardewCommandStatuses.Failed, StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(status, StardewCommandStatuses.Cancelled, StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(status, StardewCommandStatuses.Blocked, StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(status, StardewCommandStatuses.Expired, StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class StardewSpeakTool : ITool, IToolSchemaProvider
@@ -146,17 +167,20 @@ public sealed class StardewSpeakTool : ITool, IToolSchemaProvider
     private readonly NpcRuntimeDescriptor _descriptor;
     private readonly Func<string> _traceIdFactory;
     private readonly Func<string> _idempotencyKeyFactory;
+    private readonly StardewRuntimeActionController _runtimeActions;
 
-    public StardewSpeakTool(
+    internal StardewSpeakTool(
         IGameCommandService commands,
         NpcRuntimeDescriptor descriptor,
         Func<string> traceIdFactory,
-        Func<string> idempotencyKeyFactory)
+        Func<string> idempotencyKeyFactory,
+        StardewRuntimeActionController runtimeActions)
     {
         _commands = commands;
         _descriptor = descriptor;
         _traceIdFactory = traceIdFactory;
         _idempotencyKeyFactory = idempotencyKeyFactory;
+        _runtimeActions = runtimeActions;
     }
 
     public string Name => "stardew_speak";
@@ -188,7 +212,13 @@ public sealed class StardewSpeakTool : ITool, IToolSchemaProvider
             new GameActionTarget("player"),
             Payload: payload);
 
-        return ToolResult.Ok(StardewNpcToolJson.Serialize(await _commands.SubmitAsync(action, ct)));
+        var preparedAction = await _runtimeActions.TryBeginAsync(action, ct);
+        if (preparedAction?.BlockedResult is not null)
+            return ToolResult.Ok(StardewNpcToolJson.Serialize(preparedAction.BlockedResult));
+
+        var commandResult = await _commands.SubmitAsync(action, ct);
+        await _runtimeActions.RecordSubmitResultAsync(preparedAction, commandResult, ct);
+        return ToolResult.Ok(StardewNpcToolJson.Serialize(commandResult));
     }
 }
 
@@ -225,17 +255,20 @@ public sealed class StardewOpenPrivateChatTool : ITool, IToolSchemaProvider
     private readonly NpcRuntimeDescriptor _descriptor;
     private readonly Func<string> _traceIdFactory;
     private readonly Func<string> _idempotencyKeyFactory;
+    private readonly StardewRuntimeActionController _runtimeActions;
 
-    public StardewOpenPrivateChatTool(
+    internal StardewOpenPrivateChatTool(
         IGameCommandService commands,
         NpcRuntimeDescriptor descriptor,
         Func<string> traceIdFactory,
-        Func<string> idempotencyKeyFactory)
+        Func<string> idempotencyKeyFactory,
+        StardewRuntimeActionController runtimeActions)
     {
         _commands = commands;
         _descriptor = descriptor;
         _traceIdFactory = traceIdFactory;
         _idempotencyKeyFactory = idempotencyKeyFactory;
+        _runtimeActions = runtimeActions;
     }
 
     public string Name => "stardew_open_private_chat";
@@ -262,8 +295,260 @@ public sealed class StardewOpenPrivateChatTool : ITool, IToolSchemaProvider
             new GameActionTarget("player"),
             Payload: payload);
 
-        return ToolResult.Ok(StardewNpcToolJson.Serialize(await _commands.SubmitAsync(action, ct)));
+        var preparedAction = await _runtimeActions.TryBeginAsync(action, ct);
+        if (preparedAction?.BlockedResult is not null)
+            return ToolResult.Ok(StardewNpcToolJson.Serialize(preparedAction.BlockedResult));
+
+        var commandResult = await _commands.SubmitAsync(action, ct);
+        await _runtimeActions.RecordSubmitResultAsync(preparedAction, commandResult, ct);
+        return ToolResult.Ok(StardewNpcToolJson.Serialize(commandResult));
     }
+}
+
+internal sealed class StardewRuntimeActionController
+{
+    private static readonly TimeSpan DefaultRetryDelay = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan DefaultActionTimeout = TimeSpan.FromMinutes(1);
+
+    private readonly NpcRuntimeDriver? _runtimeDriver;
+    private readonly WorldCoordinationService? _worldCoordination;
+    private readonly Func<DateTime> _nowUtc;
+    private readonly TimeSpan _actionTimeout;
+
+    public StardewRuntimeActionController(
+        NpcRuntimeDriver? runtimeDriver,
+        WorldCoordinationService? worldCoordination,
+        Func<DateTime>? nowUtc,
+        TimeSpan? actionTimeout)
+    {
+        _runtimeDriver = runtimeDriver;
+        _worldCoordination = worldCoordination;
+        _nowUtc = nowUtc ?? (() => DateTime.UtcNow);
+        _actionTimeout = actionTimeout ?? DefaultActionTimeout;
+    }
+
+    public async Task<StardewPreparedActionState?> TryBeginAsync(GameAction action, CancellationToken ct)
+    {
+        if (_runtimeDriver is null)
+            return null;
+
+        var snapshot = _runtimeDriver.Snapshot();
+        if (snapshot.ActionSlot is not null || snapshot.PendingWorkItem is not null)
+        {
+            return StardewPreparedActionState.Blocked(new GameCommandResult(
+                Accepted: false,
+                CommandId: snapshot.ActionSlot?.CommandId ?? snapshot.PendingWorkItem?.CommandId ?? string.Empty,
+                Status: StardewCommandStatuses.Blocked,
+                FailureReason: StardewBridgeErrorCodes.ActionSlotBusy,
+                TraceId: action.TraceId,
+                Retryable: true));
+        }
+
+        var startedAtUtc = _nowUtc();
+        var workItemId = $"work_{action.IdempotencyKey}";
+        var claimId = RequiresMoveClaim(action) ? workItemId : null;
+        if (claimId is not null && _worldCoordination is not null)
+        {
+            var claimResult = _worldCoordination.TryClaimMove(
+                claimId,
+                action.NpcId,
+                action.TraceId,
+                new ClaimedTile(action.Target.LocationName!, action.Target.Tile!.X, action.Target.Tile.Y),
+                interactionTile: null,
+                action.IdempotencyKey);
+            if (!claimResult.Accepted)
+            {
+                await _runtimeDriver.SetNextWakeAtUtcAsync(startedAtUtc + DefaultRetryDelay, ct);
+                return StardewPreparedActionState.Blocked(new GameCommandResult(
+                    Accepted: false,
+                    CommandId: string.Empty,
+                    Status: StardewCommandStatuses.Blocked,
+                    FailureReason: claimResult.ErrorCode ?? StardewBridgeErrorCodes.CommandConflict,
+                    TraceId: action.TraceId,
+                    Retryable: true));
+            }
+        }
+
+        try
+        {
+            await _runtimeDriver.SetPendingWorkItemAsync(
+                new NpcRuntimePendingWorkItemSnapshot(
+                    workItemId,
+                    ToWorkType(action.Type),
+                    CommandId: null,
+                    Status: "submitting",
+                    CreatedAtUtc: startedAtUtc,
+                    IdempotencyKey: action.IdempotencyKey),
+                ct);
+            await _runtimeDriver.SetActionSlotAsync(
+                new NpcRuntimeActionSlotSnapshot(
+                    "action",
+                    workItemId,
+                    CommandId: null,
+                    action.TraceId,
+                    startedAtUtc,
+                    startedAtUtc + _actionTimeout),
+                ct);
+            await _runtimeDriver.SetNextWakeAtUtcAsync(null, ct);
+            return new StardewPreparedActionState(workItemId, claimId, startedAtUtc, action.TraceId, null);
+        }
+        catch
+        {
+            if (claimId is not null && _worldCoordination is not null)
+                _worldCoordination.ReleaseClaim(claimId);
+
+            throw;
+        }
+    }
+
+    public async Task RecordSubmitResultAsync(
+        StardewPreparedActionState? preparedAction,
+        GameCommandResult commandResult,
+        CancellationToken ct)
+    {
+        if (_runtimeDriver is null || preparedAction is null || preparedAction.BlockedResult is not null)
+            return;
+
+        if (!commandResult.Accepted)
+        {
+            await ClearAsync(
+                preparedAction.ClaimId ?? preparedAction.WorkItemId,
+                commandResult.Retryable ? _nowUtc() + DefaultRetryDelay : null,
+                ct);
+            return;
+        }
+
+        var snapshot = _runtimeDriver.Snapshot();
+        if (snapshot.PendingWorkItem is not null)
+        {
+            await _runtimeDriver.SetPendingWorkItemAsync(
+                snapshot.PendingWorkItem with
+                {
+                    CommandId = string.IsNullOrWhiteSpace(commandResult.CommandId) ? snapshot.PendingWorkItem.CommandId : commandResult.CommandId,
+                    Status = commandResult.Status
+                },
+                ct);
+        }
+
+        if (snapshot.ActionSlot is not null)
+        {
+            await _runtimeDriver.SetActionSlotAsync(
+                snapshot.ActionSlot with
+                {
+                    CommandId = string.IsNullOrWhiteSpace(commandResult.CommandId) ? snapshot.ActionSlot.CommandId : commandResult.CommandId
+                },
+                ct);
+        }
+
+        if (IsTerminalStatus(commandResult.Status))
+        {
+            await ClearAsync(
+                preparedAction.ClaimId ?? preparedAction.WorkItemId,
+                commandResult.Retryable ? _nowUtc() + DefaultRetryDelay : null,
+                ct);
+        }
+    }
+
+    public async Task RecordStatusAsync(GameCommandStatus status, CancellationToken ct)
+    {
+        if (_runtimeDriver is null)
+            return;
+
+        var snapshot = _runtimeDriver.Snapshot();
+        if (snapshot.PendingWorkItem is not null && !IsTerminalStatus(status.Status))
+        {
+            await _runtimeDriver.SetPendingWorkItemAsync(
+                snapshot.PendingWorkItem with
+                {
+                    CommandId = string.IsNullOrWhiteSpace(status.CommandId) ? snapshot.PendingWorkItem.CommandId : status.CommandId,
+                    Status = status.Status
+                },
+                ct);
+        }
+
+        if (snapshot.ActionSlot is not null &&
+            !string.IsNullOrWhiteSpace(status.CommandId) &&
+            !string.Equals(snapshot.ActionSlot.CommandId, status.CommandId, StringComparison.OrdinalIgnoreCase))
+        {
+            await _runtimeDriver.SetActionSlotAsync(snapshot.ActionSlot with { CommandId = status.CommandId }, ct);
+        }
+
+        if (!IsTerminalStatus(status.Status))
+            return;
+
+        var claimId = snapshot.ActionSlot?.WorkItemId ?? snapshot.PendingWorkItem?.WorkItemId ?? status.CommandId;
+        await ClearAsync(claimId, GetCooldownAtUtc(status.Status, status.RetryAfterUtc), ct);
+    }
+
+    public Task ClearAsync(DateTime? nextWakeAtUtc, CancellationToken ct)
+    {
+        var snapshot = _runtimeDriver?.Snapshot();
+        var claimId = snapshot?.ActionSlot?.WorkItemId ?? snapshot?.PendingWorkItem?.WorkItemId;
+        return ClearAsync(claimId, nextWakeAtUtc, ct);
+    }
+
+    public static bool IsTerminalStatus(string? status)
+        => string.Equals(status, StardewCommandStatuses.Completed, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Failed, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Cancelled, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Blocked, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Expired, StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsInFlightStatus(string? status)
+        => string.Equals(status, StardewCommandStatuses.Queued, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Running, StringComparison.OrdinalIgnoreCase);
+
+    private async Task ClearAsync(string? claimId, DateTime? nextWakeAtUtc, CancellationToken ct)
+    {
+        if (_runtimeDriver is null)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(claimId) && _worldCoordination is not null)
+            _worldCoordination.ReleaseClaim(claimId);
+
+        await _runtimeDriver.SetActionSlotAsync(null, ct);
+        await _runtimeDriver.SetPendingWorkItemAsync(null, ct);
+        await _runtimeDriver.SetNextWakeAtUtcAsync(nextWakeAtUtc, ct);
+    }
+
+    private static bool RequiresMoveClaim(GameAction action)
+        => action.Type == GameActionType.Move &&
+           action.Target.Tile is not null &&
+           !string.IsNullOrWhiteSpace(action.Target.LocationName);
+
+    private static string ToWorkType(GameActionType actionType)
+        => actionType switch
+        {
+            GameActionType.Move => "move",
+            GameActionType.Speak => "speak",
+            GameActionType.OpenPrivateChat => "open_private_chat",
+            _ => "action"
+        };
+
+    private DateTime? GetCooldownAtUtc(string? status, DateTime? retryAfterUtc)
+    {
+        if (retryAfterUtc.HasValue)
+            return retryAfterUtc;
+
+        if (string.Equals(status, StardewCommandStatuses.Blocked, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(status, StardewCommandStatuses.Expired, StringComparison.OrdinalIgnoreCase))
+        {
+            return _nowUtc() + DefaultRetryDelay;
+        }
+
+        return null;
+    }
+}
+
+internal sealed record StardewPreparedActionState(
+    string WorkItemId,
+    string? ClaimId,
+    DateTime StartedAtUtc,
+    string TraceId,
+    GameCommandResult? BlockedResult)
+{
+    public static StardewPreparedActionState Blocked(GameCommandResult result)
+        => new(string.Empty, null, DateTime.MinValue, result.TraceId, result);
 }
 
 public sealed class StardewStatusToolParameters

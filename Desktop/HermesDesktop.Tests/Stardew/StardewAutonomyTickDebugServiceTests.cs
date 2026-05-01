@@ -80,6 +80,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             new NpcRuntimeSupervisor(),
             new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
             discoveredToolProvider: () => [new DiscoveredNoopTool("mcp_dynamic_test")],
+            worldCoordination: CreateWorldCoordination(),
             includeMemory: true,
             includeUser: true,
             maxToolIterations: 2,
@@ -141,6 +142,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             new NpcRuntimeSupervisor(),
             new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
             discoveredToolProvider: null,
+            worldCoordination: CreateWorldCoordination(),
             includeMemory: true,
             includeUser: true,
             maxToolIterations: 2,
@@ -169,6 +171,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             new NpcRuntimeSupervisor(),
             new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
             discoveredToolProvider: null,
+            worldCoordination: CreateWorldCoordination(),
             includeMemory: true,
             includeUser: true,
             maxToolIterations: 2,
@@ -178,6 +181,54 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
         Assert.IsFalse(result.Success);
         Assert.AreEqual(StardewBridgeErrorCodes.BridgeStaleDiscovery, result.FailureReason);
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_UsesPersistedRuntimeCursorInsteadOfRestartingFromRoot()
+    {
+        var chatClient = new ToolSnapshotChatClient("I will wait near the library.");
+        var events = new CursorAwareEventSource([
+            new GameEventRecord("evt-15", "time_changed", "penny", DateTime.UtcNow, "The clock advanced.", Sequence: 15)
+        ]);
+        var adapter = new FakeGameAdapter(
+            new FakeCommandService(),
+            new FakeQueryService(new GameObservation(
+                "penny",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Penny is near the library.",
+                ["location=Town"])),
+            events);
+        var discovery = new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+            new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+            DateTimeOffset.UtcNow,
+            1234,
+            "save-42"));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("penny", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetControllerStateAsync(new GameEventCursor("evt-11", 14), null, CancellationToken.None);
+        var service = new StardewAutonomyTickDebugService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            supervisor,
+            resolver,
+            discoveredToolProvider: () => [new DiscoveredNoopTool("mcp_dynamic_test")],
+            worldCoordination: CreateWorldCoordination(),
+            includeMemory: true,
+            includeUser: true,
+            maxToolIterations: 2,
+            runtimeRoot: _tempDir);
+
+        var result = await service.RunOneTickAsync("Penny", CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual(14L, events.SeenCursor?.Sequence);
     }
 
     private void CreatePack(string npcId, string displayName)
@@ -213,6 +264,9 @@ public sealed class StardewAutonomyTickDebugServiceTests
             Path.Combine(root, FileSystemNpcPackLoader.ManifestFileName),
             JsonSerializer.Serialize(manifest));
     }
+
+    private static WorldCoordinationService CreateWorldCoordination()
+        => new(new ResourceClaimRegistry());
 
     private sealed class FakeDiscovery : IStardewBridgeDiscovery
     {
@@ -274,15 +328,33 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
     private sealed class FakeEventSource : IGameEventSource
     {
-        private readonly IReadOnlyList<GameEventRecord> _records;
+        private readonly GameEventBatch _batch;
 
         public FakeEventSource(IReadOnlyList<GameEventRecord> records)
         {
-            _records = records;
+            _batch = new GameEventBatch(records, GameEventCursor.Advance(new GameEventCursor(), records));
         }
 
         public Task<IReadOnlyList<GameEventRecord>> PollAsync(GameEventCursor cursor, CancellationToken ct)
-            => Task.FromResult(_records);
+            => Task.FromResult(_batch.Records);
+    }
+
+    private sealed class CursorAwareEventSource : IGameEventSource
+    {
+        private readonly GameEventBatch _batch;
+
+        public CursorAwareEventSource(IReadOnlyList<GameEventRecord> records)
+        {
+            _batch = new GameEventBatch(records, GameEventCursor.Advance(new GameEventCursor(), records));
+        }
+
+        public GameEventCursor? SeenCursor { get; private set; }
+
+        public Task<IReadOnlyList<GameEventRecord>> PollAsync(GameEventCursor cursor, CancellationToken ct)
+        {
+            SeenCursor = cursor;
+            return Task.FromResult(_batch.Records);
+        }
     }
 
     private sealed class FakeCommandService : IGameCommandService

@@ -1,5 +1,6 @@
 using Hermes.Agent.Game;
 using Hermes.Agent.Games.Stardew;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Text.Json.Nodes;
 
@@ -33,6 +34,53 @@ public class StardewPrivateChatOrchestratorTests
         Assert.AreEqual("Haley", commands.Submitted[0].NpcId);
         Assert.AreEqual("pc_evt-1", commands.Submitted[0].Payload?["conversationId"]?.GetValue<string>());
         Assert.AreEqual(0, agent.Requests.Count);
+    }
+
+    [TestMethod]
+    public async Task RuntimeAdapter_NewBridgeDrainsFirstBatchBeforeProcessingNewEvents()
+    {
+        var events = new FakeEventSource();
+        var commands = new FakeCommandService();
+        using var runtimeAdapter = new StardewPrivateChatRuntimeAdapter(
+            new FakePrivateChatAgentRunner(),
+            NullLogger<StardewPrivateChatRuntimeAdapter>.Instance,
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never));
+        var adapter = new FakeGameAdapter(commands, events);
+
+        await runtimeAdapter.ProcessAsync(
+            "bridge-1",
+            "save-1",
+            adapter,
+            [
+                new GameEventRecord(
+                    "evt-old",
+                    "vanilla_dialogue_completed",
+                    "Haley",
+                    DateTime.UtcNow,
+                    "Historical Haley dialogue completed.")
+            ],
+            CancellationToken.None,
+            drainOnly: true);
+
+        Assert.AreEqual(0, commands.Submitted.Count);
+
+        await runtimeAdapter.ProcessAsync(
+            "bridge-1",
+            "save-1",
+            adapter,
+            [
+                new GameEventRecord(
+                    "evt-new",
+                    "vanilla_dialogue_completed",
+                    "Haley",
+                    DateTime.UtcNow.AddSeconds(1),
+                    "Fresh Haley dialogue completed.")
+            ],
+            CancellationToken.None);
+
+        Assert.AreEqual(1, commands.Submitted.Count);
+        Assert.AreEqual(GameActionType.OpenPrivateChat, commands.Submitted[0].Type);
+        Assert.AreEqual("pc_evt-new", commands.Submitted[0].Payload?["conversationId"]?.GetValue<string>());
     }
 
     [TestMethod]
@@ -473,6 +521,33 @@ public class StardewPrivateChatOrchestratorTests
     }
 
     [TestMethod]
+    public async Task Dispose_AfterOpenReleasesSessionLease()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."));
+        var commands = new FakeCommandService();
+        var leases = new FakePrivateChatSessionLeaseCoordinator();
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            new FakePrivateChatAgentRunner(),
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never),
+            leases);
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+        orchestrator.Dispose();
+
+        Assert.AreEqual(1, leases.AcquireCalls.Count);
+        Assert.AreEqual(1, leases.ReleaseCalls.Count);
+        Assert.AreEqual(0, leases.ActiveLeaseCount);
+    }
+
+    [TestMethod]
     public async Task DrainExistingEventsAsync_AdvancesCursorWithoutOpeningStaleChat()
     {
         var events = new FakeEventSource(
@@ -518,7 +593,8 @@ public class StardewPrivateChatOrchestratorTests
                 start = index < 0 ? _records.Count : index + 1;
             }
 
-            return Task.FromResult<IReadOnlyList<GameEventRecord>>(_records.Skip(start).ToArray());
+            var records = _records.Skip(start).ToArray();
+            return Task.FromResult<IReadOnlyList<GameEventRecord>>(records);
         }
     }
 
@@ -554,5 +630,86 @@ public class StardewPrivateChatOrchestratorTests
             Requests.Add(request);
             return Task.FromResult(new NpcPrivateChatReply(ReplyText));
         }
+    }
+
+    private sealed class FakeGameAdapter : IGameAdapter
+    {
+        public FakeGameAdapter(IGameCommandService commands, IGameEventSource events)
+        {
+            Commands = commands;
+            Events = events;
+            Queries = new NoopQueryService();
+        }
+
+        public string AdapterId => "stardew";
+
+        public IGameCommandService Commands { get; }
+
+        public IGameQueryService Queries { get; }
+
+        public IGameEventSource Events { get; }
+    }
+
+    private sealed class NoopQueryService : IGameQueryService
+    {
+        public Task<GameObservation> ObserveAsync(string npcId, CancellationToken ct)
+            => Task.FromResult(new GameObservation(npcId, "stardew-valley", DateTime.UtcNow, $"{npcId} idle", []));
+
+        public Task<WorldSnapshot> GetWorldSnapshotAsync(string npcId, CancellationToken ct)
+            => Task.FromResult(new WorldSnapshot("stardew-valley", "save-1", DateTime.UtcNow, [], []));
+    }
+
+    private sealed class FakePrivateChatSessionLeaseCoordinator : IPrivateChatSessionLeaseCoordinator
+    {
+        public List<PrivateChatSessionLeaseRequest> AcquireCalls { get; } = new();
+
+        public List<ReleasedLease> ReleaseCalls { get; } = new();
+
+        public int ActiveLeaseCount { get; private set; }
+
+        public Task<IPrivateChatSessionLease> AcquireAsync(PrivateChatSessionLeaseRequest request, CancellationToken ct)
+        {
+            AcquireCalls.Add(request);
+            ActiveLeaseCount++;
+            return Task.FromResult<IPrivateChatSessionLease>(new FakePrivateChatSessionLease(this, request, AcquireCalls.Count));
+        }
+
+        private sealed class FakePrivateChatSessionLease : IPrivateChatSessionLease
+        {
+            private readonly FakePrivateChatSessionLeaseCoordinator _owner;
+            private bool _disposed;
+
+            public FakePrivateChatSessionLease(
+                FakePrivateChatSessionLeaseCoordinator owner,
+                PrivateChatSessionLeaseRequest request,
+                int generation)
+            {
+                _owner = owner;
+                NpcId = request.NpcId;
+                ConversationId = request.ConversationId;
+                Owner = request.Owner;
+                Generation = generation;
+            }
+
+            public string NpcId { get; }
+
+            public string ConversationId { get; }
+
+            public string Owner { get; }
+
+            public int Generation { get; }
+
+            public void Dispose()
+            {
+                if (_disposed)
+                    return;
+
+                _disposed = true;
+                _owner.ActiveLeaseCount--;
+                _owner.ReleaseCalls.Add(new ReleasedLease(ConversationId, Generation, Owner));
+            }
+        }
+
+        public sealed record ReleasedLease(string ConversationId, int Generation, string Owner);
     }
 }

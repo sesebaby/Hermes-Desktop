@@ -1,5 +1,7 @@
 namespace Hermes.Agent.Runtime;
 
+using Hermes.Agent.Game;
+
 public sealed class NpcRuntimeInstance
 {
     private readonly object _gate = new();
@@ -9,6 +11,19 @@ public sealed class NpcRuntimeInstance
     private NpcRuntimeAutonomyHandle? _autonomyHandle;
     private string? _autonomyRebindKey;
     private int _autonomyRebindGeneration;
+    private int _sessionLeaseGeneration;
+    private NpcRuntimeSessionLeaseSnapshot? _activePrivateChatSessionLease;
+    private NpcAutonomyLoopState _autonomyLoopState = NpcAutonomyLoopState.NotStarted;
+    private string? _pauseReason;
+    private DateTime? _lastAutomaticTickAtUtc;
+    private string? _currentBridgeKey;
+    private int _currentAutonomyHandleGeneration;
+    private int _autonomyRestartCount;
+    private GameEventCursor _eventCursor = new();
+    private NpcRuntimePendingWorkItemSnapshot? _pendingWorkItem;
+    private NpcRuntimeActionSlotSnapshot? _actionSlot;
+    private DateTime? _nextWakeAtUtc;
+    private int _inboxDepth;
 
     public NpcRuntimeInstance(NpcRuntimeDescriptor descriptor, NpcNamespace npcNamespace)
     {
@@ -34,6 +49,8 @@ public sealed class NpcRuntimeInstance
             Namespace.EnsureDirectories();
             State = NpcRuntimeState.Running;
             LastError = null;
+            if (_autonomyLoopState is NpcAutonomyLoopState.Stopped)
+                _autonomyLoopState = NpcAutonomyLoopState.NotStarted;
         }
 
         return Task.CompletedTask;
@@ -57,6 +74,8 @@ public sealed class NpcRuntimeInstance
         lock (_gate)
         {
             State = NpcRuntimeState.Stopped;
+            _autonomyLoopState = NpcAutonomyLoopState.Stopped;
+            _pauseReason = string.IsNullOrWhiteSpace(_pauseReason) ? "stopped" : _pauseReason;
         }
 
         return Task.CompletedTask;
@@ -77,6 +96,155 @@ public sealed class NpcRuntimeInstance
         {
             State = NpcRuntimeState.Faulted;
             LastError = error;
+            _autonomyLoopState = NpcAutonomyLoopState.Faulted;
+            _pauseReason = error;
+        }
+    }
+
+    public IPrivateChatSessionLease AcquirePrivateChatSessionLease(string conversationId, string owner, string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(conversationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(owner);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+
+        lock (_gate)
+        {
+            _sessionLeaseGeneration++;
+            _activePrivateChatSessionLease = new NpcRuntimeSessionLeaseSnapshot(
+                conversationId,
+                owner,
+                reason,
+                _sessionLeaseGeneration,
+                DateTime.UtcNow);
+            _autonomyLoopState = NpcAutonomyLoopState.Paused;
+            _pauseReason = reason;
+            return new RuntimePrivateChatSessionLease(this, Descriptor.NpcId, conversationId, owner, _sessionLeaseGeneration);
+        }
+    }
+
+    public bool TryGetActivePrivateChatSessionLease(out NpcRuntimeSessionLeaseSnapshot? lease)
+    {
+        lock (_gate)
+        {
+            lease = _activePrivateChatSessionLease;
+            return lease is not null;
+        }
+    }
+
+    public void MarkAutonomyPaused(string reason, string? bridgeKey = null, int? handleGeneration = null)
+    {
+        lock (_gate)
+        {
+            _autonomyLoopState = NpcAutonomyLoopState.Paused;
+            _pauseReason = reason;
+            if (bridgeKey is not null)
+                _currentBridgeKey = bridgeKey;
+
+            if (handleGeneration.HasValue)
+                _currentAutonomyHandleGeneration = handleGeneration.Value;
+        }
+    }
+
+    public void MarkAutonomyRunning(string bridgeKey, int handleGeneration, DateTime tickedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(bridgeKey);
+
+        lock (_gate)
+        {
+            if (State is not NpcRuntimeState.Stopped)
+                State = NpcRuntimeState.Running;
+
+            LastError = null;
+            _autonomyLoopState = NpcAutonomyLoopState.Running;
+            _pauseReason = null;
+            _lastAutomaticTickAtUtc = tickedAtUtc;
+            _currentBridgeKey = bridgeKey;
+            _currentAutonomyHandleGeneration = handleGeneration;
+            _nextWakeAtUtc = null;
+        }
+    }
+
+    public void RecordAutonomyRestart(string? bridgeKey = null, int? handleGeneration = null)
+    {
+        lock (_gate)
+        {
+            _autonomyRestartCount++;
+            if (bridgeKey is not null)
+                _currentBridgeKey = bridgeKey;
+
+            if (handleGeneration.HasValue)
+                _currentAutonomyHandleGeneration = handleGeneration.Value;
+        }
+    }
+
+    internal void RestoreControllerSnapshot(NpcRuntimeControllerSnapshot controller)
+    {
+        ArgumentNullException.ThrowIfNull(controller);
+
+        lock (_gate)
+        {
+            _eventCursor = controller.EventCursor ?? new GameEventCursor();
+            _pendingWorkItem = controller.PendingWorkItem;
+            _actionSlot = controller.ActionSlot;
+            _nextWakeAtUtc = controller.NextWakeAtUtc;
+            _inboxDepth = Math.Max(0, controller.InboxDepth);
+        }
+    }
+
+    internal void RestorePrivateChatSessionLease(NpcRuntimeSessionLeaseSnapshot? lease)
+    {
+        lock (_gate)
+        {
+            _activePrivateChatSessionLease = lease;
+            if (lease is not null)
+            {
+                _sessionLeaseGeneration = Math.Max(_sessionLeaseGeneration, lease.Generation);
+                _autonomyLoopState = NpcAutonomyLoopState.Paused;
+                _pauseReason = lease.Reason;
+            }
+        }
+    }
+
+    internal void RecordEventCursor(GameEventCursor cursor)
+    {
+        ArgumentNullException.ThrowIfNull(cursor);
+
+        lock (_gate)
+            _eventCursor = cursor;
+    }
+
+    internal void SetPendingWorkItem(NpcRuntimePendingWorkItemSnapshot? pendingWorkItem)
+    {
+        lock (_gate)
+            _pendingWorkItem = pendingWorkItem;
+    }
+
+    internal void SetActionSlot(NpcRuntimeActionSlotSnapshot? actionSlot)
+    {
+        lock (_gate)
+            _actionSlot = actionSlot;
+    }
+
+    internal void SetNextWakeAtUtc(DateTime? nextWakeAtUtc)
+    {
+        lock (_gate)
+            _nextWakeAtUtc = nextWakeAtUtc;
+    }
+
+    internal void SetInboxDepth(int inboxDepth)
+    {
+        lock (_gate)
+            _inboxDepth = Math.Max(0, inboxDepth);
+    }
+
+    internal void SetControllerState(GameEventCursor eventCursor, DateTime? nextWakeAtUtc)
+    {
+        ArgumentNullException.ThrowIfNull(eventCursor);
+
+        lock (_gate)
+        {
+            _eventCursor = eventCursor;
+            _nextWakeAtUtc = nextWakeAtUtc;
         }
     }
 
@@ -141,7 +309,83 @@ public sealed class NpcRuntimeInstance
                 LastTraceId,
                 LastError,
                 _privateChatRebindGeneration,
-                _autonomyRebindGeneration);
+                _autonomyRebindGeneration,
+                _autonomyLoopState,
+                _pauseReason,
+                _lastAutomaticTickAtUtc,
+                _currentBridgeKey,
+                _currentAutonomyHandleGeneration,
+                _autonomyRestartCount,
+                _activePrivateChatSessionLease,
+                new NpcRuntimeControllerSnapshot(
+                    _eventCursor,
+                    _pendingWorkItem,
+                    _actionSlot,
+                    _nextWakeAtUtc,
+                    _inboxDepth));
+        }
+    }
+
+    private bool TryReleasePrivateChatSessionLease(string owner, int generation)
+    {
+        lock (_gate)
+        {
+            if (_activePrivateChatSessionLease is null ||
+                _activePrivateChatSessionLease.Generation != generation ||
+                !string.Equals(_activePrivateChatSessionLease.Owner, owner, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var releasedLease = _activePrivateChatSessionLease;
+            _activePrivateChatSessionLease = null;
+            if (_autonomyLoopState is NpcAutonomyLoopState.Paused &&
+                string.Equals(_pauseReason, releasedLease.Reason, StringComparison.Ordinal))
+            {
+                _pauseReason = null;
+                _autonomyLoopState = _lastAutomaticTickAtUtc.HasValue
+                    ? NpcAutonomyLoopState.Running
+                    : NpcAutonomyLoopState.NotStarted;
+            }
+
+            return true;
+        }
+    }
+
+    private sealed class RuntimePrivateChatSessionLease : IPrivateChatSessionLease
+    {
+        private readonly NpcRuntimeInstance _owner;
+        private bool _disposed;
+
+        public RuntimePrivateChatSessionLease(
+            NpcRuntimeInstance owner,
+            string npcId,
+            string conversationId,
+            string leaseOwner,
+            int generation)
+        {
+            _owner = owner;
+            NpcId = npcId;
+            ConversationId = conversationId;
+            Owner = leaseOwner;
+            Generation = generation;
+        }
+
+        public string NpcId { get; }
+
+        public string ConversationId { get; }
+
+        public string Owner { get; }
+
+        public int Generation { get; }
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            _disposed = true;
+            _owner.TryReleasePrivateChatSessionLease(Owner, Generation);
         }
     }
 }

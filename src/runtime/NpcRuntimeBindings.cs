@@ -38,6 +38,16 @@ public sealed record NpcToolSurface(IReadOnlyList<ITool> Tools, string Fingerpri
     }
 }
 
+public sealed record NpcToolSurfaceSnapshot(
+    NpcToolSurface ToolSurface,
+    long SnapshotVersion,
+    DateTime CapturedAtUtc);
+
+public interface INpcToolSurfaceSnapshotProvider
+{
+    NpcToolSurfaceSnapshot Capture();
+}
+
 public sealed record NpcRuntimeAgentBindingRequest(
     string ChannelKey,
     string? SystemPromptSupplement,
@@ -45,7 +55,8 @@ public sealed record NpcRuntimeAgentBindingRequest(
     bool IncludeUser,
     int MaxToolIterations,
     NpcRuntimeCompositionServices Services,
-    NpcToolSurface ToolSurface)
+    NpcToolSurface ToolSurface,
+    long ToolSurfaceSnapshotVersion = 0)
 {
     public void Validate()
     {
@@ -66,7 +77,8 @@ public sealed record NpcRuntimeAutonomyBindingRequest(
     Func<IGameAdapter> AdapterFactory,
     Func<IGameAdapter, IEnumerable<ITool>> GameToolFactory,
     NpcRuntimeCompositionServices Services,
-    NpcToolSurface ToolSurface)
+    NpcToolSurface ToolSurface,
+    long ToolSurfaceSnapshotVersion = 0)
 {
     public void Validate()
     {

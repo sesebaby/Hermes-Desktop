@@ -143,6 +143,97 @@ public class StardewNpcToolFactoryTests
         Assert.AreEqual(StardewCommandStatuses.Completed, doc.RootElement.GetProperty("finalStatus").GetProperty("status").GetString());
     }
 
+    [TestMethod]
+    public async Task MoveTool_WithRuntimeDriver_ReleasesClaimAfterTerminalStatus()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-tool-runtime-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var commands = new CapturingCommandService(
+                [
+                    new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null),
+                    new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Completed, 1, null, null)
+                ]);
+            var supervisor = new NpcRuntimeSupervisor();
+            var driver = await supervisor.GetOrCreateDriverAsync(CreateDescriptor("haley"), tempDir, CancellationToken.None);
+            var coordination = new WorldCoordinationService(new ResourceClaimRegistry());
+            var tools = StardewNpcToolFactory.CreateDefault(
+                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+                CreateDescriptor("haley"),
+                traceIdFactory: () => "trace-move",
+                idempotencyKeyFactory: () => "idem-move",
+                runtimeDriver: driver,
+                worldCoordination: coordination);
+            var moveTool = tools.Single(tool => tool.Name == "stardew_move");
+
+            var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
+            {
+                LocationName = "Town",
+                X = 42,
+                Y = 17
+            }, CancellationToken.None);
+
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual(2, commands.StatusCalls);
+            var snapshot = driver.Snapshot();
+            Assert.IsNull(snapshot.PendingWorkItem);
+            Assert.IsNull(snapshot.ActionSlot);
+            Assert.IsTrue(
+                coordination.TryClaimMove("work-2", "penny", "trace-2", new ClaimedTile("Town", 42, 17), null, "idem-2").Accepted,
+                "Terminal completion must release the short claim so another NPC can use the same tile.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task MoveTool_WhenClaimConflicts_ReturnsBlockedWithoutSubmittingCommand()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-tool-conflict-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var commands = new CapturingCommandService();
+            var supervisor = new NpcRuntimeSupervisor();
+            var driver = await supervisor.GetOrCreateDriverAsync(CreateDescriptor("haley"), tempDir, CancellationToken.None);
+            var coordination = new WorldCoordinationService(new ResourceClaimRegistry());
+            var reserved = coordination.TryClaimMove("work-existing", "penny", "trace-existing", new ClaimedTile("Town", 42, 17), null, "idem-existing");
+            Assert.IsTrue(reserved.Accepted);
+            var tools = StardewNpcToolFactory.CreateDefault(
+                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+                CreateDescriptor("haley"),
+                traceIdFactory: () => "trace-move",
+                idempotencyKeyFactory: () => "idem-move",
+                runtimeDriver: driver,
+                worldCoordination: coordination);
+            var moveTool = tools.Single(tool => tool.Name == "stardew_move");
+
+            var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
+            {
+                LocationName = "Town",
+                X = 42,
+                Y = 17
+            }, CancellationToken.None);
+
+            Assert.IsTrue(result.Success);
+            Assert.IsNull(commands.LastAction);
+            var snapshot = driver.Snapshot();
+            Assert.IsNull(snapshot.PendingWorkItem);
+            Assert.IsNull(snapshot.ActionSlot);
+            Assert.IsTrue(snapshot.NextWakeAtUtc.HasValue);
+            using var doc = JsonDocument.Parse(result.Content);
+            Assert.AreEqual(StardewCommandStatuses.Blocked, doc.RootElement.GetProperty("status").GetString());
+            Assert.AreEqual(StardewBridgeErrorCodes.CommandConflict, doc.RootElement.GetProperty("failureReason").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
     private static NpcRuntimeDescriptor CreateDescriptor(string npcId)
         => new(
             npcId,

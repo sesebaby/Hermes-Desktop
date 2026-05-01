@@ -81,6 +81,28 @@ public sealed class BridgeCommandQueue
             new { });
     }
 
+    public BridgeResponse<TaskStatusData> LookupByIdempotency(BridgeEnvelope<TaskLookupRequest> envelope)
+    {
+        if (string.IsNullOrWhiteSpace(envelope.Payload.IdempotencyKey))
+            return Error<TaskStatusData>(envelope.TraceId, envelope.RequestId, "command_not_found", "Idempotency key was not found.", retryable: false);
+
+        if (!_idempotency.TryGetValue(envelope.Payload.IdempotencyKey, out var commandId) ||
+            !_commands.TryGetValue(commandId, out var command))
+        {
+            return Error<TaskStatusData>(envelope.TraceId, envelope.RequestId, "command_not_found", "Idempotency key was not found.", retryable: false);
+        }
+
+        return new BridgeResponse<TaskStatusData>(
+            true,
+            command.TraceId,
+            envelope.RequestId,
+            command.CommandId,
+            command.Status,
+            command.ToStatusData(),
+            null,
+            new { });
+    }
+
     public BridgeResponse<TaskStatusData> Cancel(BridgeEnvelope<TaskCancelRequest> envelope)
     {
         if (!_commands.TryGetValue(envelope.Payload.CommandId, out var command))

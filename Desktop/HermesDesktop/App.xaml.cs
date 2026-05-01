@@ -93,7 +93,7 @@ public partial class App : Application
     {
         var logger = TryGetAppLogger();
         TryCancelAndDisposeDreamerCts(logger, "process exit");
-        TryStopStardewPrivateChatBackground(logger, "process exit");
+        TryStopStardewNpcAutonomyBackground(logger, "process exit");
         TryDisposeDreamerHttpClients(logger, "process exit");
     }
 
@@ -375,6 +375,12 @@ public partial class App : Application
         services.AddSingleton(sp => new StardewNpcRuntimeBindingResolver(
             sp.GetRequiredService<INpcPackLoader>(),
             sp.GetRequiredService<NpcRuntimeWorkspaceService>().PackRoot));
+        services.AddSingleton<INpcToolSurfaceSnapshotProvider>(sp => new NpcToolSurfaceSnapshotProvider(
+            () => sp.GetRequiredService<McpManager>().Tools.Values));
+        services.AddSingleton<IPrivateChatSessionLeaseCoordinator>(sp => new StardewNpcPrivateChatSessionLeaseCoordinator(
+            projectDir,
+            sp.GetRequiredService<NpcRuntimeSupervisor>(),
+            sp.GetRequiredService<StardewNpcRuntimeBindingResolver>()));
         services.AddSingleton<IStardewBridgeDiscovery>(_ => new FileStardewBridgeDiscovery());
         services.AddSingleton(sp => new StardewNpcDebugActionService(
             sp.GetRequiredService<IStardewBridgeDiscovery>(),
@@ -388,7 +394,8 @@ public partial class App : Application
             sp.GetRequiredService<ICronScheduler>(),
             sp.GetRequiredService<NpcRuntimeSupervisor>(),
             sp.GetRequiredService<StardewNpcRuntimeBindingResolver>(),
-            () => sp.GetRequiredService<McpManager>().Tools.Values,
+            sp.GetRequiredService<INpcToolSurfaceSnapshotProvider>(),
+            sp.GetRequiredService<WorldCoordinationService>(),
             memoryEnabled,
             userProfileEnabled,
             HermesEnvironment.MaxAgentIterations,
@@ -401,15 +408,34 @@ public partial class App : Application
             sp.GetRequiredService<SkillManager>(),
             sp.GetRequiredService<ICronScheduler>(),
             sp.GetRequiredService<StardewNpcRuntimeBindingResolver>(),
+            sp.GetRequiredService<INpcToolSurfaceSnapshotProvider>(),
             memoryEnabled,
             userProfileEnabled,
-            () => sp.GetRequiredService<McpManager>().Tools.Values,
             HermesEnvironment.MaxAgentIterations));
-        services.AddSingleton(sp => new StardewPrivateChatBackgroundService(
+        services.AddSingleton(sp => new StardewPrivateChatRuntimeAdapter(
+            sp.GetRequiredService<INpcPrivateChatAgentRunner>(),
+            sp.GetRequiredService<ILogger<StardewPrivateChatRuntimeAdapter>>(),
+            sessionLeaseCoordinator: sp.GetRequiredService<IPrivateChatSessionLeaseCoordinator>()));
+        services.AddSingleton(sp => new StardewNpcAutonomyBackgroundService(
             sp.GetRequiredService<IStardewBridgeDiscovery>(),
             sp.GetRequiredService<HttpClient>(),
-            sp.GetRequiredService<INpcPrivateChatAgentRunner>(),
-            sp.GetRequiredService<ILogger<StardewPrivateChatBackgroundService>>()));
+            sp.GetRequiredService<IChatClient>(),
+            sp.GetRequiredService<ILoggerFactory>(),
+            sp.GetRequiredService<SkillManager>(),
+            sp.GetRequiredService<ICronScheduler>(),
+            sp.GetRequiredService<NpcRuntimeSupervisor>(),
+            sp.GetRequiredService<NpcRuntimeHost>(),
+            sp.GetRequiredService<StardewNpcRuntimeBindingResolver>(),
+            sp.GetRequiredService<INpcToolSurfaceSnapshotProvider>(),
+            sp.GetRequiredService<StardewPrivateChatRuntimeAdapter>(),
+            sp.GetRequiredService<NpcAutonomyBudget>(),
+            sp.GetRequiredService<WorldCoordinationService>(),
+            sp.GetRequiredService<ILogger<StardewNpcAutonomyBackgroundService>>(),
+            new StardewNpcAutonomyBackgroundOptions(
+                ReadConfigList("stardew", "npc_autonomy_enabled_ids")),
+            memoryEnabled,
+            userProfileEnabled,
+            projectDir));
 
         // Memory manager
         var memoryDir = Path.Combine(hermesHome, "memories");
@@ -665,39 +691,39 @@ public partial class App : Application
         WirePermissionCallback(provider);
 
         StartDreamerBackground(provider, hermesHome, projectDir);
-        StartStardewPrivateChatBackground(provider);
+        StartStardewNpcAutonomyBackground(provider);
 
         return provider;
     }
 
-    private static void StartStardewPrivateChatBackground(IServiceProvider provider)
+    private static void StartStardewNpcAutonomyBackground(IServiceProvider provider)
     {
         var logger = provider.GetService<ILogger<App>>();
         try
         {
-            provider.GetRequiredService<StardewPrivateChatBackgroundService>().Start();
+            provider.GetRequiredService<StardewNpcAutonomyBackgroundService>().Start();
         }
         catch (Exception ex)
         {
             if (logger is not null)
-                logger.LogWarning(ex, "Stardew private-chat background start failed");
+                logger.LogWarning(ex, "Stardew autonomy background start failed");
             else
-                BestEffort.LogFailure(null, ex, "starting Stardew private-chat background service");
+                BestEffort.LogFailure(null, ex, "starting Stardew autonomy background service");
         }
     }
 
-    private static void TryStopStardewPrivateChatBackground(ILogger? logger, string reason)
+    private static void TryStopStardewNpcAutonomyBackground(ILogger? logger, string reason)
     {
         if (ReferenceEquals(Services, UninitializedAppServiceProvider.Instance))
             return;
 
         try
         {
-            Services.GetService<StardewPrivateChatBackgroundService>()?.Stop();
+            Services.GetService<StardewNpcAutonomyBackgroundService>()?.Stop();
         }
         catch (Exception ex)
         {
-            BestEffort.LogFailure(logger, ex, "stopping Stardew private-chat background service", $"reason={reason}");
+            BestEffort.LogFailure(logger, ex, "stopping Stardew autonomy background service", $"reason={reason}");
         }
     }
 
@@ -927,6 +953,19 @@ public partial class App : Application
         return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value >= 0
             ? value
             : fallback;
+    }
+
+    private static IReadOnlyList<string> ReadConfigList(string section, string key)
+    {
+        var raw = HermesEnvironment.ReadConfigSetting(section, key);
+        if (string.IsNullOrWhiteSpace(raw))
+            return Array.Empty<string>();
+
+        return raw
+            .Split([','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static (string Target, string Body) ParseLegacyMemoryFile(string path)

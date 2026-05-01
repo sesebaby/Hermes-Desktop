@@ -208,6 +208,42 @@
   <data name="DashboardQuickNotesLine3.Text" xml:space="preserve">
     <value>Keep a Windows-native control surface separate from OpenClaw.</value>
   </data>
+  <data name="DashNpcRuntimeBridgeAttached" xml:space="preserve">
+    <value>Attached</value>
+  </data>
+  <data name="DashNpcRuntimeBridgeNotConnected" xml:space="preserve">
+    <value>Not connected</value>
+  </data>
+  <data name="DashNpcRuntimeNone" xml:space="preserve">
+    <value>-</value>
+  </data>
+  <data name="DashNpcRuntimeLoopSummaryFormat" xml:space="preserve">
+    <value>Loop: {0} | Wait: {1}</value>
+  </data>
+  <data name="DashNpcRuntimeLeaseActionSummaryFormat" xml:space="preserve">
+    <value>Session: {0} | Action: {1}</value>
+  </data>
+  <data name="DashNpcRuntimeIngressPendingCursorSummaryFormat" xml:space="preserve">
+    <value>Ingress: {0} | Pending: {1} | Cursor: {2}</value>
+  </data>
+  <data name="DashNpcRuntimePendingCursorSummaryFormat" xml:space="preserve">
+    <value>Pending: {0} | Cursor: {1}</value>
+  </data>
+  <data name="DashNpcRuntimeWaitUntilFormat" xml:space="preserve">
+    <value>{0} until {1}</value>
+  </data>
+  <data name="DashNpcRuntimeLeaseValueFormat" xml:space="preserve">
+    <value>{0}#{1}</value>
+  </data>
+  <data name="DashNpcRuntimeActionValueFormat" xml:space="preserve">
+    <value>{0}/{1}</value>
+  </data>
+  <data name="DashNpcRuntimePendingValueFormat" xml:space="preserve">
+    <value>{0} ({1})</value>
+  </data>
+  <data name="DashNpcRuntimeCursorSequenceFormat" xml:space="preserve">
+    <value>seq {0}</value>
+  </data>
   <data name="ChatPageEyebrow.Text" xml:space="preserve">
     <value>Chat surface</value>
   </data>

@@ -18,6 +18,8 @@ public sealed class StardewNpcRuntimeBindingResolver
         _packRoot = packRoot;
     }
 
+    public string PackRoot => _packRoot;
+
     public StardewNpcRuntimeBinding Resolve(string? rawNpcId, string saveId)
     {
         if (string.IsNullOrWhiteSpace(rawNpcId))

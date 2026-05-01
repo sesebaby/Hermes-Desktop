@@ -31,6 +31,8 @@ public sealed record NpcNamespace(
 
     public string SoulFilePath => Path.Combine(SoulHomePath, "SOUL.md");
 
+    public string RuntimeStateDbPath => Path.Combine(RuntimeRoot, "state.db");
+
     public string PersonaPath => Path.Combine(RuntimeRoot, "persona");
 
     public string MemoryPath => Path.Combine(RuntimeRoot, "memory");

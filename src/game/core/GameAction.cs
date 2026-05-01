@@ -43,4 +43,8 @@ public sealed record GameCommandStatus(
     string Status,
     double Progress,
     string? BlockedReason,
-    string? ErrorCode);
+    string? ErrorCode,
+    DateTime? StartedAtUtc = null,
+    DateTime? UpdatedAtUtc = null,
+    long? ElapsedMs = null,
+    DateTime? RetryAfterUtc = null);

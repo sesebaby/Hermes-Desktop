@@ -34,6 +34,8 @@ public sealed record MoveClaim(string NpcId, TileDto TargetTile, TileDto? Intera
 
 public sealed record TaskStatusRequest(string CommandId);
 
+public sealed record TaskLookupRequest(string IdempotencyKey);
+
 public sealed record TaskCancelRequest(string CommandId, string Reason);
 
 public sealed record SpeakPayload(string Text, string? Channel, string? ConversationId = null);

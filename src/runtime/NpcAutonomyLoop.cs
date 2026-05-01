@@ -41,6 +41,19 @@ public sealed class NpcAutonomyLoop
     }
 
     public async Task<NpcAutonomyTickResult> RunOneTickAsync(
+        NpcRuntimeInstance instance,
+        GameObservation observation,
+        GameEventBatch eventBatch,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+
+        var result = await RunOneTickAsync(instance.Descriptor, observation, eventBatch, ct);
+        instance.RecordTrace(result.TraceId);
+        return result;
+    }
+
+    public async Task<NpcAutonomyTickResult> RunOneTickAsync(
         NpcRuntimeDescriptor descriptor,
         GameEventCursor eventCursor,
         CancellationToken ct)
@@ -48,13 +61,26 @@ public sealed class NpcAutonomyLoop
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentNullException.ThrowIfNull(eventCursor);
 
-        var traceId = _traceIdFactory();
         var observation = await _adapter.Queries.ObserveAsync(descriptor.NpcId, ct);
+        var eventBatch = await _adapter.Events.PollBatchAsync(eventCursor, ct);
+        return await RunOneTickAsync(descriptor, observation, eventBatch, ct);
+    }
+
+    public async Task<NpcAutonomyTickResult> RunOneTickAsync(
+        NpcRuntimeDescriptor descriptor,
+        GameObservation observation,
+        GameEventBatch eventBatch,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentNullException.ThrowIfNull(eventBatch);
+
+        var traceId = _traceIdFactory();
         _factStore.RecordObservation(descriptor, observation);
 
         var eventFacts = 0;
-        var events = await _adapter.Events.PollAsync(eventCursor, ct);
-        foreach (var record in events)
+        foreach (var record in eventBatch.Records)
         {
             if (!BelongsToRuntimeNpc(descriptor, record))
                 continue;
@@ -80,7 +106,7 @@ public sealed class NpcAutonomyLoop
         await WriteActivityAsync(descriptor, traceId, eventFacts, decisionResponse, ct);
         await WriteMemoryAsync(traceId, decisionResponse, ct);
 
-        return new NpcAutonomyTickResult(descriptor.NpcId, traceId, 1, eventFacts, decisionResponse);
+        return new NpcAutonomyTickResult(descriptor.NpcId, traceId, 1, eventFacts, decisionResponse, eventBatch.NextCursor);
     }
 
     private static bool BelongsToRuntimeNpc(NpcRuntimeDescriptor descriptor, GameEventRecord record)
@@ -141,4 +167,5 @@ public sealed record NpcAutonomyTickResult(
     string TraceId,
     int ObservationFacts,
     int EventFacts,
-    string? DecisionResponse = null);
+    string? DecisionResponse = null,
+    GameEventCursor? NextEventCursor = null);

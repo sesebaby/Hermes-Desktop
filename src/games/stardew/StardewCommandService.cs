@@ -118,6 +118,34 @@ public sealed class StardewCommandService : IGameCommandService
         return ToCommandStatus(response, commandId);
     }
 
+    public async Task<GameCommandStatus?> TryGetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+            return null;
+
+        var request = new StardewTaskLookupRequest(idempotencyKey);
+        var envelope = new StardewBridgeEnvelope<StardewTaskLookupRequest>(
+            $"req_{Guid.NewGuid():N}",
+            $"trace_lookup_{Guid.NewGuid():N}",
+            null,
+            _saveId,
+            idempotencyKey,
+            request);
+
+        var response = await _client.SendAsync<StardewTaskLookupRequest, StardewTaskStatusData>(
+            StardewBridgeRoutes.TaskLookup,
+            envelope,
+            ct);
+
+        if (!response.Ok &&
+            string.Equals(response.Error?.Code, StardewBridgeErrorCodes.CommandNotFound, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return ToCommandStatus(response, response.CommandId ?? string.Empty);
+    }
+
     public async Task<GameCommandStatus> CancelAsync(string commandId, string reason, CancellationToken ct)
     {
         var request = new StardewTaskCancelRequest(commandId, reason);
@@ -167,6 +195,10 @@ public sealed class StardewCommandService : IGameCommandService
             response.Data.Status,
             response.Data.Progress,
             response.Data.BlockedReason,
-            response.Data.ErrorCode);
+            response.Data.ErrorCode,
+            response.Data.StartedAtUtc,
+            response.Data.UpdatedAtUtc,
+            response.Data.ElapsedMs,
+            response.Data.RetryAfterUtc);
     }
 }

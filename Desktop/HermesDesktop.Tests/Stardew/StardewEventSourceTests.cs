@@ -32,14 +32,17 @@ public class StardewEventSourceTests
                         {
                             ["conversationId"] = "pc_evt_000000000001",
                             ["text"] = "hi"
-                        }),
-                    new StardewEventData("evt-3", "time_changed", null, at.AddMinutes(10), "The clock advanced to 9:10.")
-                ]),
+                        },
+                        Sequence: 12),
+                    new StardewEventData("evt-3", "time_changed", null, at.AddMinutes(10), "The clock advanced to 9:10.", Sequence: 13)
+                ],
+                NextSequence: 14),
             null,
             null);
         var source = new StardewEventSource(client, "save-1", npcId: "haley");
 
-        var records = await source.PollAsync(new GameEventCursor("evt-1"), CancellationToken.None);
+        var batch = await source.PollBatchAsync(new GameEventCursor("evt-1", 11), CancellationToken.None);
+        var records = batch.Records;
 
         Assert.AreEqual(StardewBridgeRoutes.EventsPoll, client.LastRoute);
         Assert.IsInstanceOfType(client.LastEnvelope, typeof(StardewBridgeEnvelope<StardewEventPollQuery>));
@@ -48,6 +51,7 @@ public class StardewEventSourceTests
         Assert.AreEqual("save-1", envelope.SaveId);
         Assert.AreEqual("evt-1", envelope.Payload.Since);
         Assert.AreEqual("haley", envelope.Payload.NpcId);
+        Assert.AreEqual(11L, envelope.Payload.Sequence);
 
         Assert.AreEqual(2, records.Count);
         Assert.AreEqual("evt-2", records[0].EventId);
@@ -55,8 +59,12 @@ public class StardewEventSourceTests
         Assert.AreEqual("haley", records[0].NpcId);
         Assert.AreEqual("pc_evt_000000000001", records[0].CorrelationId);
         Assert.AreEqual("hi", records[0].Payload?["text"]?.GetValue<string>());
+        Assert.AreEqual(12L, records[0].Sequence);
         Assert.AreEqual("time_changed", records[1].EventType);
         Assert.IsNull(records[1].NpcId);
+        Assert.AreEqual(13L, records[1].Sequence);
+        Assert.AreEqual("evt-3", batch.NextCursor.Since);
+        Assert.AreEqual(14L, batch.NextCursor.Sequence);
     }
 
     private sealed class FakeSmapiClient : ISmapiModApiClient

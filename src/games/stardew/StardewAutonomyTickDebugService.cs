@@ -19,7 +19,8 @@ public sealed class StardewAutonomyTickDebugService
     private readonly SkillManager _skillManager;
     private readonly ICronScheduler _cronScheduler;
     private readonly StardewNpcRuntimeBindingResolver _bindingResolver;
-    private readonly Func<IEnumerable<ITool>> _discoveredToolProvider;
+    private readonly INpcToolSurfaceSnapshotProvider _toolSnapshotProvider;
+    private readonly WorldCoordinationService _worldCoordination;
     private readonly bool _includeMemory;
     private readonly bool _includeUser;
     private readonly int _maxToolIterations;
@@ -33,7 +34,43 @@ public sealed class StardewAutonomyTickDebugService
         ICronScheduler cronScheduler,
         NpcRuntimeSupervisor runtimeSupervisor,
         StardewNpcRuntimeBindingResolver bindingResolver,
+        INpcToolSurfaceSnapshotProvider toolSnapshotProvider,
+        WorldCoordinationService worldCoordination,
+        bool includeMemory,
+        bool includeUser,
+        int maxToolIterations,
+        string runtimeRoot)
+        : this(
+            discovery,
+            snapshot => new StardewGameAdapter(
+                new SmapiModApiClient(httpClient, snapshot.Options),
+                StardewBridgeRuntimeIdentity.RequireSaveId(snapshot)),
+            chatClient,
+            loggerFactory,
+            skillManager,
+            cronScheduler,
+            runtimeSupervisor,
+            bindingResolver,
+            toolSnapshotProvider,
+            worldCoordination,
+            includeMemory,
+            includeUser,
+            maxToolIterations,
+            runtimeRoot)
+    {
+    }
+
+    public StardewAutonomyTickDebugService(
+        IStardewBridgeDiscovery discovery,
+        HttpClient httpClient,
+        IChatClient chatClient,
+        ILoggerFactory loggerFactory,
+        SkillManager skillManager,
+        ICronScheduler cronScheduler,
+        NpcRuntimeSupervisor runtimeSupervisor,
+        StardewNpcRuntimeBindingResolver bindingResolver,
         Func<IEnumerable<ITool>>? discoveredToolProvider,
+        WorldCoordinationService worldCoordination,
         bool includeMemory,
         bool includeUser,
         int maxToolIterations,
@@ -50,6 +87,7 @@ public sealed class StardewAutonomyTickDebugService
             runtimeSupervisor,
             bindingResolver,
             discoveredToolProvider,
+            worldCoordination,
             includeMemory,
             includeUser,
             maxToolIterations,
@@ -66,7 +104,8 @@ public sealed class StardewAutonomyTickDebugService
         ICronScheduler cronScheduler,
         NpcRuntimeSupervisor runtimeSupervisor,
         StardewNpcRuntimeBindingResolver bindingResolver,
-        Func<IEnumerable<ITool>>? discoveredToolProvider,
+        INpcToolSurfaceSnapshotProvider toolSnapshotProvider,
+        WorldCoordinationService worldCoordination,
         bool includeMemory,
         bool includeUser,
         int maxToolIterations,
@@ -80,11 +119,45 @@ public sealed class StardewAutonomyTickDebugService
         _cronScheduler = cronScheduler;
         _runtimeSupervisor = runtimeSupervisor;
         _bindingResolver = bindingResolver;
-        _discoveredToolProvider = discoveredToolProvider ?? (() => Enumerable.Empty<ITool>());
+        _toolSnapshotProvider = toolSnapshotProvider;
+        _worldCoordination = worldCoordination;
         _includeMemory = includeMemory;
         _includeUser = includeUser;
         _maxToolIterations = Math.Max(2, maxToolIterations);
         _runtimeRoot = runtimeRoot;
+    }
+
+    public StardewAutonomyTickDebugService(
+        IStardewBridgeDiscovery discovery,
+        Func<StardewBridgeDiscoverySnapshot, IGameAdapter> adapterFactory,
+        IChatClient chatClient,
+        ILoggerFactory loggerFactory,
+        SkillManager skillManager,
+        ICronScheduler cronScheduler,
+        NpcRuntimeSupervisor runtimeSupervisor,
+        StardewNpcRuntimeBindingResolver bindingResolver,
+        Func<IEnumerable<ITool>>? discoveredToolProvider,
+        WorldCoordinationService worldCoordination,
+        bool includeMemory,
+        bool includeUser,
+        int maxToolIterations,
+        string runtimeRoot)
+        : this(
+            discovery,
+            adapterFactory,
+            chatClient,
+            loggerFactory,
+            skillManager,
+            cronScheduler,
+            runtimeSupervisor,
+            bindingResolver,
+            new NpcToolSurfaceSnapshotProvider(discoveredToolProvider ?? (() => Enumerable.Empty<ITool>())),
+            worldCoordination,
+            includeMemory,
+            includeUser,
+            maxToolIterations,
+            runtimeRoot)
+    {
     }
 
     public async Task<StardewAutonomyTickDebugResult> RunOneTickAsync(string npcId, CancellationToken ct)
@@ -107,6 +180,8 @@ public sealed class StardewAutonomyTickDebugService
         {
             var binding = _bindingResolver.Resolve(normalizedNpcId, saveId);
             var descriptor = binding.Descriptor;
+            var driver = await _runtimeSupervisor.GetOrCreateDriverAsync(descriptor, _runtimeRoot, ct);
+            var toolSnapshot = _toolSnapshotProvider.Capture();
             var handle = await _runtimeSupervisor.GetOrCreateAutonomyHandleAsync(
                 descriptor,
                 binding.Pack,
@@ -118,16 +193,21 @@ public sealed class StardewAutonomyTickDebugService
                     IncludeUser: _includeUser,
                     MaxToolIterations: _maxToolIterations,
                     AdapterFactory: () => _adapterFactory(snapshot),
-                    GameToolFactory: adapter => StardewNpcToolFactory.CreateDefault(adapter, descriptor),
+                    GameToolFactory: adapter => StardewNpcToolFactory.CreateDefault(
+                        adapter,
+                        descriptor,
+                        runtimeDriver: driver,
+                        worldCoordination: _worldCoordination),
                     Services: new NpcRuntimeCompositionServices(
                         _chatClient,
                         _loggerFactory,
                         _skillManager,
                         _cronScheduler),
-                    ToolSurface: NpcToolSurface.FromTools(_discoveredToolProvider())),
+                    ToolSurface: toolSnapshot.ToolSurface,
+                    ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion),
                 ct);
 
-            var tick = await handle.Loop.RunOneTickAsync(handle.Instance, new GameEventCursor(null), ct);
+            var tick = await handle.Loop.RunOneTickAsync(handle.Instance, driver.Snapshot().EventCursor, ct);
             return new StardewAutonomyTickDebugResult(
                 true,
                 tick.NpcId,

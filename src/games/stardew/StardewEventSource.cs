@@ -16,6 +16,9 @@ public sealed class StardewEventSource : IGameEventSource
     }
 
     public async Task<IReadOnlyList<GameEventRecord>> PollAsync(GameEventCursor cursor, CancellationToken ct)
+        => (await PollBatchAsync(cursor, ct)).Records;
+
+    public async Task<GameEventBatch> PollBatchAsync(GameEventCursor cursor, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(cursor);
 
@@ -25,7 +28,7 @@ public sealed class StardewEventSource : IGameEventSource
             _npcId,
             _saveId,
             null,
-            new StardewEventPollQuery(cursor.Since, _npcId));
+            new StardewEventPollQuery(cursor.Since, _npcId, cursor.Sequence));
 
         var response = await _client.SendAsync<StardewEventPollQuery, StardewEventPollData>(
             StardewBridgeRoutes.EventsPoll,
@@ -35,9 +38,11 @@ public sealed class StardewEventSource : IGameEventSource
         if (!response.Ok || response.Data is null)
             throw new InvalidOperationException(response.Error?.Code ?? $"stardew_query_failed:{StardewBridgeRoutes.EventsPoll}");
 
-        return response.Data.Events.Select(ToGameEventRecord).ToArray();
+        var records = response.Data.Events.Select(ToGameEventRecord).ToArray();
+        var nextCursor = GameEventCursor.Advance(cursor, records, response.Data.NextSequence);
+        return new GameEventBatch(records, nextCursor);
     }
 
     private static GameEventRecord ToGameEventRecord(StardewEventData data)
-        => new(data.EventId, data.EventType, data.NpcId, data.TimestampUtc, data.Summary, data.CorrelationId, data.Payload);
+        => new(data.EventId, data.EventType, data.NpcId, data.TimestampUtc, data.Summary, data.CorrelationId, data.Payload, data.Sequence);
 }

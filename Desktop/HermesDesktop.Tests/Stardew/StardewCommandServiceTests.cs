@@ -48,6 +48,9 @@ public class StardewCommandServiceTests
     [TestMethod]
     public async Task GetStatusAsync_MapsBridgeStatusData()
     {
+        var startedAt = new DateTime(2026, 4, 30, 9, 0, 0, DateTimeKind.Utc);
+        var updatedAt = startedAt.AddSeconds(15);
+        var retryAfter = updatedAt.AddSeconds(30);
         var client = new FakeSmapiClient();
         client.StatusResponse = new StardewBridgeResponse<StardewTaskStatusData>(
             true,
@@ -55,7 +58,18 @@ public class StardewCommandServiceTests
             "req-status",
             "cmd-1",
             StardewCommandStatuses.Running,
-            new StardewTaskStatusData("cmd-1", "haley", "move", StardewCommandStatuses.Running, DateTime.UtcNow, 25, 0.5, null, null),
+            new StardewTaskStatusData(
+                "cmd-1",
+                "haley",
+                "move",
+                StardewCommandStatuses.Running,
+                startedAt,
+                25,
+                0.5,
+                "tile_reserved",
+                "resource_busy",
+                updatedAt,
+                retryAfter),
             null,
             null);
         var service = new StardewCommandService(client, "save-1");
@@ -65,7 +79,75 @@ public class StardewCommandServiceTests
         Assert.AreEqual("cmd-1", status.CommandId);
         Assert.AreEqual("haley", status.NpcId);
         Assert.AreEqual(0.5, status.Progress);
+        Assert.AreEqual(startedAt, status.StartedAtUtc);
+        Assert.AreEqual(updatedAt, status.UpdatedAtUtc);
+        Assert.AreEqual(25L, status.ElapsedMs);
+        Assert.AreEqual(retryAfter, status.RetryAfterUtc);
+        Assert.AreEqual("tile_reserved", status.BlockedReason);
+        Assert.AreEqual("resource_busy", status.ErrorCode);
         Assert.AreEqual(StardewBridgeRoutes.TaskStatus, client.LastRoute);
+    }
+
+    [TestMethod]
+    public async Task TryGetByIdempotencyKeyAsync_MapsBridgeStatusData()
+    {
+        var startedAt = new DateTime(2026, 5, 2, 10, 0, 0, DateTimeKind.Utc);
+        var updatedAt = startedAt.AddSeconds(8);
+        var client = new FakeSmapiClient();
+        client.LookupResponse = new StardewBridgeResponse<StardewTaskStatusData>(
+            true,
+            "trace-status",
+            "req-lookup",
+            "cmd-lookup-1",
+            StardewCommandStatuses.Running,
+            new StardewTaskStatusData(
+                "cmd-lookup-1",
+                "haley",
+                "move",
+                StardewCommandStatuses.Running,
+                startedAt,
+                8,
+                0.4,
+                null,
+                null,
+                updatedAt,
+                null),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+
+        var status = await service.TryGetByIdempotencyKeyAsync("idem-lookup-1", CancellationToken.None);
+
+        Assert.IsNotNull(status);
+        Assert.AreEqual("cmd-lookup-1", status.CommandId);
+        Assert.AreEqual("haley", status.NpcId);
+        Assert.AreEqual(StardewCommandStatuses.Running, status.Status);
+        Assert.AreEqual(StardewBridgeRoutes.TaskLookup, client.LastRoute);
+        Assert.IsInstanceOfType(client.LastEnvelope, typeof(StardewBridgeEnvelope<StardewTaskLookupRequest>));
+        var envelope = (StardewBridgeEnvelope<StardewTaskLookupRequest>)client.LastEnvelope!;
+        Assert.AreEqual("idem-lookup-1", envelope.Payload.IdempotencyKey);
+        Assert.AreEqual("save-1", envelope.SaveId);
+    }
+
+    [TestMethod]
+    public async Task TryGetByIdempotencyKeyAsync_CommandNotFoundReturnsNull()
+    {
+        var client = new FakeSmapiClient();
+        client.LookupResponse = new StardewBridgeResponse<StardewTaskStatusData>(
+            false,
+            "trace-status",
+            "req-lookup",
+            null,
+            StardewCommandStatuses.Failed,
+            null,
+            new StardewBridgeError(StardewBridgeErrorCodes.CommandNotFound, "No command for idempotency key.", false),
+            null);
+        var service = new StardewCommandService(client, "save-1");
+
+        var status = await service.TryGetByIdempotencyKeyAsync("idem-missing", CancellationToken.None);
+
+        Assert.IsNull(status);
+        Assert.AreEqual(StardewBridgeRoutes.TaskLookup, client.LastRoute);
     }
 
     [TestMethod]
@@ -260,6 +342,7 @@ public class StardewCommandServiceTests
         public object? LastEnvelope { get; private set; }
         public StardewBridgeResponse<StardewMoveAcceptedData>? MoveResponse { get; set; }
         public StardewBridgeResponse<StardewTaskStatusData>? StatusResponse { get; set; }
+        public StardewBridgeResponse<StardewTaskStatusData>? LookupResponse { get; set; }
         public StardewBridgeResponse<StardewSpeakData>? SpeakResponse { get; set; }
         public StardewBridgeResponse<StardewOpenPrivateChatData>? OpenPrivateChatResponse { get; set; }
 
@@ -275,6 +358,7 @@ public class StardewCommandServiceTests
             {
                 StardewBridgeRoutes.TaskMove => MoveResponse ?? throw new InvalidOperationException("No move response configured."),
                 StardewBridgeRoutes.TaskStatus => StatusResponse ?? throw new InvalidOperationException("No status response configured."),
+                StardewBridgeRoutes.TaskLookup => LookupResponse ?? throw new InvalidOperationException("No lookup response configured."),
                 StardewBridgeRoutes.TaskCancel => StatusResponse ?? throw new InvalidOperationException("No cancel response configured."),
                 StardewBridgeRoutes.ActionSpeak => SpeakResponse ?? throw new InvalidOperationException("No speak response configured."),
                 StardewBridgeRoutes.ActionOpenPrivateChat => OpenPrivateChatResponse ?? throw new InvalidOperationException("No open private chat response configured."),

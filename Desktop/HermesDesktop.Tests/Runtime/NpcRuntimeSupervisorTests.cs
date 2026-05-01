@@ -131,6 +131,66 @@ public class NpcRuntimeSupervisorTests
     }
 
     [TestMethod]
+    public async Task GetOrCreatePrivateChatHandleAsync_RebindsWhenToolSnapshotVersionChangesEvenIfFingerprintIsStable()
+    {
+        var supervisor = new NpcRuntimeSupervisor();
+        var pack = CreatePack("penny", "Penny");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
+        var services = new NpcRuntimeCompositionServices(
+            new FakeChatClient(),
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler());
+
+        var first = await supervisor.GetOrCreatePrivateChatHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAgentBindingRequest(
+                ChannelKey: "private_chat",
+                SystemPromptSupplement: "Reply directly.",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
+                ToolSurfaceSnapshotVersion: 1),
+            CancellationToken.None);
+        var second = await supervisor.GetOrCreatePrivateChatHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAgentBindingRequest(
+                ChannelKey: "private_chat",
+                SystemPromptSupplement: "Reply directly.",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
+                ToolSurfaceSnapshotVersion: 1),
+            CancellationToken.None);
+        var third = await supervisor.GetOrCreatePrivateChatHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAgentBindingRequest(
+                ChannelKey: "private_chat",
+                SystemPromptSupplement: "Reply directly.",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
+                ToolSurfaceSnapshotVersion: 2),
+            CancellationToken.None);
+
+        Assert.AreSame(first, second);
+        Assert.AreNotSame(first, third);
+        Assert.AreEqual(2, supervisor.Snapshot().Single().PrivateChatRebindGeneration);
+    }
+
+    [TestMethod]
     public async Task GetOrCreateAutonomyHandleAsync_ReusesLoopUntilAdapterKeyChanges()
     {
         var supervisor = new NpcRuntimeSupervisor();
@@ -199,6 +259,86 @@ public class NpcRuntimeSupervisorTests
                 GameToolFactory: adapter => [new FakeTool("stardew_status"), new FakeTool("stardew_move")],
                 Services: services,
                 ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")])),
+            CancellationToken.None);
+
+        Assert.AreSame(first, second);
+        Assert.AreNotSame(first, third);
+        Assert.AreEqual(2, adapterFactoryCalls);
+        Assert.AreEqual(2, supervisor.Snapshot().Single().AutonomyRebindGeneration);
+    }
+
+    [TestMethod]
+    public async Task GetOrCreateAutonomyHandleAsync_RebindsWhenToolSnapshotVersionChangesEvenIfAdapterKeyIsStable()
+    {
+        var supervisor = new NpcRuntimeSupervisor();
+        var pack = CreatePack("haley", "Haley");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
+        var services = new NpcRuntimeCompositionServices(
+            new FakeChatClient(),
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler());
+        var adapterFactoryCalls = 0;
+
+        var first = await supervisor.GetOrCreateAutonomyHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAutonomyBindingRequest(
+                ChannelKey: "autonomy",
+                AdapterKey: "bridge-a",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                AdapterFactory: () =>
+                {
+                    adapterFactoryCalls++;
+                    return new FakeGameAdapter();
+                },
+                GameToolFactory: adapter => [new FakeTool("stardew_status"), new FakeTool("stardew_move")],
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
+                ToolSurfaceSnapshotVersion: 1),
+            CancellationToken.None);
+        var second = await supervisor.GetOrCreateAutonomyHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAutonomyBindingRequest(
+                ChannelKey: "autonomy",
+                AdapterKey: "bridge-a",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                AdapterFactory: () =>
+                {
+                    adapterFactoryCalls++;
+                    return new FakeGameAdapter();
+                },
+                GameToolFactory: adapter => [new FakeTool("stardew_status"), new FakeTool("stardew_move")],
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
+                ToolSurfaceSnapshotVersion: 1),
+            CancellationToken.None);
+        var third = await supervisor.GetOrCreateAutonomyHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAutonomyBindingRequest(
+                ChannelKey: "autonomy",
+                AdapterKey: "bridge-a",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                AdapterFactory: () =>
+                {
+                    adapterFactoryCalls++;
+                    return new FakeGameAdapter();
+                },
+                GameToolFactory: adapter => [new FakeTool("stardew_status"), new FakeTool("stardew_move")],
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
+                ToolSurfaceSnapshotVersion: 2),
             CancellationToken.None);
 
         Assert.AreSame(first, second);

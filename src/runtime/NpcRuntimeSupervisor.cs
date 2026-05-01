@@ -11,6 +11,7 @@ public sealed class NpcRuntimeSupervisor
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, NpcRuntimeInstance> _instances = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, NpcRuntimeDriver> _drivers = new(StringComparer.OrdinalIgnoreCase);
 
     public NpcRuntimeInstance Register(NpcRuntimeDescriptor descriptor, string runtimeRoot)
     {
@@ -86,6 +87,7 @@ public sealed class NpcRuntimeSupervisor
             request.IncludeMemory,
             request.IncludeUser,
             request.MaxToolIterations,
+            request.ToolSurfaceSnapshotVersion,
             request.ToolSurface.Fingerprint);
 
         return instance.GetOrCreatePrivateChatHandle(
@@ -114,11 +116,41 @@ public sealed class NpcRuntimeSupervisor
             request.IncludeMemory,
             request.IncludeUser,
             request.MaxToolIterations,
+            request.ToolSurfaceSnapshotVersion,
             request.ToolSurface.Fingerprint);
 
         return instance.GetOrCreateAutonomyHandle(
             rebindKey,
             generation => CreateAutonomyHandle(instance, request, generation));
+    }
+
+    public async Task<NpcRuntimeDriver> GetOrCreateDriverAsync(
+        NpcRuntimeDescriptor descriptor,
+        string runtimeRoot,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentException.ThrowIfNullOrWhiteSpace(runtimeRoot);
+
+        var key = BuildKey(descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+        lock (_gate)
+        {
+            if (_drivers.TryGetValue(key, out var existing))
+                return existing;
+        }
+
+        var instance = await GetOrStartAsync(descriptor, runtimeRoot, ct);
+        var created = new NpcRuntimeDriver(instance, new NpcRuntimeStateStore(instance.Namespace.RuntimeStateDbPath));
+        await created.InitializeAsync(ct);
+
+        lock (_gate)
+        {
+            if (_drivers.TryGetValue(key, out var existing))
+                return existing;
+
+            _drivers[key] = created;
+            return created;
+        }
     }
 
     public async Task StopAsync(string gameId, string saveId, string npcId, string profileId, CancellationToken ct)
@@ -130,6 +162,19 @@ public sealed class NpcRuntimeSupervisor
 
         if (instance is not null)
             await instance.StopAsync(ct);
+    }
+
+    public bool Unregister(NpcRuntimeDescriptor descriptor)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+
+        var key = BuildKey(descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+        lock (_gate)
+        {
+            var removedInstance = _instances.Remove(key);
+            var removedDriver = _drivers.Remove(key);
+            return removedInstance || removedDriver;
+        }
     }
 
     public IReadOnlyList<NpcRuntimeSnapshot> Snapshot()
@@ -151,6 +196,7 @@ public sealed class NpcRuntimeSupervisor
                 request.IncludeMemory,
                 request.IncludeUser,
                 request.MaxToolIterations,
+                request.ToolSurfaceSnapshotVersion,
                 request.ToolSurface.Fingerprint),
             request.Services,
             request.SystemPromptSupplement,
@@ -175,6 +221,7 @@ public sealed class NpcRuntimeSupervisor
             request.IncludeMemory,
             request.IncludeUser,
             request.MaxToolIterations,
+            request.ToolSurfaceSnapshotVersion,
             request.ToolSurface.Fingerprint);
         var combinedToolSurface = NpcToolSurface.FromTools(combinedTools);
         var agentHandle = CreateAgentHandle(

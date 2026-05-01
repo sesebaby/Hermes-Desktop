@@ -101,6 +101,9 @@ public sealed class BridgeHttpHost
                 case "/task/status":
                     await HandleStatusAsync(context, ct);
                     return;
+                case "/task/lookup":
+                    await HandleLookupAsync(context, ct);
+                    return;
                 case "/task/cancel":
                     await HandleCancelAsync(context, ct);
                     return;
@@ -142,6 +145,13 @@ public sealed class BridgeHttpHost
     {
         var envelope = await ReadJsonAsync<BridgeEnvelope<TaskStatusRequest>>(context.Request, ct);
         var response = _commands.GetStatus(envelope);
+        await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
+    }
+
+    private async Task HandleLookupAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        var envelope = await ReadJsonAsync<BridgeEnvelope<TaskLookupRequest>>(context.Request, ct);
+        var response = _commands.LookupByIdempotency(envelope);
         await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
     }
 

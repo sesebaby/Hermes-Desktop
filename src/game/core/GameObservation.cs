@@ -22,7 +22,25 @@ public sealed record GameEntityBinding(
     string DisplayName,
     string AdapterId);
 
-public sealed record GameEventCursor(string? Since);
+public sealed record GameEventCursor(string? Since = null, long? Sequence = null)
+{
+    public static GameEventCursor FromRecord(GameEventRecord record)
+        => new(record.EventId, record.Sequence);
+
+    public static GameEventCursor Advance(
+        GameEventCursor current,
+        IReadOnlyList<GameEventRecord> records,
+        long? nextSequence = null)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(records);
+
+        var lastRecord = records.Count > 0 ? records[^1] : null;
+        return new(
+            lastRecord?.EventId ?? current.Since,
+            nextSequence ?? lastRecord?.Sequence ?? current.Sequence);
+    }
+}
 
 public sealed record GameEventRecord(
     string EventId,
@@ -31,4 +49,9 @@ public sealed record GameEventRecord(
     DateTime TimestampUtc,
     string Summary,
     string? CorrelationId = null,
-    JsonObject? Payload = null);
+    JsonObject? Payload = null,
+    long? Sequence = null);
+
+public sealed record GameEventBatch(
+    IReadOnlyList<GameEventRecord> Records,
+    GameEventCursor NextCursor);

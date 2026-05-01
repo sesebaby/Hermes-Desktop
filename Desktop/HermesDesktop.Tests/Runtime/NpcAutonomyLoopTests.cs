@@ -54,6 +54,35 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
+    public async Task RunOneTickAsync_AdvancesCursorUsingEventSequenceWhenPresent()
+    {
+        var at = new DateTime(2026, 4, 30, 9, 40, 0, DateTimeKind.Utc);
+        var descriptor = CreateDescriptor("haley");
+        var factStore = new NpcObservationFactStore();
+        var commands = new CountingCommandService();
+        var queries = new FakeQueryService(new GameObservation(
+            "haley",
+            "stardew-valley",
+            at,
+            "Haley is near the town fountain.",
+            ["location=Town"]));
+        var events = new FakeEventSource(
+            new GameEventBatch(
+                [
+                    new GameEventRecord("evt-11", "proximity", "haley", at.AddSeconds(1), "The farmer entered Haley's proximity.", Sequence: 11),
+                    new GameEventRecord("evt-12", "proximity", "penny", at.AddSeconds(2), "The farmer entered Penny's proximity.", Sequence: 12)
+                ],
+                new GameEventCursor("evt-12", 15)));
+        var adapter = new FakeGameAdapter(commands, queries, events);
+        var loop = new NpcAutonomyLoop(adapter, factStore);
+
+        var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor("evt-10", 10), CancellationToken.None);
+
+        Assert.AreEqual("evt-12", result.NextEventCursor?.Since);
+        Assert.AreEqual(15L, result.NextEventCursor?.Sequence);
+    }
+
+    [TestMethod]
     public async Task RunOneTickAsync_ObservesBeforeAgentDecision()
     {
         var steps = new List<string>();
@@ -251,11 +280,16 @@ public class NpcAutonomyLoopTests
 
     private sealed class FakeEventSource : IGameEventSource
     {
-        private readonly IReadOnlyList<GameEventRecord> _records;
+        private readonly GameEventBatch _batch;
 
         public FakeEventSource(IReadOnlyList<GameEventRecord> records)
         {
-            _records = records;
+            _batch = new GameEventBatch(records, GameEventCursor.Advance(new GameEventCursor(), records));
+        }
+
+        public FakeEventSource(GameEventBatch batch)
+        {
+            _batch = batch;
         }
 
         public GameEventCursor? LastCursor { get; private set; }
@@ -266,7 +300,14 @@ public class NpcAutonomyLoopTests
         {
             OnPoll?.Invoke();
             LastCursor = cursor;
-            return Task.FromResult(_records);
+            return Task.FromResult(_batch.Records);
+        }
+
+        public Task<GameEventBatch> PollBatchAsync(GameEventCursor cursor, CancellationToken ct)
+        {
+            OnPoll?.Invoke();
+            LastCursor = cursor;
+            return Task.FromResult(_batch);
         }
     }
 

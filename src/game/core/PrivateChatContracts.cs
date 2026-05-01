@@ -4,7 +4,10 @@ public sealed record PrivateChatOrchestratorOptions(
     PrivateChatPolicy Policy,
     PrivateChatSessionReopenPolicy ReopenPolicy = PrivateChatSessionReopenPolicy.OnceAfterReply,
     int MaxTurnsPerSession = 3,
-    int MaxOpenAttempts = 60);
+    int MaxOpenAttempts = 60,
+    IPrivateChatSessionLeaseCoordinator? SessionLeaseCoordinator = null,
+    string SessionLeaseOwner = "private_chat",
+    string SessionLeaseReason = "private_chat_session_active");
 
 public sealed record PrivateChatPolicy(
     string NpcId,
@@ -75,6 +78,29 @@ public sealed record PrivateChatAgentRequest(
     string PlayerText);
 
 public sealed record PrivateChatAgentReply(string Text);
+
+public sealed record PrivateChatSessionLeaseRequest(
+    string NpcId,
+    string SaveId,
+    string ConversationId,
+    string Owner,
+    string Reason);
+
+public interface IPrivateChatSessionLease : IDisposable
+{
+    string NpcId { get; }
+
+    string ConversationId { get; }
+
+    string Owner { get; }
+
+    int Generation { get; }
+}
+
+public interface IPrivateChatSessionLeaseCoordinator
+{
+    Task<IPrivateChatSessionLease> AcquireAsync(PrivateChatSessionLeaseRequest request, CancellationToken ct);
+}
 
 public enum PrivateChatSessionReopenPolicy
 {

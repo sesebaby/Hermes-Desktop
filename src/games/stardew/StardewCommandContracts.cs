@@ -8,6 +8,7 @@ public static class StardewBridgeRoutes
     public const string EventsPoll = "/events/poll";
     public const string TaskMove = "/task/move";
     public const string TaskStatus = "/task/status";
+    public const string TaskLookup = "/task/lookup";
     public const string TaskCancel = "/task/cancel";
     public const string ActionSpeak = "/action/speak";
     public const string ActionOpenPrivateChat = "/action/open_private_chat";
@@ -39,6 +40,8 @@ public static class StardewBridgeErrorCodes
     public const string CommandNotFound = "command_not_found";
     public const string CommandExpired = "command_expired";
     public const string CommandStuck = "command_stuck";
+    public const string ActionSlotBusy = "action_slot_busy";
+    public const string ActionSlotTimeout = "action_slot_timeout";
     public const string IdempotencyConflict = "idempotency_conflict";
     public const string BridgeUnauthorized = "bridge_unauthorized";
     public const string BridgeStaleDiscovery = "bridge_stale_discovery";

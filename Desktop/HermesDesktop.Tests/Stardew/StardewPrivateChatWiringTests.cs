@@ -6,18 +6,27 @@ namespace HermesDesktop.Tests.Stardew;
 public class StardewPrivateChatWiringTests
 {
     [TestMethod]
-    public void AppRegistersAndStartsPrivateChatBackgroundService()
+    public void AppUsesNpcAutonomyHostAsSingleBridgePollOwner()
     {
         var app = ReadRepositoryFile("Desktop", "HermesDesktop", "App.xaml.cs");
 
         StringAssert.Contains(
             app,
-            "StardewPrivateChatBackgroundService",
-            "Desktop startup must register the private-chat background service so Haley dialogue completion can open input without a manual debug tick.");
+            "StardewNpcAutonomyBackgroundService",
+            "Desktop startup must register the autonomy background service so Haley and Penny can run without manual debug ticks.");
         StringAssert.Contains(
             app,
-            "StartStardewPrivateChatBackground",
-            "Desktop startup must start the private-chat background poller after DI is built.");
+            "StartStardewNpcAutonomyBackground",
+            "Desktop startup must start the autonomy background owner after DI is built.");
+        Assert.IsFalse(
+            app.Contains("StardewPrivateChatBackgroundService", StringComparison.Ordinal),
+            "Desktop startup must not register a second private-chat background poller once bridge events are owned by the runtime host.");
+        Assert.IsFalse(
+            app.Contains("StartStardewPrivateChatBackground", StringComparison.Ordinal),
+            "Desktop startup must not start a second private-chat background poller once bridge events are owned by the runtime host.");
+        Assert.IsFalse(
+            app.Contains("TryStopStardewPrivateChatBackground", StringComparison.Ordinal),
+            "Desktop shutdown must not stop a second private-chat background poller once bridge events are owned by the runtime host.");
     }
 
     [TestMethod]
@@ -48,6 +57,27 @@ public class StardewPrivateChatWiringTests
             runtime,
             "new PrivateChatPolicy(",
             "Stardew-specific event names, prompt, and retry codes should be injected through the core private-chat policy.");
+        StringAssert.Contains(
+            runtime,
+            "sessionLeaseCoordinator",
+            "Stardew private-chat wrapper must pass the runtime lease coordinator into the reusable core state machine.");
+    }
+
+    [TestMethod]
+    public void StardewPrivateChatRuntimeIsAnAdapterNotAnIndependentBackgroundLoop()
+    {
+        var runtime = ReadRepositoryFile("src", "games", "stardew", "StardewPrivateChatOrchestrator.cs");
+
+        StringAssert.Contains(
+            runtime,
+            "StardewPrivateChatRuntimeAdapter",
+            "Private-chat bridge integration should live in a host-internal adapter rather than a second background service.");
+        Assert.IsFalse(
+            runtime.Contains("public sealed class StardewPrivateChatBackgroundService", StringComparison.Ordinal),
+            "The old private-chat background service should be removed once the host owns bridge polling.");
+        Assert.IsFalse(
+            runtime.Contains("RunLoopAsync", StringComparison.Ordinal),
+            "The private-chat path must no longer own an independent polling loop after being folded into the runtime host.");
     }
 
     [TestMethod]

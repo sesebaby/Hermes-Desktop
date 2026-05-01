@@ -1,0 +1,1403 @@
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using Hermes.Agent.Core;
+using Hermes.Agent.Game;
+using Hermes.Agent.Games.Stardew;
+using Hermes.Agent.LLM;
+using Hermes.Agent.Runtime;
+using Hermes.Agent.Skills;
+using Hermes.Agent.Tools;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace HermesDesktop.Tests.Stardew;
+
+[TestClass]
+public sealed class StardewNpcAutonomyBackgroundServiceTests
+{
+    private string _tempDir = null!;
+    private string _packRoot = null!;
+    private SkillManager _skillManager = null!;
+    private readonly List<StardewNpcAutonomyBackgroundService> _services = [];
+
+    [TestInitialize]
+    public void Setup()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-autonomy-background-tests", Guid.NewGuid().ToString("N"));
+        _packRoot = Path.Combine(_tempDir, "packs");
+
+        var skillsDir = Path.Combine(_tempDir, "skills", "autonomy");
+        Directory.CreateDirectory(skillsDir);
+        File.WriteAllText(
+            Path.Combine(skillsDir, "SKILL.md"),
+            """
+            ---
+            name: npc-autonomy-skill
+            description: Keep autonomy actions grounded in observed Stardew facts.
+            ---
+            Use game facts before taking autonomous action.
+            """);
+        _skillManager = new SkillManager(Path.Combine(_tempDir, "skills"), NullLogger<SkillManager>.Instance);
+
+        CreatePack("haley", "Haley");
+        CreatePack("penny", "Penny");
+    }
+
+    [TestCleanup]
+    public void Cleanup()
+    {
+        foreach (var service in _services)
+            service.Stop();
+
+        _services.Clear();
+
+        if (Directory.Exists(_tempDir))
+            Directory.Delete(_tempDir, recursive: true);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_OnlyStartsWhitelistedNpcAndRecordsAutomaticTick()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("I will wait near the library.");
+        var adapter = CreateAdapter("penny");
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["penny"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, chatClient.CompleteWithToolsCalls);
+        Assert.AreEqual(1, supervisor.Snapshot().Count);
+        var snapshot = supervisor.Snapshot().Single();
+        Assert.AreEqual("penny", snapshot.NpcId);
+        Assert.AreEqual(NpcAutonomyLoopState.Running, snapshot.AutonomyLoopState);
+        Assert.IsNotNull(snapshot.LastAutomaticTickAtUtc);
+        Assert.AreEqual(1, snapshot.CurrentAutonomyHandleGeneration);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(snapshot.CurrentBridgeKey));
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_ActivePrivateChatLeasePausesAutonomy()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var instance = await supervisor.GetOrStartAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        instance.Namespace.SeedPersonaPack(binding.Pack);
+        instance.AcquirePrivateChatSessionLease("pc-1", "private_chat", "private_chat_session_active");
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, chatClient.CompleteWithToolsCalls);
+        var snapshot = supervisor.Snapshot().Single();
+        Assert.AreEqual(NpcAutonomyLoopState.Paused, snapshot.AutonomyLoopState);
+        Assert.AreEqual("private_chat_session_active", snapshot.PauseReason);
+        Assert.IsNull(snapshot.LastAutomaticTickAtUtc);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenNpcIsPaused_StillAdvancesTrackerCursorToSharedBatchWatermark()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var adapter = new FakeGameAdapter(
+            new FakeCommandService(),
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is idle.",
+                ["location=Town"])),
+            new FakeEventSource(
+                new GameEventBatch(
+                    [
+                        new GameEventRecord("evt-11", "time_changed", null, DateTime.UtcNow, "The clock advanced.", Sequence: 11)
+                    ],
+                    new GameEventCursor("evt-11", 14))));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var instance = await supervisor.GetOrStartAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        instance.Namespace.SeedPersonaPack(binding.Pack);
+        instance.AcquirePrivateChatSessionLease("pc-1", "private_chat", "private_chat_session_active");
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        var trackerCursor = GetTrackerCursor(service, "haley");
+        Assert.AreEqual("evt-11", trackerCursor.Since);
+        Assert.AreEqual(14L, trackerCursor.Sequence);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenNpcIsPaused_ExposesRelevantIngressDepthInSnapshot()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var adapter = new FakeGameAdapter(
+            new FakeCommandService(),
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is idle.",
+                ["location=Town"])),
+            new FakeEventSource(
+                new GameEventBatch(
+                    [
+                        new GameEventRecord("evt-11", "time_changed", "haley", DateTime.UtcNow, "Haley heard the clock tick.", Sequence: 11),
+                        new GameEventRecord("evt-12", "time_changed", "penny", DateTime.UtcNow.AddSeconds(1), "Penny heard the clock tick.", Sequence: 12)
+                    ],
+                    new GameEventCursor("evt-12", 12))));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var instance = await supervisor.GetOrStartAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        instance.Namespace.SeedPersonaPack(binding.Pack);
+        instance.AcquirePrivateChatSessionLease("pc-1", "private_chat", "private_chat_session_active");
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        var snapshot = supervisor.Snapshot().Single();
+        var inboxDepthProperty = snapshot.Controller.GetType().GetProperty("InboxDepth");
+        Assert.IsNotNull(inboxDepthProperty, "Runtime controller snapshot should expose an ingress/inbox depth metric for observability.");
+        Assert.AreEqual(1, inboxDepthProperty.GetValue(snapshot.Controller));
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WithMultipleEnabledNpc_PollsBridgeEventsOnlyOnce()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("I will wait near the library.");
+        var events = new CountingEventSource(
+        [
+            new GameEventRecord("evt-1", "time_changed", null, DateTime.UtcNow, "The clock advanced."),
+        ]);
+        var adapter = new FakeGameAdapter(
+            new FakeCommandService(),
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is idle.",
+                ["location=Town"])),
+            events);
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley", "penny"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(
+            1,
+            events.PollCalls,
+            "The runtime host must own bridge polling once and fan events out to NPC runtimes instead of letting each NPC loop poll independently.");
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenWorkerIsBusy_ReturnsAfterDispatchWithoutWaitingForCompletion()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new BlockingChatClient("I will wait near the library.");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"]);
+
+        var iteration = service.DispatchOneIterationAsync(CancellationToken.None);
+        var completed = await Task.WhenAny(iteration, Task.Delay(250));
+
+        Assert.AreSame(iteration, completed, "The host should dispatch/wake NPC workers and commit bridge progress without waiting for a slow worker tick to finish.");
+
+        await iteration;
+        await chatClient.WaitUntilEnteredAsync(CancellationToken.None);
+        var workerTask = GetTrackerWorkerTask(service, "haley");
+        Assert.IsFalse(workerTask.IsCompleted, "The NPC worker should still be running independently after host dispatch returns.");
+
+        chatClient.Release();
+        service.Stop();
+        await workerTask.WaitAsync(TimeSpan.FromSeconds(1));
+    }
+
+    [TestMethod]
+    public async Task DispatchOneIterationAsync_WhenWorkerIsBusy_CoalescesQueuedDispatchesPerNpc()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new BlockFirstChatClient("I will wait near the library.");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"]);
+
+        await service.DispatchOneIterationAsync(CancellationToken.None);
+        await chatClient.WaitUntilFirstCallEnteredAsync(CancellationToken.None);
+
+        await Task.WhenAll(
+            service.DispatchOneIterationAsync(CancellationToken.None),
+            service.DispatchOneIterationAsync(CancellationToken.None));
+
+        chatClient.ReleaseFirstCall();
+        await chatClient.WaitForCallCountAsync(2, TimeSpan.FromSeconds(1));
+        await Task.Delay(150);
+
+        Assert.AreEqual(
+            2,
+            chatClient.CompleteWithToolsCalls,
+            "A slow NPC worker should keep at most one queued autonomy follow-up; older queued dispatches must coalesce instead of accumulating without bound.");
+    }
+
+    [TestMethod]
+    public async Task DispatchOneIterationAsync_WhenWorkerIsBusy_MergesQueuedEventBatchesIntoNextTick()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new BlockFirstChatClient("I will wait near the library.");
+        var adapter = new FakeGameAdapter(
+            new FakeCommandService(),
+            new DynamicQueryService(),
+            new ScriptedEventSource(
+                new GameEventBatch(
+                    [
+                        new GameEventRecord("evt-1", "time_changed", "haley", DateTime.UtcNow, "Haley noticed the first clock tick.", Sequence: 1)
+                    ],
+                    new GameEventCursor("evt-1", 1)),
+                new GameEventBatch(
+                    [
+                        new GameEventRecord("evt-2", "time_changed", "haley", DateTime.UtcNow.AddSeconds(1), "Haley noticed the second clock tick.", Sequence: 2)
+                    ],
+                    new GameEventCursor("evt-2", 2)),
+                new GameEventBatch(
+                    [
+                        new GameEventRecord("evt-3", "time_changed", "haley", DateTime.UtcNow.AddSeconds(2), "Haley noticed the third clock tick.", Sequence: 3)
+                    ],
+                    new GameEventCursor("evt-3", 3))));
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"]);
+
+        await service.DispatchOneIterationAsync(CancellationToken.None);
+        await chatClient.WaitUntilFirstCallEnteredAsync(CancellationToken.None);
+
+        await Task.WhenAll(
+            service.DispatchOneIterationAsync(CancellationToken.None),
+            service.DispatchOneIterationAsync(CancellationToken.None));
+
+        chatClient.ReleaseFirstCall();
+        await chatClient.WaitForCallCountAsync(2, TimeSpan.FromSeconds(1));
+
+        var secondRequest = chatClient.GetCapturedRequest(2);
+        StringAssert.Contains(secondRequest, "Haley noticed the second clock tick.");
+        StringAssert.Contains(secondRequest, "Haley noticed the third clock tick.");
+    }
+
+    [TestMethod]
+    public async Task Stop_WhenWorkerIsInFlight_WaitsForWorkerShutdown()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new BlockingChatClient("I will wait near the library.");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"]);
+
+        await service.DispatchOneIterationAsync(CancellationToken.None);
+        await chatClient.WaitUntilEnteredAsync(CancellationToken.None);
+
+        var workerTask = GetTrackerWorkerTask(service, "haley");
+        Assert.IsFalse(workerTask.IsCompleted);
+
+        service.Stop();
+
+        Assert.IsTrue(workerTask.IsCompleted, "Stop should not return before in-flight NPC workers observe cancellation and exit.");
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WithMultipleEnabledNpc_CreatesDedicatedWorkerTaskPerNpc()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("I will wait near the library.");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley", "penny"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        var haleyWorker = GetTrackerWorkerTask(service, "haley");
+        var pennyWorker = GetTrackerWorkerTask(service, "penny");
+
+        Assert.AreNotSame(haleyWorker, pennyWorker);
+        Assert.IsFalse(haleyWorker.IsCompleted, "Haley should keep her dedicated runtime worker alive after the first host dispatch.");
+        Assert.IsFalse(pennyWorker.IsCompleted, "Penny should keep her dedicated runtime worker alive after the first host dispatch.");
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenPendingActionIsRunning_PausesWithoutStartingNewChat()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var commands = new ScriptedCommandService(
+            statusSequence:
+            [
+                new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null)
+            ]);
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is walking.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetPendingWorkItemAsync(
+            new NpcRuntimePendingWorkItemSnapshot("work-1", "move", "cmd-1", StardewCommandStatuses.Queued, DateTime.UtcNow),
+            CancellationToken.None);
+        await driver.SetActionSlotAsync(
+            new NpcRuntimeActionSlotSnapshot("action", "work-1", "cmd-1", "trace-1", DateTime.UtcNow, DateTime.UtcNow.AddMinutes(1)),
+            CancellationToken.None);
+        var service = CreateService(discovery, _ => adapter, chatClient, supervisor, enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, chatClient.CompleteWithToolsCalls);
+        var snapshot = supervisor.Snapshot().Single();
+        Assert.AreEqual(NpcAutonomyLoopState.Paused, snapshot.AutonomyLoopState);
+        Assert.AreEqual("command_running", snapshot.PauseReason);
+        Assert.AreEqual(StardewCommandStatuses.Running, snapshot.Controller.PendingWorkItem?.Status);
+        Assert.IsNotNull(snapshot.Controller.ActionSlot);
+        Assert.AreEqual(1, commands.StatusCalls);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenPendingActionCompletes_ReleasesClaimAndClearsControllerState()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var commands = new ScriptedCommandService(
+            statusSequence:
+            [
+                new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Completed, 1, null, null)
+            ]);
+        var coordination = new WorldCoordinationService(new ResourceClaimRegistry());
+        var targetTile = new ClaimedTile("Town", 42, 17);
+        var claimed = coordination.TryClaimMove("work-1", "haley", "trace-1", targetTile, targetTile, "idem-1");
+        Assert.IsTrue(claimed.Accepted);
+
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is arriving.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetPendingWorkItemAsync(
+            new NpcRuntimePendingWorkItemSnapshot("work-1", "move", "cmd-1", StardewCommandStatuses.Running, DateTime.UtcNow),
+            CancellationToken.None);
+        await driver.SetActionSlotAsync(
+            new NpcRuntimeActionSlotSnapshot("action", "work-1", "cmd-1", "trace-1", DateTime.UtcNow, DateTime.UtcNow.AddMinutes(1)),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"],
+            worldCoordination: coordination);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, chatClient.CompleteWithToolsCalls);
+        var snapshot = supervisor.Snapshot().Single();
+        Assert.IsNull(snapshot.Controller.PendingWorkItem);
+        Assert.IsNull(snapshot.Controller.ActionSlot);
+        Assert.IsTrue(
+            coordination.TryClaimMove("work-2", "penny", "trace-2", targetTile, targetTile, "idem-2").Accepted,
+            "Completed actions must release their short resource claim so another NPC can move into the tile.");
+        Assert.AreEqual(1, commands.StatusCalls);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenPendingActionHasNoCommandId_KeepsControllerStateAndClaimUntilTimeout()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var coordination = new WorldCoordinationService(new ResourceClaimRegistry());
+        var targetTile = new ClaimedTile("Town", 42, 17);
+        var claimed = coordination.TryClaimMove("work-1", "haley", "trace-1", targetTile, targetTile, "idem-1");
+        Assert.IsTrue(claimed.Accepted);
+
+        var adapter = new FakeGameAdapter(
+            new FakeCommandService(),
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is waiting for the bridge to confirm her move.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetPendingWorkItemAsync(
+            new NpcRuntimePendingWorkItemSnapshot("work-1", "move", null, "submitting", DateTime.UtcNow),
+            CancellationToken.None);
+        await driver.SetActionSlotAsync(
+            new NpcRuntimeActionSlotSnapshot("action", "work-1", null, "trace-1", DateTime.UtcNow, DateTime.UtcNow.AddMinutes(1)),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"],
+            worldCoordination: coordination);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        var snapshot = supervisor.Snapshot().Single();
+        Assert.AreEqual(NpcAutonomyLoopState.Paused, snapshot.AutonomyLoopState);
+        Assert.AreEqual("command_submitting", snapshot.PauseReason);
+        Assert.IsNotNull(snapshot.Controller.PendingWorkItem);
+        Assert.IsNotNull(snapshot.Controller.ActionSlot);
+        Assert.IsFalse(
+            coordination.TryClaimMove("work-2", "penny", "trace-2", targetTile, targetTile, "idem-2").Accepted,
+            "An action that may already be accepted by the bridge must keep its short claim until timeout or explicit terminal recovery.");
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenPendingActionCanBeFoundByIdempotency_RebindsCommandAndPausesAsRunning()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var commands = new LookupCommandService(new GameCommandStatus(
+            "cmd-lookup-1",
+            "haley",
+            "move",
+            StardewCommandStatuses.Running,
+            0.4,
+            null,
+            null,
+            StartedAtUtc: DateTime.UtcNow.AddSeconds(-3),
+            UpdatedAtUtc: DateTime.UtcNow,
+            ElapsedMs: 3000,
+            RetryAfterUtc: DateTime.UtcNow.AddSeconds(5)));
+        var coordination = new WorldCoordinationService(new ResourceClaimRegistry());
+        var targetTile = new ClaimedTile("Town", 42, 17);
+        Assert.IsTrue(coordination.TryClaimMove("work-1", "haley", "trace-1", targetTile, targetTile, "idem-1").Accepted);
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is waiting for the bridge to confirm her move.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetPendingWorkItemAsync(
+            new NpcRuntimePendingWorkItemSnapshot("work-1", "move", null, "submitting", DateTime.UtcNow, "idem-1"),
+            CancellationToken.None);
+        await driver.SetActionSlotAsync(
+            new NpcRuntimeActionSlotSnapshot("action", "work-1", null, "trace-1", DateTime.UtcNow, DateTime.UtcNow.AddMinutes(1)),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"],
+            worldCoordination: coordination);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        var snapshot = supervisor.Snapshot().Single();
+        Assert.AreEqual(NpcAutonomyLoopState.Paused, snapshot.AutonomyLoopState);
+        Assert.AreEqual("command_running", snapshot.PauseReason);
+        Assert.AreEqual("cmd-lookup-1", snapshot.Controller.PendingWorkItem?.CommandId);
+        Assert.AreEqual("cmd-lookup-1", snapshot.Controller.ActionSlot?.CommandId);
+        Assert.AreEqual(1, commands.LookupCalls);
+        Assert.AreEqual(0, commands.StatusCalls);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_RebuildUsesPersistedHostCursorInsteadOfPollingFromHead()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("I will wait near the library.");
+        var events = new CursorAwareEventSource(
+            new Dictionary<string, GameEventBatch?>
+            {
+                ["<root>"] = new GameEventBatch(
+                    [
+                        new GameEventRecord("evt-11", "time_changed", "haley", DateTime.UtcNow, "The clock advanced.", Sequence: 11)
+                    ],
+                    new GameEventCursor("evt-11", 14)),
+                ["14"] = new GameEventBatch(
+                    [
+                        new GameEventRecord("evt-15", "time_changed", "haley", DateTime.UtcNow.AddSeconds(1), "The clock advanced again.", Sequence: 15)
+                    ],
+                    new GameEventCursor("evt-15", 18))
+            });
+        var adapter = new FakeGameAdapter(
+            new FakeCommandService(),
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is idle.",
+                ["location=Town"])),
+            events);
+
+        var supervisor1 = new NpcRuntimeSupervisor();
+        var service1 = CreateService(discovery, _ => adapter, chatClient, supervisor1, enabledNpcIds: ["haley"]);
+        await service1.RunOneIterationAsync(CancellationToken.None);
+
+        var supervisor2 = new NpcRuntimeSupervisor();
+        var service2 = CreateService(discovery, _ => adapter, chatClient, supervisor2, enabledNpcIds: ["haley"]);
+        await service2.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(2, events.SeenCursors.Count);
+        Assert.IsNull(events.SeenCursors[0].Sequence);
+        Assert.AreEqual(14L, events.SeenCursors[1].Sequence);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenPreviousFanoutFailed_ReplaysStagedBatchWithoutRepollingBridge()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var events = new CountingEventSource(
+        [
+            new GameEventRecord("evt-1", "time_changed", null, DateTime.UtcNow, "The clock advanced.", Sequence: 1),
+        ]);
+        var adapter = new FakeGameAdapter(
+            new FakeCommandService(),
+            new FakeQueryService(new GameObservation(
+                "sam",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Sam is idle.",
+                ["location=Town"])),
+            events);
+
+        var supervisor1 = new NpcRuntimeSupervisor();
+        var service1 = CreateService(discovery, _ => adapter, chatClient, supervisor1, enabledNpcIds: ["sam"]);
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => service1.RunOneIterationAsync(CancellationToken.None));
+
+        var supervisor2 = new NpcRuntimeSupervisor();
+        var service2 = CreateService(discovery, _ => adapter, chatClient, supervisor2, enabledNpcIds: ["sam"]);
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => service2.RunOneIterationAsync(CancellationToken.None));
+
+        Assert.AreEqual(
+            1,
+            events.PollCalls,
+            "The host must replay the staged batch after a fanout failure instead of polling the bridge head again.");
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenSaveChanges_RebuildsTrackerScopeForNewSave()
+    {
+        var discovery = new MutableDiscovery(CreateSnapshot("save-42"));
+        var chatClient = new CountingChatClient("I will wait near the library.");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(discovery, _ => adapter, chatClient, supervisor, enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        discovery.SetSnapshot(CreateSnapshot("save-99"));
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual("save-99", GetTrackerSaveId(service, "haley"));
+        Assert.AreEqual(1, supervisor.Snapshot().Count, "Save switch should not leave the old save runtime hanging in the supervisor snapshot.");
+        Assert.AreEqual("save-99", supervisor.Snapshot().Single().SaveId);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenBridgeRebindsForSameSave_KeepsTrackerCursor()
+    {
+        var startedAt = DateTimeOffset.UtcNow;
+        var discovery = new MutableDiscovery(CreateSnapshot("save-42", startedAt));
+        var chatClient = new CountingChatClient("I will wait near the library.");
+        var events = new CursorAwareEventSource(
+            new Dictionary<string, GameEventBatch?>
+            {
+                ["<root>"] = new GameEventBatch(
+                    [
+                        new GameEventRecord("evt-11", "time_changed", "haley", DateTime.UtcNow, "The clock advanced.", Sequence: 11)
+                    ],
+                    new GameEventCursor("evt-11", 14)),
+                ["14"] = new GameEventBatch(Array.Empty<GameEventRecord>(), new GameEventCursor("evt-11", 14))
+            });
+        var adapter = new FakeGameAdapter(
+            new FakeCommandService(),
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is idle.",
+                ["location=Town"])),
+            events);
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(discovery, _ => adapter, chatClient, supervisor, enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        discovery.SetSnapshot(CreateSnapshot("save-42", startedAt.AddSeconds(5)));
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        var trackerCursor = GetTrackerCursor(service, "haley");
+        Assert.AreEqual("evt-11", trackerCursor.Since);
+        Assert.AreEqual(14L, trackerCursor.Sequence);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenInitialAttachPollsEmptyBatch_NextPrivateChatTriggerIsProcessed()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("I will wait near the library.");
+        var commands = new RecordingCommandService();
+        var events = new ScriptedEventSource(
+            new GameEventBatch(Array.Empty<GameEventRecord>(), new GameEventCursor()),
+            new GameEventBatch(
+                [
+                    new GameEventRecord("evt-21", "vanilla_dialogue_completed", "Haley", DateTime.UtcNow, "Haley finished vanilla dialogue.", Sequence: 21)
+                ],
+                new GameEventCursor("evt-21", 21)));
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is idle.",
+                ["location=Town"])),
+            events);
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(discovery, _ => adapter, chatClient, supervisor, enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, commands.Submitted.Count(action => action.Type == GameActionType.OpenPrivateChat));
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenDrainOnlyBatchIsReplayed_DoesNotOpenPrivateChat()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var commands = new RecordingCommandService();
+        var events = new CountingEventSource(
+        [
+            new GameEventRecord("evt-31", "vanilla_dialogue_completed", "Haley", DateTime.UtcNow, "Historical Haley dialogue completed.", Sequence: 31),
+        ]);
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "sam",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Sam is idle.",
+                ["location=Town"])),
+            events);
+
+        var supervisor1 = new NpcRuntimeSupervisor();
+        var service1 = CreateService(discovery, _ => adapter, chatClient, supervisor1, enabledNpcIds: ["sam"]);
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => service1.RunOneIterationAsync(CancellationToken.None));
+
+        var supervisor2 = new NpcRuntimeSupervisor();
+        var service2 = CreateService(discovery, _ => adapter, chatClient, supervisor2, enabledNpcIds: ["sam"]);
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => service2.RunOneIterationAsync(CancellationToken.None));
+
+        Assert.AreEqual(1, events.PollCalls, "The staged historical batch should replay without re-polling the bridge.");
+        Assert.AreEqual(0, commands.Submitted.Count(action => action.Type == GameActionType.OpenPrivateChat));
+    }
+
+    private StardewNpcAutonomyBackgroundService CreateService(
+        IStardewBridgeDiscovery discovery,
+        Func<StardewBridgeDiscoverySnapshot, IGameAdapter> adapterFactory,
+        IChatClient chatClient,
+        NpcRuntimeSupervisor supervisor,
+        IReadOnlyCollection<string> enabledNpcIds,
+        WorldCoordinationService? worldCoordination = null)
+    {
+        var service = new StardewNpcAutonomyBackgroundService(
+            discovery,
+            adapterFactory,
+            chatClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            supervisor,
+            new NpcRuntimeHost(new FileSystemNpcPackLoader(), supervisor, _tempDir),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            new NpcToolSurfaceSnapshotProvider(() => [new DiscoveredNoopTool("mcp_dynamic_test")]),
+            new StardewPrivateChatRuntimeAdapter(
+                new NoopPrivateChatAgentRunner(),
+                NullLogger<StardewPrivateChatRuntimeAdapter>.Instance),
+            new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(MaxToolIterations: 2, MaxConcurrentLlmRequests: 1, MaxRestartsPerScene: 2)),
+            worldCoordination ?? new WorldCoordinationService(new ResourceClaimRegistry()),
+            NullLogger<StardewNpcAutonomyBackgroundService>.Instance,
+            new StardewNpcAutonomyBackgroundOptions(enabledNpcIds, TimeSpan.FromMilliseconds(10)),
+            true,
+            true,
+            _tempDir);
+        _services.Add(service);
+        return service;
+    }
+
+    private static FakeDiscovery CreateDiscovery(string saveId)
+        => new(CreateSnapshot(saveId));
+
+    private static StardewBridgeDiscoverySnapshot CreateSnapshot(string saveId, DateTimeOffset? startedAtUtc = null)
+        => new(
+            new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+            startedAtUtc ?? DateTimeOffset.UtcNow,
+            1234,
+            saveId);
+
+    private static FakeGameAdapter CreateAdapter(string npcId)
+        => new(
+            new FakeCommandService(),
+            new DynamicQueryService(),
+            new FakeEventSource([]));
+
+    private void CreatePack(string npcId, string displayName)
+    {
+        var root = Path.Combine(_packRoot, npcId, "default");
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "SOUL.md"), $"# {displayName}\n\n{npcId}-pack-soul");
+        File.WriteAllText(Path.Combine(root, "facts.md"), $"{displayName} facts");
+        File.WriteAllText(Path.Combine(root, "voice.md"), $"{displayName} voice");
+        File.WriteAllText(Path.Combine(root, "boundaries.md"), $"{displayName} boundaries");
+        File.WriteAllText(Path.Combine(root, "skills.json"), "[]");
+
+        var manifest = new NpcPackManifest
+        {
+            SchemaVersion = 1,
+            NpcId = npcId,
+            GameId = "stardew-valley",
+            ProfileId = "default",
+            DefaultProfileId = "default",
+            DisplayName = displayName,
+            SmapiName = displayName,
+            Aliases = [npcId, displayName],
+            TargetEntityId = npcId,
+            AdapterId = "stardew",
+            SoulFile = "SOUL.md",
+            FactsFile = "facts.md",
+            VoiceFile = "voice.md",
+            BoundariesFile = "boundaries.md",
+            SkillsFile = "skills.json",
+            Capabilities = ["move", "speak"]
+        };
+        File.WriteAllText(
+            Path.Combine(root, FileSystemNpcPackLoader.ManifestFileName),
+            JsonSerializer.Serialize(manifest));
+    }
+
+    private static GameEventCursor GetTrackerCursor(StardewNpcAutonomyBackgroundService service, string npcId)
+    {
+        var snapshot = GetTrackerDriverSnapshot(service, npcId);
+        var cursorProperty = snapshot.GetType().GetProperty("EventCursor");
+        Assert.IsNotNull(cursorProperty);
+        return (GameEventCursor)(cursorProperty.GetValue(snapshot) ?? throw new AssertFailedException("Tracker cursor missing."));
+    }
+
+    private static string GetTrackerSaveId(StardewNpcAutonomyBackgroundService service, string npcId)
+    {
+        var tracker = GetTracker(service, npcId);
+        var instanceProperty = tracker.GetType().GetProperty("Instance");
+        Assert.IsNotNull(instanceProperty);
+        var instance = instanceProperty.GetValue(tracker);
+        Assert.IsNotNull(instance);
+
+        var descriptorProperty = instance.GetType().GetProperty("Descriptor");
+        Assert.IsNotNull(descriptorProperty);
+        var descriptor = descriptorProperty.GetValue(instance);
+        Assert.IsNotNull(descriptor);
+
+        var saveIdProperty = descriptor.GetType().GetProperty("SaveId");
+        Assert.IsNotNull(saveIdProperty);
+        return (string)(saveIdProperty.GetValue(descriptor) ?? throw new AssertFailedException("Tracker save id missing."));
+    }
+
+    private static object GetTrackerDriverSnapshot(StardewNpcAutonomyBackgroundService service, string npcId)
+    {
+        var tracker = GetTracker(service, npcId);
+        var driverProperty = tracker.GetType().GetProperty("Driver");
+        Assert.IsNotNull(driverProperty);
+        var driver = driverProperty.GetValue(tracker);
+        Assert.IsNotNull(driver);
+
+        var snapshotMethod = driver.GetType().GetMethod("Snapshot");
+        Assert.IsNotNull(snapshotMethod);
+        return snapshotMethod.Invoke(driver, null) ?? throw new AssertFailedException("Tracker snapshot missing.");
+    }
+
+    private static Task GetTrackerWorkerTask(StardewNpcAutonomyBackgroundService service, string npcId)
+    {
+        var tracker = GetTracker(service, npcId);
+        var workerProperty = tracker.GetType().GetProperty("WorkerTask");
+        Assert.IsNotNull(workerProperty);
+        return (Task)(workerProperty.GetValue(tracker) ?? throw new AssertFailedException("Tracker worker task missing."));
+    }
+
+    private static object GetTracker(StardewNpcAutonomyBackgroundService service, string npcId)
+    {
+        var trackersField = typeof(StardewNpcAutonomyBackgroundService).GetField("_trackers", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        Assert.IsNotNull(trackersField);
+        var trackers = trackersField.GetValue(service);
+        Assert.IsNotNull(trackers);
+
+        var tryGetValue = trackers.GetType().GetMethod("TryGetValue");
+        Assert.IsNotNull(tryGetValue);
+        var parameters = new object?[] { npcId, null };
+        var found = (bool)(tryGetValue.Invoke(trackers, parameters) ?? false);
+        Assert.IsTrue(found);
+        return parameters[1] ?? throw new AssertFailedException("Tracker missing.");
+    }
+
+    private sealed class FakeDiscovery : IStardewBridgeDiscovery
+    {
+        private readonly StardewBridgeDiscoverySnapshot _snapshot;
+
+        public FakeDiscovery(StardewBridgeDiscoverySnapshot snapshot)
+        {
+            _snapshot = snapshot;
+        }
+
+        public string DiscoveryFilePath => "fake-discovery.json";
+
+        public bool TryReadLatest(out StardewBridgeDiscoverySnapshot? snapshot, out string? failureReason)
+        {
+            snapshot = _snapshot;
+            failureReason = null;
+            return true;
+        }
+    }
+
+    private sealed class MutableDiscovery : IStardewBridgeDiscovery
+    {
+        private StardewBridgeDiscoverySnapshot _snapshot;
+
+        public MutableDiscovery(StardewBridgeDiscoverySnapshot snapshot)
+        {
+            _snapshot = snapshot;
+        }
+
+        public string DiscoveryFilePath => "mutable-discovery.json";
+
+        public void SetSnapshot(StardewBridgeDiscoverySnapshot snapshot)
+        {
+            _snapshot = snapshot;
+        }
+
+        public bool TryReadLatest(out StardewBridgeDiscoverySnapshot? snapshot, out string? failureReason)
+        {
+            snapshot = _snapshot;
+            failureReason = null;
+            return true;
+        }
+    }
+
+    private sealed class FakeGameAdapter : IGameAdapter
+    {
+        public FakeGameAdapter(IGameCommandService commands, IGameQueryService queries, IGameEventSource events)
+        {
+            Commands = commands;
+            Queries = queries;
+            Events = events;
+        }
+
+        public string AdapterId => "stardew";
+
+        public IGameCommandService Commands { get; }
+
+        public IGameQueryService Queries { get; }
+
+        public IGameEventSource Events { get; }
+    }
+
+    private sealed class FakeQueryService : IGameQueryService
+    {
+        private readonly GameObservation _observation;
+
+        public FakeQueryService(GameObservation observation)
+        {
+            _observation = observation;
+        }
+
+        public Task<GameObservation> ObserveAsync(string npcId, CancellationToken ct)
+            => Task.FromResult(_observation);
+
+        public Task<WorldSnapshot> GetWorldSnapshotAsync(string npcId, CancellationToken ct)
+            => Task.FromResult(new WorldSnapshot("stardew-valley", "save-42", _observation.TimestampUtc, [], []));
+    }
+
+    private sealed class DynamicQueryService : IGameQueryService
+    {
+        public Task<GameObservation> ObserveAsync(string npcId, CancellationToken ct)
+            => Task.FromResult(new GameObservation(
+                npcId,
+                "stardew-valley",
+                DateTime.UtcNow,
+                $"{npcId} is idle.",
+                ["location=Town"]));
+
+        public Task<WorldSnapshot> GetWorldSnapshotAsync(string npcId, CancellationToken ct)
+            => Task.FromResult(new WorldSnapshot("stardew-valley", "save-42", DateTime.UtcNow, [], []));
+    }
+
+    private sealed class FakeEventSource : IGameEventSource
+    {
+        private readonly GameEventBatch _batch;
+
+        public FakeEventSource(IReadOnlyList<GameEventRecord> records)
+        {
+            _batch = new GameEventBatch(records, GameEventCursor.Advance(new GameEventCursor(), records));
+        }
+
+        public FakeEventSource(GameEventBatch batch)
+        {
+            _batch = batch;
+        }
+
+        public Task<IReadOnlyList<GameEventRecord>> PollAsync(GameEventCursor cursor, CancellationToken ct)
+            => Task.FromResult(_batch.Records);
+
+        public Task<GameEventBatch> PollBatchAsync(GameEventCursor cursor, CancellationToken ct)
+            => Task.FromResult(_batch);
+    }
+
+    private sealed class CountingEventSource : IGameEventSource
+    {
+        private readonly GameEventBatch _batch;
+
+        public CountingEventSource(IReadOnlyList<GameEventRecord> records)
+        {
+            _batch = new GameEventBatch(records, GameEventCursor.Advance(new GameEventCursor(), records));
+        }
+
+        public int PollCalls { get; private set; }
+
+        public Task<IReadOnlyList<GameEventRecord>> PollAsync(GameEventCursor cursor, CancellationToken ct)
+        {
+            PollCalls++;
+            return Task.FromResult(_batch.Records);
+        }
+
+        public Task<GameEventBatch> PollBatchAsync(GameEventCursor cursor, CancellationToken ct)
+        {
+            PollCalls++;
+            return Task.FromResult(_batch);
+        }
+    }
+
+    private sealed class ScriptedEventSource : IGameEventSource
+    {
+        private readonly Queue<GameEventBatch> _batches;
+
+        public ScriptedEventSource(params GameEventBatch[] batches)
+        {
+            _batches = new Queue<GameEventBatch>(batches);
+        }
+
+        public Task<IReadOnlyList<GameEventRecord>> PollAsync(GameEventCursor cursor, CancellationToken ct)
+            => Task.FromResult(PollBatch(cursor).Records);
+
+        public Task<GameEventBatch> PollBatchAsync(GameEventCursor cursor, CancellationToken ct)
+            => Task.FromResult(PollBatch(cursor));
+
+        private GameEventBatch PollBatch(GameEventCursor cursor)
+        {
+            if (_batches.Count > 0)
+                return _batches.Dequeue();
+
+            return new GameEventBatch(Array.Empty<GameEventRecord>(), cursor);
+        }
+    }
+
+    private sealed class CursorAwareEventSource : IGameEventSource
+    {
+        private readonly IReadOnlyDictionary<string, GameEventBatch?> _batches;
+
+        public CursorAwareEventSource(IReadOnlyDictionary<string, GameEventBatch?> batches)
+        {
+            _batches = batches;
+        }
+
+        public List<GameEventCursor> SeenCursors { get; } = new();
+
+        public Task<IReadOnlyList<GameEventRecord>> PollAsync(GameEventCursor cursor, CancellationToken ct)
+            => Task.FromResult(PollBatch(cursor).Records);
+
+        public Task<GameEventBatch> PollBatchAsync(GameEventCursor cursor, CancellationToken ct)
+            => Task.FromResult(PollBatch(cursor));
+
+        private GameEventBatch PollBatch(GameEventCursor cursor)
+        {
+            SeenCursors.Add(cursor);
+            var key = cursor.Sequence?.ToString() ?? "<root>";
+            if (_batches.TryGetValue(key, out var batch) && batch is not null)
+                return batch;
+
+            return new GameEventBatch(Array.Empty<GameEventRecord>(), cursor);
+        }
+    }
+
+    private class RecordingCommandService : IGameCommandService
+    {
+        public List<GameAction> Submitted { get; } = new();
+
+        public virtual Task<GameCommandResult> SubmitAsync(GameAction action, CancellationToken ct)
+        {
+            Submitted.Add(action);
+            return Task.FromResult(new GameCommandResult(true, "cmd-1", StardewCommandStatuses.Completed, null, action.TraceId));
+        }
+
+        public virtual Task<GameCommandStatus> GetStatusAsync(string commandId, CancellationToken ct)
+            => Task.FromResult(new GameCommandStatus(commandId, "Penny", "debug", StardewCommandStatuses.Completed, 1, null, null));
+
+        public virtual Task<GameCommandStatus?> TryGetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken ct)
+            => Task.FromResult<GameCommandStatus?>(null);
+
+        public virtual Task<GameCommandStatus> CancelAsync(string commandId, string reason, CancellationToken ct)
+            => Task.FromResult(new GameCommandStatus(commandId, "Penny", "debug", StardewCommandStatuses.Cancelled, 1, reason, null));
+    }
+
+    private sealed class FakeCommandService : RecordingCommandService
+    {
+    }
+
+    private sealed class ScriptedCommandService : RecordingCommandService
+    {
+        private readonly Queue<GameCommandStatus> _statuses;
+
+        public ScriptedCommandService(IReadOnlyList<GameCommandStatus> statusSequence)
+        {
+            _statuses = new Queue<GameCommandStatus>(statusSequence);
+        }
+
+        public int StatusCalls { get; private set; }
+
+        public override Task<GameCommandStatus> GetStatusAsync(string commandId, CancellationToken ct)
+        {
+            StatusCalls++;
+            if (_statuses.Count > 0)
+                return Task.FromResult(_statuses.Dequeue());
+
+            return Task.FromResult(new GameCommandStatus(commandId, "haley", "move", StardewCommandStatuses.Completed, 1, null, null));
+        }
+    }
+
+    private sealed class LookupCommandService : RecordingCommandService
+    {
+        private readonly GameCommandStatus? _lookupStatus;
+
+        public LookupCommandService(GameCommandStatus? lookupStatus)
+        {
+            _lookupStatus = lookupStatus;
+        }
+
+        public int LookupCalls { get; private set; }
+
+        public int StatusCalls { get; private set; }
+
+        public override Task<GameCommandStatus> GetStatusAsync(string commandId, CancellationToken ct)
+        {
+            StatusCalls++;
+            return Task.FromResult(new GameCommandStatus(commandId, "haley", "move", StardewCommandStatuses.Completed, 1, null, null));
+        }
+
+        public override Task<GameCommandStatus?> TryGetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken ct)
+        {
+            LookupCalls++;
+            return Task.FromResult(_lookupStatus);
+        }
+    }
+
+    private sealed class CountingChatClient : IChatClient
+    {
+        private readonly string _response;
+        private int _completeWithToolsCalls;
+
+        public CountingChatClient(string response)
+        {
+            _response = response;
+        }
+
+        public int CompleteWithToolsCalls => _completeWithToolsCalls;
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult(_response);
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            Interlocked.Increment(ref _completeWithToolsCalls);
+            return Task.FromResult(new ChatResponse { Content = _response, FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class BlockingChatClient : IChatClient
+    {
+        private readonly string _response;
+        private readonly TaskCompletionSource<bool> _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public BlockingChatClient(string response)
+        {
+            _response = response;
+        }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult(_response);
+
+        public async Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            _entered.TrySetResult(true);
+            await _release.Task.WaitAsync(ct);
+            return new ChatResponse { Content = _response, FinishReason = "stop" };
+        }
+
+        public Task WaitUntilEnteredAsync(CancellationToken ct)
+            => _entered.Task.WaitAsync(ct);
+
+        public void Release()
+            => _release.TrySetResult(true);
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class BlockFirstChatClient : IChatClient
+    {
+        private readonly string _response;
+        private readonly TaskCompletionSource<bool> _firstEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _firstRelease = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly List<string> _capturedRequests = [];
+        private int _completeWithToolsCalls;
+
+        public BlockFirstChatClient(string response)
+        {
+            _response = response;
+        }
+
+        public int CompleteWithToolsCalls => Volatile.Read(ref _completeWithToolsCalls);
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult(_response);
+
+        public async Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            var callNumber = Interlocked.Increment(ref _completeWithToolsCalls);
+            lock (_capturedRequests)
+            {
+                _capturedRequests.Add(string.Join("\n", messages.Select(message => message.Content)));
+            }
+
+            if (callNumber == 1)
+            {
+                _firstEntered.TrySetResult(true);
+                await _firstRelease.Task.WaitAsync(ct);
+            }
+
+            return new ChatResponse { Content = _response, FinishReason = "stop" };
+        }
+
+        public Task WaitUntilFirstCallEnteredAsync(CancellationToken ct)
+            => _firstEntered.Task.WaitAsync(ct);
+
+        public void ReleaseFirstCall()
+            => _firstRelease.TrySetResult(true);
+
+        public string GetCapturedRequest(int oneBasedCallNumber)
+        {
+            lock (_capturedRequests)
+            {
+                if (oneBasedCallNumber <= 0 || oneBasedCallNumber > _capturedRequests.Count)
+                    throw new AssertFailedException($"Captured request #{oneBasedCallNumber} is unavailable. Total captured: {_capturedRequests.Count}.");
+
+                return _capturedRequests[oneBasedCallNumber - 1];
+            }
+        }
+
+        public async Task WaitForCallCountAsync(int expectedCount, TimeSpan timeout)
+        {
+            var deadlineUtc = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < deadlineUtc)
+            {
+                if (CompleteWithToolsCalls >= expectedCount)
+                    return;
+
+                await Task.Delay(10);
+            }
+
+            throw new AssertFailedException($"Timed out waiting for {expectedCount} chat calls. Observed {CompleteWithToolsCalls}.");
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class NoopPrivateChatAgentRunner : INpcPrivateChatAgentRunner
+    {
+        public Task<NpcPrivateChatReply> ReplyAsync(NpcPrivateChatRequest request, CancellationToken ct)
+            => Task.FromResult(new NpcPrivateChatReply("noop"));
+    }
+
+    private sealed class NoopCronScheduler : ICronScheduler
+    {
+        public event EventHandler<CronTaskDueEventArgs>? TaskDue
+        {
+            add { }
+            remove { }
+        }
+
+        public void Schedule(CronTask task)
+        {
+        }
+
+        public void Cancel(string taskId)
+        {
+        }
+
+        public CronTask? GetTask(string taskId) => null;
+
+        public IReadOnlyList<CronTask> GetAllTasks() => Array.Empty<CronTask>();
+
+        public DateTimeOffset? GetNextRun(string taskId) => null;
+    }
+
+    private sealed class DiscoveredNoopTool : ITool
+    {
+        public DiscoveredNoopTool(string name)
+        {
+            Name = name;
+        }
+
+        public string Name { get; }
+
+        public string Description => "test tool";
+
+        public Type ParametersType => typeof(object);
+
+        public Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+            => Task.FromResult(ToolResult.Ok("ok"));
+    }
+}

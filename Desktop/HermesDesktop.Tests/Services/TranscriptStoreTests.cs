@@ -282,6 +282,24 @@ public class TranscriptStoreTests
     }
 
     [TestMethod]
+    public async Task SaveMessageAsync_NewStoreInstancePreservesExistingSessionHistoryInCache()
+    {
+        var store1 = CreateStore();
+        await store1.SaveMessageAsync("cross-instance", new Message { Role = "user", Content = "remember my name" }, CancellationToken.None);
+        await store1.SaveMessageAsync("cross-instance", new Message { Role = "assistant", Content = "I will remember it" }, CancellationToken.None);
+
+        var store2 = CreateStore();
+        await store2.SaveMessageAsync("cross-instance", new Message { Role = "user", Content = "what is my name?" }, CancellationToken.None);
+
+        var loaded = await store2.LoadSessionAsync("cross-instance", CancellationToken.None);
+
+        Assert.AreEqual(3, loaded.Count);
+        Assert.AreEqual("remember my name", loaded[0].Content);
+        Assert.AreEqual("I will remember it", loaded[1].Content);
+        Assert.AreEqual("what is my name?", loaded[2].Content);
+    }
+
+    [TestMethod]
     public async Task SaveMessageAsync_DifferentSessions_CreateSeparateSessionRows()
     {
         var store = CreateStore();

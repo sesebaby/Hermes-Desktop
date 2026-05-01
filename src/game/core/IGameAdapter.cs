@@ -14,6 +14,9 @@ public interface IGameCommandService
 
     Task<GameCommandStatus> GetStatusAsync(string commandId, CancellationToken ct);
 
+    Task<GameCommandStatus?> TryGetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken ct)
+        => Task.FromResult<GameCommandStatus?>(null);
+
     Task<GameCommandStatus> CancelAsync(string commandId, string reason, CancellationToken ct);
 }
 
@@ -27,4 +30,10 @@ public interface IGameQueryService
 public interface IGameEventSource
 {
     Task<IReadOnlyList<GameEventRecord>> PollAsync(GameEventCursor cursor, CancellationToken ct);
+
+    async Task<GameEventBatch> PollBatchAsync(GameEventCursor cursor, CancellationToken ct)
+    {
+        var records = await PollAsync(cursor, ct);
+        return new GameEventBatch(records, GameEventCursor.Advance(cursor, records));
+    }
 }

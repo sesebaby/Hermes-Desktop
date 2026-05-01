@@ -27,6 +27,9 @@ public sealed class WorldCoordinationService
             TargetObjectId: null));
     }
 
+    public bool ReleaseClaim(string claimId)
+        => _claims.Release(claimId);
+
     public bool ReleaseCommand(string commandId)
-        => _claims.Release(commandId);
+        => ReleaseClaim(commandId);
 }

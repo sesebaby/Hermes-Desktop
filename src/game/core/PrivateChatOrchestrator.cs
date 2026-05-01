@@ -2,7 +2,7 @@ namespace Hermes.Agent.Game;
 
 using System.Text.Json.Nodes;
 
-public sealed class PrivateChatOrchestrator
+public sealed class PrivateChatOrchestrator : IDisposable
 {
     private readonly IGameEventSource _events;
     private readonly IGameCommandService _commands;
@@ -13,6 +13,7 @@ public sealed class PrivateChatOrchestrator
     private PrivateChatState _state = PrivateChatState.Idle;
     private string? _conversationId;
     private string? _activeNpcId;
+    private IPrivateChatSessionLease? _sessionLease;
     private int _turns;
     private PendingPrivateChatOpen? _pendingOpen;
 
@@ -32,29 +33,35 @@ public sealed class PrivateChatOrchestrator
 
     public string? ConversationId => _conversationId;
 
-    public async Task<int> DrainExistingEventsAsync(CancellationToken ct)
+    internal async Task<int> DrainExistingEventsAsync(CancellationToken ct)
     {
-        var records = await _events.PollAsync(_cursor, ct);
-        foreach (var record in records)
-            _cursor = new GameEventCursor(record.EventId);
-
-        return records.Count;
+        var batch = await _events.PollBatchAsync(_cursor, ct);
+        DrainRecords(batch.Records);
+        _cursor = batch.NextCursor;
+        return batch.Records.Count;
     }
 
-    public async Task<PrivateChatStepResult> ProcessNextAsync(CancellationToken ct)
+    internal async Task<PrivateChatStepResult> ProcessNextAsync(CancellationToken ct)
     {
-        var processed = 0;
         await TryRetryPendingOpenAsync(ct);
+        var batch = await _events.PollBatchAsync(_cursor, ct);
+        return await ProcessEventBatchCoreAsync(batch, ct);
+    }
 
-        var records = await _events.PollAsync(_cursor, ct);
+    public void DrainRecords(IReadOnlyList<GameEventRecord> records)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+
         foreach (var record in records)
-        {
-            await ProcessRecordAsync(record, ct);
-            _cursor = new GameEventCursor(record.EventId);
-            processed++;
-        }
+            AdvanceCursor(record);
+    }
 
-        return new PrivateChatStepResult(_state, _conversationId, processed);
+    public async Task<PrivateChatStepResult> ProcessRecordsAsync(IReadOnlyList<GameEventRecord> records, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+
+        await TryRetryPendingOpenAsync(ct);
+        return await ProcessRecordsCoreAsync(records, ct);
     }
 
     private async Task ProcessRecordAsync(GameEventRecord record, CancellationToken ct)
@@ -207,6 +214,12 @@ public sealed class PrivateChatOrchestrator
         _state = PrivateChatState.PendingOpen;
         _conversationId = pending.ConversationId;
 
+        if (_sessionLease is null &&
+            !await TryAcquireSessionLeaseAsync(pending.NpcId, pending.ConversationId, ct))
+        {
+            return;
+        }
+
         var result = await SubmitOpenPrivateChatAsync(
             pending.NpcId,
             pending.ConversationId,
@@ -278,8 +291,61 @@ public sealed class PrivateChatOrchestrator
         => _options.ReopenPolicy is PrivateChatSessionReopenPolicy.Never ||
            _turns >= Math.Max(1, _options.MaxTurnsPerSession);
 
+    public void Dispose() => EndSession();
+
+    private async Task<PrivateChatStepResult> ProcessEventBatchCoreAsync(GameEventBatch batch, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+
+        var result = await ProcessRecordsCoreAsync(batch.Records, ct);
+        _cursor = batch.NextCursor;
+        return result;
+    }
+
+    private async Task<PrivateChatStepResult> ProcessRecordsCoreAsync(IReadOnlyList<GameEventRecord> records, CancellationToken ct)
+    {
+        var processed = 0;
+        foreach (var record in records)
+        {
+            await ProcessRecordAsync(record, ct);
+            AdvanceCursor(record);
+            processed++;
+        }
+
+        return new PrivateChatStepResult(_state, _conversationId, processed);
+    }
+
+    private void AdvanceCursor(GameEventRecord record)
+        => _cursor = GameEventCursor.FromRecord(record);
+
+    private async Task<bool> TryAcquireSessionLeaseAsync(string npcId, string conversationId, CancellationToken ct)
+    {
+        if (_options.SessionLeaseCoordinator is null)
+            return true;
+
+        try
+        {
+            _sessionLease = await _options.SessionLeaseCoordinator.AcquireAsync(
+                new PrivateChatSessionLeaseRequest(
+                    npcId,
+                    _options.Policy.SaveId,
+                    conversationId,
+                    _options.SessionLeaseOwner,
+                    _options.SessionLeaseReason),
+                ct);
+            return true;
+        }
+        catch
+        {
+            _sessionLease = null;
+            return false;
+        }
+    }
+
     private void EndSession()
     {
+        _sessionLease?.Dispose();
+        _sessionLease = null;
         _state = PrivateChatState.Idle;
         _conversationId = null;
         _activeNpcId = null;

@@ -21,9 +21,23 @@ public sealed class NpcRuntimeHost
             .ToArray();
 
     public async Task StartDiscoveredAsync(string packRoot, string saveId, CancellationToken ct)
+        => await StartDiscoveredAsync(packRoot, saveId, enabledNpcIds: null, ct);
+
+    public async Task StartDiscoveredAsync(
+        string packRoot,
+        string saveId,
+        IReadOnlyCollection<string>? enabledNpcIds,
+        CancellationToken ct)
     {
+        HashSet<string>? enabled = null;
+        if (enabledNpcIds is { Count: > 0 })
+            enabled = new HashSet<string>(enabledNpcIds, StringComparer.OrdinalIgnoreCase);
+
         foreach (var pack in _packLoader.LoadPacks(packRoot))
         {
+            if (enabled is not null && !enabled.Contains(pack.Manifest.NpcId))
+                continue;
+
             var descriptor = NpcRuntimeDescriptorFactory.Create(pack, saveId);
             var instance = await _supervisor.GetOrStartAsync(descriptor, _runtimeRoot, ct);
             instance.Namespace.SeedPersonaPack(pack);
