@@ -14,7 +14,8 @@ public sealed class PrivateChatInputMenu : IClickableMenu
     private const int ColumnGap = 24;
     private const int PortraitPanelWidth = 220;
     private const int PortraitFrameMaxSize = 160;
-    private const int InputFramePadding = 18;
+    private const int InputFrameHorizontalPadding = 28;
+    private const int InputFrameVerticalPadding = 24;
     private const int MinimumMenuWidth = 680;
     private const int MaximumMenuWidth = 920;
     private const int MinimumMenuHeight = 320;
@@ -49,9 +50,7 @@ public sealed class PrivateChatInputMenu : IClickableMenu
     {
         _npc = npc;
         _npcDisplayName = npc.displayName ?? npc.Name;
-        _prompt = string.IsNullOrWhiteSpace(prompt)
-            ? $"对 {_npcDisplayName} 说："
-            : prompt.Trim();
+        _prompt = BuildPrompt(_npcDisplayName, prompt);
         _onSubmitted = onSubmitted;
         _onCancelled = onCancelled;
         _textBox = new TextBox(null, null, Game1.smallFont, Game1.textColor)
@@ -171,17 +170,17 @@ public sealed class PrivateChatInputMenu : IClickableMenu
             portraitSize,
             portraitSize);
 
-        var inputTop = _rightPanelBounds.Y + 58;
+        var inputTop = _rightPanelBounds.Y + 64;
         _inputFrameBounds = new Rectangle(
             _rightPanelBounds.X,
             inputTop,
             _rightPanelBounds.Width,
-            Math.Max(136, _rightPanelBounds.Bottom - inputTop - 8));
+            Math.Max(126, _rightPanelBounds.Bottom - inputTop - 26));
         _inputTextBounds = new Rectangle(
-            _inputFrameBounds.X + InputFramePadding,
-            _inputFrameBounds.Y + InputFramePadding,
-            _inputFrameBounds.Width - InputFramePadding * 2,
-            _inputFrameBounds.Height - InputFramePadding * 2);
+            _inputFrameBounds.X + InputFrameHorizontalPadding,
+            _inputFrameBounds.Y + InputFrameVerticalPadding,
+            _inputFrameBounds.Width - InputFrameHorizontalPadding * 2,
+            _inputFrameBounds.Height - InputFrameVerticalPadding * 2);
         _footerBounds = new Rectangle(
             _rightPanelBounds.X,
             yPositionOnScreen + height - 36,
@@ -193,7 +192,7 @@ public sealed class PrivateChatInputMenu : IClickableMenu
         _textBox.Width = _inputTextBounds.Width;
         _textBox.Height = _inputTextBounds.Height;
 
-        initializeUpperRightCloseButton();
+        PositionCloseButtonInsideMenu();
     }
 
     private void DrawHeader(SpriteBatch b)
@@ -202,15 +201,8 @@ public sealed class PrivateChatInputMenu : IClickableMenu
         b.DrawString(
             Game1.smallFont,
             title,
-            new Vector2(_headerBounds.X, _headerBounds.Y + 4),
+            new Vector2(_headerBounds.X, _headerBounds.Y + 14),
             Game1.textColor);
-
-        var subtitle = "Private chat";
-        b.DrawString(
-            Game1.tinyFont,
-            subtitle,
-            new Vector2(_headerBounds.X, _headerBounds.Y + 34),
-            Game1.textColor * 0.75f);
 
         b.Draw(
             Game1.staminaRect,
@@ -220,13 +212,7 @@ public sealed class PrivateChatInputMenu : IClickableMenu
 
     private void DrawPortraitPanel(SpriteBatch b)
     {
-        IClickableMenu.drawTextureBox(
-            b,
-            _portraitPanelBounds.X,
-            _portraitPanelBounds.Y,
-            _portraitPanelBounds.Width,
-            _portraitPanelBounds.Height,
-            Color.White * 0.92f);
+        DrawLightPanel(b, _portraitPanelBounds);
 
         DrawNpcPortrait(b, _portraitFrameBounds);
 
@@ -235,6 +221,15 @@ public sealed class PrivateChatInputMenu : IClickableMenu
             _portraitPanelBounds.X + (_portraitPanelBounds.Width - nameSize.X) / 2,
             _portraitFrameBounds.Bottom + 14);
         b.DrawString(Game1.smallFont, _npcDisplayName, namePosition, Game1.textColor);
+    }
+
+    private static void DrawLightPanel(SpriteBatch b, Rectangle bounds)
+    {
+        b.Draw(Game1.staminaRect, bounds, Color.White * 0.12f);
+        b.Draw(Game1.staminaRect, new Rectangle(bounds.X, bounds.Y, bounds.Width, 2), Game1.textColor * 0.18f);
+        b.Draw(Game1.staminaRect, new Rectangle(bounds.X, bounds.Y, 2, bounds.Height), Game1.textColor * 0.18f);
+        b.Draw(Game1.staminaRect, new Rectangle(bounds.X, bounds.Bottom - 2, bounds.Width, 2), Game1.textColor * 0.26f);
+        b.Draw(Game1.staminaRect, new Rectangle(bounds.Right - 2, bounds.Y, 2, bounds.Height), Game1.textColor * 0.26f);
     }
 
     private void DrawNpcPortrait(SpriteBatch b, Rectangle bounds)
@@ -321,13 +316,26 @@ public sealed class PrivateChatInputMenu : IClickableMenu
 
     private void DrawFooter(SpriteBatch b)
     {
-        var hint = "Enter 发送    Esc 取消";
-        var hintSize = Game1.tinyFont.MeasureString(hint);
+        var hint = "回车发送    ESC取消";
+        var hintSize = Game1.smallFont.MeasureString(hint);
         b.DrawString(
-            Game1.tinyFont,
+            Game1.smallFont,
             hint,
             new Vector2(_footerBounds.Right - hintSize.X, _footerBounds.Y),
             Game1.textColor * 0.75f);
+    }
+
+    private void PositionCloseButtonInsideMenu()
+    {
+        initializeUpperRightCloseButton();
+        if (upperRightCloseButton is null)
+            return;
+
+        upperRightCloseButton.bounds = new Rectangle(
+            xPositionOnScreen + width - 60,
+            yPositionOnScreen + 10,
+            48,
+            48);
     }
 
     private static void DrawCaret(SpriteBatch b, int x, int y)
@@ -351,6 +359,27 @@ public sealed class PrivateChatInputMenu : IClickableMenu
             target.Y + (target.Height - height) / 2,
             width,
             height);
+    }
+
+    private static string BuildPrompt(string npcDisplayName, string? prompt)
+    {
+        var defaultPrompt = $"你想悄悄对{npcDisplayName}说什么？";
+        if (string.IsNullOrWhiteSpace(prompt))
+            return defaultPrompt;
+
+        var trimmed = prompt.Trim();
+        return ContainsAsciiLetter(trimmed) ? defaultPrompt : trimmed;
+    }
+
+    private static bool ContainsAsciiLetter(string value)
+    {
+        foreach (var ch in value)
+        {
+            if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z'))
+                return true;
+        }
+
+        return false;
     }
 
     private void Submit()

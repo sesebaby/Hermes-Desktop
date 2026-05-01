@@ -261,6 +261,35 @@ public class RawDialogueDisplayRegressionTests
     }
 
     [TestMethod]
+    public void PrivateChatInputUsesLocalizedPolishedTextAndInsetCloseButton()
+    {
+        var inputMenu = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "PrivateChatInputMenu.cs");
+
+        Assert.IsFalse(
+            inputMenu.Contains("Private chat", StringComparison.Ordinal),
+            "Visible private-chat menu chrome should not include English subtitles.");
+        Assert.IsFalse(
+            inputMenu.Contains("Say something", StringComparison.Ordinal),
+            "Visible private-chat prompt should be localized by the bridge menu.");
+        StringAssert.Contains(
+            inputMenu,
+            "悄悄对",
+            "The default private-chat prompt should be Chinese.");
+        StringAssert.Contains(
+            inputMenu,
+            "回车发送    ESC取消",
+            "The footer should use the requested Chinese send label and ESC cancel label without unsupported separators.");
+        StringAssert.Contains(
+            inputMenu,
+            "Game1.smallFont.MeasureString(hint)",
+            "The footer contains Chinese text, so it should use the same Chinese-capable font as the rest of the private-chat menu.");
+        StringAssert.Contains(
+            inputMenu,
+            "PositionCloseButtonInsideMenu",
+            "The close button should be explicitly inset so it is not clipped by the game viewport edge.");
+    }
+
+    [TestMethod]
     public void PrivateChatReplyCloseIsRecordedBeforeOptionalReopen()
     {
         var modEntry = ReadRepositoryFile("Mods", "StardewHermesBridge", "ModEntry.cs");
