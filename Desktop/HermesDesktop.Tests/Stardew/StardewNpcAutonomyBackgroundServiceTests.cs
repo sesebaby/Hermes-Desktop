@@ -331,6 +331,38 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
+    public async Task DispatchOneIterationAsync_WhenBurstTriggeredWhileWorkerIsBusy_KeepsOnlyOneFollowUpTick()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new BlockFirstChatClient("I will wait near the library.");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"]);
+
+        await service.DispatchOneIterationAsync(CancellationToken.None);
+        await chatClient.WaitUntilFirstCallEnteredAsync(CancellationToken.None);
+
+        var burst = Enumerable.Range(0, 25)
+            .Select(_ => service.DispatchOneIterationAsync(CancellationToken.None))
+            .ToArray();
+        await Task.WhenAll(burst);
+
+        chatClient.ReleaseFirstCall();
+        await chatClient.WaitForCallCountAsync(2, TimeSpan.FromSeconds(1));
+        await Task.Delay(200);
+
+        Assert.AreEqual(
+            2,
+            chatClient.CompleteWithToolsCalls,
+            "Even after many host wake-ups while the worker is still busy, the same NPC should keep only one merged follow-up tick instead of rebuilding an ever-growing backlog.");
+    }
+
+    [TestMethod]
     public async Task Stop_WhenWorkerIsInFlight_WaitsForWorkerShutdown()
     {
         var discovery = CreateDiscovery("save-42");
