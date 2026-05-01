@@ -229,8 +229,35 @@ public class RawDialogueDisplayRegressionTests
             "The menu must subscribe the textbox to Stardew keyboard input.");
         StringAssert.Contains(
             inputMenu,
-            "_textBox.Draw(b)",
-            "The menu must draw the textbox itself; otherwise the command can complete with no visible UI.");
+            "DrawInputFrame",
+            "The menu must draw a visible input area itself; otherwise the command can complete with no visible UI.");
+    }
+
+    [TestMethod]
+    public void PrivateChatInputUsesPortraitShellAndWrappedInputArea()
+    {
+        var inputMenu = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "PrivateChatInputMenu.cs");
+
+        StringAssert.Contains(
+            inputMenu,
+            "PortraitPanelWidth",
+            "The private-chat menu should reserve a stable left column for the NPC portrait.");
+        StringAssert.Contains(
+            inputMenu,
+            "DrawNpcPortrait",
+            "The private-chat menu should draw a large NPC portrait or a clear fallback in the left column.");
+        StringAssert.Contains(
+            inputMenu,
+            "DrawWrappedInputText",
+            "The private-chat menu should render the current message in a multi-line visual input area.");
+        StringAssert.Contains(
+            inputMenu,
+            "DrawInputFrame",
+            "The private-chat menu should draw its own multi-line input frame instead of relying on the one-line textbox skin.");
+        StringAssert.Contains(
+            inputMenu,
+            "gameWindowSizeChanged",
+            "The private-chat menu should recompute its shell layout when the UI viewport changes.");
     }
 
     [TestMethod]

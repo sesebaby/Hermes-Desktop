@@ -35,6 +35,21 @@ public class StardewPrivateChatWiringTests
             "The real runner should use the Hermes Agent path so persona, transcript, memory, and model behavior stay in Desktop/core.");
     }
 
+    [TestMethod]
+    public void StardewPrivateChatOrchestratorDelegatesReusableStateMachineToGameCore()
+    {
+        var runtime = ReadRepositoryFile("src", "games", "stardew", "StardewPrivateChatOrchestrator.cs");
+
+        StringAssert.Contains(
+            runtime,
+            "new PrivateChatOrchestrator(",
+            "Stardew must keep only the compatibility wrapper and delegate reusable private-chat state transitions to src/game/core.");
+        StringAssert.Contains(
+            runtime,
+            "new PrivateChatPolicy(",
+            "Stardew-specific event names, prompt, and retry codes should be injected through the core private-chat policy.");
+    }
+
     private static string ReadRepositoryFile(params string[] relativePath)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

@@ -1,6 +1,5 @@
 namespace Hermes.Agent.Games.Stardew;
 
-using System.Text.Json.Nodes;
 using Hermes.Agent.Core;
 using Hermes.Agent.Game;
 using Hermes.Agent.LLM;
@@ -9,16 +8,7 @@ using Microsoft.Extensions.Logging;
 
 public sealed class StardewPrivateChatOrchestrator
 {
-    private readonly IGameEventSource _events;
-    private readonly IGameCommandService _commands;
-    private readonly INpcPrivateChatAgentRunner _agentRunner;
-    private readonly StardewPrivateChatOptions _options;
-    private readonly HashSet<string> _completedOpenKeys = new(StringComparer.OrdinalIgnoreCase);
-    private GameEventCursor _cursor = new(null);
-    private StardewPrivateChatState _state = StardewPrivateChatState.Idle;
-    private string? _conversationId;
-    private int _turns;
-    private StardewPendingPrivateChatOpen? _pendingOpen;
+    private readonly PrivateChatOrchestrator _inner;
 
     public StardewPrivateChatOrchestrator(
         IGameEventSource events,
@@ -26,278 +16,87 @@ public sealed class StardewPrivateChatOrchestrator
         INpcPrivateChatAgentRunner agentRunner,
         StardewPrivateChatOptions? options = null)
     {
-        _events = events;
-        _commands = commands;
-        _agentRunner = agentRunner;
-        _options = options ?? new StardewPrivateChatOptions();
+        var stardewOptions = options ?? new StardewPrivateChatOptions();
+        _inner = new PrivateChatOrchestrator(
+            events,
+            commands,
+            new StardewPrivateChatAgentRunnerAdapter(agentRunner),
+            new PrivateChatOrchestratorOptions(
+                new PrivateChatPolicy(
+                    NpcId: stardewOptions.NpcId,
+                    SaveId: stardewOptions.SaveId,
+                    GameId: "stardew-valley",
+                    OpenPrompt: "Say something to Haley.",
+                    OpenTriggerEventTypes:
+                    [
+                        "vanilla_dialogue_completed",
+                        "vanilla_dialogue_unavailable"
+                    ],
+                    IsRetryableOpenFailure: IsRetryableOpenFailure),
+                ToCoreReopenPolicy(stardewOptions.ReopenPolicy),
+                stardewOptions.MaxTurnsPerSession,
+                stardewOptions.MaxOpenAttempts));
     }
 
-    public StardewPrivateChatState State => _state;
+    public StardewPrivateChatState State => ToStardewState(_inner.State);
 
-    public string? ConversationId => _conversationId;
+    public string? ConversationId => _inner.ConversationId;
 
-    public async Task<int> DrainExistingEventsAsync(CancellationToken ct)
-    {
-        var records = await _events.PollAsync(_cursor, ct);
-        foreach (var record in records)
-            _cursor = new GameEventCursor(record.EventId);
-
-        return records.Count;
-    }
+    public Task<int> DrainExistingEventsAsync(CancellationToken ct)
+        => _inner.DrainExistingEventsAsync(ct);
 
     public async Task<StardewPrivateChatStepResult> ProcessNextAsync(CancellationToken ct)
     {
-        var processed = 0;
-        await TryRetryPendingOpenAsync(ct);
-
-        var records = await _events.PollAsync(_cursor, ct);
-        foreach (var record in records)
-        {
-            await ProcessRecordAsync(record, ct);
-            _cursor = new GameEventCursor(record.EventId);
-            processed++;
-        }
-
-        return new StardewPrivateChatStepResult(_state, _conversationId, processed);
+        var result = await _inner.ProcessNextAsync(ct);
+        return new StardewPrivateChatStepResult(
+            ToStardewState(result.State),
+            result.ConversationId,
+            result.EventsProcessed);
     }
-
-    private async Task ProcessRecordAsync(GameEventRecord record, CancellationToken ct)
-    {
-        if (!IsTargetNpc(record.NpcId))
-            return;
-
-        if (IsPrivateChatOpenTrigger(record.EventType))
-        {
-            await TryOpenAfterVanillaDialogueAsync(record, ct);
-            return;
-        }
-
-        if (string.Equals(record.EventType, "player_private_message_submitted", StringComparison.OrdinalIgnoreCase))
-            await TryReplyToPlayerMessageAsync(record, ct);
-
-        if (string.Equals(record.EventType, "player_private_message_cancelled", StringComparison.OrdinalIgnoreCase))
-            TryCancelPrivateChat(record);
-
-        if (string.Equals(record.EventType, "private_chat_reply_closed", StringComparison.OrdinalIgnoreCase))
-            await TryReopenAfterPrivateChatReplyClosedAsync(record, ct);
-    }
-
-    private async Task TryOpenAfterVanillaDialogueAsync(GameEventRecord record, CancellationToken ct)
-    {
-        if (_state is not StardewPrivateChatState.Idle)
-            return;
-
-        var dialogueEventId = GetCorrelationOrEventId(record);
-        if (_completedOpenKeys.Contains(dialogueEventId) ||
-            string.Equals(_pendingOpen?.OpenKey, dialogueEventId, StringComparison.OrdinalIgnoreCase))
-            return;
-
-        _conversationId = $"pc_{dialogueEventId}";
-        _turns = 0;
-        _state = StardewPrivateChatState.PendingOpen;
-        _pendingOpen = new StardewPendingPrivateChatOpen(
-            record.NpcId!,
-            _conversationId,
-            dialogueEventId,
-            "auto_after_vanilla_dialogue",
-            Attempts: 0);
-
-        await TrySubmitPendingOpenAsync(ct);
-    }
-
-    private async Task TryReplyToPlayerMessageAsync(GameEventRecord record, CancellationToken ct)
-    {
-        if (_state is not StardewPrivateChatState.AwaitingPlayerInput || string.IsNullOrWhiteSpace(_conversationId))
-            return;
-
-        var submittedConversationId = GetPayloadString(record.Payload, "conversationId") ?? record.CorrelationId;
-        if (!string.Equals(submittedConversationId, _conversationId, StringComparison.OrdinalIgnoreCase))
-            return;
-
-        var playerText = GetPayloadString(record.Payload, "text");
-        if (string.IsNullOrWhiteSpace(playerText))
-        {
-            EndSession();
-            return;
-        }
-
-        _state = StardewPrivateChatState.WaitingAgentReply;
-        NpcPrivateChatReply reply;
-        try
-        {
-            reply = await _agentRunner.ReplyAsync(
-                new NpcPrivateChatRequest(record.NpcId!, _options.SaveId, _conversationId, playerText),
-                ct);
-        }
-        catch
-        {
-            EndSession();
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(reply.Text))
-        {
-            EndSession();
-            return;
-        }
-
-        _state = StardewPrivateChatState.ShowingReply;
-        var speakResult = await SubmitSpeakAsync(record.NpcId!, reply.Text, _conversationId, ct);
-        _turns++;
-        if (!speakResult.Accepted || ShouldEndAfterReply())
-        {
-            EndSession();
-            return;
-        }
-
-        _state = StardewPrivateChatState.WaitingReplyDismissal;
-    }
-
-    private async Task TryReopenAfterPrivateChatReplyClosedAsync(GameEventRecord record, CancellationToken ct)
-    {
-        if (_state is not StardewPrivateChatState.WaitingReplyDismissal || string.IsNullOrWhiteSpace(_conversationId))
-            return;
-
-        var closedConversationId = GetPayloadString(record.Payload, "conversationId") ?? record.CorrelationId;
-        if (!string.Equals(closedConversationId, _conversationId, StringComparison.OrdinalIgnoreCase))
-            return;
-
-        var nextConversationId = $"{_conversationId}_turn{_turns + 1}";
-        _conversationId = nextConversationId;
-        _pendingOpen = new StardewPendingPrivateChatOpen(
-            record.NpcId!,
-            nextConversationId,
-            nextConversationId,
-            "reopen_after_reply",
-            Attempts: 0);
-        _state = StardewPrivateChatState.PendingOpen;
-
-        await TrySubmitPendingOpenAsync(ct);
-    }
-
-    private void TryCancelPrivateChat(GameEventRecord record)
-    {
-        if (_state is not StardewPrivateChatState.AwaitingPlayerInput || string.IsNullOrWhiteSpace(_conversationId))
-            return;
-
-        var cancelledConversationId = GetPayloadString(record.Payload, "conversationId") ?? record.CorrelationId;
-        if (string.Equals(cancelledConversationId, _conversationId, StringComparison.OrdinalIgnoreCase))
-            EndSession();
-    }
-
-    private async Task TryRetryPendingOpenAsync(CancellationToken ct)
-    {
-        if (_state is StardewPrivateChatState.PendingOpen && _pendingOpen is not null)
-            await TrySubmitPendingOpenAsync(ct);
-    }
-
-    private async Task TrySubmitPendingOpenAsync(CancellationToken ct)
-    {
-        if (_pendingOpen is not { } pending)
-            return;
-
-        pending = pending with { Attempts = pending.Attempts + 1 };
-        _pendingOpen = pending;
-        _state = StardewPrivateChatState.PendingOpen;
-        _conversationId = pending.ConversationId;
-
-        var result = await SubmitOpenPrivateChatAsync(
-            pending.NpcId,
-            pending.ConversationId,
-            pending.OpenKey,
-            pending.Reason,
-            ct);
-
-        if (result.Accepted)
-        {
-            _completedOpenKeys.Add(pending.OpenKey);
-            _pendingOpen = null;
-            _state = StardewPrivateChatState.AwaitingPlayerInput;
-            return;
-        }
-
-        if (IsRetryableOpenFailure(result) && pending.Attempts < Math.Max(1, _options.MaxOpenAttempts))
-            return;
-
-        _completedOpenKeys.Add(pending.OpenKey);
-        EndSession();
-    }
-
-    private Task<GameCommandResult> SubmitOpenPrivateChatAsync(
-        string npcId,
-        string conversationId,
-        string openKey,
-        string reason,
-        CancellationToken ct)
-    {
-        var payload = new JsonObject
-        {
-            ["conversationId"] = conversationId,
-            ["prompt"] = "Say something to Haley."
-        };
-        var action = new GameAction(
-            npcId,
-            "stardew-valley",
-            GameActionType.OpenPrivateChat,
-            $"trace_private_chat_{Guid.NewGuid():N}",
-            $"private_chat:{_options.SaveId}:{npcId}:{openKey}",
-            new GameActionTarget("player"),
-            reason,
-            payload);
-        return _commands.SubmitAsync(action, ct);
-    }
-
-    private Task<GameCommandResult> SubmitSpeakAsync(string npcId, string text, string conversationId, CancellationToken ct)
-    {
-        var payload = new JsonObject
-        {
-            ["text"] = text,
-            ["channel"] = "private_chat",
-            ["conversationId"] = conversationId
-        };
-        var action = new GameAction(
-            npcId,
-            "stardew-valley",
-            GameActionType.Speak,
-            $"trace_private_chat_reply_{Guid.NewGuid():N}",
-            $"private_chat_reply:{_options.SaveId}:{npcId}:{conversationId}",
-            new GameActionTarget("player"),
-            "private chat reply",
-            payload);
-        return _commands.SubmitAsync(action, ct);
-    }
-
-    private bool IsTargetNpc(string? npcId)
-        => !string.IsNullOrWhiteSpace(npcId) &&
-           string.Equals(npcId, _options.NpcId, StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsPrivateChatOpenTrigger(string eventType)
-        => string.Equals(eventType, "vanilla_dialogue_completed", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(eventType, "vanilla_dialogue_unavailable", StringComparison.OrdinalIgnoreCase);
-
-    private bool ShouldEndAfterReply()
-        => _options.ReopenPolicy is PrivateChatReopenPolicy.Never ||
-           _turns >= Math.Max(1, _options.MaxTurnsPerSession);
 
     private static bool IsRetryableOpenFailure(GameCommandResult result)
         => result.Retryable ||
            string.Equals(result.FailureReason, StardewBridgeErrorCodes.MenuBlocked, StringComparison.OrdinalIgnoreCase) ||
            string.Equals(result.FailureReason, StardewBridgeErrorCodes.WorldNotReady, StringComparison.OrdinalIgnoreCase);
 
-    private void EndSession()
+    private static PrivateChatSessionReopenPolicy ToCoreReopenPolicy(PrivateChatReopenPolicy policy)
+        => policy switch
+        {
+            PrivateChatReopenPolicy.Never => PrivateChatSessionReopenPolicy.Never,
+            PrivateChatReopenPolicy.OnceAfterReply => PrivateChatSessionReopenPolicy.OnceAfterReply,
+            PrivateChatReopenPolicy.UntilCancelled => PrivateChatSessionReopenPolicy.UntilCancelled,
+            _ => PrivateChatSessionReopenPolicy.OnceAfterReply
+        };
+
+    private static StardewPrivateChatState ToStardewState(PrivateChatState state)
+        => state switch
+        {
+            PrivateChatState.Idle => StardewPrivateChatState.Idle,
+            PrivateChatState.PendingOpen => StardewPrivateChatState.PendingOpen,
+            PrivateChatState.AwaitingPlayerInput => StardewPrivateChatState.AwaitingPlayerInput,
+            PrivateChatState.WaitingAgentReply => StardewPrivateChatState.WaitingAgentReply,
+            PrivateChatState.ShowingReply => StardewPrivateChatState.ShowingReply,
+            PrivateChatState.WaitingReplyDismissal => StardewPrivateChatState.WaitingReplyDismissal,
+            _ => StardewPrivateChatState.Idle
+        };
+
+    private sealed class StardewPrivateChatAgentRunnerAdapter : IPrivateChatAgentRunner
     {
-        _state = StardewPrivateChatState.Idle;
-        _conversationId = null;
-        _pendingOpen = null;
+        private readonly INpcPrivateChatAgentRunner _inner;
+
+        public StardewPrivateChatAgentRunnerAdapter(INpcPrivateChatAgentRunner inner)
+        {
+            _inner = inner;
+        }
+
+        public async Task<PrivateChatAgentReply> ReplyAsync(PrivateChatAgentRequest request, CancellationToken ct)
+        {
+            var reply = await _inner.ReplyAsync(
+                new NpcPrivateChatRequest(request.NpcId, request.SaveId, request.ConversationId, request.PlayerText),
+                ct);
+            return new PrivateChatAgentReply(reply.Text);
+        }
     }
-
-    private static string GetCorrelationOrEventId(GameEventRecord record)
-        => string.IsNullOrWhiteSpace(record.CorrelationId) ? record.EventId : record.CorrelationId;
-
-    private static string? GetPayloadString(JsonObject? payload, string propertyName)
-        => payload is not null && payload.TryGetPropertyValue(propertyName, out var node)
-            ? node?.GetValue<string>()
-            : null;
 }
 
 public interface INpcPrivateChatAgentRunner
@@ -526,10 +325,3 @@ public sealed record StardewPrivateChatStepResult(
     StardewPrivateChatState State,
     string? ConversationId,
     int EventsProcessed);
-
-internal sealed record StardewPendingPrivateChatOpen(
-    string NpcId,
-    string ConversationId,
-    string OpenKey,
-    string Reason,
-    int Attempts);

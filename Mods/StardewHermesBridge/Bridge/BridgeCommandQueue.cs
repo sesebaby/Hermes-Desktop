@@ -198,7 +198,7 @@ public sealed class BridgeCommandQueue
             : envelope.Payload.ConversationId;
         MarkPrivateChatInputOpened(npc.Name, conversationId, envelope.TraceId);
         var inputMenu = new PrivateChatInputMenu(
-            npc.displayName ?? npc.Name,
+            npc,
             envelope.Payload.Prompt,
             submittedText =>
             {
