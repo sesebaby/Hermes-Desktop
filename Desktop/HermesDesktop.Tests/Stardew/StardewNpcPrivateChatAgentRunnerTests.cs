@@ -1,11 +1,14 @@
 using System.Runtime.CompilerServices;
 using Hermes.Agent.Core;
+using Hermes.Agent.Game;
 using Hermes.Agent.Games.Stardew;
 using Hermes.Agent.LLM;
+using Hermes.Agent.Runtime;
 using Hermes.Agent.Skills;
 using Hermes.Agent.Tools;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Text.Json;
 
 namespace HermesDesktop.Tests.Stardew;
 
@@ -13,12 +16,14 @@ namespace HermesDesktop.Tests.Stardew;
 public sealed class StardewNpcPrivateChatAgentRunnerTests
 {
     private string _tempDir = null!;
+    private string _packRoot = null!;
     private SkillManager _skillManager = null!;
 
     [TestInitialize]
     public void Setup()
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-private-chat-tests", Guid.NewGuid().ToString("N"));
+        _packRoot = Path.Combine(_tempDir, "packs");
         var skillsDir = Path.Combine(_tempDir, "skills", "memory");
         Directory.CreateDirectory(skillsDir);
         File.WriteAllText(
@@ -31,6 +36,8 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             Use durable memory for stable player identity details.
             """);
         _skillManager = new SkillManager(Path.Combine(_tempDir, "skills"), NullLogger<SkillManager>.Instance);
+        CreatePack("haley", "Haley");
+        CreatePack("penny", "Penny");
     }
 
     [TestCleanup]
@@ -45,8 +52,9 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     {
         foreach (var npcId in new[] { "haley", "penny" })
         {
+            var runtimeSupervisor = new NpcRuntimeSupervisor();
             var writerClient = new MemoryWriteThenFinalChatClient();
-            var writer = CreateRunner(writerClient, [new DiscoveredNoopTool("mcp_dynamic_test")]);
+            var writer = CreateRunner(writerClient, runtimeSupervisor, [new DiscoveredNoopTool("mcp_dynamic_test")]);
 
             var reply = await writer.ReplyAsync(
                 new NpcPrivateChatRequest(npcId, "save-1", "conversation-write", "我叫远古牛哥,你记住"),
@@ -77,8 +85,27 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             Assert.IsTrue(File.Exists(userMemory), $"{npcId} must write memory under its NPC namespace.");
             StringAssert.Contains(await File.ReadAllTextAsync(userMemory), "远古牛哥");
 
+            var runtimeRoot = Path.Combine(
+                _tempDir,
+                "runtime",
+                "stardew",
+                "games",
+                "stardew-valley",
+                "saves",
+                "save-1",
+                "npc",
+                npcId,
+                "profiles",
+                "default");
+            var runtimeSoulPath = Path.Combine(runtimeRoot, "SOUL.md");
+            var personaSoulPath = Path.Combine(runtimeRoot, "persona", "SOUL.md");
+            Assert.IsTrue(File.Exists(runtimeSoulPath), $"{npcId} must seed its runtime SOUL.md from the NPC pack.");
+            Assert.IsTrue(File.Exists(personaSoulPath), $"{npcId} must copy the pack into its persona directory.");
+            StringAssert.Contains(await File.ReadAllTextAsync(runtimeSoulPath), $"{npcId}-pack-soul");
+            StringAssert.Contains(await File.ReadAllTextAsync(personaSoulPath), $"{npcId}-pack-soul");
+
             var readerClient = new SnapshotAnswerChatClient("远古牛哥");
-            var reader = CreateRunner(readerClient);
+            var reader = CreateRunner(readerClient, runtimeSupervisor);
 
             var followup = await reader.ReplyAsync(
                 new NpcPrivateChatRequest(npcId, "save-1", "conversation-fresh", "我叫什么?"),
@@ -86,20 +113,71 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
 
             Assert.AreEqual("你叫远古牛哥。", followup.Text);
             Assert.IsTrue(readerClient.SawExpectedMemoryInPrompt, $"{npcId} must see durable USER.md through builtin memory snapshot.");
+            Assert.AreEqual(1, runtimeSupervisor.Snapshot().Count(snapshot => string.Equals(snapshot.NpcId, npcId, StringComparison.OrdinalIgnoreCase)));
         }
+    }
+
+    [TestMethod]
+    public async Task ReplyAsync_MissingSaveIdFailsInsteadOfUsingManualDebug()
+    {
+        var runner = CreateRunner(new SnapshotAnswerChatClient("unused"), new NpcRuntimeSupervisor());
+
+        await Assert.ThrowsExceptionAsync<ArgumentException>(async () =>
+            await runner.ReplyAsync(
+                new NpcPrivateChatRequest("penny", "", "conversation-fresh", "我叫什么?"),
+                CancellationToken.None));
     }
 
     private StardewNpcPrivateChatAgentRunner CreateRunner(
         IChatClient chatClient,
+        NpcRuntimeSupervisor runtimeSupervisor,
         IEnumerable<ITool>? discoveredTools = null)
         => new(
             chatClient,
             NullLoggerFactory.Instance,
             _tempDir,
+            runtimeSupervisor,
             _skillManager,
             new NoopCronScheduler(),
-            () => discoveredTools ?? Enumerable.Empty<ITool>(),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            includeMemory: true,
+            includeUser: true,
+            discoveredToolProvider: () => discoveredTools ?? Enumerable.Empty<ITool>(),
             maxToolIterations: 2);
+
+    private void CreatePack(string npcId, string displayName)
+    {
+        var root = Path.Combine(_packRoot, npcId, "default");
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "SOUL.md"), $"# {displayName}\n\n{npcId}-pack-soul");
+        File.WriteAllText(Path.Combine(root, "facts.md"), $"{displayName} facts");
+        File.WriteAllText(Path.Combine(root, "voice.md"), $"{displayName} voice");
+        File.WriteAllText(Path.Combine(root, "boundaries.md"), $"{displayName} boundaries");
+        File.WriteAllText(Path.Combine(root, "skills.json"), "[]");
+
+        var manifest = new NpcPackManifest
+        {
+            SchemaVersion = 1,
+            NpcId = npcId,
+            GameId = "stardew-valley",
+            ProfileId = "default",
+            DefaultProfileId = "default",
+            DisplayName = displayName,
+            SmapiName = displayName,
+            Aliases = [npcId, displayName],
+            TargetEntityId = npcId,
+            AdapterId = "stardew",
+            SoulFile = "SOUL.md",
+            FactsFile = "facts.md",
+            VoiceFile = "voice.md",
+            BoundariesFile = "boundaries.md",
+            SkillsFile = "skills.json",
+            Capabilities = ["move", "speak"]
+        };
+        File.WriteAllText(
+            Path.Combine(root, FileSystemNpcPackLoader.ManifestFileName),
+            JsonSerializer.Serialize(manifest));
+    }
 
     private sealed class MemoryWriteThenFinalChatClient : IChatClient
     {

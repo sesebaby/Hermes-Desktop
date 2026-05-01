@@ -3,6 +3,12 @@ namespace Hermes.Agent.Runtime;
 public sealed class NpcRuntimeInstance
 {
     private readonly object _gate = new();
+    private NpcRuntimeAgentHandle? _privateChatHandle;
+    private string? _privateChatRebindKey;
+    private int _privateChatRebindGeneration;
+    private NpcRuntimeAutonomyHandle? _autonomyHandle;
+    private string? _autonomyRebindKey;
+    private int _autonomyRebindGeneration;
 
     public NpcRuntimeInstance(NpcRuntimeDescriptor descriptor, NpcNamespace npcNamespace)
     {
@@ -74,6 +80,52 @@ public sealed class NpcRuntimeInstance
         }
     }
 
+    public NpcRuntimeAgentHandle GetOrCreatePrivateChatHandle(
+        string rebindKey,
+        Func<int, NpcRuntimeAgentHandle> factory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rebindKey);
+        ArgumentNullException.ThrowIfNull(factory);
+
+        lock (_gate)
+        {
+            if (_privateChatHandle is not null &&
+                string.Equals(_privateChatRebindKey, rebindKey, StringComparison.Ordinal))
+            {
+                return _privateChatHandle;
+            }
+
+            _privateChatRebindGeneration++;
+            var handle = factory(_privateChatRebindGeneration);
+            _privateChatHandle = handle;
+            _privateChatRebindKey = rebindKey;
+            return handle;
+        }
+    }
+
+    public NpcRuntimeAutonomyHandle GetOrCreateAutonomyHandle(
+        string rebindKey,
+        Func<int, NpcRuntimeAutonomyHandle> factory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rebindKey);
+        ArgumentNullException.ThrowIfNull(factory);
+
+        lock (_gate)
+        {
+            if (_autonomyHandle is not null &&
+                string.Equals(_autonomyRebindKey, rebindKey, StringComparison.Ordinal))
+            {
+                return _autonomyHandle;
+            }
+
+            _autonomyRebindGeneration++;
+            var handle = factory(_autonomyRebindGeneration);
+            _autonomyHandle = handle;
+            _autonomyRebindKey = rebindKey;
+            return handle;
+        }
+    }
+
     public NpcRuntimeSnapshot Snapshot()
     {
         lock (_gate)
@@ -87,7 +139,9 @@ public sealed class NpcRuntimeInstance
                 Descriptor.SessionId,
                 State,
                 LastTraceId,
-                LastError);
+                LastError,
+                _privateChatRebindGeneration,
+                _autonomyRebindGeneration);
         }
     }
 }

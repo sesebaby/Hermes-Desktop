@@ -34,6 +34,7 @@ public sealed class ModEntry : Mod
     private bool _originalStartRetryAttempted;
     private string? _privateChatReplyNpcName;
     private string? _privateChatReplyConversationId;
+    private DateTimeOffset? _bridgeStartedAtUtc;
 
     public override void Entry(IModHelper helper)
     {
@@ -55,6 +56,8 @@ public sealed class ModEntry : Mod
         _testTeleportCommand = new TestTeleportCommand(helper, Monitor);
 
         helper.Events.GameLoop.GameLaunched += OnGameLaunched;
+        helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
+        helper.Events.GameLoop.DayStarted += OnDayStarted;
         helper.Events.GameLoop.UpdateTicked += OnUpdateTicked;
         helper.Events.GameLoop.DayEnding += OnWorldDraining;
         helper.Events.GameLoop.Saving += OnWorldDraining;
@@ -68,8 +71,18 @@ public sealed class ModEntry : Mod
     {
         _httpHost.Start("127.0.0.1", preferredPort: 8745);
         _overlay.SetBridgeOnline(_httpHost.Port, _httpHost.BridgeToken);
+        _bridgeStartedAtUtc = DateTimeOffset.UtcNow;
         WriteDiscoveryFile();
     }
+
+    private void OnSaveLoaded(object? sender, SaveLoadedEventArgs e)
+    {
+        _bridgeStartedAtUtc = DateTimeOffset.UtcNow;
+        WriteDiscoveryFile();
+    }
+
+    private void OnDayStarted(object? sender, DayStartedEventArgs e)
+        => WriteDiscoveryFile();
 
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
     {
@@ -140,6 +153,7 @@ public sealed class ModEntry : Mod
         ClearPrivateChatReplyTracking();
         ClearPendingDialogueFlow();
         ClearCustomDialogueGuards();
+        WriteDiscoveryFile();
     }
 
     private void OnRenderedHud(object? sender, RenderedHudEventArgs e)
@@ -390,7 +404,7 @@ public sealed class ModEntry : Mod
     }
 
     private static bool IsEnabledDialogueNpc(string? npcName)
-        => string.Equals(npcName, "Haley", StringComparison.OrdinalIgnoreCase);
+        => !string.IsNullOrWhiteSpace(npcName);
 
     private static string? GetActiveDialogueNpcName()
         => GetDialogueNpcName(Game1.activeClickableMenu);
@@ -417,8 +431,9 @@ public sealed class ModEntry : Mod
                 "127.0.0.1",
                 _httpHost.Port,
                 _httpHost.BridgeToken,
-                DateTimeOffset.UtcNow,
-                Environment.ProcessId);
+                _bridgeStartedAtUtc ?? DateTimeOffset.UtcNow,
+                Environment.ProcessId,
+                GetCurrentSaveId());
             File.WriteAllText(path, JsonSerializer.Serialize(document, new JsonSerializerOptions { WriteIndented = true }));
             _bridgeLogger.Write("bridge_discovery_written", null, "bridge", "bridge", null, "online", path);
         }
@@ -436,10 +451,14 @@ public sealed class ModEntry : Mod
             ? configuredHome
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "hermes");
 
+    private static string? GetCurrentSaveId()
+        => Context.IsWorldReady ? Constants.SaveFolderName : null;
+
     private sealed record BridgeDiscoveryDocument(
         string Host,
         int Port,
         string BridgeToken,
         DateTimeOffset StartedAtUtc,
-        int ProcessId);
+        int ProcessId,
+        string? SaveId);
 }

@@ -23,7 +23,8 @@ public sealed record PrivateChatPolicy(
 {
     public bool IsTargetNpc(string? npcId)
         => !string.IsNullOrWhiteSpace(npcId) &&
-           string.Equals(npcId, NpcId, StringComparison.OrdinalIgnoreCase);
+           (string.IsNullOrWhiteSpace(NpcId) ||
+            string.Equals(npcId, NpcId, StringComparison.OrdinalIgnoreCase));
 
     public bool IsOpenTrigger(string eventType)
         => OpenTriggerEventTypes.Any(trigger => string.Equals(trigger, eventType, StringComparison.OrdinalIgnoreCase));

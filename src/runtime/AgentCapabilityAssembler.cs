@@ -1,6 +1,7 @@
 namespace Hermes.Agent.Runtime;
 
 using Hermes.Agent.Core;
+using Hermes.Agent.Context;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Memory;
 using Hermes.Agent.Plugins;
@@ -65,6 +66,37 @@ public static class AgentCapabilityAssembler
             RegisterAndTrack(agent, registry, tool);
     }
 
+    public static void RegisterAllTools(
+        Agent agent,
+        AgentCapabilityServices services,
+        IEnumerable<ITool> discoveredTools)
+    {
+        RegisterBuiltInTools(agent, services);
+        RegisterDiscoveredTools(agent, services.ToolRegistry, discoveredTools);
+    }
+
+    public static PromptBuilder CreatePromptBuilder(AgentPromptServices services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.Validate();
+
+        return new PromptBuilder(() =>
+        {
+            var prompt = SystemPrompts.BuildFromBase(
+                services.BaseSystemPrompt,
+                includeMemoryGuidance: services.IncludeMemoryGuidance && services.MemoryAvailable,
+                includeSessionSearchGuidance: services.IncludeSessionSearchGuidance,
+                includeSkillsGuidance: services.IncludeSkillsGuidance,
+                skillsMandatoryPrompt: services.SkillManager.BuildSkillsMandatoryPrompt(),
+                includeRuntimeFactsGuidance: services.IncludeRuntimeFactsGuidance);
+
+            if (!string.IsNullOrWhiteSpace(services.SupplementalSystemPrompt))
+                prompt += "\n\n" + services.SupplementalSystemPrompt.Trim();
+
+            return prompt;
+        });
+    }
+
     private static void RegisterAndTrack(Agent agent, IToolRegistry registry, ITool tool)
     {
         agent.RegisterTool(tool);
@@ -97,5 +129,22 @@ public sealed class AgentCapabilityServices
         ArgumentNullException.ThrowIfNull(SkillManager);
         if (string.IsNullOrWhiteSpace(CheckpointDirectory))
             throw new ArgumentException("Checkpoint directory is required.", nameof(CheckpointDirectory));
+    }
+}
+
+public sealed class AgentPromptServices
+{
+    public required SkillManager SkillManager { get; init; }
+    public string BaseSystemPrompt { get; init; } = SystemPrompts.Default;
+    public string? SupplementalSystemPrompt { get; init; }
+    public bool IncludeMemoryGuidance { get; init; } = true;
+    public bool IncludeSessionSearchGuidance { get; init; } = true;
+    public bool IncludeSkillsGuidance { get; init; } = true;
+    public bool IncludeRuntimeFactsGuidance { get; init; } = true;
+    public bool MemoryAvailable { get; init; } = true;
+
+    internal void Validate()
+    {
+        ArgumentNullException.ThrowIfNull(SkillManager);
     }
 }

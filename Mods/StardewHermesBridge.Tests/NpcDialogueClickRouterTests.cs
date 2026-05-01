@@ -83,7 +83,7 @@ public class NpcDialogueClickRouterTests
     }
 
     [TestMethod]
-    public void Route_ActionButtonOnPenny_RejectsDialogueRouteBecauseNpcIsNotEnabled()
+    public void Route_ActionButtonOnPenny_AcceptsDialogueRoute()
     {
         var router = new NpcDialogueClickRouter();
 
@@ -96,9 +96,9 @@ public class NpcDialogueClickRouterTests
             IsDialogueBoxOpen: false,
             ActiveDialogueNpcName: null));
 
-        Assert.IsFalse(result.IsAccepted);
-        Assert.IsNull(result.NpcName);
-        Assert.AreEqual("npc_not_enabled", result.Reason);
+        Assert.IsTrue(result.IsAccepted);
+        Assert.AreEqual("Penny", result.NpcName);
+        Assert.AreEqual("accepted", result.Reason);
     }
 
     [TestMethod]

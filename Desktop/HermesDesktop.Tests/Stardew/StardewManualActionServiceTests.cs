@@ -18,7 +18,8 @@ public sealed class StardewManualActionServiceTests
               "port": 8746,
               "bridgeToken": "token-1",
               "startedAtUtc": "2026-04-29T08:00:00Z",
-              "processId": 123
+              "processId": 123,
+              "saveId": "farm-main"
             }
             """);
 
@@ -32,6 +33,7 @@ public sealed class StardewManualActionServiceTests
         Assert.AreEqual(8746, snapshot.Options.Port);
         Assert.AreEqual("token-1", snapshot.Options.BridgeToken);
         Assert.AreEqual(123, snapshot.ProcessId);
+        Assert.AreEqual("farm-main", snapshot.SaveId);
         Assert.IsTrue(snapshot.Options.IsLoopbackOnly());
     }
 
@@ -41,21 +43,23 @@ public sealed class StardewManualActionServiceTests
         var discovery = new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
             new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token-2" },
             DateTimeOffset.Parse("2026-04-29T08:00:00Z"),
-            456));
+            456,
+            "save-9"));
         var commandService = new FakeGameCommandService();
-        StardewBridgeOptions? capturedOptions = null;
+        StardewBridgeDiscoverySnapshot? capturedSnapshot = null;
         var service = new StardewNpcDebugActionService(
             discovery,
-            options =>
+            snapshot =>
             {
-                capturedOptions = options;
+                capturedSnapshot = snapshot;
                 return commandService;
             });
 
         var result = await service.SpeakAsync("Haley", "Hello from Hermes.", CancellationToken.None);
 
         Assert.IsTrue(result.Accepted);
-        Assert.AreEqual("token-2", capturedOptions?.BridgeToken);
+        Assert.AreEqual("token-2", capturedSnapshot?.Options.BridgeToken);
+        Assert.AreEqual("save-9", capturedSnapshot?.SaveId);
         Assert.IsNotNull(commandService.LastAction);
         Assert.AreEqual(GameActionType.Speak, commandService.LastAction.Type);
         Assert.AreEqual("Haley", commandService.LastAction.NpcId);
@@ -63,6 +67,22 @@ public sealed class StardewManualActionServiceTests
         Assert.AreEqual("player", commandService.LastAction.Target.Kind);
         Assert.AreEqual("Hello from Hermes.", commandService.LastAction.Payload?["text"]?.GetValue<string>());
         Assert.AreEqual("manual_debug", commandService.LastAction.Payload?["channel"]?.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task SpeakAsync_MissingSaveIdInDiscoveryFailsInsteadOfGuessingManualDebug()
+    {
+        var discovery = new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+            new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token-2" },
+            DateTimeOffset.Parse("2026-04-29T08:00:00Z"),
+            456,
+            null));
+        var service = new StardewNpcDebugActionService(discovery, _ => throw new AssertFailedException("Factory should not run without saveId."));
+
+        var result = await service.SpeakAsync("Haley", "Hello from Hermes.", CancellationToken.None);
+
+        Assert.IsFalse(result.Accepted);
+        Assert.AreEqual(StardewBridgeErrorCodes.BridgeStaleDiscovery, result.FailureReason);
     }
 
     private sealed class FakeDiscovery : IStardewBridgeDiscovery

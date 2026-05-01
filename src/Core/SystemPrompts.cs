@@ -69,8 +69,23 @@ For current time/date/timezone on Windows, use an available live-environment int
         bool includeSkillsGuidance = false,
         string? skillsMandatoryPrompt = null,
         bool includeRuntimeFactsGuidance = true)
+        => BuildFromBase(
+            Default,
+            includeMemoryGuidance,
+            includeSessionSearchGuidance,
+            includeSkillsGuidance,
+            skillsMandatoryPrompt,
+            includeRuntimeFactsGuidance);
+
+    public static string BuildFromBase(
+        string basePrompt,
+        bool includeMemoryGuidance,
+        bool includeSessionSearchGuidance,
+        bool includeSkillsGuidance = false,
+        string? skillsMandatoryPrompt = null,
+        bool includeRuntimeFactsGuidance = true)
     {
-        var prompt = Default;
+        var prompt = string.IsNullOrWhiteSpace(basePrompt) ? Default : basePrompt;
         var guidance = new List<string>();
 
         if (includeRuntimeFactsGuidance)

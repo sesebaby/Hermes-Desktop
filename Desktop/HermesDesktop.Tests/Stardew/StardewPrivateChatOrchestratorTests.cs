@@ -58,6 +58,32 @@ public class StardewPrivateChatOrchestratorTests
     }
 
     [TestMethod]
+    public async Task ProcessNextAsync_PennyDialogueCompleted_WithWildcardTarget_OpensPennyPrivateChat()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Penny",
+                DateTime.UtcNow,
+                "Penny vanilla dialogue completed."));
+        var commands = new FakeCommandService();
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            new FakePrivateChatAgentRunner(),
+            new StardewPrivateChatOptions(ReopenPolicy: PrivateChatReopenPolicy.Never));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, commands.Submitted.Count);
+        Assert.AreEqual(GameActionType.OpenPrivateChat, commands.Submitted[0].Type);
+        Assert.AreEqual("Penny", commands.Submitted[0].NpcId);
+        Assert.AreEqual("pc_evt-1", commands.Submitted[0].Payload?["conversationId"]?.GetValue<string>());
+        Assert.AreEqual(StardewPrivateChatState.AwaitingPlayerInput, orchestrator.State);
+    }
+
+    [TestMethod]
     public async Task ProcessNextAsync_HaleyDialogueUnavailable_SubmitsOpenPrivateChat()
     {
         var events = new FakeEventSource(
@@ -108,6 +134,78 @@ public class StardewPrivateChatOrchestratorTests
         await orchestrator.ProcessNextAsync(CancellationToken.None);
 
         Assert.AreEqual(1, commands.Submitted.Count);
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_ActiveHaleySession_DoesNotOpenConcurrentPennySession()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."),
+            new GameEventRecord(
+                "evt-2",
+                "vanilla_dialogue_completed",
+                "Penny",
+                DateTime.UtcNow.AddSeconds(1),
+                "Penny vanilla dialogue completed."));
+        var commands = new FakeCommandService();
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            new FakePrivateChatAgentRunner(),
+            new StardewPrivateChatOptions(ReopenPolicy: PrivateChatReopenPolicy.Never));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, commands.Submitted.Count);
+        Assert.AreEqual("Haley", commands.Submitted[0].NpcId);
+        Assert.AreEqual(StardewPrivateChatState.AwaitingPlayerInput, orchestrator.State);
+        Assert.AreEqual("pc_evt-1", orchestrator.ConversationId);
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_AfterHaleySessionEnds_PennyCanOpenNextSession()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."),
+            new GameEventRecord(
+                "evt-2",
+                "player_private_message_cancelled",
+                "Haley",
+                DateTime.UtcNow.AddSeconds(1),
+                "Player cancelled Haley private chat.",
+                "pc_evt-1",
+                new JsonObject { ["conversationId"] = "pc_evt-1" }),
+            new GameEventRecord(
+                "evt-3",
+                "vanilla_dialogue_completed",
+                "Penny",
+                DateTime.UtcNow.AddSeconds(2),
+                "Penny vanilla dialogue completed."));
+        var commands = new FakeCommandService();
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            new FakePrivateChatAgentRunner(),
+            new StardewPrivateChatOptions(ReopenPolicy: PrivateChatReopenPolicy.Never));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(2, commands.Submitted.Count);
+        Assert.AreEqual("Haley", commands.Submitted[0].NpcId);
+        Assert.AreEqual("Penny", commands.Submitted[1].NpcId);
+        Assert.AreEqual("pc_evt-3", commands.Submitted[1].Payload?["conversationId"]?.GetValue<string>());
+        Assert.AreEqual(StardewPrivateChatState.AwaitingPlayerInput, orchestrator.State);
+        Assert.AreEqual("pc_evt-3", orchestrator.ConversationId);
     }
 
     [TestMethod]

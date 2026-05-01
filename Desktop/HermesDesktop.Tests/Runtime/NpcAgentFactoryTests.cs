@@ -31,13 +31,13 @@ public class NpcAgentFactoryTests
     [TestMethod]
     public void Create_WithSharedCapabilities_RegistersDesktopCapabilitySurfaceForHaleyAndPenny()
     {
-        var skillManager = CreateSkillManager();
+            var skillManager = CreateSkillManager();
 
         foreach (var npcId in new[] { "haley", "penny" })
         {
             var chatClient = new MemoryWriteThenFinalChatClient();
             var npcNamespace = new NpcNamespace(_tempDir, "stardew-valley", "save-1", npcId, "default");
-            var context = CreateContext(npcNamespace, chatClient);
+            var context = CreateContext(npcNamespace, chatClient, skillManager);
             var agent = CreateNpcAgentWithDesktopCapabilities(chatClient, context, npcNamespace, skillManager);
 
             CollectionAssert.AreEqual(
@@ -63,8 +63,8 @@ public class NpcAgentFactoryTests
     public async Task SessionSearchTool_UsesNpcScopedTranscriptStore()
     {
         var skillManager = CreateSkillManager();
-        var haleyContext = CreateContext(new NpcNamespace(_tempDir, "stardew-valley", "save-1", "haley", "default"), new SnapshotAnswerChatClient("unused"));
-        var pennyContext = CreateContext(new NpcNamespace(_tempDir, "stardew-valley", "save-1", "penny", "default"), new SnapshotAnswerChatClient("unused"));
+        var haleyContext = CreateContext(new NpcNamespace(_tempDir, "stardew-valley", "save-1", "haley", "default"), new SnapshotAnswerChatClient("unused"), skillManager);
+        var pennyContext = CreateContext(new NpcNamespace(_tempDir, "stardew-valley", "save-1", "penny", "default"), new SnapshotAnswerChatClient("unused"), skillManager);
         var haleyAgent = CreateNpcAgentWithDesktopCapabilities(new SnapshotAnswerChatClient("unused"), haleyContext, new NpcNamespace(_tempDir, "stardew-valley", "save-1", "haley", "default"), skillManager);
         var pennyAgent = CreateNpcAgentWithDesktopCapabilities(new SnapshotAnswerChatClient("unused"), pennyContext, new NpcNamespace(_tempDir, "stardew-valley", "save-1", "penny", "default"), skillManager);
 
@@ -103,7 +103,7 @@ public class NpcAgentFactoryTests
             var npcNamespace = new NpcNamespace(_tempDir, "stardew-valley", "save-1", npcId, "default");
 
             var firstChat = new MemoryWriteThenFinalChatClient();
-            var firstContext = CreateContext(npcNamespace, firstChat);
+            var firstContext = CreateContext(npcNamespace, firstChat, skillManager);
             var firstAgent = CreateNpcAgentWithDesktopCapabilities(firstChat, firstContext, npcNamespace, skillManager);
 
             var firstReply = await firstAgent.ChatAsync(
@@ -120,7 +120,7 @@ public class NpcAgentFactoryTests
             StringAssert.Contains(await File.ReadAllTextAsync(userMemoryPath), "远古牛哥");
 
             var followupChat = new SnapshotAnswerChatClient("远古牛哥");
-            var freshContext = CreateContext(npcNamespace, followupChat);
+            var freshContext = CreateContext(npcNamespace, followupChat, skillManager);
             var freshAgent = CreateNpcAgentWithDesktopCapabilities(followupChat, freshContext, npcNamespace, skillManager);
 
             var followupReply = await freshAgent.ChatAsync(
@@ -135,11 +135,12 @@ public class NpcAgentFactoryTests
         }
     }
 
-    private NpcRuntimeContextBundle CreateContext(NpcNamespace npcNamespace, IChatClient chatClient)
+    private NpcRuntimeContextBundle CreateContext(NpcNamespace npcNamespace, IChatClient chatClient, SkillManager skillManager)
         => new NpcRuntimeContextFactory().Create(
             npcNamespace,
             chatClient,
             NullLoggerFactory.Instance,
+            skillManager,
             "You are an equal-capability Stardew NPC agent. Reply in character, and use durable memory when the player shares stable facts.");
 
     private static Hermes.Agent.Core.Agent CreateNpcAgentWithDesktopCapabilities(

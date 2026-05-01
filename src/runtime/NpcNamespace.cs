@@ -1,5 +1,6 @@
 namespace Hermes.Agent.Runtime;
 
+using Hermes.Agent.Game;
 using Hermes.Agent.Memory;
 using Hermes.Agent.Search;
 using Hermes.Agent.Soul;
@@ -28,6 +29,10 @@ public sealed record NpcNamespace(
 
     public string SoulHomePath => RuntimeRoot;
 
+    public string SoulFilePath => Path.Combine(SoulHomePath, "SOUL.md");
+
+    public string PersonaPath => Path.Combine(RuntimeRoot, "persona");
+
     public string MemoryPath => Path.Combine(RuntimeRoot, "memory");
 
     public string TranscriptPath => Path.Combine(RuntimeRoot, "transcripts");
@@ -43,10 +48,27 @@ public sealed record NpcNamespace(
     public void EnsureDirectories()
     {
         Directory.CreateDirectory(RuntimeRoot);
+        Directory.CreateDirectory(PersonaPath);
         Directory.CreateDirectory(MemoryPath);
         Directory.CreateDirectory(TranscriptPath);
         Directory.CreateDirectory(TracePath);
         Directory.CreateDirectory(ActivityPath);
+    }
+
+    public void SeedPersonaPack(NpcPack pack)
+    {
+        ArgumentNullException.ThrowIfNull(pack);
+
+        EnsureDirectories();
+
+        var sourceRoot = Path.GetFullPath(pack.RootPath);
+        CopyDirectoryIfMissing(sourceRoot, PersonaPath);
+
+        if (!File.Exists(SoulFilePath))
+        {
+            var soulSource = ResolvePackFile(sourceRoot, pack.Manifest.SoulFile);
+            File.Copy(soulSource, SoulFilePath, overwrite: false);
+        }
     }
 
     public SoulService CreateSoulService(ILogger<SoulService> logger)
@@ -102,5 +124,35 @@ public sealed record NpcNamespace(
             throw new ArgumentException($"Invalid namespace segment '{segment}'.", nameof(segment));
 
         return safe;
+    }
+
+    private static string ResolvePackFile(string sourceRoot, string relativePath)
+    {
+        var fullSourceRoot = Path.GetFullPath(sourceRoot);
+        var fullPath = Path.GetFullPath(Path.Combine(fullSourceRoot, relativePath));
+        if (!fullPath.StartsWith(fullSourceRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(fullPath, fullSourceRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Pack file '{relativePath}' must stay inside '{sourceRoot}'.");
+        }
+
+        return fullPath;
+    }
+
+    private static void CopyDirectoryIfMissing(string sourceRoot, string destinationRoot)
+    {
+        Directory.CreateDirectory(destinationRoot);
+
+        foreach (var sourcePath in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(sourceRoot, sourcePath);
+            var destinationPath = Path.Combine(destinationRoot, relativePath);
+            var destinationDirectory = Path.GetDirectoryName(destinationPath);
+            if (destinationDirectory is not null)
+                Directory.CreateDirectory(destinationDirectory);
+
+            if (!File.Exists(destinationPath))
+                File.Copy(sourcePath, destinationPath, overwrite: false);
+        }
     }
 }

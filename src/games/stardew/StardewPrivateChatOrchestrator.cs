@@ -25,10 +25,10 @@ public sealed class StardewPrivateChatOrchestrator
             new StardewPrivateChatAgentRunnerAdapter(agentRunner),
             new PrivateChatOrchestratorOptions(
                 new PrivateChatPolicy(
-                    NpcId: stardewOptions.NpcId,
+                    NpcId: stardewOptions.NpcId ?? string.Empty,
                     SaveId: stardewOptions.SaveId,
                     GameId: "stardew-valley",
-                    OpenPrompt: "Say something to Haley.",
+                    OpenPrompt: "Say something.",
                     OpenTriggerEventTypes:
                     [
                         "vanilla_dialogue_completed",
@@ -111,75 +111,71 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
     private readonly IChatClient _chatClient;
     private readonly ILoggerFactory _loggerFactory;
     private readonly string _runtimeRoot;
+    private readonly NpcRuntimeSupervisor _runtimeSupervisor;
     private readonly SkillManager _skillManager;
     private readonly ICronScheduler _cronScheduler;
+    private readonly StardewNpcRuntimeBindingResolver _bindingResolver;
     private readonly Func<IEnumerable<ITool>> _discoveredToolProvider;
+    private readonly bool _includeMemory;
+    private readonly bool _includeUser;
     private readonly int _maxToolIterations;
 
     public StardewNpcPrivateChatAgentRunner(
         IChatClient chatClient,
         ILoggerFactory loggerFactory,
         string runtimeRoot,
+        NpcRuntimeSupervisor runtimeSupervisor,
         SkillManager skillManager,
         ICronScheduler cronScheduler,
+        StardewNpcRuntimeBindingResolver bindingResolver,
+        bool includeMemory = true,
+        bool includeUser = true,
         Func<IEnumerable<ITool>>? discoveredToolProvider = null,
         int maxToolIterations = 25)
     {
         _chatClient = chatClient;
         _loggerFactory = loggerFactory;
         _runtimeRoot = runtimeRoot;
+        _runtimeSupervisor = runtimeSupervisor;
         _skillManager = skillManager;
         _cronScheduler = cronScheduler;
+        _bindingResolver = bindingResolver;
+        _includeMemory = includeMemory;
+        _includeUser = includeUser;
         _discoveredToolProvider = discoveredToolProvider ?? (() => Enumerable.Empty<ITool>());
         _maxToolIterations = Math.Max(2, maxToolIterations);
     }
 
     public async Task<NpcPrivateChatReply> ReplyAsync(NpcPrivateChatRequest request, CancellationToken ct)
     {
-        var npcId = string.IsNullOrWhiteSpace(request.NpcId) ? "haley" : request.NpcId.Trim().ToLowerInvariant();
-        var displayName = ResolveDisplayName(npcId, request.NpcId);
-        var saveId = string.IsNullOrWhiteSpace(request.SaveId) ? "manual-debug" : request.SaveId.Trim();
-        var descriptor = new NpcRuntimeDescriptor(
-            npcId,
-            displayName,
-            "stardew-valley",
-            saveId,
-            "default",
-            "stardew",
-            saveId,
-            $"sdv_{saveId}_{npcId}_default");
-        var npcNamespace = new NpcNamespace(_runtimeRoot, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
-        var context = new NpcRuntimeContextFactory().Create(
-            npcNamespace,
-            _chatClient,
-            _loggerFactory,
-            BuildPrivateChatSystemPrompt(displayName),
-            skillManager: _skillManager);
-        var agent = new NpcAgentFactory().Create(
-            _chatClient,
-            context,
-            Enumerable.Empty<ITool>(),
-            _loggerFactory,
-            maxToolIterations: _maxToolIterations);
-        AgentCapabilityAssembler.RegisterBuiltInTools(
-            agent,
-            new AgentCapabilityServices
-            {
-                ChatClient = _chatClient,
-                ToolRegistry = context.ToolRegistry,
-                TodoStore = context.TodoStore,
-                CronScheduler = _cronScheduler,
-                MemoryManager = context.MemoryManager,
-                PluginManager = context.PluginManager,
-                TranscriptRecallService = context.TranscriptRecallService,
-                SkillManager = _skillManager,
-                CheckpointDirectory = Path.Combine(npcNamespace.RuntimeRoot, "checkpoints"),
-                MemoryAvailable = true
-            });
-        AgentCapabilityAssembler.RegisterDiscoveredTools(agent, context.ToolRegistry, _discoveredToolProvider());
+        if (string.IsNullOrWhiteSpace(request.NpcId))
+            throw new ArgumentException("NPC id is required.", nameof(request));
+        if (string.IsNullOrWhiteSpace(request.SaveId))
+            throw new ArgumentException("Save id is required.", nameof(request));
 
-        var response = await agent.ChatAsync(
-            BuildPrivateChatMessage(displayName, request.PlayerText),
+        var saveId = request.SaveId.Trim();
+        var binding = _bindingResolver.Resolve(request.NpcId, saveId);
+        var descriptor = binding.Descriptor;
+        var handle = await _runtimeSupervisor.GetOrCreatePrivateChatHandleAsync(
+            descriptor,
+            binding.Pack,
+            _runtimeRoot,
+            new NpcRuntimeAgentBindingRequest(
+                ChannelKey: "private_chat",
+                SystemPromptSupplement: BuildPrivateChatSystemPrompt(descriptor.DisplayName),
+                IncludeMemory: _includeMemory,
+                IncludeUser: _includeUser,
+                MaxToolIterations: _maxToolIterations,
+                Services: new NpcRuntimeCompositionServices(
+                    _chatClient,
+                    _loggerFactory,
+                    _skillManager,
+                    _cronScheduler),
+                ToolSurface: NpcToolSurface.FromTools(_discoveredToolProvider())),
+            ct);
+
+        var response = await handle.Agent.ChatAsync(
+            BuildPrivateChatMessage(descriptor.DisplayName, request.PlayerText),
             new Session
             {
                 Id = $"{descriptor.SessionId}:private_chat:{request.ConversationId}",
@@ -200,21 +196,13 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
         =>
             $"You are the Stardew Valley NPC {displayName} in a private chat with the player. " +
             $"Reply as {displayName} with one concise spoken response. Do not include labels, markdown, or tool narration.";
-
-    private static string ResolveDisplayName(string npcId, string rawNpcId)
-        => npcId switch
-        {
-            "haley" => "Haley",
-            "penny" => "Penny",
-            _ => string.IsNullOrWhiteSpace(rawNpcId) ? npcId : rawNpcId.Trim()
-        };
 }
 
 public sealed class StardewPrivateChatBackgroundService : IDisposable
 {
     private readonly object _gate = new();
     private readonly IStardewBridgeDiscovery _discovery;
-    private readonly Func<StardewBridgeOptions, IGameAdapter> _adapterFactory;
+    private readonly Func<StardewBridgeDiscoverySnapshot, IGameAdapter> _adapterFactory;
     private readonly INpcPrivateChatAgentRunner _agentRunner;
     private readonly StardewPrivateChatOptions _options;
     private readonly ILogger<StardewPrivateChatBackgroundService> _logger;
@@ -231,7 +219,9 @@ public sealed class StardewPrivateChatBackgroundService : IDisposable
         StardewPrivateChatOptions? options = null)
         : this(
             discovery,
-            bridgeOptions => new StardewGameAdapter(new SmapiModApiClient(httpClient, bridgeOptions), "manual-debug"),
+            snapshot => new StardewGameAdapter(
+                new SmapiModApiClient(httpClient, snapshot.Options),
+                StardewBridgeRuntimeIdentity.RequireSaveId(snapshot)),
             agentRunner,
             logger,
             options)
@@ -240,7 +230,7 @@ public sealed class StardewPrivateChatBackgroundService : IDisposable
 
     public StardewPrivateChatBackgroundService(
         IStardewBridgeDiscovery discovery,
-        Func<StardewBridgeOptions, IGameAdapter> adapterFactory,
+        Func<StardewBridgeDiscoverySnapshot, IGameAdapter> adapterFactory,
         INpcPrivateChatAgentRunner agentRunner,
         ILogger<StardewPrivateChatBackgroundService> logger,
         StardewPrivateChatOptions? options = null)
@@ -298,15 +288,24 @@ public sealed class StardewPrivateChatBackgroundService : IDisposable
             {
                 if (!_discovery.TryReadLatest(out var snapshot, out _) || snapshot is null)
                 {
+                    ResetBridgeAttachment();
                     await Task.Delay(delay, ct);
                     continue;
                 }
 
-                var key = $"{snapshot.Options.Host}:{snapshot.Options.Port}:{snapshot.StartedAtUtc:O}";
+                if (!StardewBridgeRuntimeIdentity.TryGetSaveId(snapshot, out var saveId))
+                {
+                    ResetBridgeAttachment();
+                    await Task.Delay(delay, ct);
+                    continue;
+                }
+
+                var key = $"{snapshot.Options.Host}:{snapshot.Options.Port}:{snapshot.StartedAtUtc:O}:{saveId}";
                 if (!string.Equals(key, _bridgeKey, StringComparison.Ordinal))
                 {
-                    var adapter = _adapterFactory(snapshot.Options);
-                    _orchestrator = new StardewPrivateChatOrchestrator(adapter.Events, adapter.Commands, _agentRunner, _options);
+                    var adapter = _adapterFactory(snapshot);
+                    var resolvedOptions = _options with { SaveId = saveId };
+                    _orchestrator = new StardewPrivateChatOrchestrator(adapter.Events, adapter.Commands, _agentRunner, resolvedOptions);
                     await _orchestrator.DrainExistingEventsAsync(ct);
                     _bridgeKey = key;
                     _logger.LogInformation("Stardew private-chat bridge attached: {BridgeKey}", key);
@@ -327,6 +326,15 @@ public sealed class StardewPrivateChatBackgroundService : IDisposable
             await Task.Delay(delay, ct);
         }
     }
+
+    private void ResetBridgeAttachment()
+    {
+        lock (_gate)
+        {
+            _bridgeKey = null;
+            _orchestrator = null;
+        }
+    }
 }
 
 public sealed record NpcPrivateChatRequest(
@@ -338,8 +346,8 @@ public sealed record NpcPrivateChatRequest(
 public sealed record NpcPrivateChatReply(string Text);
 
 public sealed record StardewPrivateChatOptions(
-    string NpcId = "haley",
-    string SaveId = "manual-debug",
+    string? NpcId = null,
+    string SaveId = "",
     PrivateChatReopenPolicy ReopenPolicy = PrivateChatReopenPolicy.OnceAfterReply,
     int MaxTurnsPerSession = 3,
     int MaxOpenAttempts = 60,

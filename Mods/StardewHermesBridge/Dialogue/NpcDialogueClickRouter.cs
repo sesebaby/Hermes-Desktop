@@ -17,9 +17,6 @@ public sealed class NpcDialogueClickRouter
         if (string.IsNullOrWhiteSpace(targetNpcName))
             return NpcDialogueClickRouteResult.Rejected("no_npc_hit");
 
-        if (!string.Equals(targetNpcName, "Haley", StringComparison.OrdinalIgnoreCase))
-            return NpcDialogueClickRouteResult.Rejected("npc_not_enabled");
-
         return NpcDialogueClickRouteResult.Accepted(
             targetNpcName,
             request.IsDialogueBoxOpen ? "accepted_active_dialogue" : "accepted");

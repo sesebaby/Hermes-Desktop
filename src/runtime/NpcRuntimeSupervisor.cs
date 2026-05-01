@@ -1,5 +1,12 @@
 namespace Hermes.Agent.Runtime;
 
+using Hermes.Agent.Core;
+using Hermes.Agent.Game;
+using Hermes.Agent.LLM;
+using Hermes.Agent.Skills;
+using Hermes.Agent.Tools;
+using Microsoft.Extensions.Logging;
+
 public sealed class NpcRuntimeSupervisor
 {
     private readonly object _gate = new();
@@ -31,6 +38,89 @@ public sealed class NpcRuntimeSupervisor
         await instance.StartAsync(ct);
     }
 
+    public async Task<NpcRuntimeInstance> GetOrStartAsync(NpcRuntimeDescriptor descriptor, string runtimeRoot, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        if (string.IsNullOrWhiteSpace(runtimeRoot))
+            throw new ArgumentException("Runtime root is required.", nameof(runtimeRoot));
+
+        var key = BuildKey(descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+        NpcRuntimeInstance? instance;
+        lock (_gate)
+        {
+            if (!_instances.TryGetValue(key, out instance))
+            {
+                var npcNamespace = new NpcNamespace(
+                    runtimeRoot,
+                    descriptor.GameId,
+                    descriptor.SaveId,
+                    descriptor.NpcId,
+                    descriptor.ProfileId);
+                instance = new NpcRuntimeInstance(descriptor, npcNamespace);
+                _instances[key] = instance;
+            }
+        }
+
+        await instance.StartAsync(ct);
+        return instance;
+    }
+
+    public async Task<NpcRuntimeAgentHandle> GetOrCreatePrivateChatHandleAsync(
+        NpcRuntimeDescriptor descriptor,
+        NpcPack pack,
+        string runtimeRoot,
+        NpcRuntimeAgentBindingRequest request,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentNullException.ThrowIfNull(pack);
+        ArgumentException.ThrowIfNullOrWhiteSpace(runtimeRoot);
+        request.Validate();
+
+        var instance = await GetOrStartAsync(descriptor, runtimeRoot, ct);
+        instance.Namespace.SeedPersonaPack(pack);
+
+        var rebindKey = BuildRebindKey(
+            request.ChannelKey,
+            request.SystemPromptSupplement,
+            request.IncludeMemory,
+            request.IncludeUser,
+            request.MaxToolIterations,
+            request.ToolSurface.Fingerprint);
+
+        return instance.GetOrCreatePrivateChatHandle(
+            rebindKey,
+            generation => CreatePrivateChatHandle(instance, request, generation));
+    }
+
+    public async Task<NpcRuntimeAutonomyHandle> GetOrCreateAutonomyHandleAsync(
+        NpcRuntimeDescriptor descriptor,
+        NpcPack pack,
+        string runtimeRoot,
+        NpcRuntimeAutonomyBindingRequest request,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentNullException.ThrowIfNull(pack);
+        ArgumentException.ThrowIfNullOrWhiteSpace(runtimeRoot);
+        request.Validate();
+
+        var instance = await GetOrStartAsync(descriptor, runtimeRoot, ct);
+        instance.Namespace.SeedPersonaPack(pack);
+
+        var rebindKey = BuildRebindKey(
+            request.ChannelKey,
+            request.AdapterKey,
+            request.IncludeMemory,
+            request.IncludeUser,
+            request.MaxToolIterations,
+            request.ToolSurface.Fingerprint);
+
+        return instance.GetOrCreateAutonomyHandle(
+            rebindKey,
+            generation => CreateAutonomyHandle(instance, request, generation));
+    }
+
     public async Task StopAsync(string gameId, string saveId, string npcId, string profileId, CancellationToken ct)
     {
         var key = BuildKey(gameId, saveId, npcId, profileId);
@@ -47,6 +137,135 @@ public sealed class NpcRuntimeSupervisor
         lock (_gate)
             return _instances.Values.Select(instance => instance.Snapshot()).OrderBy(item => item.NpcId).ToArray();
     }
+
+    private static NpcRuntimeAgentHandle CreatePrivateChatHandle(
+        NpcRuntimeInstance instance,
+        NpcRuntimeAgentBindingRequest request,
+        int generation)
+        => CreateAgentHandle(
+            instance,
+            request.ChannelKey,
+            BuildRebindKey(
+                request.ChannelKey,
+                request.SystemPromptSupplement,
+                request.IncludeMemory,
+                request.IncludeUser,
+                request.MaxToolIterations,
+                request.ToolSurface.Fingerprint),
+            request.Services,
+            request.SystemPromptSupplement,
+            request.IncludeMemory,
+            request.IncludeUser,
+            request.MaxToolIterations,
+            request.ToolSurface.Tools,
+            generation,
+            request.ToolSurface.Fingerprint);
+
+    private static NpcRuntimeAutonomyHandle CreateAutonomyHandle(
+        NpcRuntimeInstance instance,
+        NpcRuntimeAutonomyBindingRequest request,
+        int generation)
+    {
+        var adapter = request.AdapterFactory();
+        var gameTools = request.GameToolFactory(adapter).ToArray();
+        var combinedTools = gameTools.Concat(request.ToolSurface.Tools).ToArray();
+        var rebindKey = BuildRebindKey(
+            request.ChannelKey,
+            request.AdapterKey,
+            request.IncludeMemory,
+            request.IncludeUser,
+            request.MaxToolIterations,
+            request.ToolSurface.Fingerprint);
+        var combinedToolSurface = NpcToolSurface.FromTools(combinedTools);
+        var agentHandle = CreateAgentHandle(
+            instance,
+            request.ChannelKey,
+            rebindKey,
+            request.Services,
+            systemPromptSupplement: null,
+            request.IncludeMemory,
+            request.IncludeUser,
+            request.MaxToolIterations,
+            combinedToolSurface.Tools,
+            generation,
+            combinedToolSurface.Fingerprint);
+
+        var loop = new NpcAutonomyLoop(
+            adapter,
+            new NpcObservationFactStore(),
+            agentHandle.Agent,
+            new NpcRuntimeLogWriter(Path.Combine(instance.Namespace.ActivityPath, "runtime.jsonl")),
+            agentHandle.Context.MemoryManager);
+
+        return new NpcRuntimeAutonomyHandle(
+            instance,
+            agentHandle,
+            adapter,
+            loop,
+            request.ChannelKey,
+            rebindKey,
+            generation,
+            combinedToolSurface.Fingerprint);
+    }
+
+    private static NpcRuntimeAgentHandle CreateAgentHandle(
+        NpcRuntimeInstance instance,
+        string channelKey,
+        string rebindKey,
+        NpcRuntimeCompositionServices services,
+        string? systemPromptSupplement,
+        bool includeMemory,
+        bool includeUser,
+        int maxToolIterations,
+        IEnumerable<ITool> tools,
+        int generation,
+        string toolFingerprint)
+    {
+        var context = new NpcRuntimeContextFactory().Create(
+            instance.Namespace,
+            services.ChatClient,
+            services.LoggerFactory,
+            services.SkillManager,
+            systemPromptSupplement,
+            includeMemory: includeMemory,
+            includeUser: includeUser);
+
+        var agent = new NpcAgentFactory().Create(
+            services.ChatClient,
+            context,
+            Enumerable.Empty<ITool>(),
+            services.LoggerFactory,
+            maxToolIterations: maxToolIterations);
+
+        AgentCapabilityAssembler.RegisterAllTools(
+            agent,
+            new AgentCapabilityServices
+            {
+                ChatClient = services.ChatClient,
+                ToolRegistry = context.ToolRegistry,
+                TodoStore = context.TodoStore,
+                CronScheduler = services.CronScheduler,
+                MemoryManager = context.MemoryManager,
+                PluginManager = context.PluginManager,
+                TranscriptRecallService = context.TranscriptRecallService,
+                SkillManager = services.SkillManager,
+                CheckpointDirectory = Path.Combine(instance.Namespace.RuntimeRoot, "checkpoints"),
+                MemoryAvailable = includeMemory || includeUser
+            },
+            tools);
+
+        return new NpcRuntimeAgentHandle(
+            instance,
+            context,
+            agent,
+            channelKey,
+            rebindKey,
+            generation,
+            toolFingerprint);
+    }
+
+    private static string BuildRebindKey(params object?[] parts)
+        => string.Join("|", parts.Select(part => part?.ToString() ?? string.Empty));
 
     private static string BuildKey(string gameId, string saveId, string npcId, string profileId)
         => $"{gameId}:{saveId}:{npcId}:{profileId}";

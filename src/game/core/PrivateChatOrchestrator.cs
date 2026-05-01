@@ -12,6 +12,7 @@ public sealed class PrivateChatOrchestrator
     private GameEventCursor _cursor = new(null);
     private PrivateChatState _state = PrivateChatState.Idle;
     private string? _conversationId;
+    private string? _activeNpcId;
     private int _turns;
     private PendingPrivateChatOpen? _pendingOpen;
 
@@ -108,6 +109,8 @@ public sealed class PrivateChatOrchestrator
     {
         if (_state is not PrivateChatState.AwaitingPlayerInput || string.IsNullOrWhiteSpace(_conversationId))
             return;
+        if (!string.Equals(record.NpcId, _activeNpcId, StringComparison.OrdinalIgnoreCase))
+            return;
 
         var submittedConversationId = _options.Policy.ExtractConversationId(record);
         if (!string.Equals(submittedConversationId, _conversationId, StringComparison.OrdinalIgnoreCase))
@@ -125,7 +128,7 @@ public sealed class PrivateChatOrchestrator
         try
         {
             reply = await _agentRunner.ReplyAsync(
-                new PrivateChatAgentRequest(record.NpcId!, _options.Policy.SaveId, _conversationId, playerText),
+                new PrivateChatAgentRequest(_activeNpcId!, _options.Policy.SaveId, _conversationId, playerText),
                 ct);
         }
         catch
@@ -141,7 +144,7 @@ public sealed class PrivateChatOrchestrator
         }
 
         _state = PrivateChatState.ShowingReply;
-        var speakResult = await SubmitSpeakAsync(record.NpcId!, reply.Text, _conversationId, ct);
+        var speakResult = await SubmitSpeakAsync(_activeNpcId!, reply.Text, _conversationId, ct);
         _turns++;
         if (!speakResult.Accepted || ShouldEndAfterReply())
         {
@@ -156,6 +159,8 @@ public sealed class PrivateChatOrchestrator
     {
         if (_state is not PrivateChatState.WaitingReplyDismissal || string.IsNullOrWhiteSpace(_conversationId))
             return;
+        if (!string.Equals(record.NpcId, _activeNpcId, StringComparison.OrdinalIgnoreCase))
+            return;
 
         var closedConversationId = _options.Policy.ExtractConversationId(record);
         if (!string.Equals(closedConversationId, _conversationId, StringComparison.OrdinalIgnoreCase))
@@ -164,7 +169,7 @@ public sealed class PrivateChatOrchestrator
         var nextConversationId = $"{_conversationId}_turn{_turns + 1}";
         _conversationId = nextConversationId;
         _pendingOpen = new PendingPrivateChatOpen(
-            record.NpcId!,
+            _activeNpcId!,
             nextConversationId,
             nextConversationId,
             "reopen_after_private_chat_reply",
@@ -177,6 +182,8 @@ public sealed class PrivateChatOrchestrator
     private void TryCancelPrivateChat(GameEventRecord record)
     {
         if (_state is not PrivateChatState.AwaitingPlayerInput || string.IsNullOrWhiteSpace(_conversationId))
+            return;
+        if (!string.Equals(record.NpcId, _activeNpcId, StringComparison.OrdinalIgnoreCase))
             return;
 
         var cancelledConversationId = _options.Policy.ExtractConversationId(record);
@@ -211,6 +218,7 @@ public sealed class PrivateChatOrchestrator
         {
             _completedOpenKeys.Add(pending.OpenKey);
             _pendingOpen = null;
+            _activeNpcId = pending.NpcId;
             _state = PrivateChatState.AwaitingPlayerInput;
             return;
         }
@@ -274,6 +282,7 @@ public sealed class PrivateChatOrchestrator
     {
         _state = PrivateChatState.Idle;
         _conversationId = null;
+        _activeNpcId = null;
         _pendingOpen = null;
     }
 }

@@ -308,6 +308,9 @@ public partial class App : Application
         // Hermes home directory — ensure all required dirs exist on startup
         var hermesHome = HermesEnvironment.HermesHomePath;
         var projectDir = Path.Combine(hermesHome, "hermes-cs");
+        var memoryEnabled = IsConfigEnabled("memory", "memory_enabled");
+        var userProfileEnabled = IsConfigEnabled("memory", "user_profile_enabled");
+        var memoryAvailable = memoryEnabled || userProfileEnabled;
         foreach (var dir in new[]
         {
             hermesHome, projectDir,
@@ -369,6 +372,9 @@ public partial class App : Application
             sp.GetRequiredService<NpcRuntimeSupervisor>(),
             projectDir));
         services.AddSingleton<NpcRuntimeWorkspaceService>();
+        services.AddSingleton(sp => new StardewNpcRuntimeBindingResolver(
+            sp.GetRequiredService<INpcPackLoader>(),
+            sp.GetRequiredService<NpcRuntimeWorkspaceService>().PackRoot));
         services.AddSingleton<IStardewBridgeDiscovery>(_ => new FileStardewBridgeDiscovery());
         services.AddSingleton(sp => new StardewNpcDebugActionService(
             sp.GetRequiredService<IStardewBridgeDiscovery>(),
@@ -378,13 +384,25 @@ public partial class App : Application
             sp.GetRequiredService<HttpClient>(),
             sp.GetRequiredService<IChatClient>(),
             sp.GetRequiredService<ILoggerFactory>(),
+            sp.GetRequiredService<SkillManager>(),
+            sp.GetRequiredService<ICronScheduler>(),
+            sp.GetRequiredService<NpcRuntimeSupervisor>(),
+            sp.GetRequiredService<StardewNpcRuntimeBindingResolver>(),
+            () => sp.GetRequiredService<McpManager>().Tools.Values,
+            memoryEnabled,
+            userProfileEnabled,
+            HermesEnvironment.MaxAgentIterations,
             projectDir));
         services.AddSingleton<INpcPrivateChatAgentRunner>(sp => new StardewNpcPrivateChatAgentRunner(
             sp.GetRequiredService<IChatClient>(),
             sp.GetRequiredService<ILoggerFactory>(),
             projectDir,
+            sp.GetRequiredService<NpcRuntimeSupervisor>(),
             sp.GetRequiredService<SkillManager>(),
             sp.GetRequiredService<ICronScheduler>(),
+            sp.GetRequiredService<StardewNpcRuntimeBindingResolver>(),
+            memoryEnabled,
+            userProfileEnabled,
             () => sp.GetRequiredService<McpManager>().Tools.Values,
             HermesEnvironment.MaxAgentIterations));
         services.AddSingleton(sp => new StardewPrivateChatBackgroundService(
@@ -395,9 +413,6 @@ public partial class App : Application
 
         // Memory manager
         var memoryDir = Path.Combine(hermesHome, "memories");
-        var memoryEnabled = IsConfigEnabled("memory", "memory_enabled");
-        var userProfileEnabled = IsConfigEnabled("memory", "user_profile_enabled");
-        var memoryAvailable = memoryEnabled || userProfileEnabled;
         services.AddSingleton(sp => new MemoryManager(
             memoryDir,
             sp.GetRequiredService<IChatClient>(),
@@ -508,11 +523,11 @@ public partial class App : Application
 
         // Token budget & Prompt builder for Context Runtime
         services.AddSingleton(sp => new TokenBudget(maxTokens: 8000, recentTurnWindow: 6));
-        services.AddSingleton(sp => new PromptBuilder(() => SystemPrompts.Build(
-            includeMemoryGuidance: memoryAvailable,
-            includeSessionSearchGuidance: true,
-            includeSkillsGuidance: true,
-            skillsMandatoryPrompt: sp.GetRequiredService<SkillManager>().BuildSkillsMandatoryPrompt())));
+        services.AddSingleton(sp => AgentCapabilityAssembler.CreatePromptBuilder(new AgentPromptServices
+        {
+            SkillManager = sp.GetRequiredService<SkillManager>(),
+            MemoryAvailable = memoryAvailable
+        }));
 
         // Context manager (with soul integration)
         services.AddSingleton(sp => new ContextManager(
@@ -834,7 +849,7 @@ public partial class App : Application
         MigrateLegacyMemoriesIfNeeded(memoryManager.MemoryDir);
         var checkpointDir = Path.Combine(HermesEnvironment.HermesHomePath, "checkpoints");
 
-        AgentCapabilityAssembler.RegisterBuiltInTools(
+        AgentCapabilityAssembler.RegisterAllTools(
             agent,
             new AgentCapabilityServices
             {
@@ -848,7 +863,8 @@ public partial class App : Application
                 SkillManager = services.GetRequiredService<SkillManager>(),
                 CheckpointDirectory = checkpointDir,
                 MemoryAvailable = memoryAvailable
-            });
+            },
+            Enumerable.Empty<ITool>());
     }
 
     /// <summary>

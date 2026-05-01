@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Runtime;
+using Hermes.Agent.Skills;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -31,8 +32,9 @@ public class NpcRuntimeContextFactoryTests
     {
         var ns = new NpcNamespace(_tempDir, "stardew-valley", "save-1", "haley", "default");
         var factory = new NpcRuntimeContextFactory();
+        var skillManager = CreateSkillManager();
 
-        var bundle = factory.Create(ns, new FakeChatClient(), NullLoggerFactory.Instance);
+        var bundle = factory.Create(ns, new FakeChatClient(), NullLoggerFactory.Instance, skillManager);
         var messages = await bundle.ContextManager.PrepareContextAsync(
             "sdv_save-1_haley_default",
             "Observe the latest Stardew facts and decide whether to act.",
@@ -40,12 +42,30 @@ public class NpcRuntimeContextFactoryTests
             CancellationToken.None);
 
         Assert.AreEqual(Path.Combine(ns.SoulHomePath, "SOUL.md"), bundle.SoulService.SoulFilePath);
-        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("autonomous NPC", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("Stardew Valley NPC runtime", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("## Skills (mandatory)", StringComparison.Ordinal));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("npc-memory-skill", StringComparison.Ordinal));
         Assert.IsTrue(messages.Any(message =>
             message.Role == "system" &&
             message.Content.Contains("[Agent Identity]", StringComparison.Ordinal)));
         Assert.AreEqual("user", messages[^1].Role);
         Assert.AreEqual("Observe the latest Stardew facts and decide whether to act.", messages[^1].Content);
+    }
+
+    private SkillManager CreateSkillManager()
+    {
+        var skillsDir = Path.Combine(_tempDir, "skills", "memory");
+        Directory.CreateDirectory(skillsDir);
+        File.WriteAllText(
+            Path.Combine(skillsDir, "SKILL.md"),
+            """
+            ---
+            name: npc-memory-skill
+            description: Preserve stable NPC conversation context.
+            ---
+            Use durable memory for recurring player facts.
+            """);
+        return new SkillManager(Path.Combine(_tempDir, "skills"), NullLogger<SkillManager>.Instance);
     }
 
     private sealed class FakeChatClient : IChatClient

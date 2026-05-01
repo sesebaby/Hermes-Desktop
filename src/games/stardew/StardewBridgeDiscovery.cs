@@ -13,7 +13,8 @@ public interface IStardewBridgeDiscovery
 public sealed record StardewBridgeDiscoverySnapshot(
     StardewBridgeOptions Options,
     DateTimeOffset StartedAtUtc,
-    int? ProcessId);
+    int? ProcessId,
+    string? SaveId);
 
 public sealed class FileStardewBridgeDiscovery : IStardewBridgeDiscovery
 {
@@ -83,7 +84,8 @@ public sealed class FileStardewBridgeDiscovery : IStardewBridgeDiscovery
         snapshot = new StardewBridgeDiscoverySnapshot(
             options,
             document.StartedAtUtc ?? File.GetLastWriteTimeUtc(DiscoveryFilePath),
-            document.ProcessId);
+            document.ProcessId,
+            StardewBridgeRuntimeIdentity.NormalizeSaveId(document.SaveId));
         return true;
     }
 
@@ -100,22 +102,25 @@ public sealed class FileStardewBridgeDiscovery : IStardewBridgeDiscovery
         int Port,
         string BridgeToken,
         DateTimeOffset? StartedAtUtc,
-        int? ProcessId);
+        int? ProcessId,
+        string? SaveId);
 }
 
 public sealed class StardewNpcDebugActionService
 {
     private readonly IStardewBridgeDiscovery _discovery;
-    private readonly Func<StardewBridgeOptions, IGameCommandService> _commandServiceFactory;
+    private readonly Func<StardewBridgeDiscoverySnapshot, IGameCommandService> _commandServiceFactory;
 
     public StardewNpcDebugActionService(IStardewBridgeDiscovery discovery, HttpClient httpClient)
-        : this(discovery, options => new StardewCommandService(new SmapiModApiClient(httpClient, options), "manual-debug"))
+        : this(discovery, snapshot => new StardewCommandService(
+            new SmapiModApiClient(httpClient, snapshot.Options),
+            StardewBridgeRuntimeIdentity.RequireSaveId(snapshot)))
     {
     }
 
     public StardewNpcDebugActionService(
         IStardewBridgeDiscovery discovery,
-        Func<StardewBridgeOptions, IGameCommandService> commandServiceFactory)
+        Func<StardewBridgeDiscoverySnapshot, IGameCommandService> commandServiceFactory)
     {
         _discovery = discovery;
         _commandServiceFactory = commandServiceFactory;
@@ -129,6 +134,9 @@ public sealed class StardewNpcDebugActionService
 
         if (!_discovery.TryReadLatest(out var snapshot, out var failureReason) || snapshot is null)
             return new GameCommandResult(false, "", StardewCommandStatuses.Failed, failureReason ?? StardewBridgeErrorCodes.BridgeUnavailable, traceId);
+
+        if (!StardewBridgeRuntimeIdentity.TryGetSaveId(snapshot, out _))
+            return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.BridgeStaleDiscovery, traceId);
 
         var payload = new System.Text.Json.Nodes.JsonObject
         {
@@ -147,11 +155,37 @@ public sealed class StardewNpcDebugActionService
 
         try
         {
-            return await _commandServiceFactory(snapshot.Options).SubmitAsync(action, ct);
+            return await _commandServiceFactory(snapshot).SubmitAsync(action, ct);
         }
         catch
         {
             return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.BridgeUnavailable, traceId);
         }
     }
+}
+
+internal static class StardewBridgeRuntimeIdentity
+{
+    public static bool TryGetSaveId(StardewBridgeDiscoverySnapshot snapshot, out string saveId)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        var normalized = NormalizeSaveId(snapshot.SaveId);
+        if (normalized is null)
+        {
+            saveId = string.Empty;
+            return false;
+        }
+
+        saveId = normalized;
+        return true;
+    }
+
+    public static string RequireSaveId(StardewBridgeDiscoverySnapshot snapshot)
+        => TryGetSaveId(snapshot, out var saveId)
+            ? saveId
+            : throw new InvalidOperationException(StardewBridgeErrorCodes.BridgeStaleDiscovery);
+
+    public static string? NormalizeSaveId(string? saveId)
+        => string.IsNullOrWhiteSpace(saveId) ? null : saveId.Trim();
 }

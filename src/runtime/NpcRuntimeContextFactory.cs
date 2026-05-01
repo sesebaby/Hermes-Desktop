@@ -14,24 +14,25 @@ namespace Hermes.Agent.Runtime;
 
 public sealed class NpcRuntimeContextFactory
 {
-    private const string DefaultSystemPrompt =
-        "You are an autonomous NPC runtime. Observe facts, decide only from NPC-local context, " +
-        "and use only the tools explicitly registered for this NPC.";
+    private const string DefaultSystemPromptSupplement =
+        "You are acting as a Stardew Valley NPC runtime. Observe facts from NPC-local context, " +
+        "keep continuity inside this NPC namespace, and use the registered tools available in this session.";
 
     public NpcRuntimeContextBundle Create(
         NpcNamespace npcNamespace,
         IChatClient chatClient,
         ILoggerFactory loggerFactory,
-        string? systemPrompt = null,
+        SkillManager skillManager,
+        string? systemPromptSupplement = null,
         int maxTokens = 8000,
         int recentTurnWindow = 6,
-        SkillManager? skillManager = null,
         bool includeMemory = true,
         bool includeUser = true)
     {
         ArgumentNullException.ThrowIfNull(npcNamespace);
         ArgumentNullException.ThrowIfNull(chatClient);
         ArgumentNullException.ThrowIfNull(loggerFactory);
+        ArgumentNullException.ThrowIfNull(skillManager);
 
         npcNamespace.EnsureDirectories();
 
@@ -63,7 +64,14 @@ public sealed class NpcRuntimeContextFactory
             memoryManager,
             includeMemory: includeMemory,
             includeUser: includeUser));
-        var promptBuilder = new PromptBuilder(systemPrompt ?? DefaultSystemPrompt);
+        var promptBuilder = AgentCapabilityAssembler.CreatePromptBuilder(new AgentPromptServices
+        {
+            SkillManager = skillManager,
+            MemoryAvailable = includeMemory || includeUser,
+            SupplementalSystemPrompt = string.IsNullOrWhiteSpace(systemPromptSupplement)
+                ? DefaultSystemPromptSupplement
+                : $"{DefaultSystemPromptSupplement}\n\n{systemPromptSupplement.Trim()}"
+        });
         var contextManager = new ContextManager(
             transcriptStore,
             chatClient,

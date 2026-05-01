@@ -28,4 +28,6 @@ public sealed record NpcRuntimeSnapshot(
     string SessionId,
     NpcRuntimeState State,
     string? LastTraceId,
-    string? LastError);
+    string? LastError,
+    int PrivateChatRebindGeneration,
+    int AutonomyRebindGeneration);
