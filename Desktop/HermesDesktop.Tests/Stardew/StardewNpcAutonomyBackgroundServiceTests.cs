@@ -380,6 +380,42 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
+    public async Task RunOneIterationAsync_WhenLlmSlotBecomesAvailable_RetriesPausedNpcOnNextIteration()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("I will wait near the library.");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var budget = new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(MaxToolIterations: 2, MaxConcurrentLlmRequests: 1, MaxRestartsPerScene: 2));
+        await using var heldSlot = await budget.TryAcquireLlmSlotAsync("external", CancellationToken.None);
+        Assert.IsNotNull(heldSlot);
+
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"],
+            budget: budget);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        var paused = supervisor.Snapshot().Single();
+        Assert.AreEqual(NpcAutonomyLoopState.Paused, paused.AutonomyLoopState);
+        Assert.AreEqual(NpcAutonomyExitReason.LlmConcurrencyLimit.ToString(), paused.PauseReason);
+        Assert.IsNull(paused.LastAutomaticTickAtUtc);
+        Assert.AreEqual(0, chatClient.CompleteWithToolsCalls);
+
+        await heldSlot.DisposeAsync();
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        var resumed = supervisor.Snapshot().Single();
+        Assert.AreEqual(NpcAutonomyLoopState.Running, resumed.AutonomyLoopState);
+        Assert.IsTrue(resumed.LastAutomaticTickAtUtc.HasValue);
+        Assert.AreEqual(1, chatClient.CompleteWithToolsCalls);
+    }
+
+    [TestMethod]
     public async Task RunOneIterationAsync_WhenPendingActionIsRunning_PausesWithoutStartingNewChat()
     {
         var discovery = CreateDiscovery("save-42");
@@ -783,7 +819,8 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         IChatClient chatClient,
         NpcRuntimeSupervisor supervisor,
         IReadOnlyCollection<string> enabledNpcIds,
-        WorldCoordinationService? worldCoordination = null)
+        WorldCoordinationService? worldCoordination = null,
+        NpcAutonomyBudget? budget = null)
     {
         var service = new StardewNpcAutonomyBackgroundService(
             discovery,
@@ -799,7 +836,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             new StardewPrivateChatRuntimeAdapter(
                 new NoopPrivateChatAgentRunner(),
                 NullLogger<StardewPrivateChatRuntimeAdapter>.Instance),
-            new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(MaxToolIterations: 2, MaxConcurrentLlmRequests: 1, MaxRestartsPerScene: 2)),
+            budget ?? new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(MaxToolIterations: 2, MaxConcurrentLlmRequests: 1, MaxRestartsPerScene: 2)),
             worldCoordination ?? new WorldCoordinationService(new ResourceClaimRegistry()),
             NullLogger<StardewNpcAutonomyBackgroundService>.Instance,
             new StardewNpcAutonomyBackgroundOptions(enabledNpcIds, TimeSpan.FromMilliseconds(10)),
