@@ -32,6 +32,8 @@ public sealed record NpcNamespace(
 
     public string TranscriptPath => Path.Combine(RuntimeRoot, "transcripts");
 
+    public string TranscriptStateDbPath => Path.Combine(TranscriptPath, "state.db");
+
     public string TracePath => Path.Combine(RuntimeRoot, "traces");
 
     public string ActivityPath => Path.Combine(RuntimeRoot, "activity");
@@ -59,14 +61,30 @@ public sealed record NpcNamespace(
         return new MemoryManager(MemoryPath, chatClient, logger);
     }
 
-    public TranscriptStore CreateTranscriptStore(ILogger<SessionSearchIndex> logger)
+    public SessionSearchIndex CreateSessionSearchIndex(ILogger<SessionSearchIndex> logger)
     {
         EnsureDirectories();
-        var dbPath = Path.Combine(TranscriptPath, "state.db");
+        return new SessionSearchIndex(TranscriptStateDbPath, logger);
+    }
+
+    public TranscriptStore CreateTranscriptStore(
+        ILogger<SessionSearchIndex> logger,
+        ITranscriptMessageObserver? messageObserver = null)
+    {
+        EnsureDirectories();
+        return CreateTranscriptStore(CreateSessionSearchIndex(logger), messageObserver);
+    }
+
+    public TranscriptStore CreateTranscriptStore(
+        SessionSearchIndex sessionStore,
+        ITranscriptMessageObserver? messageObserver = null)
+    {
+        EnsureDirectories();
         return new TranscriptStore(
             TranscriptPath,
             eagerFlush: true,
-            sessionStore: new SessionSearchIndex(dbPath, logger),
+            messageObserver: messageObserver,
+            sessionStore: sessionStore,
             sessionSource: SessionSource);
     }
 

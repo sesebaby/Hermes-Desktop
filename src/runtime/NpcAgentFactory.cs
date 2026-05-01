@@ -24,9 +24,12 @@ public sealed class NpcAgentFactory
             transcripts: context.TranscriptStore,
             memories: context.MemoryManager,
             contextManager: context.ContextManager,
-            soulService: context.SoulService)
+            soulService: context.SoulService,
+            pluginManager: context.PluginManager,
+            turnMemoryCoordinator: context.TurnMemoryCoordinator,
+            memoryReviewService: context.MemoryReviewService)
         {
-            MaxToolIterations = maxToolIterations
+            MaxToolIterations = Math.Max(2, maxToolIterations)
         };
 
         foreach (var tool in tools)

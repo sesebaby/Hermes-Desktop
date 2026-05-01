@@ -382,7 +382,11 @@ public partial class App : Application
         services.AddSingleton<INpcPrivateChatAgentRunner>(sp => new StardewNpcPrivateChatAgentRunner(
             sp.GetRequiredService<IChatClient>(),
             sp.GetRequiredService<ILoggerFactory>(),
-            projectDir));
+            projectDir,
+            sp.GetRequiredService<SkillManager>(),
+            sp.GetRequiredService<ICronScheduler>(),
+            () => sp.GetRequiredService<McpManager>().Tools.Values,
+            HermesEnvironment.MaxAgentIterations));
         services.AddSingleton(sp => new StardewPrivateChatBackgroundService(
             sp.GetRequiredService<IStardewBridgeDiscovery>(),
             sp.GetRequiredService<HttpClient>(),
@@ -823,47 +827,28 @@ public partial class App : Application
         var toolRegistry = services.GetRequiredService<IToolRegistry>();
         var chatClient = services.GetRequiredService<IChatClient>();
 
-        // Task management
         var todoStore = services.GetRequiredService<SessionTodoStore>();
-        RegisterAndTrack(agent, toolRegistry, new TodoTool(todoStore));
-        RegisterAndTrack(agent, toolRegistry, new TodoWriteTool(todoStore));
-        RegisterAndTrack(agent, toolRegistry, new ScheduleCronTool(
-            services.GetRequiredService<ICronScheduler>()));
-
-        // Agent tool (subagent spawning — needs chat client and tool registry)
-        RegisterAndTrack(agent, toolRegistry, new AgentTool(chatClient, toolRegistry));
-
-        // Memory tool — Python-compatible curated MEMORY.md / USER.md store.
         var memoryManager = services.GetRequiredService<MemoryManager>();
         var memoryAvailable = IsConfigEnabled("memory", "memory_enabled") ||
                               IsConfigEnabled("memory", "user_profile_enabled");
         MigrateLegacyMemoriesIfNeeded(memoryManager.MemoryDir);
-        RegisterAndTrack(agent, toolRegistry, new MemoryTool(
-            memoryManager,
-            services.GetRequiredService<PluginManager>(),
-            isAvailable: memoryAvailable));
-
-        // Session search tool
-        RegisterAndTrack(agent, toolRegistry, new SessionSearchTool(
-            services.GetRequiredService<TranscriptRecallService>()));
-
-        // Skill invoke tool
-        var skillManager = services.GetRequiredService<SkillManager>();
-        RegisterAndTrack(agent, toolRegistry, new SkillsListTool(skillManager));
-        RegisterAndTrack(agent, toolRegistry, new SkillViewTool(skillManager));
-        RegisterAndTrack(agent, toolRegistry, new SkillManageTool(skillManager));
-        RegisterAndTrack(agent, toolRegistry, new SkillInvokeTool(skillManager));
-
-        // Checkpoint tool
         var checkpointDir = Path.Combine(HermesEnvironment.HermesHomePath, "checkpoints");
-        RegisterAndTrack(agent, toolRegistry, new CheckpointTool(checkpointDir));
-    }
 
-    /// <summary>Register a tool with both the Agent and the shared IToolRegistry.</summary>
-    private static void RegisterAndTrack(Agent agent, IToolRegistry registry, ITool tool)
-    {
-        agent.RegisterTool(tool);
-        registry.RegisterTool(tool);
+        AgentCapabilityAssembler.RegisterBuiltInTools(
+            agent,
+            new AgentCapabilityServices
+            {
+                ChatClient = chatClient,
+                ToolRegistry = toolRegistry,
+                TodoStore = todoStore,
+                CronScheduler = services.GetRequiredService<ICronScheduler>(),
+                MemoryManager = memoryManager,
+                PluginManager = services.GetRequiredService<PluginManager>(),
+                TranscriptRecallService = services.GetRequiredService<TranscriptRecallService>(),
+                SkillManager = services.GetRequiredService<SkillManager>(),
+                CheckpointDirectory = checkpointDir,
+                MemoryAvailable = memoryAvailable
+            });
     }
 
     /// <summary>
@@ -1039,11 +1024,7 @@ public partial class App : Application
             await mcpManager.ConnectAllAsync();
 
             // Register discovered MCP tools with the Agent
-            foreach (var mcpTool in mcpManager.Tools.Values)
-            {
-                agent.RegisterTool(mcpTool);
-                toolRegistry.RegisterTool(mcpTool);
-            }
+            AgentCapabilityAssembler.RegisterDiscoveredTools(agent, toolRegistry, mcpManager.Tools.Values);
         }
         catch (Exception ex)
         {

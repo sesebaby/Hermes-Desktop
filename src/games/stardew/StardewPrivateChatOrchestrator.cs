@@ -4,6 +4,8 @@ using Hermes.Agent.Core;
 using Hermes.Agent.Game;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Runtime;
+using Hermes.Agent.Skills;
+using Hermes.Agent.Tools;
 using Microsoft.Extensions.Logging;
 
 public sealed class StardewPrivateChatOrchestrator
@@ -106,28 +108,36 @@ public interface INpcPrivateChatAgentRunner
 
 public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunner
 {
-    private const string PrivateChatSystemPrompt =
-        "You are the Stardew Valley NPC Haley in a private chat with the player. " +
-        "Reply as Haley with one concise spoken response. Do not include labels, markdown, or tool narration.";
-
     private readonly IChatClient _chatClient;
     private readonly ILoggerFactory _loggerFactory;
     private readonly string _runtimeRoot;
+    private readonly SkillManager _skillManager;
+    private readonly ICronScheduler _cronScheduler;
+    private readonly Func<IEnumerable<ITool>> _discoveredToolProvider;
+    private readonly int _maxToolIterations;
 
     public StardewNpcPrivateChatAgentRunner(
         IChatClient chatClient,
         ILoggerFactory loggerFactory,
-        string runtimeRoot)
+        string runtimeRoot,
+        SkillManager skillManager,
+        ICronScheduler cronScheduler,
+        Func<IEnumerable<ITool>>? discoveredToolProvider = null,
+        int maxToolIterations = 25)
     {
         _chatClient = chatClient;
         _loggerFactory = loggerFactory;
         _runtimeRoot = runtimeRoot;
+        _skillManager = skillManager;
+        _cronScheduler = cronScheduler;
+        _discoveredToolProvider = discoveredToolProvider ?? (() => Enumerable.Empty<ITool>());
+        _maxToolIterations = Math.Max(2, maxToolIterations);
     }
 
     public async Task<NpcPrivateChatReply> ReplyAsync(NpcPrivateChatRequest request, CancellationToken ct)
     {
         var npcId = string.IsNullOrWhiteSpace(request.NpcId) ? "haley" : request.NpcId.Trim().ToLowerInvariant();
-        var displayName = string.Equals(npcId, "haley", StringComparison.OrdinalIgnoreCase) ? "Haley" : request.NpcId.Trim();
+        var displayName = ResolveDisplayName(npcId, request.NpcId);
         var saveId = string.IsNullOrWhiteSpace(request.SaveId) ? "manual-debug" : request.SaveId.Trim();
         var descriptor = new NpcRuntimeDescriptor(
             npcId,
@@ -143,13 +153,31 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
             npcNamespace,
             _chatClient,
             _loggerFactory,
-            PrivateChatSystemPrompt);
+            BuildPrivateChatSystemPrompt(displayName),
+            skillManager: _skillManager);
         var agent = new NpcAgentFactory().Create(
             _chatClient,
             context,
-            Array.Empty<ITool>(),
+            Enumerable.Empty<ITool>(),
             _loggerFactory,
-            maxToolIterations: 1);
+            maxToolIterations: _maxToolIterations);
+        AgentCapabilityAssembler.RegisterBuiltInTools(
+            agent,
+            new AgentCapabilityServices
+            {
+                ChatClient = _chatClient,
+                ToolRegistry = context.ToolRegistry,
+                TodoStore = context.TodoStore,
+                CronScheduler = _cronScheduler,
+                MemoryManager = context.MemoryManager,
+                PluginManager = context.PluginManager,
+                TranscriptRecallService = context.TranscriptRecallService,
+                SkillManager = _skillManager,
+                CheckpointDirectory = Path.Combine(npcNamespace.RuntimeRoot, "checkpoints"),
+                MemoryAvailable = true
+            });
+        AgentCapabilityAssembler.RegisterDiscoveredTools(agent, context.ToolRegistry, _discoveredToolProvider());
+
         var response = await agent.ChatAsync(
             BuildPrivateChatMessage(displayName, request.PlayerText),
             new Session
@@ -167,6 +195,19 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
             $"Private chat for {displayName}.\n" +
             "The player explicitly typed this message to you. Respond directly in-character.\n\n" +
             $"Player: {playerText}";
+
+    private static string BuildPrivateChatSystemPrompt(string displayName)
+        =>
+            $"You are the Stardew Valley NPC {displayName} in a private chat with the player. " +
+            $"Reply as {displayName} with one concise spoken response. Do not include labels, markdown, or tool narration.";
+
+    private static string ResolveDisplayName(string npcId, string rawNpcId)
+        => npcId switch
+        {
+            "haley" => "Haley",
+            "penny" => "Penny",
+            _ => string.IsNullOrWhiteSpace(rawNpcId) ? npcId : rawNpcId.Trim()
+        };
 }
 
 public sealed class StardewPrivateChatBackgroundService : IDisposable
