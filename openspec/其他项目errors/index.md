@@ -23,3 +23,5 @@
 10. `E-2026-0010-stardew-dialogue-click-bound-to-left-button.md`
 11. `E-2026-0011-raw-dialogue-text-passed-as-translation-key.md`
 12. `E-2026-0012-active-dialogue-menu-misrouted-as-menu-open.md`
+13. `E-2026-0013-stardew-ui-called-from-http-thread.md`
+14. `E-2026-0014-show-text-entry-is-not-visible-menu.md`

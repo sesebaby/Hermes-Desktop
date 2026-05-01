@@ -155,14 +155,14 @@ public sealed class BridgeHttpHost
     private async Task HandleSpeakAsync(HttpListenerContext context, CancellationToken ct)
     {
         var envelope = await ReadJsonAsync<BridgeEnvelope<SpeakPayload>>(context.Request, ct);
-        var response = _commands.Speak(envelope);
+        var response = await _commands.SpeakAsync(envelope, ct);
         await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
     }
 
     private async Task HandleOpenPrivateChatAsync(HttpListenerContext context, CancellationToken ct)
     {
         var envelope = await ReadJsonAsync<BridgeEnvelope<OpenPrivateChatPayload>>(context.Request, ct);
-        var response = _commands.OpenPrivateChat(envelope);
+        var response = await _commands.OpenPrivateChatAsync(envelope, ct);
         await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
     }
 

@@ -175,6 +175,65 @@ public class RawDialogueDisplayRegressionTests
     }
 
     [TestMethod]
+    public void BridgeUiActionsAreQueuedForGameLoopPump()
+    {
+        var httpHost = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeHttpHost.cs");
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(
+            httpHost,
+            "await _commands.OpenPrivateChatAsync",
+            "The HTTP listener must not execute Stardew UI calls directly on its background request thread.");
+        StringAssert.Contains(
+            httpHost,
+            "await _commands.SpeakAsync",
+            "Speak replies also display UI and must be marshalled through the game loop.");
+        StringAssert.Contains(
+            commandQueue,
+            "_pendingUi.Enqueue",
+            "Bridge UI actions should be queued for execution by UpdateTicked/PumpOneTick.");
+        StringAssert.Contains(
+            commandQueue,
+            "TryPumpUiCommand()",
+            "PumpOneTick must execute queued UI commands on the Stardew game loop.");
+        StringAssert.Contains(
+            commandQueue,
+            "TaskCompletionSource<BridgeResponse<OpenPrivateChatData>>",
+            "The HTTP path should wait for the game-loop execution result before reporting completion.");
+    }
+
+    [TestMethod]
+    public void PrivateChatInputUsesVisibleClickableMenuInsteadOfTextEntryHelper()
+    {
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+        var inputMenu = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "PrivateChatInputMenu.cs");
+
+        StringAssert.Contains(
+            commandQueue,
+            "new PrivateChatInputMenu",
+            "Opening private chat must construct a real Stardew menu, not just a text entry helper.");
+        StringAssert.Contains(
+            commandQueue,
+            "Game1.activeClickableMenu =",
+            "The private-chat input must be assigned to Game1.activeClickableMenu so Stardew draws and routes input to it.");
+        Assert.IsFalse(
+            commandQueue.Contains("Game1.showTextEntry(textBox)", StringComparison.Ordinal),
+            "Game1.showTextEntry only supports the text-entry helper path; it does not by itself draw a visible private-chat menu.");
+        StringAssert.Contains(
+            inputMenu,
+            "class PrivateChatInputMenu : IClickableMenu",
+            "The private-chat input should be a first-class Stardew menu.");
+        StringAssert.Contains(
+            inputMenu,
+            "Game1.keyboardDispatcher.Subscriber",
+            "The menu must subscribe the textbox to Stardew keyboard input.");
+        StringAssert.Contains(
+            inputMenu,
+            "_textBox.Draw(b)",
+            "The menu must draw the textbox itself; otherwise the command can complete with no visible UI.");
+    }
+
+    [TestMethod]
     public void PrivateChatReplyCloseIsRecordedBeforeOptionalReopen()
     {
         var modEntry = ReadRepositoryFile("Mods", "StardewHermesBridge", "ModEntry.cs");
