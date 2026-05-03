@@ -191,7 +191,7 @@ public sealed class BridgeHttpHost
         if (!string.IsNullOrWhiteSpace(npcId))
         {
             var npc = Context.IsWorldReady
-                ? Game1.getCharacterFromName(npcId, mustBeVillager: false, includeEventActors: false)
+                ? BridgeNpcResolver.Resolve(npcId)
                 : null;
             if (npc is not null)
                 entities.Add(new WorldEntityData(npc.Name.ToLowerInvariant(), npc.Name, npc.displayName, "stardew"));
@@ -264,7 +264,7 @@ public sealed class BridgeHttpHost
         if (string.IsNullOrWhiteSpace(requestedNpc))
             return Error<StatusQuery, NpcStatusData>(envelope, "invalid_target", "npcId is required.", retryable: false);
 
-        var npc = Game1.getCharacterFromName(requestedNpc, mustBeVillager: false, includeEventActors: false);
+        var npc = BridgeNpcResolver.Resolve(requestedNpc);
         if (npc is null)
             return Error<StatusQuery, NpcStatusData>(envelope, "invalid_target", "NPC was not found.", retryable: false);
 

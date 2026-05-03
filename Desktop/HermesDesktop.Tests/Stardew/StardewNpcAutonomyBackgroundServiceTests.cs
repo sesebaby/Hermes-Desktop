@@ -845,6 +845,51 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         Assert.AreEqual(0, commands.Submitted.Count(action => action.Type == GameActionType.OpenPrivateChat));
     }
 
+    [TestMethod]
+    public async Task CronTaskDue_WhenTaskBelongsToNpcSession_SubmitsOpenPrivateChat()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var commands = new RecordingCommandService();
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is idle.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var cronScheduler = new ManualCronScheduler();
+        CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"],
+            cronScheduler: cronScheduler);
+        var task = new CronTask(
+            "task-haley-talk",
+            "haley_talk",
+            "* * * * *",
+            "一分钟后主动和我对话",
+            DateTimeOffset.UtcNow,
+            Recurring: false,
+            Durable: true,
+            SessionId: "sdv_save-42_haley_default:private_chat:pc-1");
+
+        cronScheduler.Fire(task, DateTimeOffset.UtcNow);
+        await WaitForSubmittedCountAsync(commands, 1, TimeSpan.FromSeconds(1));
+
+        var action = commands.Submitted.Single();
+        Assert.AreEqual(GameActionType.OpenPrivateChat, action.Type);
+        Assert.AreEqual("haley", action.NpcId);
+        Assert.AreEqual("stardew-valley", action.GameId);
+        Assert.AreEqual("一分钟后主动和我对话", action.Payload?["prompt"]?.ToString());
+        Assert.AreEqual("scheduled_task:task-haley-talk", action.Payload?["conversationId"]?.ToString());
+    }
+
     private StardewNpcAutonomyBackgroundService CreateService(
         IStardewBridgeDiscovery discovery,
         Func<StardewBridgeDiscoverySnapshot, IGameAdapter> adapterFactory,
@@ -852,7 +897,8 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         NpcRuntimeSupervisor supervisor,
         IReadOnlyCollection<string> enabledNpcIds,
         WorldCoordinationService? worldCoordination = null,
-        NpcAutonomyBudget? budget = null)
+        NpcAutonomyBudget? budget = null,
+        ICronScheduler? cronScheduler = null)
     {
         var service = new StardewNpcAutonomyBackgroundService(
             discovery,
@@ -860,7 +906,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             chatClient,
             NullLoggerFactory.Instance,
             _skillManager,
-            new NoopCronScheduler(),
+            cronScheduler ?? new NoopCronScheduler(),
             supervisor,
             new NpcRuntimeHost(new FileSystemNpcPackLoader(), supervisor, _tempDir),
             new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
@@ -877,6 +923,23 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             _tempDir);
         _services.Add(service);
         return service;
+    }
+
+    private static async Task WaitForSubmittedCountAsync(
+        RecordingCommandService commands,
+        int expectedCount,
+        TimeSpan timeout)
+    {
+        var deadlineUtc = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadlineUtc)
+        {
+            if (commands.Submitted.Count >= expectedCount)
+                return;
+
+            await Task.Delay(10);
+        }
+
+        Assert.Fail($"Timed out waiting for {expectedCount} submitted command(s). Observed {commands.Submitted.Count}.");
     }
 
     private static FakeDiscovery CreateDiscovery(string saveId)
@@ -1437,6 +1500,28 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             add { }
             remove { }
         }
+
+        public void Schedule(CronTask task)
+        {
+        }
+
+        public void Cancel(string taskId)
+        {
+        }
+
+        public CronTask? GetTask(string taskId) => null;
+
+        public IReadOnlyList<CronTask> GetAllTasks() => Array.Empty<CronTask>();
+
+        public DateTimeOffset? GetNextRun(string taskId) => null;
+    }
+
+    private sealed class ManualCronScheduler : ICronScheduler
+    {
+        public event EventHandler<CronTaskDueEventArgs>? TaskDue;
+
+        public void Fire(CronTask task, DateTimeOffset firedAt)
+            => TaskDue?.Invoke(this, new CronTaskDueEventArgs { Task = task, FiredAt = firedAt });
 
         public void Schedule(CronTask task)
         {

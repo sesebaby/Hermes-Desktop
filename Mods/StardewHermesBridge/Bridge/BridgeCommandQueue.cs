@@ -146,7 +146,7 @@ public sealed class BridgeCommandQueue
             return Error<SpeakData>(envelope.TraceId, envelope.RequestId, "world_not_ready", "The Stardew world is not ready.", retryable: true);
         }
 
-        var npc = Game1.getCharacterFromName(npcId, mustBeVillager: false, includeEventActors: false);
+        var npc = BridgeNpcResolver.Resolve(npcId);
         if (npc is null)
         {
             _logger.Write("action_speak_failed", npcId, "speak", envelope.TraceId, null, "failed", "invalid_target");
@@ -208,7 +208,7 @@ public sealed class BridgeCommandQueue
             return Error<OpenPrivateChatData>(envelope.TraceId, envelope.RequestId, "menu_blocked", "A Stardew menu is already open.", retryable: true);
         }
 
-        var npc = Game1.getCharacterFromName(npcId, mustBeVillager: false, includeEventActors: false);
+        var npc = BridgeNpcResolver.Resolve(npcId);
         if (npc is null)
         {
             _logger.Write("action_open_private_chat_failed", npcId, "open_private_chat", envelope.TraceId, null, "failed", "invalid_target");
@@ -323,7 +323,7 @@ public sealed class BridgeCommandQueue
             return command.ToStatusData();
         }
 
-        var npc = Game1.getCharacterFromName(command.NpcId, mustBeVillager: false, includeEventActors: false);
+        var npc = BridgeNpcResolver.Resolve(command.NpcId);
         if (npc is null)
         {
             command.Fail("invalid_target");

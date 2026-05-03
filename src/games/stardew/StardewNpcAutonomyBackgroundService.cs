@@ -7,6 +7,7 @@ using Hermes.Agent.Runtime;
 using Hermes.Agent.Skills;
 using Hermes.Agent.Tools;
 using Microsoft.Extensions.Logging;
+using System.Text.Json.Nodes;
 
 public sealed record StardewNpcAutonomyBackgroundOptions(
     IReadOnlyCollection<string> EnabledNpcIds,
@@ -128,6 +129,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 .Select(id => id.Trim()),
             StringComparer.OrdinalIgnoreCase);
         _pollInterval = options.PollInterval == default ? TimeSpan.FromSeconds(2) : options.PollInterval;
+        _cronScheduler.TaskDue += OnCronTaskDue;
     }
 
     public void Start()
@@ -175,7 +177,11 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         }
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        _cronScheduler.TaskDue -= OnCronTaskDue;
+        Stop();
+    }
 
     public Task RunOneIterationAsync(CancellationToken ct)
         => RunOneIterationCoreAsync(ct, waitForWorkerCompletion: true);
@@ -293,6 +299,45 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
 
             await Task.Delay(_pollInterval, ct);
         }
+    }
+
+    private void OnCronTaskDue(object? sender, CronTaskDueEventArgs e)
+        => _ = HandleCronTaskDueAsync(e.Task, e.FiredAt, CancellationToken.None);
+
+    internal async Task HandleCronTaskDueAsync(CronTask task, DateTimeOffset firedAtUtc, CancellationToken ct)
+    {
+        if (_enabledNpcIds.Count == 0 || string.IsNullOrWhiteSpace(task.SessionId))
+            return;
+
+        if (!_discovery.TryReadLatest(out var snapshot, out var failureReason) || snapshot is null)
+        {
+            _logger.LogWarning(
+                "Ignoring due cron task {TaskId} because Stardew discovery is unavailable: {Reason}",
+                task.Id,
+                failureReason ?? StardewBridgeErrorCodes.BridgeUnavailable);
+            return;
+        }
+
+        if (!StardewBridgeRuntimeIdentity.TryGetSaveId(snapshot, out var saveId))
+        {
+            _logger.LogWarning("Ignoring due cron task {TaskId} because Stardew save identity is unavailable.", task.Id);
+            return;
+        }
+
+        foreach (var npcId in _enabledNpcIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase))
+        {
+            var binding = _bindingResolver.Resolve(npcId, saveId);
+            if (!MatchesNpcSession(task.SessionId, binding.Descriptor.SessionId))
+                continue;
+
+            await SubmitScheduledPrivateChatAsync(binding, snapshot, task, firedAtUtc, ct);
+            return;
+        }
+
+        _logger.LogInformation(
+            "Ignoring due cron task {TaskId} because session {SessionId} does not belong to an enabled Stardew NPC runtime.",
+            task.Id,
+            task.SessionId);
     }
 
     private async Task ProcessTrackerDispatchAsync(
@@ -612,12 +657,55 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
     private static bool ShouldStageBatch(GameEventCursor sourceCursor, GameEventBatch batch)
         => batch.Records.Count > 0 || !CursorsEqual(sourceCursor, batch.NextCursor);
 
+    private async Task SubmitScheduledPrivateChatAsync(
+        StardewNpcRuntimeBinding binding,
+        StardewBridgeDiscoverySnapshot snapshot,
+        CronTask task,
+        DateTimeOffset firedAtUtc,
+        CancellationToken ct)
+    {
+        var adapter = _adapterFactory(snapshot);
+        var traceId = $"trace_scheduled_{binding.Descriptor.NpcId}_{task.Id}_{firedAtUtc.UtcDateTime.Ticks}";
+        var action = new GameAction(
+            binding.Descriptor.NpcId,
+            binding.Descriptor.GameId,
+            GameActionType.OpenPrivateChat,
+            traceId,
+            $"idem_scheduled_{binding.Descriptor.NpcId}_{task.Id}_{firedAtUtc.UtcDateTime.Ticks}",
+            new GameActionTarget("player"),
+            Payload: new JsonObject
+            {
+                ["prompt"] = task.Prompt,
+                ["conversationId"] = $"scheduled_task:{task.Id}"
+            });
+
+        var result = await adapter.Commands.SubmitAsync(action, ct);
+        if (result.Accepted)
+        {
+            _logger.LogInformation(
+                "Scheduled Stardew cron task {TaskId} opened private chat for {NpcId}.",
+                task.Id,
+                binding.Descriptor.NpcId);
+            return;
+        }
+
+        _logger.LogWarning(
+            "Scheduled Stardew cron task {TaskId} for {NpcId} was not accepted: {FailureReason}",
+            task.Id,
+            binding.Descriptor.NpcId,
+            result.FailureReason ?? result.Status);
+    }
+
     private static bool IsInitialCursor(GameEventCursor cursor)
         => string.IsNullOrWhiteSpace(cursor.Since) && !cursor.Sequence.HasValue;
 
     private static bool CursorsEqual(GameEventCursor left, GameEventCursor right)
         => string.Equals(left.Since, right.Since, StringComparison.Ordinal) &&
            left.Sequence == right.Sequence;
+
+    private static bool MatchesNpcSession(string scheduledSessionId, string runtimeSessionId)
+        => string.Equals(scheduledSessionId, runtimeSessionId, StringComparison.OrdinalIgnoreCase) ||
+           scheduledSessionId.StartsWith(runtimeSessionId + ":", StringComparison.OrdinalIgnoreCase);
 
     private static int CountRelevantIngressRecords(
         NpcRuntimeDescriptor descriptor,

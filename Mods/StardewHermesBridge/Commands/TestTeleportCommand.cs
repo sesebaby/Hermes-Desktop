@@ -7,16 +7,7 @@ using StardewValley;
 public static class TestTeleportTargetResolver
 {
     public static bool TryResolve(string input, out string? npcName)
-    {
-        npcName = input.Trim() switch
-        {
-            "Haley" or "haley" or "海莉" => "Haley",
-            "Penny" or "penny" or "潘妮" => "Penny",
-            _ => null
-        };
-
-        return npcName is not null;
-    }
+        => NpcTargetNameResolver.TryResolveKnownAlias(input, out npcName);
 }
 
 public sealed class TestTeleportCommand
