@@ -12,22 +12,25 @@ internal sealed class NpcRuntimeWorkspaceService
 {
     private static readonly ResourceLoader ResourceLoader = new();
     private readonly INpcPackLoader _packLoader;
+    private readonly IStardewNpcPackRootProvider _packRootProvider;
     private readonly NpcRuntimeSupervisor _supervisor;
     private readonly ILogger<NpcRuntimeWorkspaceService> _logger;
 
     public NpcRuntimeWorkspaceService(
         INpcPackLoader packLoader,
+        IStardewNpcPackRootProvider packRootProvider,
         NpcRuntimeSupervisor supervisor,
         ILogger<NpcRuntimeWorkspaceService> logger)
     {
         _packLoader = packLoader;
+        _packRootProvider = packRootProvider;
         _supervisor = supervisor;
         _logger = logger;
     }
 
     public string RuntimeRoot => Path.Combine(HermesEnvironment.HermesHomePath, "hermes-cs");
 
-    public string PackRoot => Path.Combine(HermesEnvironment.AgentWorkingDirectory, "src", "game", "stardew", "personas");
+    public string PackRoot => _packRootProvider.GetRequiredPackRoot();
 
     public NpcRuntimeWorkspaceSnapshot GetSnapshot()
     {
@@ -42,7 +45,9 @@ internal sealed class NpcRuntimeWorkspaceService
 
             if (active.Count == 0)
             {
-                active.AddRange(_packLoader.LoadPacks(PackRoot).Select(pack => new NpcRuntimeItem
+                var resolution = _packRootProvider.Locate();
+                var packRoot = resolution.GetRequiredPackRoot();
+                active.AddRange(_packLoader.LoadPacks(packRoot).Select(pack => new NpcRuntimeItem
                 {
                     NpcId = pack.Manifest.NpcId,
                     DisplayName = pack.Manifest.DisplayName,

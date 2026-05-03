@@ -10,15 +10,20 @@ public sealed record StardewNpcRuntimeBinding(
 public sealed class StardewNpcRuntimeBindingResolver
 {
     private readonly INpcPackLoader _packLoader;
-    private readonly string _packRoot;
+    private readonly IStardewNpcPackRootProvider _packRootProvider;
 
     public StardewNpcRuntimeBindingResolver(INpcPackLoader packLoader, string packRoot)
+        : this(packLoader, new FixedStardewNpcPackRootProvider(packRoot))
     {
-        _packLoader = packLoader;
-        _packRoot = packRoot;
     }
 
-    public string PackRoot => _packRoot;
+    public StardewNpcRuntimeBindingResolver(INpcPackLoader packLoader, IStardewNpcPackRootProvider packRootProvider)
+    {
+        _packLoader = packLoader;
+        _packRootProvider = packRootProvider;
+    }
+
+    public string PackRoot => _packRootProvider.GetRequiredPackRoot();
 
     public StardewNpcRuntimeBinding Resolve(string? rawNpcId, string saveId)
     {
@@ -27,9 +32,10 @@ public sealed class StardewNpcRuntimeBindingResolver
         if (string.IsNullOrWhiteSpace(saveId))
             throw new ArgumentException("Save id is required.", nameof(saveId));
 
-        var packs = _packLoader.LoadPacks(_packRoot);
+        var packRoot = _packRootProvider.GetRequiredPackRoot();
+        var packs = _packLoader.LoadPacks(packRoot);
         if (packs.Count == 0)
-            throw new InvalidOperationException($"No Stardew NPC packs were found under '{_packRoot}'.");
+            throw new InvalidOperationException($"Stardew NPC pack source '{packRoot}' resolved without any loadable packs.");
 
         var lookup = rawNpcId.Trim();
         var catalog = new StardewNpcCatalog(packs.Select(pack => pack.Manifest));
@@ -40,5 +46,25 @@ public sealed class StardewNpcRuntimeBindingResolver
         return new StardewNpcRuntimeBinding(
             NpcRuntimeDescriptorFactory.Create(pack, saveId),
             pack);
+    }
+
+    private sealed class FixedStardewNpcPackRootProvider : IStardewNpcPackRootProvider
+    {
+        private readonly string _packRoot;
+
+        public FixedStardewNpcPackRootProvider(string packRoot)
+        {
+            _packRoot = packRoot;
+        }
+
+        public StardewNpcPackSourceResolution Locate()
+            => new(
+                _packRoot,
+                StardewNpcPackSourceKind.Workspace,
+                [new StardewNpcPackSourceCandidate(_packRoot, StardewNpcPackSourceKind.Workspace)],
+                [],
+                "Fixed pack root provider.");
+
+        public string GetRequiredPackRoot() => _packRoot;
     }
 }

@@ -367,6 +367,14 @@ public partial class App : Application
             MaxConcurrentLlmRequests: ReadPositiveConfigInt("stardew", "npc_autonomy_max_concurrent_llm_requests", 1),
             RestartCooldown: TimeSpan.FromSeconds(ReadPositiveConfigInt("stardew", "npc_autonomy_restart_cooldown_seconds", 5)),
             MaxRestartsPerScene: ReadPositiveConfigInt("stardew", "npc_autonomy_max_restarts_per_scene", 3))));
+        services.AddSingleton(sp => new StardewNpcPackSourceLocator(
+            sp.GetRequiredService<INpcPackLoader>(),
+            new StardewNpcPackSourceLocatorOptions(
+                BaseDirectory: AppContext.BaseDirectory,
+                CurrentDirectory: Environment.CurrentDirectory,
+                WorkspaceDirectory: Environment.GetEnvironmentVariable("HERMES_DESKTOP_WORKSPACE"),
+                MaxParentDepth: 8)));
+        services.AddSingleton<IStardewNpcPackRootProvider>(sp => sp.GetRequiredService<StardewNpcPackSourceLocator>());
         services.AddSingleton(sp => new NpcRuntimeHost(
             sp.GetRequiredService<INpcPackLoader>(),
             sp.GetRequiredService<NpcRuntimeSupervisor>(),
@@ -374,7 +382,7 @@ public partial class App : Application
         services.AddSingleton<NpcRuntimeWorkspaceService>();
         services.AddSingleton(sp => new StardewNpcRuntimeBindingResolver(
             sp.GetRequiredService<INpcPackLoader>(),
-            sp.GetRequiredService<NpcRuntimeWorkspaceService>().PackRoot));
+            sp.GetRequiredService<IStardewNpcPackRootProvider>()));
         services.AddSingleton<INpcToolSurfaceSnapshotProvider>(sp => new NpcToolSurfaceSnapshotProvider(
             () => sp.GetRequiredService<McpManager>().Tools.Values));
         services.AddSingleton<IPrivateChatSessionLeaseCoordinator>(sp => new StardewNpcPrivateChatSessionLeaseCoordinator(
