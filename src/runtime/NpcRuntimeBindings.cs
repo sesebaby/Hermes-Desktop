@@ -78,7 +78,8 @@ public sealed record NpcRuntimeAutonomyBindingRequest(
     Func<IGameAdapter, IEnumerable<ITool>> GameToolFactory,
     NpcRuntimeCompositionServices Services,
     NpcToolSurface ToolSurface,
-    long ToolSurfaceSnapshotVersion = 0)
+    long ToolSurfaceSnapshotVersion = 0,
+    string? SystemPromptSupplement = null)
 {
     public void Validate()
     {

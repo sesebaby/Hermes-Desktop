@@ -173,7 +173,7 @@ public sealed class NpcRuntimeRecoveryTests
         File.WriteAllText(Path.Combine(root, "facts.md"), $"{displayName} facts");
         File.WriteAllText(Path.Combine(root, "voice.md"), $"{displayName} voice");
         File.WriteAllText(Path.Combine(root, "boundaries.md"), $"{displayName} boundaries");
-        File.WriteAllText(Path.Combine(root, "skills.json"), "[]");
+        File.WriteAllText(Path.Combine(root, "skills.json"), """{"required":[],"optional":[]}""");
 
         var manifest = new NpcPackManifest
         {

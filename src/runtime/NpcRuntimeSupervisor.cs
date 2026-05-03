@@ -113,6 +113,7 @@ public sealed class NpcRuntimeSupervisor
         var rebindKey = BuildRebindKey(
             request.ChannelKey,
             request.AdapterKey,
+            request.SystemPromptSupplement,
             request.IncludeMemory,
             request.IncludeUser,
             request.MaxToolIterations,
@@ -218,6 +219,7 @@ public sealed class NpcRuntimeSupervisor
         var rebindKey = BuildRebindKey(
             request.ChannelKey,
             request.AdapterKey,
+            request.SystemPromptSupplement,
             request.IncludeMemory,
             request.IncludeUser,
             request.MaxToolIterations,
@@ -229,7 +231,7 @@ public sealed class NpcRuntimeSupervisor
             request.ChannelKey,
             rebindKey,
             request.Services,
-            systemPromptSupplement: null,
+            request.SystemPromptSupplement,
             request.IncludeMemory,
             request.IncludeUser,
             request.MaxToolIterations,

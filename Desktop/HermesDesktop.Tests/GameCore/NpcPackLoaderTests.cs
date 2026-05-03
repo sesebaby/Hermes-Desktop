@@ -51,7 +51,7 @@ public class NpcPackLoaderTests
         var root = Path.Combine(_tempDir, parent, npcId, "default");
         Directory.CreateDirectory(root);
         foreach (var file in new[] { "SOUL.md", "facts.md", "voice.md", "boundaries.md", "skills.json" })
-            File.WriteAllText(Path.Combine(root, file), "ok");
+            File.WriteAllText(Path.Combine(root, file), file == "skills.json" ? """{"required":[],"optional":[]}""" : "ok");
 
         var manifest = new NpcPackManifest
         {

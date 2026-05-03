@@ -17,6 +17,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
 {
     private string _tempDir = null!;
     private string _packRoot = null!;
+    private string _gamingSkillRoot = null!;
     private SkillManager _skillManager = null!;
     private readonly List<StardewNpcAutonomyBackgroundService> _services = [];
 
@@ -25,9 +26,11 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-autonomy-background-tests", Guid.NewGuid().ToString("N"));
         _packRoot = Path.Combine(_tempDir, "packs");
+        _gamingSkillRoot = Path.Combine(_tempDir, "skills", "gaming");
 
         var skillsDir = Path.Combine(_tempDir, "skills", "autonomy");
         Directory.CreateDirectory(skillsDir);
+        CreateGamingSkillFixtures(_gamingSkillRoot);
         File.WriteAllText(
             Path.Combine(skillsDir, "SKILL.md"),
             """
@@ -79,6 +82,49 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         Assert.IsNotNull(snapshot.LastAutomaticTickAtUtc);
         Assert.AreEqual(1, snapshot.CurrentAutonomyHandleGeneration);
         Assert.IsFalse(string.IsNullOrWhiteSpace(snapshot.CurrentBridgeKey));
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_MissingRequiredSkillPausesNpcWithoutLlmRetryLoop()
+    {
+        File.Delete(Path.Combine(_gamingSkillRoot, "stardew-social.md"));
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var budget = new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(MaxToolIterations: 2, MaxConcurrentLlmRequests: 1, MaxRestartsPerScene: 2));
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"],
+            budget: budget);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, chatClient.CompleteWithToolsCalls);
+        var snapshot = supervisor.Snapshot().Single();
+        Assert.AreEqual("haley", snapshot.NpcId);
+        Assert.AreEqual(NpcAutonomyLoopState.Paused, snapshot.AutonomyLoopState);
+        Assert.IsNull(snapshot.LastAutomaticTickAtUtc);
+        StringAssert.Contains(snapshot.PauseReason, "stardew-social");
+        StringAssert.Contains(snapshot.PauseReason, Path.Combine(_gamingSkillRoot, "stardew-social.md"));
+        Assert.AreEqual(0, snapshot.AutonomyRestartCount);
+
+        await using var heldSlot = await budget.TryAcquireLlmSlotAsync("external", CancellationToken.None);
+        Assert.IsNotNull(heldSlot);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        snapshot = supervisor.Snapshot().Single();
+        Assert.AreEqual(0, chatClient.CompleteWithToolsCalls);
+        Assert.AreEqual(NpcAutonomyLoopState.Paused, snapshot.AutonomyLoopState);
+        StringAssert.Contains(snapshot.PauseReason, "stardew-social");
+        Assert.IsFalse(
+            string.Equals(snapshot.PauseReason, NpcAutonomyExitReason.LlmConcurrencyLimit.ToString(), StringComparison.Ordinal),
+            "A prompt resource pause must short-circuit later autonomy ticks before acquiring an LLM slot.");
+        Assert.AreEqual(0, snapshot.AutonomyRestartCount);
     }
 
     [TestMethod]
@@ -953,6 +999,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             supervisor,
             new NpcRuntimeHost(new FileSystemNpcPackLoader(), supervisor, _tempDir),
             new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            new StardewNpcAutonomyPromptSupplementBuilder(new FixedStardewGamingSkillRootProvider(_gamingSkillRoot)),
             new NpcToolSurfaceSnapshotProvider(() => [new DiscoveredNoopTool("mcp_dynamic_test")]),
             new StardewPrivateChatRuntimeAdapter(
                 new NoopPrivateChatAgentRunner(),
@@ -1009,7 +1056,9 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         File.WriteAllText(Path.Combine(root, "facts.md"), $"{displayName} facts");
         File.WriteAllText(Path.Combine(root, "voice.md"), $"{displayName} voice");
         File.WriteAllText(Path.Combine(root, "boundaries.md"), $"{displayName} boundaries");
-        File.WriteAllText(Path.Combine(root, "skills.json"), "[]");
+        File.WriteAllText(
+            Path.Combine(root, "skills.json"),
+            """{"required":["stardew-core","stardew-social","stardew-navigation"],"optional":[]}""");
 
         var manifest = new NpcPackManifest
         {
@@ -1033,6 +1082,14 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         File.WriteAllText(
             Path.Combine(root, FileSystemNpcPackLoader.ManifestFileName),
             JsonSerializer.Serialize(manifest));
+    }
+
+    private static void CreateGamingSkillFixtures(string gamingSkillRoot)
+    {
+        Directory.CreateDirectory(gamingSkillRoot);
+        File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-core.md"), "stardew-core test guidance");
+        File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-social.md"), "stardew-social test guidance");
+        File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-navigation.md"), "stardew-navigation test guidance");
     }
 
     private static GameEventCursor GetTrackerCursor(StardewNpcAutonomyBackgroundService service, string npcId)

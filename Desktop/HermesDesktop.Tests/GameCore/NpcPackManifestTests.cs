@@ -46,7 +46,7 @@ public class NpcPackManifestTests
             Capabilities = new[] { "move", "speak" }
         };
         foreach (var file in new[] { "SOUL.md", "facts.md", "voice.md", "boundaries.md", "skills.json" })
-            File.WriteAllText(Path.Combine(_tempDir, file), "ok");
+            File.WriteAllText(Path.Combine(_tempDir, file), file == "skills.json" ? """{"required":[],"optional":[]}""" : "ok");
 
         var result = loader.Validate(_tempDir, manifest);
 

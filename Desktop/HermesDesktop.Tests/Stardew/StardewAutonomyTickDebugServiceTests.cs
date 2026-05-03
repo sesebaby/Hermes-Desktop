@@ -17,6 +17,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
 {
     private string _tempDir = null!;
     private string _packRoot = null!;
+    private string _gamingSkillRoot = null!;
     private SkillManager _skillManager = null!;
 
     [TestInitialize]
@@ -24,9 +25,11 @@ public sealed class StardewAutonomyTickDebugServiceTests
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-autonomy-tests", Guid.NewGuid().ToString("N"));
         _packRoot = Path.Combine(_tempDir, "packs");
+        _gamingSkillRoot = Path.Combine(_tempDir, "skills", "gaming");
 
         var skillsDir = Path.Combine(_tempDir, "skills", "autonomy");
         Directory.CreateDirectory(skillsDir);
+        CreateGamingSkillFixtures(_gamingSkillRoot);
         File.WriteAllText(
             Path.Combine(skillsDir, "SKILL.md"),
             """
@@ -50,14 +53,14 @@ public sealed class StardewAutonomyTickDebugServiceTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_PennyUsesSharedPromptToolSurfaceAndPackSeed()
+    public async Task RunOneTickAsync_HaleyInjectsRequiredPersonaSkillsAndPreservesStardewTools()
     {
         var chatClient = new ToolSnapshotChatClient("I will wait near the library.");
         var queries = new FakeQueryService(new GameObservation(
-            "penny",
+            "haley",
             "stardew-valley",
             DateTime.UtcNow,
-            "Penny is near the library.",
+            "Haley is near the fountain.",
             ["location=Town", "tile=12,8"]));
         var adapter = new FakeGameAdapter(
             new FakeCommandService(),
@@ -79,6 +82,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             new NoopCronScheduler(),
             new NpcRuntimeSupervisor(),
             new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            CreatePromptSupplementBuilder(),
             discoveredToolProvider: () => [new DiscoveredNoopTool("mcp_dynamic_test")],
             worldCoordination: CreateWorldCoordination(),
             includeMemory: true,
@@ -86,12 +90,12 @@ public sealed class StardewAutonomyTickDebugServiceTests
             maxToolIterations: 2,
             runtimeRoot: _tempDir);
 
-        var result = await service.RunOneTickAsync("Penny", CancellationToken.None);
+        var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
 
         Assert.IsTrue(result.Success);
-        Assert.AreEqual("penny", result.NpcId);
+        Assert.AreEqual("haley", result.NpcId);
         Assert.AreEqual("I will wait near the library.", result.DecisionResponse);
-        Assert.AreEqual("penny", queries.LastNpcId);
+        Assert.AreEqual("haley", queries.LastNpcId);
 
         CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "memory");
         CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "session_search");
@@ -107,6 +111,17 @@ public sealed class StardewAutonomyTickDebugServiceTests
         Assert.IsTrue(chatClient.SystemMessages.Any(message =>
             message.Contains("## Skills (mandatory)", StringComparison.Ordinal) &&
             message.Contains("npc-autonomy-skill", StringComparison.Ordinal)));
+        Assert.IsTrue(chatClient.SystemMessages.Any(message =>
+            message.Contains("## Persona Facts", StringComparison.Ordinal) &&
+            message.Contains("Haley facts", StringComparison.Ordinal) &&
+            message.Contains("## Persona Voice", StringComparison.Ordinal) &&
+            message.Contains("Haley voice", StringComparison.Ordinal) &&
+            message.Contains("## Persona Boundaries", StringComparison.Ordinal) &&
+            message.Contains("Haley boundaries", StringComparison.Ordinal) &&
+            message.Contains("## Stardew Required Skills", StringComparison.Ordinal) &&
+            message.Contains("stardew-core test guidance", StringComparison.Ordinal) &&
+            message.Contains("stardew-social test guidance", StringComparison.Ordinal) &&
+            message.Contains("stardew-navigation test guidance", StringComparison.Ordinal)));
 
         var runtimeSoulPath = Path.Combine(
             _tempDir,
@@ -117,12 +132,172 @@ public sealed class StardewAutonomyTickDebugServiceTests
             "saves",
             "save-42",
             "npc",
-            "penny",
+            "haley",
             "profiles",
             "default",
             "SOUL.md");
         Assert.IsTrue(File.Exists(runtimeSoulPath));
-        StringAssert.Contains(await File.ReadAllTextAsync(runtimeSoulPath), "penny-pack-soul");
+        StringAssert.Contains(await File.ReadAllTextAsync(runtimeSoulPath), "haley-pack-soul");
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WhenPackPromptFilesChange_RebindsWithLatestPersonaAndRequiredSkills()
+    {
+        var chatClient = new ToolSnapshotChatClient("I will wait near the library.");
+        var queries = new FakeQueryService(new GameObservation(
+            "haley",
+            "stardew-valley",
+            DateTime.UtcNow,
+            "Haley is near the fountain.",
+            ["location=Town"]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = new StardewAutonomyTickDebugService(
+            new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+                new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+                DateTimeOffset.UtcNow,
+                1234,
+                "save-42")),
+            _ => new FakeGameAdapter(new FakeCommandService(), queries, new FakeEventSource([])),
+            chatClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            supervisor,
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            CreatePromptSupplementBuilder(),
+            discoveredToolProvider: () => [new DiscoveredNoopTool("mcp_dynamic_test")],
+            worldCoordination: CreateWorldCoordination(),
+            includeMemory: true,
+            includeUser: true,
+            maxToolIterations: 2,
+            runtimeRoot: _tempDir);
+
+        var first = await service.RunOneTickAsync("Haley", CancellationToken.None);
+        Assert.IsTrue(first.Success);
+        Assert.AreEqual(1, supervisor.Snapshot().Single().AutonomyRebindGeneration);
+
+        var packRoot = Path.Combine(_packRoot, "haley", "default");
+        File.WriteAllText(Path.Combine(packRoot, "facts.md"), "Haley updated facts");
+        File.WriteAllText(
+            Path.Combine(packRoot, "skills.json"),
+            """{"required":["stardew-core","stardew-gossip"],"optional":[]}""");
+        File.WriteAllText(Path.Combine(_gamingSkillRoot, "stardew-gossip.md"), "stardew-gossip updated guidance");
+
+        var second = await service.RunOneTickAsync("Haley", CancellationToken.None);
+
+        Assert.IsTrue(second.Success);
+        Assert.AreEqual(2, supervisor.Snapshot().Single().AutonomyRebindGeneration);
+        Assert.IsTrue(chatClient.SystemMessages.Any(message =>
+            message.Contains("Haley updated facts", StringComparison.Ordinal) &&
+            message.Contains("stardew-gossip updated guidance", StringComparison.Ordinal)));
+        Assert.IsFalse(chatClient.SystemMessages.Any(message => message.Contains("Haley facts", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_MissingRequiredSkillFileFailsWithSkillIdAndPath()
+    {
+        File.Delete(Path.Combine(_gamingSkillRoot, "stardew-navigation.md"));
+        var service = new StardewAutonomyTickDebugService(
+            new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+                new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+                DateTimeOffset.UtcNow,
+                1234,
+                "save-42")),
+            _ => new FakeGameAdapter(
+                new FakeCommandService(),
+                new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "Haley is idle.", [])),
+                new FakeEventSource([])),
+            new ToolSnapshotChatClient("unused"),
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            new NpcRuntimeSupervisor(),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            CreatePromptSupplementBuilder(),
+            discoveredToolProvider: null,
+            worldCoordination: CreateWorldCoordination(),
+            includeMemory: true,
+            includeUser: true,
+            maxToolIterations: 2,
+            runtimeRoot: _tempDir);
+
+        var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.FailureReason, "haley");
+        StringAssert.Contains(result.FailureReason, "stardew-navigation");
+        StringAssert.Contains(result.FailureReason, Path.Combine(_gamingSkillRoot, "stardew-navigation.md"));
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_InvalidSkillsJsonFailsWithSkillsJsonPath()
+    {
+        var skillsPath = Path.Combine(_packRoot, "haley", "default", "skills.json");
+        File.WriteAllText(skillsPath, "[]");
+        var service = new StardewAutonomyTickDebugService(
+            new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+                new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+                DateTimeOffset.UtcNow,
+                1234,
+                "save-42")),
+            _ => new FakeGameAdapter(
+                new FakeCommandService(),
+                new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "Haley is idle.", [])),
+                new FakeEventSource([])),
+            new ToolSnapshotChatClient("unused"),
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            new NpcRuntimeSupervisor(),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            CreatePromptSupplementBuilder(),
+            discoveredToolProvider: null,
+            worldCoordination: CreateWorldCoordination(),
+            includeMemory: true,
+            includeUser: true,
+            maxToolIterations: 2,
+            runtimeRoot: _tempDir);
+
+        var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.FailureReason, "skills.json");
+        StringAssert.Contains(
+            result.FailureReason,
+            Path.Combine(_packRoot, "haley", "default", "skills.json"));
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_MissingPersonaFileFailsWithFilePath()
+    {
+        var factsPath = Path.Combine(_packRoot, "haley", "default", "facts.md");
+        File.Delete(factsPath);
+        var service = new StardewAutonomyTickDebugService(
+            new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+                new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+                DateTimeOffset.UtcNow,
+                1234,
+                "save-42")),
+            _ => throw new AssertFailedException("Adapter factory should not run when persona files are missing."),
+            new ToolSnapshotChatClient("unused"),
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            new NpcRuntimeSupervisor(),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            CreatePromptSupplementBuilder(),
+            discoveredToolProvider: null,
+            worldCoordination: CreateWorldCoordination(),
+            includeMemory: true,
+            includeUser: true,
+            maxToolIterations: 2,
+            runtimeRoot: _tempDir);
+
+        var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        StringAssert.Contains(result.FailureReason, "facts.md");
+        StringAssert.Contains(result.FailureReason, factsPath);
     }
 
     [TestMethod]
@@ -141,6 +316,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             new NoopCronScheduler(),
             new NpcRuntimeSupervisor(),
             new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            CreatePromptSupplementBuilder(),
             discoveredToolProvider: null,
             worldCoordination: CreateWorldCoordination(),
             includeMemory: true,
@@ -170,6 +346,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             new NoopCronScheduler(),
             new NpcRuntimeSupervisor(),
             new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            new StardewNpcAutonomyPromptSupplementBuilder(new FixedStardewGamingSkillRootProvider(_gamingSkillRoot)),
             discoveredToolProvider: null,
             worldCoordination: CreateWorldCoordination(),
             includeMemory: true,
@@ -218,6 +395,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             new NoopCronScheduler(),
             supervisor,
             resolver,
+            CreatePromptSupplementBuilder(),
             discoveredToolProvider: () => [new DiscoveredNoopTool("mcp_dynamic_test")],
             worldCoordination: CreateWorldCoordination(),
             includeMemory: true,
@@ -239,7 +417,9 @@ public sealed class StardewAutonomyTickDebugServiceTests
         File.WriteAllText(Path.Combine(root, "facts.md"), $"{displayName} facts");
         File.WriteAllText(Path.Combine(root, "voice.md"), $"{displayName} voice");
         File.WriteAllText(Path.Combine(root, "boundaries.md"), $"{displayName} boundaries");
-        File.WriteAllText(Path.Combine(root, "skills.json"), "[]");
+        File.WriteAllText(
+            Path.Combine(root, "skills.json"),
+            """{"required":["stardew-core","stardew-social","stardew-navigation"],"optional":[]}""");
 
         var manifest = new NpcPackManifest
         {
@@ -267,6 +447,17 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
     private static WorldCoordinationService CreateWorldCoordination()
         => new(new ResourceClaimRegistry());
+
+    private StardewNpcAutonomyPromptSupplementBuilder CreatePromptSupplementBuilder()
+        => new(new FixedStardewGamingSkillRootProvider(_gamingSkillRoot));
+
+    private static void CreateGamingSkillFixtures(string gamingSkillRoot)
+    {
+        Directory.CreateDirectory(gamingSkillRoot);
+        File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-core.md"), "stardew-core test guidance");
+        File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-social.md"), "stardew-social test guidance");
+        File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-navigation.md"), "stardew-navigation test guidance");
+    }
 
     private sealed class FakeDiscovery : IStardewBridgeDiscovery
     {

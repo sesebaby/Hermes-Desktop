@@ -347,6 +347,89 @@ public class NpcRuntimeSupervisorTests
         Assert.AreEqual(2, supervisor.Snapshot().Single().AutonomyRebindGeneration);
     }
 
+    [TestMethod]
+    public async Task GetOrCreateAutonomyHandleAsync_RebindsWhenSystemPromptSupplementChanges()
+    {
+        var supervisor = new NpcRuntimeSupervisor();
+        var pack = CreatePack("haley", "Haley");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
+        var services = new NpcRuntimeCompositionServices(
+            new FakeChatClient(),
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler());
+        var adapterFactoryCalls = 0;
+
+        var first = await supervisor.GetOrCreateAutonomyHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAutonomyBindingRequest(
+                ChannelKey: "autonomy",
+                AdapterKey: "bridge-a",
+                SystemPromptSupplement: "Persona facts v1",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                AdapterFactory: () =>
+                {
+                    adapterFactoryCalls++;
+                    return new FakeGameAdapter();
+                },
+                GameToolFactory: adapter => [new FakeTool("stardew_status"), new FakeTool("stardew_move")],
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
+                ToolSurfaceSnapshotVersion: 1),
+            CancellationToken.None);
+        var second = await supervisor.GetOrCreateAutonomyHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAutonomyBindingRequest(
+                ChannelKey: "autonomy",
+                AdapterKey: "bridge-a",
+                SystemPromptSupplement: "Persona facts v1",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                AdapterFactory: () =>
+                {
+                    adapterFactoryCalls++;
+                    return new FakeGameAdapter();
+                },
+                GameToolFactory: adapter => [new FakeTool("stardew_status"), new FakeTool("stardew_move")],
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
+                ToolSurfaceSnapshotVersion: 1),
+            CancellationToken.None);
+        var third = await supervisor.GetOrCreateAutonomyHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAutonomyBindingRequest(
+                ChannelKey: "autonomy",
+                AdapterKey: "bridge-a",
+                SystemPromptSupplement: "Persona facts v2",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                AdapterFactory: () =>
+                {
+                    adapterFactoryCalls++;
+                    return new FakeGameAdapter();
+                },
+                GameToolFactory: adapter => [new FakeTool("stardew_status"), new FakeTool("stardew_move")],
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
+                ToolSurfaceSnapshotVersion: 1),
+            CancellationToken.None);
+
+        Assert.AreSame(first, second);
+        Assert.AreNotSame(first, third);
+        Assert.AreEqual(2, adapterFactoryCalls);
+        Assert.AreEqual(2, supervisor.Snapshot().Single().AutonomyRebindGeneration);
+    }
+
     private static NpcRuntimeDescriptor CreateDescriptor(string npcId)
         => new(
             npcId,
@@ -382,7 +465,7 @@ public class NpcRuntimeSupervisorTests
         File.WriteAllText(Path.Combine(root, "facts.md"), $"{displayName} facts");
         File.WriteAllText(Path.Combine(root, "voice.md"), $"{displayName} voice");
         File.WriteAllText(Path.Combine(root, "boundaries.md"), $"{displayName} boundaries");
-        File.WriteAllText(Path.Combine(root, "skills.json"), "[]");
+        File.WriteAllText(Path.Combine(root, "skills.json"), """{"required":[],"optional":[]}""");
 
         return new NpcPack(
             new NpcPackManifest

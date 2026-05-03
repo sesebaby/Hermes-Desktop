@@ -674,7 +674,7 @@ public class StardewPrivateChatOrchestratorTests
         var packRoot = Path.Combine(root, npcId, "default");
         Directory.CreateDirectory(packRoot);
         foreach (var file in new[] { "SOUL.md", "facts.md", "voice.md", "boundaries.md", "skills.json" })
-            File.WriteAllText(Path.Combine(packRoot, file), "ok");
+            File.WriteAllText(Path.Combine(packRoot, file), file == "skills.json" ? """{"required":[],"optional":[]}""" : "ok");
 
         var manifest = new NpcPackManifest
         {

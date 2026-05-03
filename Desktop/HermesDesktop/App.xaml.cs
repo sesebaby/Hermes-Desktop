@@ -357,6 +357,8 @@ public partial class App : Application
             messageObserver: sp.GetRequiredService<SessionTaskProjectionService>(),
             sessionStore: sp.GetRequiredService<SessionSearchIndex>()));
 
+        var skillsDir = Path.Combine(projectDir, "skills");
+
         services.AddSingleton<INpcPackLoader, FileSystemNpcPackLoader>();
         services.AddSingleton<NpcRuntimeSupervisor>();
         services.AddSingleton<ResourceClaimRegistry>();
@@ -383,6 +385,9 @@ public partial class App : Application
         services.AddSingleton(sp => new StardewNpcRuntimeBindingResolver(
             sp.GetRequiredService<INpcPackLoader>(),
             sp.GetRequiredService<IStardewNpcPackRootProvider>()));
+        services.AddSingleton<IStardewGamingSkillRootProvider>(_ => new FixedStardewGamingSkillRootProvider(
+            Path.Combine(skillsDir, "gaming")));
+        services.AddSingleton<StardewNpcAutonomyPromptSupplementBuilder>();
         services.AddSingleton<INpcToolSurfaceSnapshotProvider>(sp => new NpcToolSurfaceSnapshotProvider(
             () => sp.GetRequiredService<McpManager>().Tools.Values));
         services.AddSingleton<IPrivateChatSessionLeaseCoordinator>(sp => new StardewNpcPrivateChatSessionLeaseCoordinator(
@@ -402,6 +407,7 @@ public partial class App : Application
             sp.GetRequiredService<ICronScheduler>(),
             sp.GetRequiredService<NpcRuntimeSupervisor>(),
             sp.GetRequiredService<StardewNpcRuntimeBindingResolver>(),
+            sp.GetRequiredService<StardewNpcAutonomyPromptSupplementBuilder>(),
             sp.GetRequiredService<INpcToolSurfaceSnapshotProvider>(),
             sp.GetRequiredService<WorldCoordinationService>(),
             memoryEnabled,
@@ -435,6 +441,7 @@ public partial class App : Application
             sp.GetRequiredService<NpcRuntimeSupervisor>(),
             sp.GetRequiredService<NpcRuntimeHost>(),
             sp.GetRequiredService<StardewNpcRuntimeBindingResolver>(),
+            sp.GetRequiredService<StardewNpcAutonomyPromptSupplementBuilder>(),
             sp.GetRequiredService<INpcToolSurfaceSnapshotProvider>(),
             sp.GetRequiredService<StardewPrivateChatRuntimeAdapter>(),
             sp.GetRequiredService<NpcAutonomyBudget>(),
@@ -456,7 +463,6 @@ public partial class App : Application
             userCharLimit: ReadPositiveConfigInt("memory", "user_char_limit", 1375)));
 
         // Skill manager — reconcile bundled skills against the active user tree on startup (non-fatal)
-        var skillsDir = Path.Combine(projectDir, "skills");
         var skillsProvenancePath = BundledSkillCatalogService.GetDefaultProvenancePath(projectDir);
         var skillsQuarantineDir = BundledSkillCatalogService.GetDefaultQuarantineRoot(projectDir);
         try

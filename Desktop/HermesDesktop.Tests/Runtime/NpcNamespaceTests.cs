@@ -41,7 +41,7 @@ public class NpcNamespaceTests
             File.WriteAllText(Path.Combine(packRoot, "facts.md"), "facts");
             File.WriteAllText(Path.Combine(packRoot, "voice.md"), "voice");
             File.WriteAllText(Path.Combine(packRoot, "boundaries.md"), "boundaries");
-            File.WriteAllText(Path.Combine(packRoot, "skills.json"), "[]");
+            File.WriteAllText(Path.Combine(packRoot, "skills.json"), """{"required":[],"optional":[]}""");
 
             var pack = new NpcPack(
                 new NpcPackManifest

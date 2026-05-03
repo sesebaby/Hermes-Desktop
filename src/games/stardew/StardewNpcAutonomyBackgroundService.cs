@@ -25,6 +25,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
     private readonly NpcRuntimeSupervisor _runtimeSupervisor;
     private readonly NpcRuntimeHost _runtimeHost;
     private readonly StardewNpcRuntimeBindingResolver _bindingResolver;
+    private readonly StardewNpcAutonomyPromptSupplementBuilder _promptSupplementBuilder;
     private readonly INpcToolSurfaceSnapshotProvider _toolSnapshotProvider;
     private readonly StardewPrivateChatRuntimeAdapter _privateChatRuntimeAdapter;
     private readonly NpcAutonomyBudget _budget;
@@ -53,6 +54,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         NpcRuntimeSupervisor runtimeSupervisor,
         NpcRuntimeHost runtimeHost,
         StardewNpcRuntimeBindingResolver bindingResolver,
+        StardewNpcAutonomyPromptSupplementBuilder promptSupplementBuilder,
         INpcToolSurfaceSnapshotProvider toolSnapshotProvider,
         StardewPrivateChatRuntimeAdapter privateChatRuntimeAdapter,
         NpcAutonomyBudget budget,
@@ -74,6 +76,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             runtimeSupervisor,
             runtimeHost,
             bindingResolver,
+            promptSupplementBuilder,
             toolSnapshotProvider,
             privateChatRuntimeAdapter,
             budget,
@@ -96,6 +99,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         NpcRuntimeSupervisor runtimeSupervisor,
         NpcRuntimeHost runtimeHost,
         StardewNpcRuntimeBindingResolver bindingResolver,
+        StardewNpcAutonomyPromptSupplementBuilder promptSupplementBuilder,
         INpcToolSurfaceSnapshotProvider toolSnapshotProvider,
         StardewPrivateChatRuntimeAdapter privateChatRuntimeAdapter,
         NpcAutonomyBudget budget,
@@ -115,6 +119,8 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         _runtimeSupervisor = runtimeSupervisor;
         _runtimeHost = runtimeHost;
         _bindingResolver = bindingResolver;
+        ArgumentNullException.ThrowIfNull(promptSupplementBuilder);
+        _promptSupplementBuilder = promptSupplementBuilder;
         _toolSnapshotProvider = toolSnapshotProvider;
         _privateChatRuntimeAdapter = privateChatRuntimeAdapter;
         _budget = budget;
@@ -360,18 +366,28 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             if (await TryProcessIngressWorkAsync(binding, tracker, hostAdapter.Commands, deliveredCursor, ct))
                 return;
 
-            if (controller.NextWakeAtUtc.HasValue && DateTime.UtcNow < controller.NextWakeAtUtc.Value)
-            {
-                await PauseTrackerAsync(tracker, deliveredCursor, "restart_cooldown", dispatch.BridgeKey, controller.NextWakeAtUtc, ct);
-                return;
-            }
-
             if (tracker.Instance.TryGetActivePrivateChatSessionLease(out var activeLease) && activeLease is not null)
             {
                 await PauseTrackerAsync(tracker, deliveredCursor, activeLease.Reason, dispatch.BridgeKey, null, ct);
                 return;
             }
 
+            if (TryGetPromptResourcePauseReason(tracker, out var promptResourcePauseReason))
+            {
+                await PauseTrackerAsync(tracker, deliveredCursor, promptResourcePauseReason, dispatch.BridgeKey, null, ct);
+                return;
+            }
+
+            if (controller.NextWakeAtUtc.HasValue && DateTime.UtcNow < controller.NextWakeAtUtc.Value)
+            {
+                await PauseTrackerAsync(tracker, deliveredCursor, "restart_cooldown", dispatch.BridgeKey, controller.NextWakeAtUtc, ct);
+                return;
+            }
+
+            var systemPromptSupplement = _promptSupplementBuilder.Build(
+                binding.Descriptor,
+                tracker.Instance.Namespace,
+                binding.Pack);
             await using var llmSlot = await _budget.TryAcquireLlmSlotAsync(binding.Descriptor.NpcId, ct);
             if (llmSlot is null)
             {
@@ -402,7 +418,8 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                         _skillManager,
                         _cronScheduler),
                     ToolSurface: toolSnapshot.ToolSurface,
-                    ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion),
+                    ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion,
+                    SystemPromptSupplement: systemPromptSupplement),
                 ct);
 
             var observation = await hostAdapter.Queries.ObserveAsync(binding.Descriptor.EffectiveBodyBinding, ct);
@@ -410,6 +427,13 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             await tracker.Driver.SetControllerStateAsync(tick.NextEventCursor ?? deliveredCursor, null, ct);
             tracker.RestartCount = 0;
             handle.Instance.MarkAutonomyRunning(dispatch.BridgeKey, handle.RebindGeneration, DateTime.UtcNow);
+        }
+        catch (StardewNpcAutonomyPromptResourceException ex)
+        {
+            tracker.RestartCount = 0;
+            await tracker.Instance.PauseAsync(ex.Message, ct);
+            await PauseTrackerAsync(tracker, deliveredCursor, ex.Message, dispatch.BridgeKey, null, ct);
+            _logger.LogWarning(ex, "Stardew autonomy prompt resources are incomplete for {NpcId}", binding.Descriptor.NpcId);
         }
         catch (Exception ex)
         {
@@ -472,6 +496,29 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         tracker.Instance.MarkAutonomyPaused(reason, bridgeKey, tracker.Instance.Snapshot().CurrentAutonomyHandleGeneration);
         await tracker.Driver.SetControllerStateAsync(deliveredCursor, nextWakeAtUtc, ct);
     }
+
+    private static bool TryGetPromptResourcePauseReason(NpcAutonomyTracker tracker, out string reason)
+    {
+        var snapshot = tracker.Instance.Snapshot();
+        if (IsPromptResourcePauseReason(snapshot.PauseReason))
+        {
+            reason = snapshot.PauseReason!;
+            return true;
+        }
+
+        if (IsPromptResourcePauseReason(snapshot.LastError))
+        {
+            reason = snapshot.LastError!;
+            return true;
+        }
+
+        reason = string.Empty;
+        return false;
+    }
+
+    private static bool IsPromptResourcePauseReason(string? reason)
+        => !string.IsNullOrWhiteSpace(reason) &&
+           reason.StartsWith(StardewNpcAutonomyPromptResourceException.MessagePrefix, StringComparison.Ordinal);
 
     private static string BuildBridgeKey(StardewBridgeDiscoverySnapshot snapshot, string saveId)
         => $"{snapshot.Options.Host}:{snapshot.Options.Port}:{snapshot.StartedAtUtc:O}:{saveId}";

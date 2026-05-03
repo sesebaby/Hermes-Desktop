@@ -95,7 +95,7 @@ public sealed class FileSystemNpcPackLoader : INpcPackLoader
         }
 
         if (!File.Exists(fullPath))
-            errors.Add($"{fieldName} file '{relativePath}' does not exist.");
+            errors.Add($"{fieldName} file '{relativePath}' does not exist at '{fullPath}'.");
     }
 
     private static void RequireNotEmpty(string? value, string fieldName, List<string> errors)
