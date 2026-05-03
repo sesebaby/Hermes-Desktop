@@ -217,14 +217,14 @@ public sealed class BridgeHttpHost
     private async Task HandleEventsPollAsync(HttpListenerContext context, CancellationToken ct)
     {
         var envelope = await ReadJsonAsync<BridgeEnvelope<EventPollQuery>>(context.Request, ct);
-        var events = _events.Poll(envelope.Payload.Since, envelope.Payload.NpcId ?? envelope.NpcId);
+        var events = _events.PollBatch(envelope.Payload.Since, envelope.Payload.NpcId ?? envelope.NpcId, envelope.Payload.Sequence);
         var response = new BridgeResponse<EventPollData>(
             true,
             envelope.TraceId,
             envelope.RequestId,
             null,
             "completed",
-            new EventPollData(events),
+            events,
             null,
             new { });
         await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);

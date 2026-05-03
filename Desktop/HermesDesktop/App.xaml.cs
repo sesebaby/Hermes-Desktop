@@ -423,7 +423,8 @@ public partial class App : Application
         services.AddSingleton(sp => new StardewPrivateChatRuntimeAdapter(
             sp.GetRequiredService<INpcPrivateChatAgentRunner>(),
             sp.GetRequiredService<ILogger<StardewPrivateChatRuntimeAdapter>>(),
-            sessionLeaseCoordinator: sp.GetRequiredService<IPrivateChatSessionLeaseCoordinator>()));
+            sessionLeaseCoordinator: sp.GetRequiredService<IPrivateChatSessionLeaseCoordinator>(),
+            bindingResolver: sp.GetRequiredService<StardewNpcRuntimeBindingResolver>()));
         services.AddSingleton(sp => new StardewNpcAutonomyBackgroundService(
             sp.GetRequiredService<IStardewBridgeDiscovery>(),
             sp.GetRequiredService<HttpClient>(),

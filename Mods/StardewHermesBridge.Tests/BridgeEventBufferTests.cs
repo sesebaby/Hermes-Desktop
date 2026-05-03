@@ -64,4 +64,34 @@ public class BridgeEventBufferTests
             record.Summary,
             "Raw player private-chat text must stay in payload, not in the human summary.");
     }
+
+    [TestMethod]
+    public void PollBatch_UsesSequenceAsPrimaryCursorAndReturnsNextSequence()
+    {
+        var buffer = new BridgeEventBuffer(() => new DateTime(2026, 4, 30, 5, 0, 0, DateTimeKind.Utc));
+        var first = buffer.Record("vanilla_dialogue_completed", "Haley", "first");
+        var second = buffer.Record("player_private_message_submitted", "Haley", "second");
+
+        var afterFirst = buffer.PollBatch(since: null, npcId: "Haley", sequence: first.Sequence);
+        var seqWins = buffer.PollBatch(since: second.EventId, npcId: "Haley", sequence: first.Sequence);
+        var empty = buffer.PollBatch(since: null, npcId: "Haley", sequence: second.Sequence);
+
+        CollectionAssert.AreEqual(new[] { second.EventId }, afterFirst.Events.Select(item => item.EventId).ToArray());
+        CollectionAssert.AreEqual(new[] { second.EventId }, seqWins.Events.Select(item => item.EventId).ToArray());
+        Assert.AreEqual(second.Sequence, afterFirst.NextSequence);
+        Assert.AreEqual(second.Sequence, empty.NextSequence, "Empty batches must keep the current buffer max sequence instead of rolling back.");
+    }
+
+    [TestMethod]
+    public void PollBatch_WhenSinceIsMissingAndSequenceAbsent_ReplaysFromBufferHead()
+    {
+        var buffer = new BridgeEventBuffer(() => new DateTime(2026, 4, 30, 5, 0, 0, DateTimeKind.Utc));
+        var first = buffer.Record("vanilla_dialogue_completed", "Haley", "first");
+        var second = buffer.Record("player_private_message_submitted", "Haley", "second");
+
+        var batch = buffer.PollBatch(since: "evt_missing", npcId: "Haley", sequence: null);
+
+        CollectionAssert.AreEqual(new[] { first.EventId, second.EventId }, batch.Events.Select(item => item.EventId).ToArray());
+        Assert.AreEqual(second.Sequence, batch.NextSequence);
+    }
 }

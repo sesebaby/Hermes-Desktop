@@ -22,7 +22,9 @@ public sealed record PrivateChatPolicy(
     Func<GameEventRecord, string?>? GetPlayerText = null,
     Func<GameCommandResult, bool>? IsRetryableOpenFailure = null,
     Func<string, string, string, string>? BuildOpenIdempotencyKey = null,
-    Func<string, string, string, string>? BuildReplyIdempotencyKey = null)
+    Func<string, string, string, string>? BuildReplyIdempotencyKey = null,
+    NpcBodyBinding? BodyBinding = null,
+    Func<string, NpcBodyBinding>? BodyBindingResolver = null)
 {
     public bool IsTargetNpc(string? npcId)
         => !string.IsNullOrWhiteSpace(npcId) &&
@@ -59,6 +61,11 @@ public sealed record PrivateChatPolicy(
     public string GetReplyIdempotencyKey(string npcId, string conversationId)
         => BuildReplyIdempotencyKey?.Invoke(SaveId, npcId, conversationId) ??
            $"private_chat_reply:{SaveId}:{npcId}:{conversationId}";
+
+    public NpcBodyBinding GetBodyBinding(string npcId)
+        => BodyBinding is not null && IsTargetNpc(npcId)
+            ? BodyBinding
+            : BodyBindingResolver?.Invoke(npcId) ?? NpcBodyBinding.FromLogicalId(npcId);
 
     private static string? GetPayloadString(GameEventRecord record, string propertyName)
         => record.Payload is not null && record.Payload.TryGetPropertyValue(propertyName, out var node)

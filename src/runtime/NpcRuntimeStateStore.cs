@@ -33,7 +33,7 @@ public sealed class NpcRuntimeStateStore
             using var db = OpenConnection();
             using var cmd = db.CreateCommand();
             cmd.CommandText = """
-                SELECT event_since, event_sequence, next_wake_at_utc, pending_work_item_json, action_slot_json, lease_json
+                SELECT event_since, event_sequence, next_wake_at_utc, pending_work_item_json, action_slot_json, lease_json, ingress_work_items_json
                 FROM runtime_state
                 WHERE id = 1;
                 """;
@@ -47,13 +47,15 @@ public sealed class NpcRuntimeStateStore
             var pending = Deserialize<NpcRuntimePendingWorkItemSnapshot>(reader, 3);
             var actionSlot = Deserialize<NpcRuntimeActionSlotSnapshot>(reader, 4);
             var lease = Deserialize<NpcRuntimeSessionLeaseSnapshot>(reader, 5);
+            var ingressWorkItems = Deserialize<IReadOnlyList<NpcRuntimeIngressWorkItemSnapshot>>(reader, 6) ?? [];
 
             return Task.FromResult(new NpcRuntimePersistedState(
                 new NpcRuntimeControllerSnapshot(
                     new GameEventCursor(eventSince, eventSequence),
                     pending,
                     actionSlot,
-                    nextWakeAtUtc),
+                    nextWakeAtUtc,
+                    ingressWorkItems: ingressWorkItems),
                 lease));
         }
     }
@@ -75,6 +77,7 @@ public sealed class NpcRuntimeStateStore
                     next_wake_at_utc,
                     pending_work_item_json,
                     action_slot_json,
+                    ingress_work_items_json,
                     lease_json,
                     updated_at_utc)
                 VALUES (
@@ -84,6 +87,7 @@ public sealed class NpcRuntimeStateStore
                     $next_wake_at_utc,
                     $pending_work_item_json,
                     $action_slot_json,
+                    $ingress_work_items_json,
                     $lease_json,
                     $updated_at_utc)
                 ON CONFLICT(id) DO UPDATE SET
@@ -92,6 +96,7 @@ public sealed class NpcRuntimeStateStore
                     next_wake_at_utc = excluded.next_wake_at_utc,
                     pending_work_item_json = excluded.pending_work_item_json,
                     action_slot_json = excluded.action_slot_json,
+                    ingress_work_items_json = excluded.ingress_work_items_json,
                     lease_json = excluded.lease_json,
                     updated_at_utc = excluded.updated_at_utc;
                 """;
@@ -100,6 +105,7 @@ public sealed class NpcRuntimeStateStore
             cmd.Parameters.AddWithValue("$next_wake_at_utc", state.Controller.NextWakeAtUtc?.ToString("O") ?? (object)DBNull.Value);
             cmd.Parameters.AddWithValue("$pending_work_item_json", Serialize(state.Controller.PendingWorkItem));
             cmd.Parameters.AddWithValue("$action_slot_json", Serialize(state.Controller.ActionSlot));
+            cmd.Parameters.AddWithValue("$ingress_work_items_json", Serialize(state.Controller.IngressWorkItems));
             cmd.Parameters.AddWithValue("$lease_json", Serialize(state.LeaseSnapshot));
             cmd.Parameters.AddWithValue("$updated_at_utc", DateTime.UtcNow.ToString("O"));
             cmd.ExecuteNonQuery();
@@ -135,12 +141,30 @@ public sealed class NpcRuntimeStateStore
                     next_wake_at_utc TEXT,
                     pending_work_item_json TEXT,
                     action_slot_json TEXT,
+                    ingress_work_items_json TEXT,
                     lease_json TEXT,
                     updated_at_utc TEXT NOT NULL
                 );
                 """;
             cmd.ExecuteNonQuery();
+            EnsureColumn(db, "runtime_state", "ingress_work_items_json", "TEXT");
         }
+    }
+
+    private static void EnsureColumn(SqliteConnection db, string tableName, string columnName, string definition)
+    {
+        using var columns = db.CreateCommand();
+        columns.CommandText = $"PRAGMA table_info({tableName});";
+        using var reader = columns.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+                return;
+        }
+
+        using var alter = db.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {definition};";
+        alter.ExecuteNonQuery();
     }
 
     private static string Serialize<T>(T value)

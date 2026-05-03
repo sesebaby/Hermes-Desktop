@@ -22,6 +22,21 @@ public sealed record GameEntityBinding(
     string DisplayName,
     string AdapterId);
 
+public sealed record NpcBodyBinding(
+    string NpcId,
+    string TargetEntityId,
+    string? SmapiName = null,
+    string? DisplayName = null,
+    string? AdapterId = null)
+{
+    public static NpcBodyBinding FromLogicalId(string npcId, string? adapterId = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(npcId);
+        var trimmed = npcId.Trim();
+        return new NpcBodyBinding(trimmed, trimmed, DisplayName: trimmed, AdapterId: adapterId);
+    }
+}
+
 public sealed record GameEventCursor(string? Since = null, long? Sequence = null)
 {
     public static GameEventCursor FromRecord(GameEventRecord record)

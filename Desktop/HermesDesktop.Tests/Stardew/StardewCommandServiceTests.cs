@@ -89,6 +89,36 @@ public class StardewCommandServiceTests
     }
 
     [TestMethod]
+    public async Task SubmitAsync_Move_UsesExplicitBodyBindingTargetForBridgeNpcId()
+    {
+        var client = new FakeSmapiClient();
+        client.MoveResponse = new StardewBridgeResponse<StardewMoveAcceptedData>(
+            true,
+            "trace-1",
+            "req-1",
+            "cmd-1",
+            StardewCommandStatuses.Queued,
+            new StardewMoveAcceptedData(true, new StardewMoveClaim("Haley", new StardewTile(42, 17), null)),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.Move,
+            "trace-1",
+            "idem-1",
+            new GameActionTarget("tile", "Town", new GameTile(42, 17)),
+            "inspect board",
+            BodyBinding: new NpcBodyBinding("haley", "Haley", "Haley", "Haley", "stardew"));
+
+        await service.SubmitAsync(action, CancellationToken.None);
+
+        var envelope = (StardewBridgeEnvelope<StardewMoveRequest>)client.LastEnvelope!;
+        Assert.AreEqual("Haley", envelope.NpcId);
+    }
+
+    [TestMethod]
     public async Task TryGetByIdempotencyKeyAsync_MapsBridgeStatusData()
     {
         var startedAt = new DateTime(2026, 5, 2, 10, 0, 0, DateTimeKind.Utc);

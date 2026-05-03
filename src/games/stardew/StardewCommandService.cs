@@ -36,7 +36,7 @@ public sealed class StardewCommandService : IGameCommandService
         var envelope = new StardewBridgeEnvelope<StardewMoveRequest>(
             requestId,
             action.TraceId,
-            action.NpcId,
+            ResolveNpcId(action),
             _saveId,
             action.IdempotencyKey,
             payload);
@@ -56,7 +56,7 @@ public sealed class StardewCommandService : IGameCommandService
         var envelope = new StardewBridgeEnvelope<StardewOpenPrivateChatRequest>(
             $"req_{Guid.NewGuid():N}",
             action.TraceId,
-            action.NpcId,
+            ResolveNpcId(action),
             _saveId,
             action.IdempotencyKey,
             new StardewOpenPrivateChatRequest(prompt, conversationId));
@@ -86,7 +86,7 @@ public sealed class StardewCommandService : IGameCommandService
         var envelope = new StardewBridgeEnvelope<StardewSpeakRequest>(
             $"req_{Guid.NewGuid():N}",
             action.TraceId,
-            action.NpcId,
+            ResolveNpcId(action),
             _saveId,
             action.IdempotencyKey,
             new StardewSpeakRequest(text, channel, conversationId));
@@ -173,6 +173,11 @@ public sealed class StardewCommandService : IGameCommandService
             response.Error?.Code,
             string.IsNullOrWhiteSpace(response.TraceId) ? fallbackTraceId : response.TraceId,
             response.Error?.Retryable == true);
+
+    private static string ResolveNpcId(GameAction action)
+        => !string.IsNullOrWhiteSpace(action.BodyBinding?.TargetEntityId)
+            ? action.BodyBinding.TargetEntityId!
+            : action.NpcId;
 
     private static GameCommandStatus ToCommandStatus(StardewBridgeResponse<StardewTaskStatusData> response, string fallbackCommandId)
     {

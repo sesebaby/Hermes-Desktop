@@ -53,6 +53,26 @@ public sealed class NpcRuntimeDriver
         await SyncAsync(ct);
     }
 
+    public async Task EnqueueIngressWorkItemAsync(NpcRuntimeIngressWorkItemSnapshot workItem, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(workItem);
+        _instance.EnqueueIngressWorkItem(workItem);
+        await SyncAsync(ct);
+    }
+
+    public async Task RemoveIngressWorkItemAsync(string workItemId, CancellationToken ct)
+    {
+        _instance.RemoveIngressWorkItem(workItemId);
+        await SyncAsync(ct);
+    }
+
+    public async Task SetIngressWorkItemsAsync(IReadOnlyList<NpcRuntimeIngressWorkItemSnapshot> ingressWorkItems, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ingressWorkItems);
+        _instance.SetIngressWorkItems(ingressWorkItems);
+        await SyncAsync(ct);
+    }
+
     public async Task SetControllerStateAsync(GameEventCursor eventCursor, DateTime? nextWakeAtUtc, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(eventCursor);
@@ -75,5 +95,6 @@ public sealed class NpcRuntimeDriver
            controller.EventCursor.Sequence.HasValue ||
            controller.PendingWorkItem is not null ||
            controller.ActionSlot is not null ||
-           controller.NextWakeAtUtc.HasValue;
+           controller.NextWakeAtUtc.HasValue ||
+           controller.IngressWorkItems.Count > 0;
 }

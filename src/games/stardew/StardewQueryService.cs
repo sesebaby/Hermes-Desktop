@@ -19,17 +19,20 @@ public sealed class StardewQueryService : IGameQueryService
     }
 
     public async Task<GameObservation> ObserveAsync(string npcId, CancellationToken ct)
+        => await ObserveAsync(NpcBodyBinding.FromLogicalId(npcId, AdapterId), ct);
+
+    public async Task<GameObservation> ObserveAsync(NpcBodyBinding bodyBinding, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(npcId))
-            throw new ArgumentException("NPC id is required.", nameof(npcId));
+        ArgumentNullException.ThrowIfNull(bodyBinding);
+        var targetEntityId = ResolveTargetEntityId(bodyBinding);
 
         var envelope = new StardewBridgeEnvelope<StardewStatusQuery>(
             $"req_{Guid.NewGuid():N}",
             $"trace_observe_{Guid.NewGuid():N}",
-            npcId,
+            targetEntityId,
             _saveId,
             null,
-            new StardewStatusQuery(npcId));
+            new StardewStatusQuery(targetEntityId));
 
         var response = await _client.SendAsync<StardewStatusQuery, StardewNpcStatusData>(
             StardewBridgeRoutes.QueryStatus,
@@ -46,17 +49,20 @@ public sealed class StardewQueryService : IGameQueryService
     }
 
     public async Task<WorldSnapshot> GetWorldSnapshotAsync(string npcId, CancellationToken ct)
+        => await GetWorldSnapshotAsync(NpcBodyBinding.FromLogicalId(npcId, AdapterId), ct);
+
+    public async Task<WorldSnapshot> GetWorldSnapshotAsync(NpcBodyBinding bodyBinding, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(npcId))
-            throw new ArgumentException("NPC id is required.", nameof(npcId));
+        ArgumentNullException.ThrowIfNull(bodyBinding);
+        var targetEntityId = ResolveTargetEntityId(bodyBinding);
 
         var envelope = new StardewBridgeEnvelope<StardewWorldSnapshotQuery>(
             $"req_{Guid.NewGuid():N}",
             $"trace_world_{Guid.NewGuid():N}",
-            npcId,
+            targetEntityId,
             _saveId,
             null,
-            new StardewWorldSnapshotQuery(npcId));
+            new StardewWorldSnapshotQuery(targetEntityId));
 
         var response = await _client.SendAsync<StardewWorldSnapshotQuery, StardewWorldSnapshotData>(
             StardewBridgeRoutes.QueryWorldSnapshot,
@@ -113,6 +119,20 @@ public sealed class StardewQueryService : IGameQueryService
 
     private static GameEntityBinding ToEntityBinding(StardewWorldEntityData data)
         => new(data.NpcId, data.TargetEntityId, data.DisplayName, string.IsNullOrWhiteSpace(data.AdapterId) ? AdapterId : data.AdapterId);
+
+    private static string ResolveTargetEntityId(NpcBodyBinding bodyBinding)
+    {
+        if (!string.IsNullOrWhiteSpace(bodyBinding.TargetEntityId))
+            return bodyBinding.TargetEntityId;
+
+        if (!string.IsNullOrWhiteSpace(bodyBinding.SmapiName))
+            return bodyBinding.SmapiName;
+
+        if (!string.IsNullOrWhiteSpace(bodyBinding.NpcId))
+            return bodyBinding.NpcId;
+
+        throw new ArgumentException("NPC body binding target is required.", nameof(bodyBinding));
+    }
 
     private static string Bool(bool value) => value ? "true" : "false";
 }

@@ -58,7 +58,7 @@ public sealed class StardewStatusTool : ITool, IToolSchemaProvider
     public JsonElement GetParameterSchema() => StardewNpcToolSchemas.Empty();
 
     public async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
-        => ToolResult.Ok(StardewNpcToolJson.Serialize(await _queries.ObserveAsync(_descriptor.NpcId, ct)));
+        => ToolResult.Ok(StardewNpcToolJson.Serialize(await _queries.ObserveAsync(_descriptor.EffectiveBodyBinding, ct)));
 }
 
 public sealed class StardewMoveTool : ITool, IToolSchemaProvider
@@ -107,7 +107,8 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
             _traceIdFactory(),
             _idempotencyKeyFactory(),
             new GameActionTarget("tile", p.LocationName, new GameTile(p.X, p.Y)),
-            p.Reason);
+            p.Reason,
+            BodyBinding: _descriptor.EffectiveBodyBinding);
 
         var preparedAction = await _runtimeActions.TryBeginAsync(action, ct);
         if (preparedAction?.BlockedResult is not null)
@@ -210,7 +211,8 @@ public sealed class StardewSpeakTool : ITool, IToolSchemaProvider
             _traceIdFactory(),
             _idempotencyKeyFactory(),
             new GameActionTarget("player"),
-            Payload: payload);
+            Payload: payload,
+            BodyBinding: _descriptor.EffectiveBodyBinding);
 
         var preparedAction = await _runtimeActions.TryBeginAsync(action, ct);
         if (preparedAction?.BlockedResult is not null)
@@ -293,7 +295,8 @@ public sealed class StardewOpenPrivateChatTool : ITool, IToolSchemaProvider
             _traceIdFactory(),
             _idempotencyKeyFactory(),
             new GameActionTarget("player"),
-            Payload: payload);
+            Payload: payload,
+            BodyBinding: _descriptor.EffectiveBodyBinding);
 
         var preparedAction = await _runtimeActions.TryBeginAsync(action, ct);
         if (preparedAction?.BlockedResult is not null)

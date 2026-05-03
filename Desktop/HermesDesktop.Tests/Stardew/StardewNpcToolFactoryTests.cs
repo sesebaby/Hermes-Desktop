@@ -52,6 +52,8 @@ public class StardewNpcToolFactoryTests
         Assert.IsTrue(result.Success);
         Assert.IsNotNull(commands.LastAction);
         Assert.AreEqual("haley", commands.LastAction.NpcId);
+        Assert.AreEqual("Haley", commands.LastAction.BodyBinding?.TargetEntityId);
+        Assert.AreEqual("Haley", commands.LastAction.BodyBinding?.SmapiName);
         Assert.AreEqual("stardew-valley", commands.LastAction.GameId);
         Assert.AreEqual(GameActionType.Move, commands.LastAction.Type);
         Assert.AreEqual("trace-move", commands.LastAction.TraceId);
@@ -81,6 +83,7 @@ public class StardewNpcToolFactoryTests
         Assert.IsTrue(result.Success);
         Assert.IsNotNull(commands.LastAction);
         Assert.AreEqual("haley", commands.LastAction.NpcId);
+        Assert.AreEqual("Haley", commands.LastAction.BodyBinding?.TargetEntityId);
         Assert.AreEqual(GameActionType.Speak, commands.LastAction.Type);
         Assert.AreEqual("trace-speak", commands.LastAction.TraceId);
         Assert.AreEqual("idem-speak", commands.LastAction.IdempotencyKey);
@@ -108,6 +111,7 @@ public class StardewNpcToolFactoryTests
         Assert.IsTrue(result.Success);
         Assert.IsNotNull(commands.LastAction);
         Assert.AreEqual("haley", commands.LastAction.NpcId);
+        Assert.AreEqual("Haley", commands.LastAction.BodyBinding?.TargetEntityId);
         Assert.AreEqual(GameActionType.OpenPrivateChat, commands.LastAction.Type);
         Assert.AreEqual("trace-private-chat", commands.LastAction.TraceId);
         Assert.AreEqual("idem-private-chat", commands.LastAction.IdempotencyKey);
@@ -243,7 +247,8 @@ public class StardewNpcToolFactoryTests
             "default",
             "stardew",
             "pack-root",
-            $"sdv_save-1_{npcId}_default");
+            $"sdv_save-1_{npcId}_default",
+            new NpcBodyBinding(npcId, "Haley", "Haley", "Haley", "stardew"));
 
     private sealed class FakeGameAdapter : IGameAdapter
     {

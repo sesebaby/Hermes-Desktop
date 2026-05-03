@@ -23,6 +23,7 @@ public sealed class NpcRuntimeInstance
     private NpcRuntimePendingWorkItemSnapshot? _pendingWorkItem;
     private NpcRuntimeActionSlotSnapshot? _actionSlot;
     private DateTime? _nextWakeAtUtc;
+    private IReadOnlyList<NpcRuntimeIngressWorkItemSnapshot> _ingressWorkItems = [];
     private int _inboxDepth;
 
     public NpcRuntimeInstance(NpcRuntimeDescriptor descriptor, NpcNamespace npcNamespace)
@@ -187,6 +188,7 @@ public sealed class NpcRuntimeInstance
             _pendingWorkItem = controller.PendingWorkItem;
             _actionSlot = controller.ActionSlot;
             _nextWakeAtUtc = controller.NextWakeAtUtc;
+            _ingressWorkItems = controller.IngressWorkItems.ToArray();
             _inboxDepth = Math.Max(0, controller.InboxDepth);
         }
     }
@@ -229,6 +231,44 @@ public sealed class NpcRuntimeInstance
     {
         lock (_gate)
             _nextWakeAtUtc = nextWakeAtUtc;
+    }
+
+    internal void SetIngressWorkItems(IReadOnlyList<NpcRuntimeIngressWorkItemSnapshot> ingressWorkItems)
+    {
+        ArgumentNullException.ThrowIfNull(ingressWorkItems);
+
+        lock (_gate)
+            _ingressWorkItems = ingressWorkItems.ToArray();
+    }
+
+    internal void EnqueueIngressWorkItem(NpcRuntimeIngressWorkItemSnapshot workItem)
+    {
+        ArgumentNullException.ThrowIfNull(workItem);
+
+        lock (_gate)
+        {
+            if (!string.IsNullOrWhiteSpace(workItem.IdempotencyKey) &&
+                _ingressWorkItems.Any(item => string.Equals(item.IdempotencyKey, workItem.IdempotencyKey, StringComparison.OrdinalIgnoreCase)))
+            {
+                return;
+            }
+
+            if (_ingressWorkItems.Any(item => string.Equals(item.WorkItemId, workItem.WorkItemId, StringComparison.OrdinalIgnoreCase)))
+                return;
+
+            _ingressWorkItems = [.. _ingressWorkItems, workItem];
+        }
+    }
+
+    internal void RemoveIngressWorkItem(string workItemId)
+    {
+        if (string.IsNullOrWhiteSpace(workItemId))
+            return;
+
+        lock (_gate)
+            _ingressWorkItems = _ingressWorkItems
+                .Where(item => !string.Equals(item.WorkItemId, workItemId, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
     }
 
     internal void SetInboxDepth(int inboxDepth)
@@ -322,7 +362,8 @@ public sealed class NpcRuntimeInstance
                     _pendingWorkItem,
                     _actionSlot,
                     _nextWakeAtUtc,
-                    _inboxDepth));
+                    _inboxDepth,
+                    _ingressWorkItems));
         }
     }
 

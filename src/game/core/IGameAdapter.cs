@@ -25,6 +25,18 @@ public interface IGameQueryService
     Task<GameObservation> ObserveAsync(string npcId, CancellationToken ct);
 
     Task<WorldSnapshot> GetWorldSnapshotAsync(string npcId, CancellationToken ct);
+
+    Task<GameObservation> ObserveAsync(NpcBodyBinding bodyBinding, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(bodyBinding);
+        return ObserveAsync(bodyBinding.TargetEntityId, ct);
+    }
+
+    Task<WorldSnapshot> GetWorldSnapshotAsync(NpcBodyBinding bodyBinding, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(bodyBinding);
+        return GetWorldSnapshotAsync(bodyBinding.TargetEntityId, ct);
+    }
 }
 
 public interface IGameEventSource

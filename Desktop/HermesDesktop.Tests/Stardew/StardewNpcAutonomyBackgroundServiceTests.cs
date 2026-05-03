@@ -846,7 +846,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
-    public async Task CronTaskDue_WhenTaskBelongsToNpcSession_SubmitsOpenPrivateChat()
+    public async Task CronTaskDue_WhenTaskBelongsToNpcSession_AppendsDurableIngressBeforeSubmitting()
     {
         var discovery = CreateDiscovery("save-42");
         var chatClient = new CountingChatClient("unused");
@@ -861,14 +861,12 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 ["location=Town"])),
             new FakeEventSource([]));
         var supervisor = new NpcRuntimeSupervisor();
-        var cronScheduler = new ManualCronScheduler();
-        CreateService(
+        var service = CreateService(
             discovery,
             _ => adapter,
             chatClient,
             supervisor,
-            enabledNpcIds: ["haley"],
-            cronScheduler: cronScheduler);
+            enabledNpcIds: ["haley"]);
         var task = new CronTask(
             "task-haley-talk",
             "haley_talk",
@@ -879,8 +877,16 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             Durable: true,
             SessionId: "sdv_save-42_haley_default:private_chat:pc-1");
 
-        cronScheduler.Fire(task, DateTimeOffset.UtcNow);
-        await WaitForSubmittedCountAsync(commands, 1, TimeSpan.FromSeconds(1));
+        await service.HandleCronTaskDueAsync(task, DateTimeOffset.UtcNow, CancellationToken.None);
+
+        Assert.AreEqual(0, commands.Submitted.Count, "Cron due must only append durable ingress; the autonomy worker submits the side effect later.");
+        var queued = supervisor.Snapshot().Single().Controller;
+        Assert.AreEqual(1, queued.IngressWorkItems.Count);
+        Assert.AreEqual("scheduled_private_chat", queued.IngressWorkItems.Single().WorkType);
+        Assert.IsNull(queued.PendingWorkItem);
+        Assert.IsNull(queued.ActionSlot);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
 
         var action = commands.Submitted.Single();
         Assert.AreEqual(GameActionType.OpenPrivateChat, action.Type);
@@ -888,6 +894,43 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         Assert.AreEqual("stardew-valley", action.GameId);
         Assert.AreEqual("一分钟后主动和我对话", action.Payload?["prompt"]?.ToString());
         Assert.AreEqual("scheduled_task:task-haley-talk", action.Payload?["conversationId"]?.ToString());
+        Assert.AreEqual(0, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_FiltersSharedBatchByNpcPersistedCursorBeforeDispatch()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CapturingChatClient("I will wait near the library.");
+        var events = new CountingEventSource(
+        [
+            new GameEventRecord("evt-11", "time_changed", "haley", DateTime.UtcNow, "old Haley event", Sequence: 11),
+            new GameEventRecord("evt-12", "time_changed", "haley", DateTime.UtcNow.AddSeconds(1), "new Haley event", Sequence: 12),
+        ]);
+        var adapter = new FakeGameAdapter(
+            new FakeCommandService(),
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is idle.",
+                ["location=Town"])),
+            events);
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetControllerStateAsync(new GameEventCursor("evt-11", 11), null, CancellationToken.None);
+        var service = CreateService(discovery, _ => adapter, chatClient, supervisor, enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        var request = chatClient.CapturedRequests.Single();
+        Assert.IsFalse(request.Contains("old Haley event", StringComparison.Ordinal), "Host fanout must filter records already acknowledged by this NPC before worker dispatch.");
+        Assert.IsTrue(request.Contains("new Haley event", StringComparison.Ordinal));
+        var trackerCursor = GetTrackerCursor(service, "haley");
+        Assert.AreEqual("evt-12", trackerCursor.Since);
+        Assert.AreEqual(12L, trackerCursor.Sequence);
     }
 
     private StardewNpcAutonomyBackgroundService CreateService(
@@ -1334,6 +1377,56 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             CancellationToken ct)
         {
             Interlocked.Increment(ref _completeWithToolsCalls);
+            return Task.FromResult(new ChatResponse { Content = _response, FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class CapturingChatClient : IChatClient
+    {
+        private readonly string _response;
+        private readonly List<string> _capturedRequests = [];
+
+        public CapturingChatClient(string response)
+        {
+            _response = response;
+        }
+
+        public IReadOnlyList<string> CapturedRequests
+        {
+            get
+            {
+                lock (_capturedRequests)
+                    return _capturedRequests.ToArray();
+            }
+        }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult(_response);
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            lock (_capturedRequests)
+                _capturedRequests.Add(string.Join("\n", messages.Select(message => message.Content)));
+
             return Task.FromResult(new ChatResponse { Content = _response, FinishReason = "stop" });
         }
 

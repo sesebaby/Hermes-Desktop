@@ -53,6 +53,41 @@ public class StardewQueryServiceTests
     }
 
     [TestMethod]
+    public async Task ObserveAsync_WithBodyBinding_PostsTargetEntityId()
+    {
+        var at = new DateTime(2026, 4, 30, 8, 30, 0, DateTimeKind.Utc);
+        var client = new FakeSmapiClient();
+        client.StatusResponse = new StardewBridgeResponse<StardewNpcStatusData>(
+            true,
+            "trace-status",
+            "req-status",
+            null,
+            null,
+            new StardewNpcStatusData(
+                "haley",
+                "Haley",
+                "Haley",
+                "Town",
+                new StardewTile(42, 17),
+                false,
+                false,
+                true,
+                null,
+                null,
+                null),
+            null,
+            null);
+        var service = new StardewQueryService(client, "save-1", nowUtc: () => at);
+
+        await service.ObserveAsync(new NpcBodyBinding("haley", "Haley", "Haley", "Haley", "stardew"), CancellationToken.None);
+
+        Assert.IsInstanceOfType(client.LastEnvelope, typeof(StardewBridgeEnvelope<StardewStatusQuery>));
+        var envelope = (StardewBridgeEnvelope<StardewStatusQuery>)client.LastEnvelope!;
+        Assert.AreEqual("Haley", envelope.NpcId);
+        Assert.AreEqual("Haley", envelope.Payload.NpcId);
+    }
+
+    [TestMethod]
     public async Task GetWorldSnapshotAsync_PostsWorldSnapshotQueryAndMapsCoreSnapshot()
     {
         var at = new DateTime(2026, 4, 30, 8, 45, 0, DateTimeKind.Utc);
@@ -87,6 +122,34 @@ public class StardewQueryServiceTests
         Assert.AreEqual(at, snapshot.TimestampUtc);
         Assert.AreEqual("haley", snapshot.Entities.Single().NpcId);
         CollectionAssert.Contains(snapshot.Facts.ToList(), "weather=sunny");
+    }
+
+    [TestMethod]
+    public async Task GetWorldSnapshotAsync_WithBodyBinding_PostsTargetEntityId()
+    {
+        var at = new DateTime(2026, 4, 30, 8, 45, 0, DateTimeKind.Utc);
+        var client = new FakeSmapiClient();
+        client.WorldSnapshotResponse = new StardewBridgeResponse<StardewWorldSnapshotData>(
+            true,
+            "trace-world",
+            "req-world",
+            null,
+            null,
+            new StardewWorldSnapshotData(
+                "stardew-valley",
+                "save-1",
+                at,
+                [new StardewWorldEntityData("haley", "Haley", "Haley", "stardew")],
+                []),
+            null,
+            null);
+        var service = new StardewQueryService(client, "save-1");
+
+        await service.GetWorldSnapshotAsync(new NpcBodyBinding("haley", "Haley", "Haley", "Haley", "stardew"), CancellationToken.None);
+
+        var envelope = (StardewBridgeEnvelope<StardewWorldSnapshotQuery>)client.LastEnvelope!;
+        Assert.AreEqual("Haley", envelope.NpcId);
+        Assert.AreEqual("Haley", envelope.Payload.NpcId);
     }
 
     private sealed class FakeSmapiClient : ISmapiModApiClient

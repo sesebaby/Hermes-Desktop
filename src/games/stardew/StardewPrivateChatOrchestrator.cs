@@ -35,7 +35,9 @@ public sealed class StardewPrivateChatOrchestrator : IDisposable
                         "vanilla_dialogue_completed",
                         "vanilla_dialogue_unavailable"
                     ],
-                    IsRetryableOpenFailure: IsRetryableOpenFailure),
+                    IsRetryableOpenFailure: IsRetryableOpenFailure,
+                    BodyBinding: stardewOptions.BodyBinding,
+                    BodyBindingResolver: stardewOptions.BodyBindingResolver),
                 ToCoreReopenPolicy(stardewOptions.ReopenPolicy),
                 stardewOptions.MaxTurnsPerSession,
                 stardewOptions.MaxOpenAttempts,
@@ -252,6 +254,7 @@ public sealed class StardewPrivateChatRuntimeAdapter : IDisposable
     private readonly StardewPrivateChatOptions _options;
     private readonly ILogger<StardewPrivateChatRuntimeAdapter> _logger;
     private readonly IPrivateChatSessionLeaseCoordinator? _sessionLeaseCoordinator;
+    private readonly StardewNpcRuntimeBindingResolver? _bindingResolver;
     private string? _bridgeKey;
     private StardewPrivateChatOrchestrator? _orchestrator;
 
@@ -259,12 +262,14 @@ public sealed class StardewPrivateChatRuntimeAdapter : IDisposable
         INpcPrivateChatAgentRunner agentRunner,
         ILogger<StardewPrivateChatRuntimeAdapter> logger,
         StardewPrivateChatOptions? options = null,
-        IPrivateChatSessionLeaseCoordinator? sessionLeaseCoordinator = null)
+        IPrivateChatSessionLeaseCoordinator? sessionLeaseCoordinator = null,
+        StardewNpcRuntimeBindingResolver? bindingResolver = null)
     {
         _agentRunner = agentRunner;
         _logger = logger;
         _options = options ?? new StardewPrivateChatOptions();
         _sessionLeaseCoordinator = sessionLeaseCoordinator;
+        _bindingResolver = bindingResolver;
     }
 
     public async Task ProcessAsync(
@@ -328,12 +333,24 @@ public sealed class StardewPrivateChatRuntimeAdapter : IDisposable
                 adapter.Events,
                 adapter.Commands,
                 _agentRunner,
-                _options with { SaveId = saveId },
+                BuildOptions(saveId),
                 _sessionLeaseCoordinator);
             _bridgeKey = bridgeKey;
         }
 
         _logger.LogInformation("Stardew private-chat runtime bridge attached: {BridgeKey}", bridgeKey);
+    }
+
+    private StardewPrivateChatOptions BuildOptions(string saveId)
+    {
+        var options = _options with { SaveId = saveId };
+        if (options.BodyBinding is not null || options.BodyBindingResolver is not null || _bindingResolver is null)
+            return options;
+
+        return options with
+        {
+            BodyBindingResolver = npcId => _bindingResolver.Resolve(npcId, saveId).Descriptor.EffectiveBodyBinding
+        };
     }
 
     private void DisposeOrchestratorNoThrow()
@@ -368,7 +385,9 @@ public sealed record StardewPrivateChatOptions(
     PrivateChatReopenPolicy ReopenPolicy = PrivateChatReopenPolicy.OnceAfterReply,
     int MaxTurnsPerSession = 3,
     int MaxOpenAttempts = 60,
-    TimeSpan PollInterval = default);
+    TimeSpan PollInterval = default,
+    NpcBodyBinding? BodyBinding = null,
+    Func<string, NpcBodyBinding>? BodyBindingResolver = null);
 
 public enum PrivateChatReopenPolicy
 {

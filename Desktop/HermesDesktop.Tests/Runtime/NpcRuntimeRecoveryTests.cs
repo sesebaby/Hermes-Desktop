@@ -68,6 +68,38 @@ public sealed class NpcRuntimeRecoveryTests
     }
 
     [TestMethod]
+    public async Task GetOrCreateDriverAsync_PersistsIngressWorkItemsWithoutPendingActionSlot()
+    {
+        var descriptor = CreateDescriptor("haley");
+        var createdAt = new DateTime(2026, 5, 3, 6, 30, 0, DateTimeKind.Utc);
+        var supervisor1 = new NpcRuntimeSupervisor();
+        var driver1 = await supervisor1.GetOrCreateDriverAsync(descriptor, _tempDir, CancellationToken.None);
+        var workItem = new NpcRuntimeIngressWorkItemSnapshot(
+            "ingress-scheduled-1",
+            "scheduled_private_chat",
+            "queued",
+            createdAt,
+            IdempotencyKey: "idem-scheduled-1",
+            TraceId: "trace-scheduled-1",
+            Payload: new System.Text.Json.Nodes.JsonObject
+            {
+                ["prompt"] = "一分钟后主动和我对话",
+                ["conversationId"] = "scheduled_task:task-haley-talk"
+            });
+
+        await driver1.EnqueueIngressWorkItemAsync(workItem, CancellationToken.None);
+
+        var supervisor2 = new NpcRuntimeSupervisor();
+        var driver2 = await supervisor2.GetOrCreateDriverAsync(descriptor, _tempDir, CancellationToken.None);
+        var controller = driver2.Snapshot();
+
+        Assert.AreEqual(1, controller.IngressWorkItems.Count);
+        Assert.AreEqual("ingress-scheduled-1", controller.IngressWorkItems.Single().WorkItemId);
+        Assert.IsNull(controller.PendingWorkItem);
+        Assert.IsNull(controller.ActionSlot);
+    }
+
+    [TestMethod]
     public async Task GetOrCreateDriverAsync_RestoresLeaseSnapshotAndKeepsGenerationMonotonic()
     {
         var descriptor = CreateDescriptor("penny");

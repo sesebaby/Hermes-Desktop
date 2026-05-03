@@ -1,4 +1,5 @@
 using Hermes.Agent.Game;
+using System.Text.Json.Nodes;
 
 namespace Hermes.Agent.Runtime;
 
@@ -10,7 +11,12 @@ public sealed record NpcRuntimeDescriptor(
     string ProfileId,
     string AdapterId,
     string PackRoot,
-    string SessionId);
+    string SessionId,
+    NpcBodyBinding? BodyBinding = null)
+{
+    public NpcBodyBinding EffectiveBodyBinding
+        => BodyBinding ?? new NpcBodyBinding(NpcId, NpcId, DisplayName: DisplayName, AdapterId: AdapterId);
+}
 
 public enum NpcRuntimeState
 {
@@ -53,14 +59,46 @@ public sealed record NpcRuntimeActionSlotSnapshot(
     DateTime StartedAtUtc,
     DateTime? TimeoutAtUtc);
 
-public sealed record NpcRuntimeControllerSnapshot(
-    GameEventCursor EventCursor,
-    NpcRuntimePendingWorkItemSnapshot? PendingWorkItem,
-    NpcRuntimeActionSlotSnapshot? ActionSlot,
-    DateTime? NextWakeAtUtc,
-    int InboxDepth = 0)
+public sealed record NpcRuntimeIngressWorkItemSnapshot(
+    string WorkItemId,
+    string WorkType,
+    string Status,
+    DateTime CreatedAtUtc,
+    string? IdempotencyKey = null,
+    string? TraceId = null,
+    JsonObject? Payload = null);
+
+public sealed record NpcRuntimeControllerSnapshot
 {
-    public static NpcRuntimeControllerSnapshot Empty { get; } = new(new GameEventCursor(), null, null, null, 0);
+    public NpcRuntimeControllerSnapshot(
+        GameEventCursor eventCursor,
+        NpcRuntimePendingWorkItemSnapshot? pendingWorkItem,
+        NpcRuntimeActionSlotSnapshot? actionSlot,
+        DateTime? nextWakeAtUtc,
+        int inboxDepth = 0,
+        IReadOnlyList<NpcRuntimeIngressWorkItemSnapshot>? ingressWorkItems = null)
+    {
+        EventCursor = eventCursor;
+        PendingWorkItem = pendingWorkItem;
+        ActionSlot = actionSlot;
+        NextWakeAtUtc = nextWakeAtUtc;
+        InboxDepth = Math.Max(0, inboxDepth);
+        IngressWorkItems = ingressWorkItems?.ToArray() ?? [];
+    }
+
+    public GameEventCursor EventCursor { get; init; }
+
+    public NpcRuntimePendingWorkItemSnapshot? PendingWorkItem { get; init; }
+
+    public NpcRuntimeActionSlotSnapshot? ActionSlot { get; init; }
+
+    public DateTime? NextWakeAtUtc { get; init; }
+
+    public int InboxDepth { get; init; }
+
+    public IReadOnlyList<NpcRuntimeIngressWorkItemSnapshot> IngressWorkItems { get; init; }
+
+    public static NpcRuntimeControllerSnapshot Empty { get; } = new(new GameEventCursor(), null, null, null);
 }
 
 public sealed record NpcRuntimeSnapshot(

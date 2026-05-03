@@ -61,7 +61,7 @@ public sealed class NpcAutonomyLoop
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentNullException.ThrowIfNull(eventCursor);
 
-        var observation = await _adapter.Queries.ObserveAsync(descriptor.NpcId, ct);
+        var observation = await _adapter.Queries.ObserveAsync(descriptor.EffectiveBodyBinding, ct);
         var eventBatch = await _adapter.Events.PollBatchAsync(eventCursor, ct);
         return await RunOneTickAsync(descriptor, observation, eventBatch, ct);
     }
@@ -110,8 +110,15 @@ public sealed class NpcAutonomyLoop
     }
 
     private static bool BelongsToRuntimeNpc(NpcRuntimeDescriptor descriptor, GameEventRecord record)
-        => string.IsNullOrWhiteSpace(record.NpcId)
-           || string.Equals(descriptor.NpcId, record.NpcId, StringComparison.OrdinalIgnoreCase);
+    {
+        if (string.IsNullOrWhiteSpace(record.NpcId))
+            return true;
+
+        var body = descriptor.EffectiveBodyBinding;
+        return string.Equals(descriptor.NpcId, record.NpcId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(body.TargetEntityId, record.NpcId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(body.SmapiName, record.NpcId, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string BuildDecisionMessage(NpcRuntimeDescriptor descriptor, IReadOnlyList<NpcObservationFact> facts)
     {

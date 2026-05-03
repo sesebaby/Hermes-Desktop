@@ -17,7 +17,8 @@ public sealed record GameAction(
     string IdempotencyKey,
     GameActionTarget Target,
     string? Reason = null,
-    JsonObject? Payload = null);
+    JsonObject? Payload = null,
+    NpcBodyBinding? BodyBinding = null);
 
 public sealed record GameActionTarget(
     string Kind,

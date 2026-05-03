@@ -32,7 +32,8 @@ public sealed class BridgeEventBuffer
             DateTime.SpecifyKind(_nowUtc(), DateTimeKind.Utc),
             string.IsNullOrWhiteSpace(summary) ? eventType : summary,
             string.IsNullOrWhiteSpace(correlationId) ? null : correlationId,
-            payload);
+            payload,
+            sequence);
 
         lock (_gate)
             _events.Add(record);
@@ -41,19 +42,32 @@ public sealed class BridgeEventBuffer
     }
 
     public IReadOnlyList<BridgeEventData> Poll(string? since, string? npcId)
+        => PollBatch(since, npcId, sequence: null).Events;
+
+    public EventPollData PollBatch(string? since, string? npcId, long? sequence = null)
     {
         lock (_gate)
         {
-            var startIndex = -1;
-            if (!string.IsNullOrWhiteSpace(since))
-                startIndex = _events.FindIndex(item => string.Equals(item.EventId, since, StringComparison.OrdinalIgnoreCase));
+            var startIndex = ResolveStartIndex(since, sequence);
 
-            return _events
+            var events = _events
                 .Skip(startIndex < 0 ? 0 : startIndex + 1)
                 .Where(item => string.IsNullOrWhiteSpace(npcId) ||
                                string.IsNullOrWhiteSpace(item.NpcId) ||
                                string.Equals(item.NpcId, npcId, StringComparison.OrdinalIgnoreCase))
                 .ToArray();
+            return new EventPollData(events, _sequence == 0 ? null : _sequence);
         }
+    }
+
+    private int ResolveStartIndex(string? since, long? sequence)
+    {
+        if (sequence.HasValue)
+            return _events.FindLastIndex(item => item.Sequence.HasValue && item.Sequence.Value <= sequence.Value);
+
+        if (string.IsNullOrWhiteSpace(since))
+            return -1;
+
+        return _events.FindIndex(item => string.Equals(item.EventId, since, StringComparison.OrdinalIgnoreCase));
     }
 }

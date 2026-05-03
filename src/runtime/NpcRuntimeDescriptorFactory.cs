@@ -21,6 +21,12 @@ public static class NpcRuntimeDescriptorFactory
             manifest.ProfileId,
             manifest.AdapterId,
             pack.RootPath,
-            $"sdv_{effectiveSaveId}_{manifest.NpcId}_{manifest.ProfileId}");
+            $"sdv_{effectiveSaveId}_{manifest.NpcId}_{manifest.ProfileId}",
+            new NpcBodyBinding(
+                manifest.NpcId,
+                manifest.TargetEntityId,
+                manifest.SmapiName,
+                manifest.DisplayName,
+                manifest.AdapterId));
     }
 }

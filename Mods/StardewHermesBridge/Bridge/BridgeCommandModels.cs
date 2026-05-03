@@ -1,6 +1,7 @@
 namespace StardewHermesBridge.Bridge;
 
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 public sealed record BridgeEnvelope<TPayload>(
     string RequestId,
@@ -88,7 +89,10 @@ public sealed record WorldSnapshotData(
     IReadOnlyList<WorldEntityData> Entities,
     IReadOnlyList<string> Facts);
 
-public sealed record EventPollQuery(string? Since, string? NpcId);
+public sealed record EventPollQuery(
+    string? Since,
+    string? NpcId,
+    [property: JsonPropertyName("seq")] long? Sequence = null);
 
 public sealed record BridgeEventData(
     string EventId,
@@ -97,6 +101,9 @@ public sealed record BridgeEventData(
     DateTime TimestampUtc,
     string Summary,
     string? CorrelationId = null,
-    JsonObject? Payload = null);
+    JsonObject? Payload = null,
+    [property: JsonPropertyName("seq")] long? Sequence = null);
 
-public sealed record EventPollData(IReadOnlyList<BridgeEventData> Events);
+public sealed record EventPollData(
+    IReadOnlyList<BridgeEventData> Events,
+    [property: JsonPropertyName("next_seq")] long? NextSequence = null);

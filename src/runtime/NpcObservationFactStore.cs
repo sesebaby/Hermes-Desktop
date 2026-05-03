@@ -69,6 +69,13 @@ public sealed class NpcObservationFactStore
                 _facts[key] = facts;
             }
 
+            if (!string.IsNullOrWhiteSpace(fact.SourceId) &&
+                facts.Any(existing => string.Equals(existing.SourceKind, fact.SourceKind, StringComparison.OrdinalIgnoreCase) &&
+                                      string.Equals(existing.SourceId, fact.SourceId, StringComparison.OrdinalIgnoreCase)))
+            {
+                return;
+            }
+
             facts.Add(fact);
         }
     }
@@ -87,8 +94,13 @@ public sealed class NpcObservationFactStore
         if (string.IsNullOrWhiteSpace(record.NpcId))
             return;
 
-        if (!string.Equals(descriptor.NpcId, record.NpcId, StringComparison.OrdinalIgnoreCase))
+        var body = descriptor.EffectiveBodyBinding;
+        if (!string.Equals(descriptor.NpcId, record.NpcId, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(body.TargetEntityId, record.NpcId, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(body.SmapiName, record.NpcId, StringComparison.OrdinalIgnoreCase))
+        {
             throw new InvalidOperationException($"Event NPC '{record.NpcId}' does not match runtime NPC '{descriptor.NpcId}'.");
+        }
     }
 
     private static string BuildKey(string gameId, string saveId, string npcId, string profileId)

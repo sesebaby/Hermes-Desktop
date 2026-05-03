@@ -254,12 +254,14 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         {
             var binding = _bindingResolver.Resolve(npcId, saveId);
             var tracker = await GetOrCreateTrackerAsync(binding, ct);
-            tracker.Instance.SetInboxDepth(CountRelevantIngressRecords(binding.Descriptor, sharedEventBatch.Records));
+            var controller = tracker.Driver.Snapshot();
+            var npcEventBatch = FilterBatchForRuntime(binding.Descriptor, sharedEventBatch, controller.EventCursor);
+            tracker.Instance.SetInboxDepth(npcEventBatch.Records.Count + controller.IngressWorkItems.Count);
             var workerTask = await tracker.EnqueueAsync(
                 new NpcAutonomyDispatch(
                     bridgeKey,
                     snapshot,
-                    sharedEventBatch,
+                    npcEventBatch,
                     sharedEventBatch.NextCursor),
                 ct);
             workerTasks?.Add(workerTask);
@@ -330,7 +332,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             if (!MatchesNpcSession(task.SessionId, binding.Descriptor.SessionId))
                 continue;
 
-            await SubmitScheduledPrivateChatAsync(binding, snapshot, task, firedAtUtc, ct);
+            await AppendScheduledPrivateChatIngressAsync(binding, task, firedAtUtc, ct);
             return;
         }
 
@@ -353,6 +355,9 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             var controller = tracker.Driver.Snapshot();
 
             if (await TryAdvancePendingActionAsync(binding, tracker, hostAdapter.Commands, deliveredCursor, dispatch.BridgeKey, ct))
+                return;
+
+            if (await TryProcessIngressWorkAsync(binding, tracker, hostAdapter.Commands, deliveredCursor, ct))
                 return;
 
             if (controller.NextWakeAtUtc.HasValue && DateTime.UtcNow < controller.NextWakeAtUtc.Value)
@@ -400,7 +405,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                     ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion),
                 ct);
 
-            var observation = await hostAdapter.Queries.ObserveAsync(binding.Descriptor.NpcId, ct);
+            var observation = await hostAdapter.Queries.ObserveAsync(binding.Descriptor.EffectiveBodyBinding, ct);
             var tick = await handle.Loop.RunOneTickAsync(handle.Instance, observation, dispatch.SharedEventBatch, ct);
             await tracker.Driver.SetControllerStateAsync(tick.NextEventCursor ?? deliveredCursor, null, ct);
             tracker.RestartCount = 0;
@@ -657,43 +662,36 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
     private static bool ShouldStageBatch(GameEventCursor sourceCursor, GameEventBatch batch)
         => batch.Records.Count > 0 || !CursorsEqual(sourceCursor, batch.NextCursor);
 
-    private async Task SubmitScheduledPrivateChatAsync(
+    private async Task AppendScheduledPrivateChatIngressAsync(
         StardewNpcRuntimeBinding binding,
-        StardewBridgeDiscoverySnapshot snapshot,
         CronTask task,
         DateTimeOffset firedAtUtc,
         CancellationToken ct)
     {
-        var adapter = _adapterFactory(snapshot);
         var traceId = $"trace_scheduled_{binding.Descriptor.NpcId}_{task.Id}_{firedAtUtc.UtcDateTime.Ticks}";
-        var action = new GameAction(
-            binding.Descriptor.NpcId,
-            binding.Descriptor.GameId,
-            GameActionType.OpenPrivateChat,
-            traceId,
-            $"idem_scheduled_{binding.Descriptor.NpcId}_{task.Id}_{firedAtUtc.UtcDateTime.Ticks}",
-            new GameActionTarget("player"),
-            Payload: new JsonObject
-            {
-                ["prompt"] = task.Prompt,
-                ["conversationId"] = $"scheduled_task:{task.Id}"
-            });
+        var idempotencyKey = $"idem_scheduled_{binding.Descriptor.NpcId}_{task.Id}_{firedAtUtc.UtcDateTime.Ticks}";
+        var tracker = await GetOrCreateTrackerAsync(binding, ct);
+        await tracker.Driver.EnqueueIngressWorkItemAsync(
+            new NpcRuntimeIngressWorkItemSnapshot(
+                $"ingress_scheduled_{binding.Descriptor.NpcId}_{task.Id}_{firedAtUtc.UtcDateTime.Ticks}",
+                "scheduled_private_chat",
+                "queued",
+                firedAtUtc.UtcDateTime,
+                idempotencyKey,
+                traceId,
+                new JsonObject
+                {
+                    ["prompt"] = task.Prompt,
+                    ["conversationId"] = $"scheduled_task:{task.Id}",
+                    ["taskId"] = task.Id
+                }),
+            ct);
+        tracker.Instance.SetInboxDepth(tracker.Driver.Snapshot().IngressWorkItems.Count);
 
-        var result = await adapter.Commands.SubmitAsync(action, ct);
-        if (result.Accepted)
-        {
-            _logger.LogInformation(
-                "Scheduled Stardew cron task {TaskId} opened private chat for {NpcId}.",
-                task.Id,
-                binding.Descriptor.NpcId);
-            return;
-        }
-
-        _logger.LogWarning(
-            "Scheduled Stardew cron task {TaskId} for {NpcId} was not accepted: {FailureReason}",
+        _logger.LogInformation(
+            "Scheduled Stardew cron task {TaskId} queued durable private chat ingress for {NpcId}.",
             task.Id,
-            binding.Descriptor.NpcId,
-            result.FailureReason ?? result.Status);
+            binding.Descriptor.NpcId);
     }
 
     private static bool IsInitialCursor(GameEventCursor cursor)
@@ -707,24 +705,108 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         => string.Equals(scheduledSessionId, runtimeSessionId, StringComparison.OrdinalIgnoreCase) ||
            scheduledSessionId.StartsWith(runtimeSessionId + ":", StringComparison.OrdinalIgnoreCase);
 
-    private static int CountRelevantIngressRecords(
-        NpcRuntimeDescriptor descriptor,
-        IReadOnlyList<GameEventRecord> records)
+    private async Task<bool> TryProcessIngressWorkAsync(
+        StardewNpcRuntimeBinding binding,
+        NpcAutonomyTracker tracker,
+        IGameCommandService commandService,
+        GameEventCursor deliveredCursor,
+        CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(descriptor);
-        ArgumentNullException.ThrowIfNull(records);
+        var workItem = tracker.Driver.Snapshot().IngressWorkItems
+            .FirstOrDefault(item => string.Equals(item.WorkType, "scheduled_private_chat", StringComparison.OrdinalIgnoreCase));
+        if (workItem is null)
+            return false;
 
-        var count = 0;
-        foreach (var record in records)
+        var action = new GameAction(
+            binding.Descriptor.NpcId,
+            binding.Descriptor.GameId,
+            GameActionType.OpenPrivateChat,
+            string.IsNullOrWhiteSpace(workItem.TraceId) ? $"trace_ingress_{Guid.NewGuid():N}" : workItem.TraceId!,
+            string.IsNullOrWhiteSpace(workItem.IdempotencyKey) ? $"idem_ingress_{Guid.NewGuid():N}" : workItem.IdempotencyKey!,
+            new GameActionTarget("player"),
+            Payload: ClonePayload(workItem.Payload),
+            BodyBinding: binding.Descriptor.EffectiveBodyBinding);
+
+        var runtimeActions = new StardewRuntimeActionController(tracker.Driver, _worldCoordination, null, null);
+        var preparedAction = await runtimeActions.TryBeginAsync(action, ct);
+        if (preparedAction?.BlockedResult is not null)
         {
-            if (string.IsNullOrWhiteSpace(record.NpcId) ||
-                string.Equals(descriptor.NpcId, record.NpcId, StringComparison.OrdinalIgnoreCase))
-            {
-                count++;
-            }
+            await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
+            return true;
         }
 
-        return count;
+        var result = await commandService.SubmitAsync(action, ct);
+        await runtimeActions.RecordSubmitResultAsync(preparedAction, result, ct);
+        if (result.Accepted || !result.Retryable)
+            await tracker.Driver.RemoveIngressWorkItemAsync(workItem.WorkItemId, ct);
+
+        await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
+        return true;
+    }
+
+    private static JsonObject ClonePayload(JsonObject? payload)
+    {
+        var clone = new JsonObject();
+        if (payload is null)
+            return clone;
+
+        foreach (var pair in payload)
+            clone[pair.Key] = pair.Value?.DeepClone();
+
+        return clone;
+    }
+
+    private static GameEventBatch FilterBatchForRuntime(
+        NpcRuntimeDescriptor descriptor,
+        GameEventBatch sharedEventBatch,
+        GameEventCursor persistedCursor)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        ArgumentNullException.ThrowIfNull(sharedEventBatch);
+        ArgumentNullException.ThrowIfNull(persistedCursor);
+
+        var recordsAfterCursor = FilterRecordsAfterCursor(sharedEventBatch.Records, persistedCursor);
+        var records = recordsAfterCursor
+            .Where(record => IsRelevantToRuntime(descriptor, record))
+            .ToArray();
+        return new GameEventBatch(records, sharedEventBatch.NextCursor);
+    }
+
+    private static IReadOnlyList<GameEventRecord> FilterRecordsAfterCursor(
+        IReadOnlyList<GameEventRecord> records,
+        GameEventCursor persistedCursor)
+    {
+        if (records.Count == 0)
+            return [];
+
+        if (persistedCursor.Sequence.HasValue && records.Any(record => record.Sequence.HasValue))
+        {
+            return records
+                .Where(record => !record.Sequence.HasValue || record.Sequence.Value > persistedCursor.Sequence.Value)
+                .ToArray();
+        }
+
+        if (string.IsNullOrWhiteSpace(persistedCursor.Since))
+            return records;
+
+        var sinceIndex = records
+            .Select((record, index) => new { record, index })
+            .FirstOrDefault(item => string.Equals(item.record.EventId, persistedCursor.Since, StringComparison.OrdinalIgnoreCase))
+            ?.index;
+        return sinceIndex.HasValue
+            ? records.Skip(sinceIndex.Value + 1).ToArray()
+            : records;
+    }
+
+    private static bool IsRelevantToRuntime(NpcRuntimeDescriptor descriptor, GameEventRecord record)
+    {
+        if (string.IsNullOrWhiteSpace(record.NpcId))
+            return true;
+
+        var body = descriptor.EffectiveBodyBinding;
+        return string.Equals(descriptor.NpcId, record.NpcId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(body.TargetEntityId, record.NpcId, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(body.SmapiName, record.NpcId, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class NpcAutonomyTracker

@@ -263,7 +263,8 @@ public sealed class PrivateChatOrchestrator : IDisposable
             _options.Policy.GetOpenIdempotencyKey(npcId, openKey),
             new GameActionTarget("player"),
             reason,
-            payload);
+            payload,
+            _options.Policy.GetBodyBinding(npcId));
         return _commands.SubmitAsync(action, ct);
     }
 
@@ -283,7 +284,8 @@ public sealed class PrivateChatOrchestrator : IDisposable
             _options.Policy.GetReplyIdempotencyKey(npcId, conversationId),
             new GameActionTarget("player"),
             "private chat reply",
-            payload);
+            payload,
+            _options.Policy.GetBodyBinding(npcId));
         return _commands.SubmitAsync(action, ct);
     }
 

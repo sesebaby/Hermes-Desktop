@@ -65,6 +65,32 @@ public class StardewNpcBindingResolverTests
     }
 
     [TestMethod]
+    public void Resolve_PopulatesRuntimeBodyBindingFromManifest()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-binding-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            CreatePack(tempDir, "haley", "Haley", targetEntityId: "Haley");
+
+            var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), tempDir);
+            var binding = resolver.Resolve("haley", "save-7");
+
+            Assert.IsNotNull(binding.Descriptor.BodyBinding);
+            Assert.AreEqual("haley", binding.Descriptor.BodyBinding!.NpcId);
+            Assert.AreEqual("Haley", binding.Descriptor.BodyBinding.SmapiName);
+            Assert.AreEqual("Haley", binding.Descriptor.BodyBinding.TargetEntityId);
+            Assert.AreEqual("stardew", binding.Descriptor.BodyBinding.AdapterId);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public void Resolve_RejectsMissingNpcId()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-binding-tests", Guid.NewGuid().ToString("N"));
@@ -104,7 +130,7 @@ public class StardewNpcBindingResolverTests
         }
     }
 
-    private static void CreatePack(string root, string npcId, string displayName)
+    private static void CreatePack(string root, string npcId, string displayName, string? targetEntityId = null)
     {
         var packRoot = Path.Combine(root, npcId, "default");
         Directory.CreateDirectory(packRoot);
@@ -121,7 +147,7 @@ public class StardewNpcBindingResolverTests
             DisplayName = displayName,
             SmapiName = displayName,
             Aliases = [npcId, displayName],
-            TargetEntityId = npcId,
+            TargetEntityId = targetEntityId ?? npcId,
             AdapterId = "stardew",
             SoulFile = "SOUL.md",
             FactsFile = "facts.md",

@@ -2,6 +2,7 @@ using Hermes.Agent.Game;
 using Hermes.Agent.Games.Stardew;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace HermesDesktop.Tests.Stardew;
@@ -32,8 +33,35 @@ public class StardewPrivateChatOrchestratorTests
         Assert.AreEqual(1, commands.Submitted.Count);
         Assert.AreEqual(GameActionType.OpenPrivateChat, commands.Submitted[0].Type);
         Assert.AreEqual("Haley", commands.Submitted[0].NpcId);
+        Assert.AreEqual("Haley", commands.Submitted[0].BodyBinding?.TargetEntityId);
         Assert.AreEqual("pc_evt-1", commands.Submitted[0].Payload?["conversationId"]?.GetValue<string>());
         Assert.AreEqual(0, agent.Requests.Count);
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_UsesConfiguredBodyBindingWhenNpcIdIsLogical()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."));
+        var commands = new FakeCommandService();
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            new FakePrivateChatAgentRunner(),
+            new StardewPrivateChatOptions(
+                NpcId: "haley",
+                ReopenPolicy: PrivateChatReopenPolicy.Never,
+                BodyBinding: new NpcBodyBinding("haley", "Haley", "Haley", "Haley", "stardew")));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual("haley", commands.Submitted.Single().NpcId);
+        Assert.AreEqual("Haley", commands.Submitted.Single().BodyBinding?.TargetEntityId);
     }
 
     [TestMethod]
@@ -81,6 +109,49 @@ public class StardewPrivateChatOrchestratorTests
         Assert.AreEqual(1, commands.Submitted.Count);
         Assert.AreEqual(GameActionType.OpenPrivateChat, commands.Submitted[0].Type);
         Assert.AreEqual("pc_evt-new", commands.Submitted[0].Payload?["conversationId"]?.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task RuntimeAdapter_ResolvesPrivateChatBodyBindingFromManifest()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-private-chat-runtime-binding-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            CreatePack(tempDir, "haley", "Haley", targetEntityId: "Haley");
+            var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), tempDir);
+            var events = new FakeEventSource();
+            var commands = new FakeCommandService();
+            using var runtimeAdapter = new StardewPrivateChatRuntimeAdapter(
+                new FakePrivateChatAgentRunner(),
+                NullLogger<StardewPrivateChatRuntimeAdapter>.Instance,
+                new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never),
+                bindingResolver: resolver);
+            var adapter = new FakeGameAdapter(commands, events);
+
+            await runtimeAdapter.ProcessAsync(
+                "bridge-1",
+                "save-1",
+                adapter,
+                [
+                    new GameEventRecord(
+                        "evt-new",
+                        "vanilla_dialogue_completed",
+                        "haley",
+                        DateTime.UtcNow,
+                        "Fresh Haley dialogue completed.")
+                ],
+                CancellationToken.None);
+
+            var action = commands.Submitted.Single();
+            Assert.AreEqual("haley", action.NpcId);
+            Assert.AreEqual("Haley", action.BodyBinding?.TargetEntityId);
+            Assert.AreEqual("Haley", action.BodyBinding?.SmapiName);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
     }
 
     [TestMethod]
@@ -596,6 +667,35 @@ public class StardewPrivateChatOrchestratorTests
             var records = _records.Skip(start).ToArray();
             return Task.FromResult<IReadOnlyList<GameEventRecord>>(records);
         }
+    }
+
+    private static void CreatePack(string root, string npcId, string displayName, string? targetEntityId = null)
+    {
+        var packRoot = Path.Combine(root, npcId, "default");
+        Directory.CreateDirectory(packRoot);
+        foreach (var file in new[] { "SOUL.md", "facts.md", "voice.md", "boundaries.md", "skills.json" })
+            File.WriteAllText(Path.Combine(packRoot, file), "ok");
+
+        var manifest = new NpcPackManifest
+        {
+            SchemaVersion = 1,
+            NpcId = npcId,
+            GameId = "stardew-valley",
+            ProfileId = "default",
+            DefaultProfileId = "default",
+            DisplayName = displayName,
+            SmapiName = displayName,
+            Aliases = [npcId, displayName],
+            TargetEntityId = targetEntityId ?? npcId,
+            AdapterId = "stardew",
+            SoulFile = "SOUL.md",
+            FactsFile = "facts.md",
+            VoiceFile = "voice.md",
+            BoundariesFile = "boundaries.md",
+            SkillsFile = "skills.json",
+            Capabilities = ["move", "speak"]
+        };
+        File.WriteAllText(Path.Combine(packRoot, FileSystemNpcPackLoader.ManifestFileName), JsonSerializer.Serialize(manifest));
     }
 
     private sealed class FakeCommandService : IGameCommandService
