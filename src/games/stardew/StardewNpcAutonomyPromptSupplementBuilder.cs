@@ -176,6 +176,11 @@ public sealed class StardewNpcAutonomyPromptSupplementBuilder
             checkedPaths.Add(path);
             if (File.Exists(path))
                 return path;
+
+            var skillDirectoryPath = ResolveInsideRoot(descriptor, fullRoot, Path.Combine(skillId, "SKILL.md"), $"required skill '{skillId}'");
+            checkedPaths.Add(skillDirectoryPath);
+            if (File.Exists(skillDirectoryPath))
+                return skillDirectoryPath;
         }
 
         var checkedPathList = string.Join("; ", checkedPaths.Select(path => $"'{path}'"));

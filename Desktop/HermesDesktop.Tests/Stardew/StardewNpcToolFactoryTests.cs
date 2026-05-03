@@ -31,6 +31,24 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
+    public void MoveToolDescription_AllowsObservedPlaceCandidate()
+    {
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"));
+        var moveTool = (IToolSchemaProvider)tools.Single(tool => tool.Name == "stardew_move");
+        var description = tools.Single(tool => tool.Name == "stardew_move").Description;
+        var moveSchema = moveTool.GetParameterSchema().GetRawText();
+
+        StringAssert.Contains(description, "moveCandidate");
+        StringAssert.Contains(description, "placeCandidate");
+        StringAssert.Contains(description, "schedule-style destination");
+        StringAssert.Contains(moveSchema, "moveCandidate");
+        StringAssert.Contains(moveSchema, "placeCandidate");
+        StringAssert.Contains(moveSchema, "facingDirection");
+    }
+
+    [TestMethod]
     public async Task MoveTool_BindsRuntimeIdentityAndSubmitsThroughCommandService()
     {
         var commands = new CapturingCommandService();
@@ -46,7 +64,8 @@ public class StardewNpcToolFactoryTests
             LocationName = "Town",
             X = 42,
             Y = 17,
-            Reason = "inspect the town board"
+            Reason = "inspect the town board",
+            FacingDirection = 2
         }, CancellationToken.None);
 
         Assert.IsTrue(result.Success);
@@ -60,6 +79,7 @@ public class StardewNpcToolFactoryTests
         Assert.AreEqual("idem-move", commands.LastAction.IdempotencyKey);
         Assert.AreEqual("Town", commands.LastAction.Target.LocationName);
         Assert.AreEqual(42, commands.LastAction.Target.Tile?.X);
+        Assert.AreEqual("2", commands.LastAction.Payload?["facingDirection"]?.ToString());
         Assert.AreEqual("cmd-1", JsonDocument.Parse(result.Content).RootElement.GetProperty("commandId").GetString());
     }
 

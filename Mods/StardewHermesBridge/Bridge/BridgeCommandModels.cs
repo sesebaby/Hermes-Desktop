@@ -23,11 +23,22 @@ public sealed record BridgeResponse<TData>(
 
 public sealed record BridgeError(string Code, string Message, bool Retryable);
 
-public sealed record MovePayload(MoveTarget Target, string? Reason);
+public sealed record MovePayload(MoveTarget Target, string? Reason, int? FacingDirection = null);
 
 public sealed record MoveTarget(string LocationName, TileDto Tile);
 
 public sealed record TileDto(int X, int Y);
+
+public sealed record MoveCandidateData(string LocationName, TileDto Tile, string Reason);
+
+public sealed record PlaceCandidateData(
+    string Label,
+    string LocationName,
+    TileDto Tile,
+    IReadOnlyList<string> Tags,
+    string Reason,
+    int? FacingDirection = null,
+    string? EndBehavior = null);
 
 public sealed record MoveAcceptedData(bool Accepted, MoveClaim Claim);
 
@@ -74,7 +85,9 @@ public sealed record NpcStatusData(
     bool IsAvailableForControl,
     string? BlockedReason,
     string? CurrentCommandId,
-    string? LastTraceId);
+    string? LastTraceId,
+    IReadOnlyList<MoveCandidateData>? MoveCandidates = null,
+    IReadOnlyList<PlaceCandidateData>? PlaceCandidates = null);
 
 public sealed record WorldEntityData(
     string NpcId,

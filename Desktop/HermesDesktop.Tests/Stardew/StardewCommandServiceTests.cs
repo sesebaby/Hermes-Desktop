@@ -29,7 +29,8 @@ public class StardewCommandServiceTests
             "trace-1",
             "idem-1",
             new GameActionTarget("tile", "Town", new GameTile(42, 17)),
-            "inspect board");
+            "inspect board",
+            Payload: new JsonObject { ["facingDirection"] = 2 });
 
         var result = await service.SubmitAsync(action, CancellationToken.None);
 
@@ -43,6 +44,7 @@ public class StardewCommandServiceTests
         Assert.AreEqual("idem-1", envelope.IdempotencyKey);
         Assert.AreEqual("Town", envelope.Payload.Target.LocationName);
         Assert.AreEqual(42, envelope.Payload.Target.Tile.X);
+        Assert.AreEqual(2, envelope.Payload.FacingDirection);
     }
 
     [TestMethod]

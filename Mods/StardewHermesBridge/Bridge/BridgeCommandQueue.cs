@@ -2,11 +2,13 @@ namespace StardewHermesBridge.Bridge;
 
 using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
+using Microsoft.Xna.Framework;
 using StardewHermesBridge.Dialogue;
 using StardewHermesBridge.Logging;
 using StardewHermesBridge.Ui;
 using StardewModdingAPI;
 using StardewValley;
+using StardewValley.Pathfinding;
 
 public sealed class BridgeCommandQueue
 {
@@ -21,6 +23,7 @@ public sealed class BridgeCommandQueue
     private readonly Action<string, string>? _privateChatReplyDisplayed;
     private readonly object _privateChatInputGate = new();
     private BridgePrivateChatInput? _privateChatInput;
+    private BridgeMoveCommand? _activeMove;
 
     public BridgeCommandQueue(
         SmapiBridgeLogger logger,
@@ -55,6 +58,7 @@ public sealed class BridgeCommandQueue
             envelope.NpcId,
             envelope.Payload.Target.LocationName,
             envelope.Payload.Target.Tile,
+            envelope.Payload.FacingDirection,
             envelope.IdempotencyKey);
         _commands[commandId] = command;
         if (!string.IsNullOrWhiteSpace(envelope.IdempotencyKey))
@@ -313,8 +317,19 @@ public sealed class BridgeCommandQueue
         if (uiStatus is not null)
             return uiStatus;
 
-        if (!_pending.TryDequeue(out var command))
+        var command = _activeMove;
+        if (command is null && !_pending.TryDequeue(out command))
             return null;
+
+        var status = PumpMoveCommand(command);
+        _activeMove = command.Status == "running" ? command : null;
+        return status;
+    }
+
+    private TaskStatusData PumpMoveCommand(BridgeMoveCommand command)
+    {
+        if (command.IsTerminal)
+            return command.ToStatusData();
 
         if (!Context.IsWorldReady || Game1.player is null)
         {
@@ -331,6 +346,14 @@ public sealed class BridgeCommandQueue
             return command.ToStatusData();
         }
 
+        var currentLocation = npc.currentLocation;
+        if (currentLocation is null)
+        {
+            command.Fail("invalid_target");
+            _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", "current_location_missing");
+            return command.ToStatusData();
+        }
+
         var targetLocation = Game1.getLocationFromName(command.LocationName);
         if (targetLocation is null)
         {
@@ -339,36 +362,103 @@ public sealed class BridgeCommandQueue
             return command.ToStatusData();
         }
 
-        var targetTile = new Microsoft.Xna.Framework.Vector2(command.TargetTile.X, command.TargetTile.Y);
-        if (!targetLocation.isTileLocationOpen(targetTile) || !targetLocation.CanSpawnCharacterHere(targetTile))
+        if (!ReferenceEquals(currentLocation, targetLocation))
+        {
+            command.Block("cross_location_unsupported");
+            _logger.Write("task_blocked", command.NpcId, "move", command.TraceId, command.CommandId, "blocked", "cross_location_unsupported");
+            return command.ToStatusData();
+        }
+
+        if (!IsTileSafeForMove(targetLocation, command.TargetTile))
         {
             command.Fail("invalid_target");
             _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", $"tile_blocked:{command.LocationName}:{command.TargetTile.X},{command.TargetTile.Y}");
             return command.ToStatusData();
         }
 
-        command.Start();
-        npc.currentLocation?.characters.Remove(npc);
-        targetLocation.characters.Remove(npc);
-        npc.currentLocation = targetLocation;
+        var currentTile = new TileDto((int)npc.Tile.X, (int)npc.Tile.Y);
+
+        if (command.Status == "queued")
+        {
+            if (!command.TryPrepareSchedulePath(npc, currentTile, targetLocation, out var pathFailure))
+            {
+                command.Fail(pathFailure ?? "path_unreachable");
+                _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", command.BlockedReason);
+                return command.ToStatusData();
+            }
+
+            command.Start();
+            _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"started;pathSteps={command.PathStepsRemaining}");
+            return command.ToStatusData();
+        }
+
+        if (command.ConsumeStepDelayTick())
+            return command.ToStatusData();
+
+        if (currentTile.X == command.TargetTile.X && currentTile.Y == command.TargetTile.Y)
+        {
+            ApplyArrivalFacing(npc, command);
+            command.Complete();
+            _logger.Write("task_completed", command.NpcId, "move", command.TraceId, command.CommandId, "completed", null);
+            return command.ToStatusData();
+        }
+
+        var nextTile = command.NextScheduleStepFrom(currentTile);
+        if (nextTile is null)
+        {
+            command.Fail("path_exhausted");
+            _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", "path_exhausted");
+            return command.ToStatusData();
+        }
+
+        if (!IsTileSafeForMove(targetLocation, nextTile))
+        {
+            command.Fail("invalid_target");
+            _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", $"step_blocked:{command.LocationName}:{nextTile.X},{nextTile.Y}");
+            return command.ToStatusData();
+        }
+
         npc.Halt();
-        npc.setTilePosition(command.TargetTile.X, command.TargetTile.Y);
-        targetLocation.addCharacter(npc);
-        command.Complete();
-        _logger.Write("task_completed", command.NpcId, "move", command.TraceId, command.CommandId, "completed", null);
+        npc.setTilePosition(nextTile.X, nextTile.Y);
+        command.RecordStep();
+
+        if (nextTile.X == command.TargetTile.X && nextTile.Y == command.TargetTile.Y)
+        {
+            ApplyArrivalFacing(npc, command);
+            command.Complete();
+            _logger.Write("task_completed", command.NpcId, "move", command.TraceId, command.CommandId, "completed", null);
+            return command.ToStatusData();
+        }
+
+        command.ResetStepDelay();
+        _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"tile={nextTile.X},{nextTile.Y};target={command.TargetTile.X},{command.TargetTile.Y}");
         return command.ToStatusData();
+    }
+
+    private static bool IsTileSafeForMove(GameLocation location, TileDto tile)
+    {
+        var vector = new Microsoft.Xna.Framework.Vector2(tile.X, tile.Y);
+        return location.isTileLocationOpen(vector) && location.CanSpawnCharacterHere(vector);
+    }
+
+    private static void ApplyArrivalFacing(NPC npc, BridgeMoveCommand command)
+    {
+        if (command.FacingDirection is >= 0 and <= 3)
+            npc.faceDirection(command.FacingDirection.Value);
     }
 
     public void Drain(string reason)
     {
         foreach (var command in _commands.Values.Where(command => command.Status is "queued" or "running"))
             command.Fail(reason);
+        _activeMove = null;
     }
 
     public void Clear()
     {
         _commands.Clear();
         _idempotency.Clear();
+        _activeMove = null;
         ClearPrivateChatInput(null);
         while (_pending.TryDequeue(out _))
         {
@@ -520,16 +610,30 @@ internal static class BridgeEnvelopeExtensions
 
 public sealed class BridgeMoveCommand
 {
+    private const int StepDelayTicks = 8;
+
     private readonly DateTime _createdAtUtc = DateTime.UtcNow;
     private DateTime? _startedAtUtc;
+    private int _stepDelayTicksRemaining;
+    private int _stepsTaken;
 
-    public BridgeMoveCommand(string commandId, string traceId, string npcId, string locationName, TileDto targetTile, string? idempotencyKey)
+    private Stack<Point>? _schedulePath;
+
+    public BridgeMoveCommand(
+        string commandId,
+        string traceId,
+        string npcId,
+        string locationName,
+        TileDto targetTile,
+        int? facingDirection,
+        string? idempotencyKey)
     {
         CommandId = commandId;
         TraceId = traceId;
         NpcId = npcId;
         LocationName = locationName;
         TargetTile = targetTile;
+        FacingDirection = facingDirection;
         IdempotencyKey = idempotencyKey;
     }
 
@@ -538,15 +642,22 @@ public sealed class BridgeMoveCommand
     public string NpcId { get; }
     public string LocationName { get; }
     public TileDto TargetTile { get; }
+    public int? FacingDirection { get; }
     public string? IdempotencyKey { get; }
     public string Status { get; private set; } = "queued";
     public string? BlockedReason { get; private set; }
     public string? ErrorCode { get; private set; }
+    public bool IsTerminal => Status is "completed" or "cancelled" or "failed" or "blocked";
+    public int PathStepsRemaining => _schedulePath?.Count ?? 0;
 
     public void Start()
     {
+        if (Status != "queued")
+            return;
+
         _startedAtUtc = DateTime.UtcNow;
         Status = "running";
+        _stepDelayTicksRemaining = StepDelayTicks;
     }
 
     public void Complete()
@@ -567,6 +678,69 @@ public sealed class BridgeMoveCommand
         BlockedReason = errorCode;
     }
 
+    public void Block(string reason)
+    {
+        Status = "blocked";
+        ErrorCode = reason;
+        BlockedReason = reason;
+    }
+
+    public bool ConsumeStepDelayTick()
+    {
+        if (_stepDelayTicksRemaining <= 0)
+            return false;
+
+        _stepDelayTicksRemaining--;
+        return true;
+    }
+
+    public void ResetStepDelay()
+        => _stepDelayTicksRemaining = StepDelayTicks;
+
+    public void RecordStep()
+        => _stepsTaken++;
+
+    public bool TryPrepareSchedulePath(NPC npc, TileDto currentTile, GameLocation location, out string? failureReason)
+    {
+        failureReason = null;
+        if (currentTile.X == TargetTile.X && currentTile.Y == TargetTile.Y)
+            return true;
+
+        _schedulePath = PathFindController.findPathForNPCSchedules(
+            new Point(currentTile.X, currentTile.Y),
+            new Point(TargetTile.X, TargetTile.Y),
+            location,
+            300,
+            npc);
+
+        TrimCurrentTileFromPath(currentTile);
+        if (_schedulePath is { Count: > 0 })
+            return true;
+
+        failureReason = "path_unreachable";
+        return false;
+    }
+
+    public TileDto? NextScheduleStepFrom(TileDto currentTile)
+    {
+        TrimCurrentTileFromPath(currentTile);
+        if (_schedulePath is not { Count: > 0 })
+            return null;
+
+        var next = _schedulePath.Pop();
+        return new TileDto(next.X, next.Y);
+    }
+
+    private void TrimCurrentTileFromPath(TileDto currentTile)
+    {
+        while (_schedulePath is { Count: > 0 } &&
+               _schedulePath.Peek().X == currentTile.X &&
+               _schedulePath.Peek().Y == currentTile.Y)
+        {
+            _schedulePath.Pop();
+        }
+    }
+
     public TaskStatusData ToStatusData()
         => new(
             CommandId,
@@ -576,7 +750,7 @@ public sealed class BridgeMoveCommand
             Status,
             _startedAtUtc,
             (long)(DateTime.UtcNow - (_startedAtUtc ?? _createdAtUtc)).TotalMilliseconds,
-            Status == "completed" ? 1.0 : Status == "running" ? 0.5 : 0,
+            Status == "completed" ? 1.0 : Status == "running" ? Math.Min(0.9, 0.1 + (_stepsTaken * 0.2)) : 0,
             BlockedReason,
             ErrorCode);
 }

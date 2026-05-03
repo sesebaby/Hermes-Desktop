@@ -32,7 +32,8 @@ public sealed class StardewCommandService : IGameCommandService
             new StardewMoveTarget(
                 action.Target.LocationName,
                 new StardewTile(action.Target.Tile.X, action.Target.Tile.Y)),
-            action.Reason);
+            action.Reason,
+            ReadOptionalInt(action.Payload, "facingDirection"));
         var envelope = new StardewBridgeEnvelope<StardewMoveRequest>(
             requestId,
             action.TraceId,
@@ -178,6 +179,14 @@ public sealed class StardewCommandService : IGameCommandService
         => !string.IsNullOrWhiteSpace(action.BodyBinding?.TargetEntityId)
             ? action.BodyBinding.TargetEntityId!
             : action.NpcId;
+
+    private static int? ReadOptionalInt(System.Text.Json.Nodes.JsonObject? payload, string propertyName)
+    {
+        if (payload is null || !payload.TryGetPropertyValue(propertyName, out var node) || node is null)
+            return null;
+
+        return int.TryParse(node.ToString(), out var value) ? value : null;
+    }
 
     private static GameCommandStatus ToCommandStatus(StardewBridgeResponse<StardewTaskStatusData> response, string fallbackCommandId)
     {

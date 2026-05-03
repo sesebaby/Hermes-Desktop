@@ -88,7 +88,7 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_move";
 
-    public string Description => "Ask this NPC to move to a Stardew tile. The runtime binds npcId, saveId, traceId, and idempotency internally.";
+    public string Description => "Ask this NPC to move to one of the current observed moveCandidate or placeCandidate facts. Treat placeCandidate as a schedule-style destination: locationName, x, y, reason, and optional facingDirection come from the latest observation; do not invent coordinates. The runtime binds npcId, saveId, traceId, and idempotency internally.";
 
     public Type ParametersType => typeof(StardewMoveToolParameters);
 
@@ -100,6 +100,10 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
         if (string.IsNullOrWhiteSpace(p.LocationName))
             return ToolResult.Fail("locationName is required.");
 
+        var payload = new JsonObject();
+        if (p.FacingDirection.HasValue)
+            payload["facingDirection"] = p.FacingDirection.Value;
+
         var action = new GameAction(
             _descriptor.NpcId,
             _descriptor.GameId,
@@ -108,6 +112,7 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
             _idempotencyKeyFactory(),
             new GameActionTarget("tile", p.LocationName, new GameTile(p.X, p.Y)),
             p.Reason,
+            payload,
             BodyBinding: _descriptor.EffectiveBodyBinding);
 
         var preparedAction = await _runtimeActions.TryBeginAsync(action, ct);
@@ -567,6 +572,8 @@ public sealed class StardewMoveToolParameters
     public int Y { get; init; }
 
     public string? Reason { get; init; }
+
+    public int? FacingDirection { get; init; }
 }
 
 public sealed class StardewSpeakToolParameters
@@ -625,9 +632,10 @@ internal static class StardewNpcToolSchemas
             new Dictionary<string, object>
             {
                 ["locationName"] = new { type = "string", description = "Stardew location name, for example Town." },
-                ["x"] = new { type = "integer", description = "Target tile X coordinate." },
-                ["y"] = new { type = "integer", description = "Target tile Y coordinate." },
-                ["reason"] = new { type = "string", description = "Short reason for the move." }
+                ["x"] = new { type = "integer", description = "Target tile X coordinate from a current moveCandidate or placeCandidate fact." },
+                ["y"] = new { type = "integer", description = "Target tile Y coordinate from a current moveCandidate or placeCandidate fact." },
+                ["reason"] = new { type = "string", description = "Short reason copied from the current moveCandidate or placeCandidate fact." },
+                ["facingDirection"] = new { type = "integer", description = "Optional Stardew facing direction copied from a schedule-style placeCandidate fact when present." }
             },
             ["locationName", "x", "y"]);
 

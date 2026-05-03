@@ -271,6 +271,8 @@ public sealed class BridgeHttpHost
         var isInDialogue = Game1.activeClickableMenu is DialogueBox dialogueBox &&
                            string.Equals(dialogueBox.characterDialogue?.speaker?.Name ?? Game1.currentSpeaker?.Name, npc.Name, StringComparison.OrdinalIgnoreCase);
         var blockedReason = BuildBlockedReason();
+        var moveCandidates = BuildMoveCandidates(npc, blockedReason);
+        var placeCandidates = BuildPlaceCandidates(npc, blockedReason, moveCandidates);
         var data = new NpcStatusData(
             npc.Name.ToLowerInvariant(),
             npc.Name,
@@ -282,7 +284,9 @@ public sealed class BridgeHttpHost
             blockedReason is null,
             blockedReason,
             null,
-            null);
+            null,
+            moveCandidates,
+            placeCandidates);
 
         return new BridgeResponse<NpcStatusData>(
             true,
@@ -306,6 +310,218 @@ public sealed class BridgeHttpHost
             return "menu_open";
         return null;
     }
+
+    private static IReadOnlyList<MoveCandidateData> BuildMoveCandidates(NPC npc, string? blockedReason)
+    {
+        if (!string.IsNullOrWhiteSpace(blockedReason) || npc.currentLocation is null)
+            return Array.Empty<MoveCandidateData>();
+
+        var location = npc.currentLocation;
+        var locationName = location.NameOrUniqueName ?? location.Name;
+        var currentX = (int)npc.Tile.X;
+        var currentY = (int)npc.Tile.Y;
+        var deltas = new (int X, int Y)[]
+        {
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1),
+            (1, 1),
+            (-1, 1),
+            (1, -1),
+            (-1, -1),
+            (2, 0),
+            (-2, 0),
+            (0, 2),
+            (0, -2)
+        };
+
+        return deltas
+            .Select(delta => new TileDto(currentX + delta.X, currentY + delta.Y))
+            .Where(tile => IsSafeMoveCandidate(location, tile, currentX, currentY))
+            .Take(3)
+            .Select(tile => new MoveCandidateData(locationName, tile, "same_location_safe_reposition"))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<PlaceCandidateData> BuildPlaceCandidates(
+        NPC npc,
+        string? blockedReason,
+        IReadOnlyList<MoveCandidateData> moveCandidates)
+    {
+        if (!string.IsNullOrWhiteSpace(blockedReason) || npc.currentLocation is null)
+            return Array.Empty<PlaceCandidateData>();
+
+        var location = npc.currentLocation;
+        var locationName = location.NameOrUniqueName ?? location.Name;
+        var candidates = new List<PlaceCandidateData>();
+        foreach (var definition in BuildPlaceCandidateDefinitions(locationName, npc.Name))
+        {
+            if (!IsSafeMoveCandidate(location, definition.Tile, int.MinValue, int.MinValue))
+                continue;
+
+            candidates.Add(new PlaceCandidateData(
+                definition.Label,
+                locationName,
+                definition.Tile,
+                definition.Tags,
+                definition.Reason,
+                definition.FacingDirection,
+                definition.EndBehavior));
+            if (candidates.Count >= 3)
+                return candidates;
+        }
+
+        foreach (var move in moveCandidates)
+        {
+            if (candidates.Any(candidate => candidate.Tile.X == move.Tile.X && candidate.Tile.Y == move.Tile.Y))
+                continue;
+
+            candidates.Add(new PlaceCandidateData(
+                BuildLocalCandidateLabel(locationName, npc.Name),
+                move.LocationName,
+                move.Tile,
+                new[] { "nearby", "safe", "current-location" },
+                "nearby safe spot that can start a self-directed move",
+                null,
+                null));
+            if (candidates.Count >= 3)
+                break;
+        }
+
+        return candidates.ToArray();
+    }
+
+    private static IEnumerable<PlaceCandidateDefinition> BuildPlaceCandidateDefinitions(string locationName, string npcName)
+    {
+        if (string.Equals(locationName, "HaleyHouse", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return new PlaceCandidateDefinition(
+                "Bedroom mirror",
+                new TileDto(6, 4),
+                new[] { "home", "photogenic", "Haley" },
+                "check her look before deciding whether to go out",
+                2,
+                "Haley_Mirror");
+            yield return new PlaceCandidateDefinition(
+                "Living room",
+                new TileDto(10, 12),
+                new[] { "home", "social" },
+                "see what is happening downstairs",
+                2,
+                null);
+            yield return new PlaceCandidateDefinition(
+                "Front door",
+                new TileDto(15, 8),
+                new[] { "transition", "outdoor" },
+                "consider stepping outside",
+                2,
+                null);
+            yield break;
+        }
+
+        if (string.Equals(locationName, "Town", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return new PlaceCandidateDefinition(
+                "Town fountain",
+                new TileDto(47, 56),
+                new[] { "public", "photogenic", "social" },
+                "stand somewhere bright and visible in town",
+                2,
+                null);
+            yield return new PlaceCandidateDefinition(
+                "Town square",
+                new TileDto(52, 68),
+                new[] { "public", "social" },
+                "notice who is passing through town",
+                2,
+                null);
+            yield return new PlaceCandidateDefinition(
+                "Clinic path",
+                new TileDto(30, 55),
+                new[] { "public", "errands" },
+                "walk near the town services without committing to a visit",
+                2,
+                null);
+            yield break;
+        }
+
+        if (string.Equals(locationName, "Beach", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return new PlaceCandidateDefinition(
+                "Shore photo spot",
+                new TileDto(32, 34),
+                new[] { "outdoor", "photogenic", "water" },
+                "look for good light near the water",
+                2,
+                null);
+            yield return new PlaceCandidateDefinition(
+                "Beach bridge",
+                new TileDto(55, 14),
+                new[] { "outdoor", "landmark" },
+                "check the beach crossing and horizon",
+                2,
+                null);
+            yield break;
+        }
+
+        if (string.Equals(locationName, "Forest", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return new PlaceCandidateDefinition(
+                "Forest path",
+                new TileDto(34, 48),
+                new[] { "outdoor", "quiet" },
+                "walk somewhere quieter and greener",
+                2,
+                null);
+            yield break;
+        }
+
+        if (string.Equals(locationName, "Mountain", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return new PlaceCandidateDefinition(
+                "Lake overlook",
+                new TileDto(32, 20),
+                new[] { "outdoor", "water", "photogenic" },
+                "look toward the mountain lake",
+                2,
+                null);
+            yield break;
+        }
+
+        yield return new PlaceCandidateDefinition(
+            $"{npcName} nearby spot",
+            new TileDto(-1, -1),
+            new[] { "nearby", "current-location" },
+            "fallback nearby place",
+            null,
+            null);
+    }
+
+    private static bool IsSafeMoveCandidate(GameLocation location, TileDto tile, int currentX, int currentY)
+    {
+        if (tile.X == currentX && tile.Y == currentY)
+            return false;
+
+        if (tile.X < 0 || tile.Y < 0)
+            return false;
+
+        var vector = new Microsoft.Xna.Framework.Vector2(tile.X, tile.Y);
+        return location.isTileLocationOpen(vector) && location.CanSpawnCharacterHere(vector);
+    }
+
+    private static string BuildLocalCandidateLabel(string locationName, string npcName)
+        => string.Equals(npcName, "Haley", StringComparison.OrdinalIgnoreCase)
+            ? $"{locationName} photo angle"
+            : $"{locationName} nearby spot";
+
+    private sealed record PlaceCandidateDefinition(
+        string Label,
+        TileDto Tile,
+        IReadOnlyList<string> Tags,
+        string Reason,
+        int? FacingDirection,
+        string? EndBehavior);
 
     private static IReadOnlyList<string> BuildWorldFacts()
     {

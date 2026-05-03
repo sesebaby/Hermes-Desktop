@@ -30,13 +30,28 @@ public sealed record StardewTile(
     [property: JsonPropertyName("x")] int X,
     [property: JsonPropertyName("y")] int Y);
 
+public sealed record StardewMoveCandidateData(
+    [property: JsonPropertyName("locationName")] string LocationName,
+    [property: JsonPropertyName("tile")] StardewTile Tile,
+    [property: JsonPropertyName("reason")] string Reason);
+
+public sealed record StardewPlaceCandidateData(
+    [property: JsonPropertyName("label")] string Label,
+    [property: JsonPropertyName("locationName")] string LocationName,
+    [property: JsonPropertyName("tile")] StardewTile Tile,
+    [property: JsonPropertyName("tags")] IReadOnlyList<string> Tags,
+    [property: JsonPropertyName("reason")] string Reason,
+    [property: JsonPropertyName("facingDirection")] int? FacingDirection = null,
+    [property: JsonPropertyName("endBehavior")] string? EndBehavior = null);
+
 public sealed record StardewMoveTarget(
     [property: JsonPropertyName("locationName")] string LocationName,
     [property: JsonPropertyName("tile")] StardewTile Tile);
 
 public sealed record StardewMoveRequest(
     [property: JsonPropertyName("target")] StardewMoveTarget Target,
-    [property: JsonPropertyName("reason")] string? Reason);
+    [property: JsonPropertyName("reason")] string? Reason,
+    [property: JsonPropertyName("facingDirection")] int? FacingDirection = null);
 
 public sealed record StardewMoveAcceptedData(
     [property: JsonPropertyName("accepted")] bool Accepted,
@@ -106,7 +121,9 @@ public sealed record StardewNpcStatusData(
     [property: JsonPropertyName("isAvailableForControl")] bool IsAvailableForControl,
     [property: JsonPropertyName("blockedReason")] string? BlockedReason,
     [property: JsonPropertyName("currentCommandId")] string? CurrentCommandId,
-    [property: JsonPropertyName("lastTraceId")] string? LastTraceId);
+    [property: JsonPropertyName("lastTraceId")] string? LastTraceId,
+    [property: JsonPropertyName("moveCandidates")] IReadOnlyList<StardewMoveCandidateData>? MoveCandidates = null,
+    [property: JsonPropertyName("placeCandidates")] IReadOnlyList<StardewPlaceCandidateData>? PlaceCandidates = null);
 
 public sealed record StardewWorldEntityData(
     [property: JsonPropertyName("npcId")] string NpcId,

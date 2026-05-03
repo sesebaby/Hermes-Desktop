@@ -121,7 +121,10 @@ public sealed class StardewAutonomyTickDebugServiceTests
             message.Contains("## Stardew Required Skills", StringComparison.Ordinal) &&
             message.Contains("stardew-core test guidance", StringComparison.Ordinal) &&
             message.Contains("stardew-social test guidance", StringComparison.Ordinal) &&
-            message.Contains("stardew-navigation test guidance", StringComparison.Ordinal)));
+            message.Contains("stardew-navigation test guidance", StringComparison.Ordinal) &&
+            message.Contains("stardew-world test guidance", StringComparison.Ordinal) &&
+            message.Contains("references/stardew-places.md", StringComparison.Ordinal) &&
+            !message.Contains("full stardew places encyclopedia fixture", StringComparison.Ordinal)));
 
         var runtimeSoulPath = Path.Combine(
             _tempDir,
@@ -453,6 +456,169 @@ public sealed class StardewAutonomyTickDebugServiceTests
         Assert.AreEqual(14L, events.SeenCursor?.Sequence);
     }
 
+    [TestMethod]
+    public async Task RunOneTickAsync_WithObservedMoveCandidateExecutesStardewMoveTool()
+    {
+        var commands = new FakeCommandService();
+        var chatClient = new ToolSnapshotChatClient(
+            new ChatResponse
+            {
+                FinishReason = "tool_calls",
+                ToolCalls =
+                [
+                    new ToolCall
+                    {
+                        Id = "call-move",
+                        Name = "stardew_move",
+                        Arguments = """{"locationName":"Town","x":43,"y":17,"reason":"same_location_safe_reposition"}"""
+                    }
+                ]
+            },
+            new ChatResponse { Content = "Moved toward the safe nearby tile.", FinishReason = "stop" });
+        var queries = new FakeQueryService(new GameObservation(
+            "haley",
+            "stardew-valley",
+            DateTime.UtcNow,
+            "Haley is idle in town.",
+            [
+                "location=Town",
+                "tile=42,17",
+                "isAvailableForControl=true",
+                "moveCandidate[0]=locationName=Town,x=43,y=17,reason=same_location_safe_reposition"
+            ]));
+        var service = new StardewAutonomyTickDebugService(
+            new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+                new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+                DateTimeOffset.UtcNow,
+                1234,
+                "save-42")),
+            _ => new FakeGameAdapter(commands, queries, new FakeEventSource([])),
+            chatClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            new NpcRuntimeSupervisor(),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            CreatePromptSupplementBuilder(),
+            discoveredToolProvider: null,
+            worldCoordination: CreateWorldCoordination(),
+            includeMemory: true,
+            includeUser: true,
+            maxToolIterations: 2,
+            runtimeRoot: _tempDir);
+
+        var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.FailureReason);
+        Assert.AreEqual("Moved toward the safe nearby tile.", result.DecisionResponse);
+        Assert.IsTrue(
+            chatClient.UserMessages.Any(message => message.Contains("moveCandidate[0]=locationName=Town,x=43,y=17", StringComparison.Ordinal)),
+            "The model-facing autonomy prompt must expose the current candidate before the tool call happens.");
+        Assert.IsNotNull(commands.LastAction);
+        Assert.AreEqual(GameActionType.Move, commands.LastAction.Type);
+        Assert.AreEqual("Town", commands.LastAction.Target.LocationName);
+        Assert.AreEqual(43, commands.LastAction.Target.Tile?.X);
+        Assert.AreEqual(17, commands.LastAction.Target.Tile?.Y);
+        Assert.AreEqual("same_location_safe_reposition", commands.LastAction.Reason);
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithPlaceCandidateButNoMoveToolCall_DoesNotMove()
+    {
+        var commands = new FakeCommandService();
+        var chatClient = new ToolSnapshotChatClient("I'll look around first.");
+        var queries = new FakeQueryService(new GameObservation(
+            "haley",
+            "stardew-valley",
+            DateTime.UtcNow,
+            "Haley is in her room.",
+            [
+                "location=HaleyHouse",
+                "tile=8,7",
+                "isAvailableForControl=true",
+                "placeCandidate[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out"
+            ]));
+        var service = new StardewAutonomyTickDebugService(
+            new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+                new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+                DateTimeOffset.UtcNow,
+                1234,
+                "save-42")),
+            _ => new FakeGameAdapter(commands, queries, new FakeEventSource([])),
+            chatClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            new NpcRuntimeSupervisor(),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            CreatePromptSupplementBuilder(),
+            discoveredToolProvider: null,
+            worldCoordination: CreateWorldCoordination(),
+            includeMemory: true,
+            includeUser: true,
+            maxToolIterations: 2,
+            runtimeRoot: _tempDir);
+
+        var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.FailureReason);
+        Assert.AreEqual("I'll look around first.", result.DecisionResponse);
+        Assert.IsTrue(
+            chatClient.UserMessages.Any(message => message.Contains("placeCandidate[0]=label=Bedroom mirror", StringComparison.Ordinal)),
+            "The candidate should be visible to the model, not converted into a host-side movement.");
+        Assert.IsNull(commands.LastAction, "A placeCandidate fact must not force host-side movement without an agent tool call.");
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_NonPrivateChatEventDoesNotDirectlyDriveMove()
+    {
+        var commands = new FakeCommandService();
+        var chatClient = new ToolSnapshotChatClient("Noted.");
+        var queries = new FakeQueryService(new GameObservation(
+            "haley",
+            "stardew-valley",
+            DateTime.UtcNow,
+            "Haley is idle in town.",
+            [
+                "location=Town",
+                "tile=42,17",
+                "isAvailableForControl=true",
+                "placeCandidate[0]=label=Town fountain,locationName=Town,x=42,y=20,tags=public|photogenic,reason=stand somewhere pretty"
+            ]));
+        var events = new FakeEventSource([
+            new GameEventRecord("evt-1", "player_nearby", "haley", DateTime.UtcNow, "The player walked near Haley.")
+        ]);
+        var service = new StardewAutonomyTickDebugService(
+            new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+                new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+                DateTimeOffset.UtcNow,
+                1234,
+                "save-42")),
+            _ => new FakeGameAdapter(commands, queries, events),
+            chatClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            new NpcRuntimeSupervisor(),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            CreatePromptSupplementBuilder(),
+            discoveredToolProvider: null,
+            worldCoordination: CreateWorldCoordination(),
+            includeMemory: true,
+            includeUser: true,
+            maxToolIterations: 2,
+            runtimeRoot: _tempDir);
+
+        var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.FailureReason);
+        Assert.IsTrue(
+            chatClient.UserMessages.Any(message =>
+                message.Contains("[event] evt-1", StringComparison.Ordinal) &&
+                message.Contains("Events are context only", StringComparison.Ordinal)));
+        Assert.IsNull(commands.LastAction, "Non-private-chat events must not directly drive host-side movement.");
+    }
+
     private void CreatePack(string npcId, string displayName)
     {
         var root = Path.Combine(_packRoot, npcId, "default");
@@ -463,7 +629,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
         File.WriteAllText(Path.Combine(root, "boundaries.md"), $"{displayName} boundaries");
         File.WriteAllText(
             Path.Combine(root, "skills.json"),
-            """{"required":["stardew-core","stardew-social","stardew-navigation"],"optional":[]}""");
+            """{"required":["stardew-core","stardew-social","stardew-navigation","stardew-world"],"optional":[]}""");
 
         var manifest = new NpcPackManifest
         {
@@ -501,6 +667,14 @@ public sealed class StardewAutonomyTickDebugServiceTests
         File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-core.md"), "stardew-core test guidance");
         File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-social.md"), "stardew-social test guidance");
         File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-navigation.md"), "stardew-navigation test guidance");
+        var stardewWorldRoot = Path.Combine(gamingSkillRoot, "stardew-world");
+        Directory.CreateDirectory(Path.Combine(stardewWorldRoot, "references"));
+        File.WriteAllText(
+            Path.Combine(stardewWorldRoot, "SKILL.md"),
+            "stardew-world test guidance; detailed places live in references/stardew-places.md");
+        File.WriteAllText(
+            Path.Combine(stardewWorldRoot, "references", "stardew-places.md"),
+            "full stardew places encyclopedia fixture");
     }
 
     private sealed class FakeDiscovery : IStardewBridgeDiscovery
@@ -594,8 +768,13 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
     private sealed class FakeCommandService : IGameCommandService
     {
+        public GameAction? LastAction { get; private set; }
+
         public Task<GameCommandResult> SubmitAsync(GameAction action, CancellationToken ct)
-            => Task.FromResult(new GameCommandResult(true, "cmd-1", StardewCommandStatuses.Completed, null, action.TraceId));
+        {
+            LastAction = action;
+            return Task.FromResult(new GameCommandResult(true, "cmd-1", StardewCommandStatuses.Completed, null, action.TraceId));
+        }
 
         public Task<GameCommandStatus> GetStatusAsync(string commandId, CancellationToken ct)
             => Task.FromResult(new GameCommandStatus(commandId, "Penny", "debug", StardewCommandStatuses.Completed, 1, null, null));
@@ -607,15 +786,25 @@ public sealed class StardewAutonomyTickDebugServiceTests
     private sealed class ToolSnapshotChatClient : IChatClient
     {
         private readonly string _response;
+        private readonly Queue<ChatResponse> _responses;
 
         public ToolSnapshotChatClient(string response)
         {
             _response = response;
+            _responses = new Queue<ChatResponse>();
+        }
+
+        public ToolSnapshotChatClient(params ChatResponse[] responses)
+        {
+            _response = responses.LastOrDefault()?.Content ?? "";
+            _responses = new Queue<ChatResponse>(responses);
         }
 
         public List<string> ToolNames { get; } = new();
 
         public List<string> SystemMessages { get; } = new();
+
+        public List<string> UserMessages { get; } = new();
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
             => Task.FromResult(_response);
@@ -631,6 +820,13 @@ public sealed class StardewAutonomyTickDebugServiceTests
             SystemMessages.AddRange(messages
                 .Where(message => string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase))
                 .Select(message => message.Content));
+            UserMessages.Clear();
+            UserMessages.AddRange(messages
+                .Where(message => string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase))
+                .Select(message => message.Content));
+
+            if (_responses.Count > 0)
+                return Task.FromResult(_responses.Dequeue());
 
             return Task.FromResult(new ChatResponse
             {

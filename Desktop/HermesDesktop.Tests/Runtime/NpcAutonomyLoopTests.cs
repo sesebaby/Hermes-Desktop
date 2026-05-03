@@ -115,6 +115,52 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
+    public async Task RunOneTickAsync_DecisionMessageDoesNotReuseHistoricalMoveCandidates()
+    {
+        var descriptor = CreateDescriptor("haley");
+        var factStore = new NpcObservationFactStore();
+        var agent = new FakeAgent(() => { });
+        var loop = new NpcAutonomyLoop(
+            new FakeGameAdapter(
+                new CountingCommandService(),
+                new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                new FakeEventSource([])),
+            factStore,
+            agent);
+
+        await loop.RunOneTickAsync(
+            descriptor,
+            new GameObservation(
+                "haley",
+                "stardew-valley",
+                new DateTime(2026, 4, 30, 10, 0, 0, DateTimeKind.Utc),
+                "Haley can step east.",
+                ["location=HaleyHouse", "moveCandidate[0]=locationName=HaleyHouse,x=9,y=7,reason=same_location_safe_reposition"]),
+            new GameEventBatch([], new GameEventCursor()),
+            CancellationToken.None);
+
+        await loop.RunOneTickAsync(
+            descriptor,
+            new GameObservation(
+                "haley",
+                "stardew-valley",
+                new DateTime(2026, 4, 30, 10, 1, 0, DateTimeKind.Utc),
+                "Haley can step south.",
+                ["location=HaleyHouse", "moveCandidate[0]=locationName=HaleyHouse,x=8,y=8,reason=same_location_safe_reposition"]),
+            new GameEventBatch([], new GameEventCursor()),
+            CancellationToken.None);
+
+        Assert.AreEqual(2, agent.Messages.Count);
+        StringAssert.Contains(agent.Messages[1], "x=8,y=8");
+        Assert.IsFalse(
+            agent.Messages[1].Contains("x=9,y=7", StringComparison.Ordinal),
+            "Old move candidates must remain in persisted debug facts but must not re-enter the current decision prompt.");
+        Assert.IsTrue(
+            factStore.Snapshot(descriptor).Any(fact => fact.Facts.Any(value => value.Contains("x=9,y=7", StringComparison.Ordinal))),
+            "The store can retain historical observations for diagnostics; only the live decision prompt must be current-only.");
+    }
+
+    [TestMethod]
     public async Task RunOneTickAsync_WithRuntimeInstance_WritesActivityLogAndUpdatesTrace()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-trace-tests", Guid.NewGuid().ToString("N"));
@@ -327,11 +373,14 @@ public class NpcAutonomyLoopTests
 
         public string? LastMessage { get; private set; }
 
+        public List<string> Messages { get; } = new();
+
         public Task<string> ChatAsync(string message, Hermes.Agent.Core.Session session, CancellationToken ct)
         {
             _onChat();
             ChatCalls++;
             LastMessage = message;
+            Messages.Add(message);
             return Task.FromResult(_response);
         }
 

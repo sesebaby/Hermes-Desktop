@@ -77,6 +77,10 @@ public sealed class NpcAutonomyLoop
         ArgumentNullException.ThrowIfNull(eventBatch);
 
         var traceId = _traceIdFactory();
+        var currentFacts = new List<NpcObservationFact>
+        {
+            ToObservationFact(descriptor, observation)
+        };
         _factStore.RecordObservation(descriptor, observation);
 
         var eventFacts = 0;
@@ -86,15 +90,15 @@ public sealed class NpcAutonomyLoop
                 continue;
 
             _factStore.RecordEvent(descriptor, record);
+            currentFacts.Add(ToEventFact(descriptor, record));
             eventFacts++;
         }
 
         string? decisionResponse = null;
         if (_agent is not null)
         {
-            var facts = _factStore.Snapshot(descriptor);
             decisionResponse = await _agent.ChatAsync(
-                BuildDecisionMessage(descriptor, facts),
+                BuildDecisionMessage(descriptor, currentFacts),
                 new Hermes.Agent.Core.Session
                 {
                     Id = descriptor.SessionId,
@@ -119,6 +123,30 @@ public sealed class NpcAutonomyLoop
                string.Equals(body.TargetEntityId, record.NpcId, StringComparison.OrdinalIgnoreCase) ||
                string.Equals(body.SmapiName, record.NpcId, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static NpcObservationFact ToObservationFact(NpcRuntimeDescriptor descriptor, GameObservation observation)
+        => new(
+            descriptor.NpcId,
+            descriptor.GameId,
+            descriptor.SaveId,
+            descriptor.ProfileId,
+            "observation",
+            null,
+            observation.TimestampUtc,
+            observation.Summary,
+            observation.Facts.ToArray());
+
+    private static NpcObservationFact ToEventFact(NpcRuntimeDescriptor descriptor, GameEventRecord record)
+        => new(
+            descriptor.NpcId,
+            descriptor.GameId,
+            descriptor.SaveId,
+            descriptor.ProfileId,
+            "event",
+            record.EventId,
+            record.TimestampUtc,
+            record.Summary,
+            [record.EventType]);
 
     private static string BuildDecisionMessage(NpcRuntimeDescriptor descriptor, IReadOnlyList<NpcObservationFact> facts)
     {
