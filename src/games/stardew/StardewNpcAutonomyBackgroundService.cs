@@ -372,12 +372,6 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 return;
             }
 
-            if (TryGetPromptResourcePauseReason(tracker, out var promptResourcePauseReason))
-            {
-                await PauseTrackerAsync(tracker, deliveredCursor, promptResourcePauseReason, dispatch.BridgeKey, null, ct);
-                return;
-            }
-
             if (controller.NextWakeAtUtc.HasValue && DateTime.UtcNow < controller.NextWakeAtUtc.Value)
             {
                 await PauseTrackerAsync(tracker, deliveredCursor, "restart_cooldown", dispatch.BridgeKey, controller.NextWakeAtUtc, ct);
@@ -496,29 +490,6 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         tracker.Instance.MarkAutonomyPaused(reason, bridgeKey, tracker.Instance.Snapshot().CurrentAutonomyHandleGeneration);
         await tracker.Driver.SetControllerStateAsync(deliveredCursor, nextWakeAtUtc, ct);
     }
-
-    private static bool TryGetPromptResourcePauseReason(NpcAutonomyTracker tracker, out string reason)
-    {
-        var snapshot = tracker.Instance.Snapshot();
-        if (IsPromptResourcePauseReason(snapshot.PauseReason))
-        {
-            reason = snapshot.PauseReason!;
-            return true;
-        }
-
-        if (IsPromptResourcePauseReason(snapshot.LastError))
-        {
-            reason = snapshot.LastError!;
-            return true;
-        }
-
-        reason = string.Empty;
-        return false;
-    }
-
-    private static bool IsPromptResourcePauseReason(string? reason)
-        => !string.IsNullOrWhiteSpace(reason) &&
-           reason.StartsWith(StardewNpcAutonomyPromptResourceException.MessagePrefix, StringComparison.Ordinal);
 
     private static string BuildBridgeKey(StardewBridgeDiscoverySnapshot snapshot, string saveId)
         => $"{snapshot.Options.Host}:{snapshot.Options.Port}:{snapshot.StartedAtUtc:O}:{saveId}";

@@ -18,10 +18,10 @@ public sealed class StardewManualActionServiceTests
               "port": 8746,
               "bridgeToken": "token-1",
               "startedAtUtc": "2026-04-29T08:00:00Z",
-              "processId": 123,
+              "processId": %PROCESS_ID%,
               "saveId": "farm-main"
             }
-            """);
+            """.Replace("%PROCESS_ID%", Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture)));
 
         var discovery = new FileStardewBridgeDiscovery(path);
 
@@ -32,9 +32,33 @@ public sealed class StardewManualActionServiceTests
         Assert.AreEqual("127.0.0.1", snapshot.Options.Host);
         Assert.AreEqual(8746, snapshot.Options.Port);
         Assert.AreEqual("token-1", snapshot.Options.BridgeToken);
-        Assert.AreEqual(123, snapshot.ProcessId);
+        Assert.AreEqual(Environment.ProcessId, snapshot.ProcessId);
         Assert.AreEqual("farm-main", snapshot.SaveId);
         Assert.IsTrue(snapshot.Options.IsLoopbackOnly());
+    }
+
+    [TestMethod]
+    public void TryReadLatest_WhenDiscoveryProcessIdIsDead_ReturnsStaleDiscovery()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"stardew-bridge-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, """
+            {
+              "host": "127.0.0.1",
+              "port": 8746,
+              "bridgeToken": "token-1",
+              "startedAtUtc": "2026-04-29T08:00:00Z",
+              "processId": 2147483647,
+              "saveId": "farm-main"
+            }
+            """);
+
+        var discovery = new FileStardewBridgeDiscovery(path);
+
+        var ok = discovery.TryReadLatest(out var snapshot, out var failure);
+
+        Assert.IsFalse(ok);
+        Assert.IsNull(snapshot);
+        Assert.AreEqual(StardewBridgeErrorCodes.BridgeStaleDiscovery, failure);
     }
 
     [TestMethod]

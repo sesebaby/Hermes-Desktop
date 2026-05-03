@@ -1,5 +1,6 @@
 namespace Hermes.Agent.Games.Stardew;
 
+using System.Diagnostics;
 using System.Text.Json;
 using Hermes.Agent.Game;
 
@@ -81,6 +82,12 @@ public sealed class FileStardewBridgeDiscovery : IStardewBridgeDiscovery
             return false;
         }
 
+        if (!IsProcessAlive(document.ProcessId))
+        {
+            failureReason = StardewBridgeErrorCodes.BridgeStaleDiscovery;
+            return false;
+        }
+
         snapshot = new StardewBridgeDiscoverySnapshot(
             options,
             document.StartedAtUtc ?? File.GetLastWriteTimeUtc(DiscoveryFilePath),
@@ -96,6 +103,25 @@ public sealed class FileStardewBridgeDiscovery : IStardewBridgeDiscovery
         => Environment.GetEnvironmentVariable("HERMES_HOME") is { Length: > 0 } configuredHome
             ? configuredHome
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "hermes");
+
+    private static bool IsProcessAlive(int? processId)
+    {
+        if (!processId.HasValue)
+            return true;
+
+        if (processId.Value <= 0)
+            return false;
+
+        try
+        {
+            using var process = Process.GetProcessById(processId.Value);
+            return !process.HasExited;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private sealed record StardewBridgeDiscoveryDocument(
         string Host,

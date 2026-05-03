@@ -7,7 +7,7 @@ using Hermes.Agent.Runtime;
 
 public interface IStardewGamingSkillRootProvider
 {
-    string GetRequiredGamingSkillRoot();
+    IReadOnlyList<string> GetRequiredGamingSkillRoots();
 }
 
 public sealed class FixedStardewGamingSkillRootProvider : IStardewGamingSkillRootProvider
@@ -19,12 +19,34 @@ public sealed class FixedStardewGamingSkillRootProvider : IStardewGamingSkillRoo
         _gamingSkillRoot = gamingSkillRoot;
     }
 
-    public string GetRequiredGamingSkillRoot()
+    public IReadOnlyList<string> GetRequiredGamingSkillRoots()
     {
         if (string.IsNullOrWhiteSpace(_gamingSkillRoot))
             throw new InvalidOperationException("Stardew gaming skill root is required.");
 
-        return Path.GetFullPath(_gamingSkillRoot);
+        return [Path.GetFullPath(_gamingSkillRoot)];
+    }
+}
+
+public sealed class CompositeStardewGamingSkillRootProvider : IStardewGamingSkillRootProvider
+{
+    private readonly string[] _gamingSkillRoots;
+
+    public CompositeStardewGamingSkillRootProvider(params string?[] gamingSkillRoots)
+    {
+        _gamingSkillRoots = gamingSkillRoots
+            .Where(root => !string.IsNullOrWhiteSpace(root))
+            .Select(root => Path.GetFullPath(root!))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public IReadOnlyList<string> GetRequiredGamingSkillRoots()
+    {
+        if (_gamingSkillRoots.Length == 0)
+            throw new InvalidOperationException("At least one Stardew gaming skill root is required.");
+
+        return _gamingSkillRoots;
     }
 }
 
@@ -58,10 +80,10 @@ public sealed class StardewNpcAutonomyPromptSupplementBuilder
         AppendSection(builder, "Persona Boundaries", boundaries);
 
         builder.AppendLine("## Stardew Required Skills");
-        var skillRoot = _gamingSkillRootProvider.GetRequiredGamingSkillRoot();
+        var skillRoots = _gamingSkillRootProvider.GetRequiredGamingSkillRoots();
         foreach (var skillId in requiredSkillIds)
         {
-            var skillPath = ResolveRequiredSkillPath(descriptor, skillRoot, skillId);
+            var skillPath = ResolveRequiredSkillPath(descriptor, skillRoots, skillId);
             builder.AppendLine($"### {skillId}");
             builder.AppendLine(File.ReadAllText(skillPath).Trim());
             builder.AppendLine();
@@ -132,7 +154,10 @@ public sealed class StardewNpcAutonomyPromptSupplementBuilder
         }
     }
 
-    private static string ResolveRequiredSkillPath(NpcRuntimeDescriptor descriptor, string skillRoot, string skillId)
+    private static string ResolveRequiredSkillPath(
+        NpcRuntimeDescriptor descriptor,
+        IReadOnlyList<string> skillRoots,
+        string skillId)
     {
         if (string.IsNullOrWhiteSpace(skillId))
             throw ResourceException(descriptor, "required Stardew skill id cannot be empty.");
@@ -140,16 +165,23 @@ public sealed class StardewNpcAutonomyPromptSupplementBuilder
         if (skillId.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]) >= 0)
             throw ResourceException(descriptor, $"required Stardew skill id '{skillId}' must not contain path separators.");
 
-        var fullRoot = Path.GetFullPath(skillRoot);
-        var path = ResolveInsideRoot(descriptor, fullRoot, $"{skillId}.md", $"required skill '{skillId}'");
-        if (!File.Exists(path))
+        if (skillRoots.Count == 0)
+            throw ResourceException(descriptor, "at least one Stardew gaming skill root is required.");
+
+        var checkedPaths = new List<string>(skillRoots.Count);
+        foreach (var skillRoot in skillRoots)
         {
-            throw ResourceException(
-                descriptor,
-                $"required skill '{skillId}' was not found at '{path}'.");
+            var fullRoot = Path.GetFullPath(skillRoot);
+            var path = ResolveInsideRoot(descriptor, fullRoot, $"{skillId}.md", $"required skill '{skillId}'");
+            checkedPaths.Add(path);
+            if (File.Exists(path))
+                return path;
         }
 
-        return path;
+        var checkedPathList = string.Join("; ", checkedPaths.Select(path => $"'{path}'"));
+        throw ResourceException(
+            descriptor,
+            $"required skill '{skillId}' was not found at any configured Stardew gaming skill root. Checked: {checkedPathList}.");
     }
 
     private static string ResolveInsideRoot(

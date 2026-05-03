@@ -194,6 +194,50 @@ public sealed class StardewAutonomyTickDebugServiceTests
     }
 
     [TestMethod]
+    public async Task RunOneTickAsync_WhenActiveGamingRootOnlyHasDescription_UsesBundledFallbackStardewSkills()
+    {
+        var activeGamingRoot = Path.Combine(_tempDir, "active-skills", "gaming");
+        Directory.CreateDirectory(activeGamingRoot);
+        File.WriteAllText(Path.Combine(activeGamingRoot, "DESCRIPTION.md"), "Gaming skill category description.");
+        var chatClient = new ToolSnapshotChatClient("I will walk somewhere quiet.");
+        var queries = new FakeQueryService(new GameObservation(
+            "haley",
+            "stardew-valley",
+            DateTime.UtcNow,
+            "Haley is near the fountain.",
+            ["location=Town"]));
+        var service = new StardewAutonomyTickDebugService(
+            new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+                new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+                DateTimeOffset.UtcNow,
+                1234,
+                "save-42")),
+            _ => new FakeGameAdapter(new FakeCommandService(), queries, new FakeEventSource([])),
+            chatClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            new NpcRuntimeSupervisor(),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            CreatePromptSupplementBuilder(new CompositeStardewGamingSkillRootProvider(activeGamingRoot, _gamingSkillRoot)),
+            discoveredToolProvider: null,
+            worldCoordination: CreateWorldCoordination(),
+            includeMemory: true,
+            includeUser: true,
+            maxToolIterations: 2,
+            runtimeRoot: _tempDir);
+
+        var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.FailureReason);
+        Assert.IsTrue(chatClient.SystemMessages.Any(message =>
+            message.Contains("## Stardew Required Skills", StringComparison.Ordinal) &&
+            message.Contains("stardew-core test guidance", StringComparison.Ordinal) &&
+            message.Contains("stardew-social test guidance", StringComparison.Ordinal) &&
+            message.Contains("stardew-navigation test guidance", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
     public async Task RunOneTickAsync_MissingRequiredSkillFileFailsWithSkillIdAndPath()
     {
         File.Delete(Path.Combine(_gamingSkillRoot, "stardew-navigation.md"));
@@ -448,8 +492,8 @@ public sealed class StardewAutonomyTickDebugServiceTests
     private static WorldCoordinationService CreateWorldCoordination()
         => new(new ResourceClaimRegistry());
 
-    private StardewNpcAutonomyPromptSupplementBuilder CreatePromptSupplementBuilder()
-        => new(new FixedStardewGamingSkillRootProvider(_gamingSkillRoot));
+    private StardewNpcAutonomyPromptSupplementBuilder CreatePromptSupplementBuilder(IStardewGamingSkillRootProvider? provider = null)
+        => new(provider ?? new FixedStardewGamingSkillRootProvider(_gamingSkillRoot));
 
     private static void CreateGamingSkillFixtures(string gamingSkillRoot)
     {

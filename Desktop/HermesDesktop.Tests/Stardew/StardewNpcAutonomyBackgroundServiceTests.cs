@@ -128,6 +128,39 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
+    public async Task RunOneIterationAsync_WhenPromptResourcePauseBecomesResolvable_ResumesAutonomy()
+    {
+        var missingSkillPath = Path.Combine(_gamingSkillRoot, "stardew-social.md");
+        File.Delete(missingSkillPath);
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("I will walk somewhere quiet.");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        var paused = supervisor.Snapshot().Single();
+        Assert.AreEqual(NpcAutonomyLoopState.Paused, paused.AutonomyLoopState);
+        StringAssert.Contains(paused.PauseReason, "stardew-social");
+        Assert.AreEqual(0, chatClient.CompleteWithToolsCalls);
+
+        File.WriteAllText(missingSkillPath, "stardew-social restored guidance");
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        var resumed = supervisor.Snapshot().Single();
+        Assert.AreEqual(1, chatClient.CompleteWithToolsCalls);
+        Assert.AreEqual(NpcAutonomyLoopState.Running, resumed.AutonomyLoopState);
+        Assert.IsNotNull(resumed.LastAutomaticTickAtUtc);
+    }
+
+    [TestMethod]
     public async Task RunOneIterationAsync_ActivePrivateChatLeasePausesAutonomy()
     {
         var discovery = CreateDiscovery("save-42");

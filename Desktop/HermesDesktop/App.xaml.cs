@@ -385,8 +385,10 @@ public partial class App : Application
         services.AddSingleton(sp => new StardewNpcRuntimeBindingResolver(
             sp.GetRequiredService<INpcPackLoader>(),
             sp.GetRequiredService<IStardewNpcPackRootProvider>()));
-        services.AddSingleton<IStardewGamingSkillRootProvider>(_ => new FixedStardewGamingSkillRootProvider(
-            Path.Combine(skillsDir, "gaming")));
+        services.AddSingleton<IStardewGamingSkillRootProvider>(_ => new CompositeStardewGamingSkillRootProvider(
+            Path.Combine(skillsDir, "gaming"),
+            Path.Combine(AppContext.BaseDirectory, "skills", "gaming"),
+            FindRepoSkillsDir() is { } repoSkillsDir ? Path.Combine(repoSkillsDir, "gaming") : null));
         services.AddSingleton<StardewNpcAutonomyPromptSupplementBuilder>();
         services.AddSingleton<INpcToolSurfaceSnapshotProvider>(sp => new NpcToolSurfaceSnapshotProvider(
             () => sp.GetRequiredService<McpManager>().Tools.Values));
