@@ -89,4 +89,39 @@ public sealed class BridgeMovementPathProbeTests
         Assert.AreEqual("step_can_spawn_false", result.FailureKind);
         Assert.AreEqual("cannot spawn on route step", result.FailureDetail);
     }
+
+    [TestMethod]
+    public void CheckRouteStepSafety_WhenTileIsOpen_DoesNotRequireSpawnAffordance()
+    {
+        var result = BridgeMovementPathProbe.CheckRouteStepSafety(
+            new TileDto(6, 7),
+            isTileLocationOpen: true);
+
+        Assert.IsTrue(
+            result.IsSafe,
+            "Schedule pathfinder already chose route steps; Bridge must not reject them with CanSpawnCharacterHere-only spawn rules.");
+    }
+
+    [TestMethod]
+    public void EnumerateArrivalFallbackCandidates_SearchesBeyondImmediateNeighbors()
+    {
+        var target = new TileDto(10, 12);
+        var candidates = BridgeMovementPathProbe.EnumerateArrivalFallbackCandidates(target, maxRadius: 2)
+            .Select(candidate => candidate.Tile)
+            .ToArray();
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                new TileDto(11, 12),
+                new TileDto(9, 12),
+                new TileDto(10, 13),
+                new TileDto(10, 11)
+            },
+            candidates.Take(4).ToArray(),
+            "Immediate neighbors must keep the historical preference order.");
+        Assert.IsTrue(
+            candidates.Contains(new TileDto(12, 12)) || candidates.Contains(new TileDto(11, 13)),
+            "Blocked furniture anchors such as HaleyHouse living room need a wider reachable fallback search.");
+    }
 }

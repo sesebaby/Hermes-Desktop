@@ -153,7 +153,22 @@ internal static class BridgeMovementPathProbe
         => CheckTileSafety(location, tile, "target");
 
     public static BridgeTileSafetyCheck CheckRouteStepSafety(GameLocation location, TileDto tile)
-        => CheckTileSafety(location, tile, "step");
+    {
+        if (tile.X < 0 || tile.Y < 0)
+            return BridgeTileSafetyCheck.Blocked("step_tile_open_false", "negative_tile");
+
+        return CheckRouteStepSafety(tile, location.isTileLocationOpen(new Vector2(tile.X, tile.Y)));
+    }
+
+    public static BridgeTileSafetyCheck CheckRouteStepSafety(TileDto tile, bool isTileLocationOpen)
+    {
+        if (tile.X < 0 || tile.Y < 0)
+            return BridgeTileSafetyCheck.Blocked("step_tile_open_false", "negative_tile");
+        if (!isTileLocationOpen)
+            return BridgeTileSafetyCheck.Blocked("step_tile_open_false", "tile_location_open_false");
+
+        return BridgeTileSafetyCheck.Safe;
+    }
 
     private static BridgeTileSafetyCheck CheckTileSafety(GameLocation location, TileDto tile, string scope)
     {
@@ -187,26 +202,17 @@ internal static class BridgeMovementPathProbe
         TileDto blockedTarget,
         TileDto currentTile)
     {
-        var candidates = new (int X, int Y, int Direction)[]
-        {
-            (blockedTarget.X + 1, blockedTarget.Y, 3),  // right neighbor, face left toward target
-            (blockedTarget.X - 1, blockedTarget.Y, 1),  // left neighbor, face right toward target
-            (blockedTarget.X, blockedTarget.Y + 1, 0),  // below neighbor, face up toward target
-            (blockedTarget.X, blockedTarget.Y - 1, 2),  // above neighbor, face down toward target
-        };
-
         // Temporarily remove terrain feature at the blocked target tile — oversized features
         // (trees, large bushes) can make adjacent tiles appear blocked when they aren't.
         using var _ = new ScopedTerrainFeatureRemoval(location, blockedTarget);
 
         var passable = new List<(TileDto Tile, int Direction, int Distance)>();
-        foreach (var (x, y, dir) in candidates)
+        foreach (var candidate in EnumerateArrivalFallbackCandidates(blockedTarget))
         {
-            var tile = new TileDto(x, y);
-            if (CheckTargetAffordance(location, tile).IsSafe)
+            if (CheckTargetAffordance(location, candidate.Tile).IsSafe)
             {
-                var dist = Math.Abs(x - currentTile.X) + Math.Abs(y - currentTile.Y);
-                passable.Add((tile, dir, dist));
+                var dist = Math.Abs(candidate.Tile.X - currentTile.X) + Math.Abs(candidate.Tile.Y - currentTile.Y);
+                passable.Add((candidate.Tile, candidate.Direction, dist));
             }
         }
 
@@ -242,21 +248,82 @@ internal static class BridgeMovementPathProbe
 
     private static IEnumerable<(TileDto Tile, int Direction)> FindPassableNeighbors(GameLocation location, TileDto target)
     {
-        var candidates = new (int X, int Y, int Direction)[]
-        {
-            (target.X + 1, target.Y, 3),
-            (target.X - 1, target.Y, 1),
-            (target.X, target.Y + 1, 0),
-            (target.X, target.Y - 1, 2),
-        };
-
         using var _ = new ScopedTerrainFeatureRemoval(location, target);
-        foreach (var (x, y, direction) in candidates)
+        foreach (var candidate in EnumerateArrivalFallbackCandidates(target))
         {
-            var tile = new TileDto(x, y);
-            if (CheckTargetAffordance(location, tile).IsSafe)
-                yield return (tile, direction);
+            if (CheckTargetAffordance(location, candidate.Tile).IsSafe)
+                yield return candidate;
         }
+    }
+
+    public static IEnumerable<(TileDto Tile, int Direction)> EnumerateArrivalFallbackCandidates(
+        TileDto target,
+        int maxRadius = 3)
+    {
+        if (maxRadius < 1)
+            yield break;
+
+        var seen = new HashSet<TileDto>();
+        foreach (var offset in EnumerateFallbackOffsets(maxRadius))
+        {
+            var tile = new TileDto(target.X + offset.X, target.Y + offset.Y);
+            if (!seen.Add(tile))
+                continue;
+
+            yield return (tile, GetFacingDirectionTowardTarget(tile, target));
+        }
+    }
+
+    private static IEnumerable<(int X, int Y)> EnumerateFallbackOffsets(int maxRadius)
+    {
+        yield return (1, 0);
+        yield return (-1, 0);
+        yield return (0, 1);
+        yield return (0, -1);
+
+        for (var radius = 2; radius <= maxRadius; radius++)
+        {
+            yield return (radius, 0);
+            yield return (-radius, 0);
+            yield return (0, radius);
+            yield return (0, -radius);
+
+            var diagonalOffsets = new List<(int X, int Y)>();
+            for (var dx = -radius; dx <= radius; dx++)
+            {
+                for (var dy = -radius; dy <= radius; dy++)
+                {
+                    if (dx == 0 && dy == 0)
+                        continue;
+                    if (dx == 0 || dy == 0)
+                        continue;
+                    if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != radius)
+                        continue;
+
+                    diagonalOffsets.Add((dx, dy));
+                }
+            }
+
+            foreach (var offset in diagonalOffsets
+                         .OrderBy(offset => Math.Abs(offset.X) + Math.Abs(offset.Y))
+                         .ThenBy(offset => offset.Y < 0 ? 1 : 0)
+                         .ThenBy(offset => offset.X < 0 ? 1 : 0)
+                         .ThenBy(offset => Math.Abs(offset.X))
+                         .ThenBy(offset => Math.Abs(offset.Y)))
+            {
+                yield return offset;
+            }
+        }
+    }
+
+    private static int GetFacingDirectionTowardTarget(TileDto from, TileDto target)
+    {
+        var dx = target.X - from.X;
+        var dy = target.Y - from.Y;
+        if (Math.Abs(dx) >= Math.Abs(dy))
+            return dx > 0 ? 1 : 3;
+
+        return dy > 0 ? 2 : 0;
     }
 
     private static bool SameTile(TileDto left, TileDto right)
