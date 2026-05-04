@@ -3,213 +3,211 @@ name: pokemon-player
 description: Play Pokemon games autonomously via headless emulation. Starts a game server, reads structured game state from RAM, makes strategic decisions, and sends button inputs — all from the terminal.
 tags: [gaming, pokemon, emulator, pyboy, gameplay, gameboy]
 ---
-# Pokemon Player
+# 宝可梦玩家
 
-Play Pokemon games via headless emulation using the `pokemon-agent` package.
+使用 `pokemon-agent` 包通过无头模拟来玩宝可梦游戏。
 
-## When to Use
-- User says "play pokemon", "start pokemon", "pokemon game"
-- User asks about Pokemon Red, Blue, Yellow, FireRed, etc.
-- User wants to watch an AI play Pokemon
-- User references a ROM file (.gb, .gbc, .gba)
+## 何时使用
+- 用户说“play pokemon”、“start pokemon”、“pokemon game”
+- 用户询问 Pokemon Red、Blue、Yellow、FireRed 等
+- 用户想看 AI 玩宝可梦
+- 用户提到 ROM 文件（.gb、.gbc、.gba）
 
-## Startup Procedure
+## 启动流程
 
-### 1. First-time setup (clone, venv, install)
-The repo is NousResearch/pokemon-agent on GitHub. Clone it, then
-set up a Python 3.10+ virtual environment. Use uv (preferred for speed)
-to create the venv and install the package in editable mode with the
-pyboy extra. If uv is not available, fall back to python3 -m venv + pip.
+### 1. 首次设置（克隆、venv、安装）
+仓库是 GitHub 上的 NousResearch/pokemon-agent。先克隆它，然后
+用 Python 3.10+ 虚拟环境完成初始化。优先使用 uv
+创建 venv，并以可编辑模式安装包，同时带上
+pyboy extra；如果没有 uv，再退回到 python3 -m venv + pip。
 
-On this machine it is already set up at /home/teknium/pokemon-agent
-with a venv ready — just cd there and source .venv/bin/activate.
+这台机器上它已经配置好了，位于 /home/teknium/pokemon-agent，
+并且 venv 已就绪——直接进入该目录并执行 source .venv/bin/activate。
 
-You also need a ROM file. Ask the user for theirs. On this machine
-one exists at roms/pokemon_red.gb inside that directory.
-NEVER download or provide ROM files — always ask the user.
+你还需要一个 ROM 文件。向用户索要他们自己的 ROM。此机器上
+该目录里已经有一个：roms/pokemon_red.gb。
+绝不要下载或提供 ROM 文件——始终向用户索要。
 
-### 2. Start the game server
-From inside the pokemon-agent directory with the venv activated, run
-pokemon-agent serve with --rom pointing to the ROM and --port 9876.
-Run it in the background with &.
-To resume from a saved game, add --load-state with the save name.
-Wait 4 seconds for startup, then verify with GET /health.
+### 2. 启动游戏服务
+在 pokemon-agent 目录内并激活 venv 后，运行
+pokemon-agent serve，并用 --rom 指向 ROM，用 --port 9876。
+把它放到后台运行，使用 &。
+如需从存档继续，额外添加 --load-state 并传入存档名。
+等待 4 秒让它启动，然后通过 GET /health 验证。
 
-### 3. Set up live dashboard for user to watch
-Use an SSH reverse tunnel via localhost.run so the user can view
-the dashboard in their browser. Connect with ssh, forwarding local
-port 9876 to remote port 80 on nokey@localhost.run. Redirect output
-to a log file, wait 10 seconds, then grep the log for the .lhr.life
-URL. Give the user the URL with /dashboard/ appended.
-The tunnel URL changes each time — give the user the new one if restarted.
+### 3. 给用户搭好实时仪表盘
+使用 localhost.run 的 SSH 反向隧道，让用户能在浏览器里查看
+仪表盘。通过 ssh 连接，将本地 9876 端口转发到远端 80 端口，
+目标为 nokey@localhost.run。把输出重定向到日志文件，
+等待 10 秒，然后在日志里 grep 出 .lhr.life
+URL。把带上 /dashboard/ 的完整地址发给用户。
+每次重启后隧道 URL 都会变化——重启后要把新的地址发给用户。
 
-## Save and Load
+## 存档与读档
 
-### When to save
-- Every 15-20 turns of gameplay
-- ALWAYS before gym battles, rival encounters, or risky fights
-- Before entering a new town or dungeon
-- Before any action you are unsure about
+### 何时存档
+- 每 15-20 回合存一次
+- 训练馆战斗、劲敌遭遇或高风险战斗前**必须**存档
+- 进入新城镇或地牢前存档
+- 在任何你不确定的动作之前先存档
 
-### How to save
-POST /save with a descriptive name. Good examples:
-before_brock, route1_start, mt_moon_entrance, got_cut
+### 如何存档
+使用 POST /save，并给它一个描述性名称。好例子：
+before_brock、route1_start、mt_moon_entrance、got_cut
 
-### How to load
-POST /load with the save name.
+### 如何读档
+使用 POST /load，并传入存档名。
 
-### List available saves
-GET /saves returns all saved states.
+### 列出可用存档
+GET /saves 会返回所有已保存的状态。
 
-### Loading on server startup
-Use --load-state flag when starting the server to auto-load a save.
-This is faster than loading via the API after startup.
+### 服务启动时自动读档
+启动服务时使用 --load-state 标志自动加载存档。
+这比启动后再通过 API 读档更快。
 
-## The Gameplay Loop
+## 游戏循环
 
-### Step 1: OBSERVE — check state AND take a screenshot
-GET /state for position, HP, battle, dialog.
-GET /screenshot and save to /tmp/pokemon.png, then use vision_analyze.
-Always do BOTH — RAM state gives numbers, vision gives spatial awareness.
+### 第 1 步：观察——检查状态并截图
+GET /state 获取位置、HP、战斗和对话状态。
+GET /screenshot 并保存到 /tmp/pokemon.png，然后用 vision_analyze。
+两者都要做——RAM 状态给出数值，视觉给出空间感知。
 
-### Step 2: ORIENT
-- Dialog/text on screen → advance it
-- In battle → fight or run
-- Party hurt → head to Pokemon Center
-- Near objective → navigate carefully
+### 第 2 步：定向
+- 屏幕上有对话/文字 → 继续推进
+- 正在战斗 → 打或跑
+- 队伍受伤 → 去 Pokemon Center
+- 接近目标 → 谨慎导航
 
-### Step 3: DECIDE
-Priority: dialog > battle > heal > story objective > training > explore
+### 第 3 步：决策
+优先级：对话 > 战斗 > 治疗 > 剧情目标 > 训练 > 探索
 
-### Step 4: ACT — move 2-4 steps max, then re-check
-POST /action with a SHORT action list (2-4 actions, not 10-15).
+### 第 4 步：行动——每次最多移动 2-4 步，然后重新检查
+使用 POST /action，动作列表要短（2-4 个动作，不是 10-15 个）。
 
-### Step 5: VERIFY — screenshot after every move sequence
-Take a screenshot and use vision_analyze to confirm you moved where
-intended. This is the MOST IMPORTANT step. Without vision you WILL get lost.
+### 第 5 步：验证——每次移动序列后都截图
+拍一张截图并用 vision_analyze 确认你是否真的移动到了
+想去的地方。这是最重要的一步。没有视觉你一定会迷路。
 
-### Step 6: RECORD progress to memory with PKM: prefix
+### 第 6 步：用 PKM: 前缀把进度写入 memory
 
-### Step 7: SAVE periodically
+### 第 7 步：定期存档
 
-## Action Reference
-- press_a — confirm, talk, select
-- press_b — cancel, close menu
-- press_start — open game menu
-- walk_up/down/left/right — move one tile
-- hold_b_N — hold B for N frames (use for speeding through text)
-- wait_60 — wait about 1 second (60 frames)
-- a_until_dialog_end — press A repeatedly until dialog clears
+## 操作参考
+- press_a — 确认、对话、选择
+- press_b — 取消、关闭菜单
+- press_start — 打开游戏菜单
+- walk_up/down/left/right — 移动一格
+- hold_b_N — 按住 B N 帧（用于加速文字显示）
+- wait_60 — 等待约 1 秒（60 帧）
+- a_until_dialog_end — 反复按 A，直到对话结束
 
-## Critical Tips from Experience
+## 经验中的关键提示
 
-### USE VISION CONSTANTLY
-- Take a screenshot every 2-4 movement steps
-- The RAM state tells you position and HP but NOT what is around you
-- Ledges, fences, signs, building doors, NPCs — only visible via screenshot
-- Ask the vision model specific questions: "what is one tile north of me?"
-- When stuck, always screenshot before trying random directions
+### 始终使用视觉
+- 每移动 2-4 步就截图一次
+- RAM 状态只告诉你位置和 HP，但**不知道**周围有什么
+- 台阶、栅栏、路牌、建筑门、NPC——只有截图能看到
+- 向视觉模型提具体问题：“我正北边一格是什么？”
+- 卡住时，先截图再尝试随机方向
 
-### Warp Transitions Need Extra Wait Time
-When walking through a door or stairs, the screen fades to black during
-the map transition. You MUST wait for it to complete. Add 2-3 wait_60
-actions after any door/stair warp. Without waiting, the position reads
-as stale and you will think you are still in the old map.
+### 穿门/楼梯传送需要额外等待
+走过门或楼梯时，地图切换期间屏幕会变黑。你**必须**等待它完成。
+在任何门/楼梯传送后都要再追加 2-3 个 wait_60 动作。否则
+位置读数会滞后，你会以为自己还在旧地图。
 
-### Building Exit Trap
-When you exit a building, you appear directly IN FRONT of the door.
-If you walk north, you go right back inside. ALWAYS sidestep first
-by walking left or right 2 tiles, then proceed in your intended direction.
+### 出门陷阱
+离开建筑时，你会直接出现在门口正前方。
+如果你往北走，就会立刻回到屋里。一定要先横移：
+先向左或向右走 2 格，再继续朝你的目标方向前进。
 
-### Dialog Handling
-Gen 1 text scrolls slowly letter-by-letter. To speed through dialog,
-hold B for 120 frames then press A. Repeat as needed. Holding B makes
-text display at max speed. Then press A to advance to the next line.
-The a_until_dialog_end action checks the RAM dialog flag, but this flag
-does not catch ALL text states. If dialog seems stuck, use the manual
-hold_b + press_a pattern instead and verify via screenshot.
+### 对话处理
+第一世代的文字会逐字慢慢滚动。想加速对话时，
+按住 B 120 帧，然后按 A。按需要重复。按住 B 会把
+文字显示速度拉到最大。之后再按 A 推进到下一行。
+a_until_dialog_end 动作会检查 RAM 里的对话标志，
+但这个标志**不能**覆盖所有文字状态。如果对话看起来卡住，
+就改用手动的 hold_b + press_a 模式，并通过截图验证。
 
-### Ledges Are One-Way
-Ledges (small cliff edges) can only be jumped DOWN (south), never climbed
-UP (north). If blocked by a ledge going north, you must go left or right
-to find the gap around it. Use vision to identify which direction the
-gap is. Ask the vision model explicitly.
+### 窄崖是单向的
+窄崖（小悬崖边）只能**向下**跳（向南），不能向上爬（向北）。
+如果被向北的窄崖挡住，你必须向左或向右移动，找到绕过去的缺口。
+用视觉判断缺口在哪个方向，并明确让视觉模型帮你确认。
 
-### Navigation Strategy
-- Move 2-4 steps at a time, then screenshot to check position
-- When entering a new area, screenshot immediately to orient
-- Ask the vision model "which direction to [destination]?"
-- If stuck for 3+ attempts, screenshot and re-evaluate completely
-- Do not spam 10-15 movements — you will overshoot or get stuck
+### 导航策略
+- 每次只移动 2-4 步，然后截图检查位置
+- 进入新区域时立刻截图，先定向
+- 问视觉模型“怎么去 [目的地]？”
+- 如果连续卡住 3 次以上，截图并彻底重新评估
+- 不要一口气狂按 10-15 次移动——你会冲过头或卡住
 
-### Running from Wild Battles
-On the battle menu, RUN is bottom-right. To reach it from the default
-cursor position (FIGHT, top-left): press down then right to move cursor
-to RUN, then press A. Wrap with hold_b to speed through text/animations.
+### 野外战斗逃跑
+在战斗菜单里，RUN 在右下角。从默认光标位置（FIGHT，左上）
+出发：先按下再按右，把光标移动到 RUN，然后按 A。
+用 hold_b 包起来加速文字和动画。
 
-### Battling (FIGHT)
-On the battle menu FIGHT is top-left (default cursor position).
-Press A to enter move selection, A again to use the first move.
-Then hold B to speed through attack animations and text.
+### 战斗（FIGHT）
+在战斗菜单里 FIGHT 在左上角（默认光标位置）。
+按 A 进入招式选择，再按 A 使用第一招。
+然后按住 B 加速攻击动画和文字。
 
-## Battle Strategy
+## 战斗策略
 
-### Decision Tree
-1. Want to catch? → Weaken then throw Poke Ball
-2. Wild you don't need? → RUN
-3. Type advantage? → Use super-effective move
-4. No advantage? → Use strongest STAB move
-5. Low HP? → Switch or use Potion
+### 决策树
+1. 想抓？→ 先削弱，再丢 Poke Ball
+2. 遇到不需要的野怪？→ RUN
+3. 有属性克制？→ 用效果拔群的招式
+4. 没有克制？→ 用最强的 STAB 招式
+5. HP 低？→ 换人或使用 Potion
 
-### Gen 1 Type Chart (key matchups)
-- Water beats Fire, Ground, Rock
-- Fire beats Grass, Bug, Ice
-- Grass beats Water, Ground, Rock
-- Electric beats Water, Flying
-- Ground beats Fire, Electric, Rock, Poison
-- Psychic beats Fighting, Poison (dominant in Gen 1!)
+### 第一世代属性克制表（关键克制）
+- 水克火、地面、岩石
+- 火克草、虫、冰
+- 草克水、地面、岩石
+- 电克水、飞行
+- 地面克火、电、岩石、毒
+- 超能力克格斗、毒（第一世代非常强势！）
 
-### Gen 1 Quirks
-- Special stat = both offense AND defense for special moves
-- Psychic type is overpowered (Ghost moves bugged)
-- Critical hits based on Speed stat
-- Wrap/Bind prevent opponent from acting
-- Focus Energy bug: REDUCES crit rate instead of raising it
+### 第一世代特殊机制
+- 特攻数值同时影响特殊招式的攻击和防御
+- 超能力系过强（幽灵招式有 bug）
+- 暴击率与速度有关
+- Wrap/Bind 会让对手无法行动
+- Focus Energy bug：会**降低**暴击率，而不是提高
 
-## Memory Conventions
-| Prefix | Purpose | Example |
+## 记忆约定
+| 前缀 | 用途 | 示例 |
 |--------|---------|---------|
-| PKM:OBJECTIVE | Current goal | Get Parcel from Viridian Mart |
-| PKM:MAP | Navigation knowledge | Viridian: mart is northeast |
-| PKM:STRATEGY | Battle/team plans | Need Grass type before Misty |
-| PKM:PROGRESS | Milestone tracker | Beat rival, heading to Viridian |
-| PKM:STUCK | Stuck situations | Ledge at y=28 go right to bypass |
-| PKM:TEAM | Team notes | Squirtle Lv6, Tackle + Tail Whip |
+| PKM:OBJECTIVE | 当前目标 | 从 Viridian Mart 取 Parcel |
+| PKM:MAP | 导航知识 | Viridian：商店在东北方向 |
+| PKM:STRATEGY | 战斗/队伍计划 | 打 Misty 前需要草系 |
+| PKM:PROGRESS | 里程碑跟踪 | 打败劲敌，正在前往 Viridian |
+| PKM:STUCK | 卡住的情况 | y=28 的窄崖，向右绕过去 |
+| PKM:TEAM | 队伍备注 | Squirtle Lv6，Tackle + Tail Whip |
 
-## Progression Milestones
-- Choose starter
-- Deliver Parcel from Viridian Mart, receive Pokedex
-- Boulder Badge — Brock (Rock) → use Water/Grass
-- Cascade Badge — Misty (Water) → use Grass/Electric
-- Thunder Badge — Lt. Surge (Electric) → use Ground
-- Rainbow Badge — Erika (Grass) → use Fire/Ice/Flying
-- Soul Badge — Koga (Poison) → use Ground/Psychic
-- Marsh Badge — Sabrina (Psychic) → hardest gym
-- Volcano Badge — Blaine (Fire) → use Water/Ground
-- Earth Badge — Giovanni (Ground) → use Water/Grass/Ice
-- Elite Four → Champion!
+## 进度里程碑
+- 选择初始宝可梦
+- 从 Viridian Mart 交付 Parcel，获得 Pokedex
+- Boulder Badge——Brock（岩石）→ 用水/草
+- Cascade Badge——Misty（水）→ 用草/电
+- Thunder Badge——Lt. Surge（电）→ 用地面
+- Rainbow Badge——Erika（草）→ 用火/冰/飞行
+- Soul Badge——Koga（毒）→ 用地面/超能力
+- Marsh Badge——Sabrina（超能力）→ 最难的道馆
+- Volcano Badge——Blaine（火）→ 用水/地面
+- Earth Badge——Giovanni（地面）→ 用水/草/冰
+- Elite Four → 冠军！
 
-## Stopping Play
-1. Save the game with a descriptive name via POST /save
-2. Update memory with PKM:PROGRESS
-3. Tell user: "Game saved as [name]! Say 'play pokemon' to resume."
-4. Kill the server and tunnel background processes
+## 停止游玩
+1. 通过 POST /save 用一个有描述性的名字保存游戏
+2. 用 PKM:PROGRESS 更新 memory
+3. 告诉用户：“游戏已保存为 [name]！说‘play pokemon’即可继续。”
+4. 结束服务和隧道的后台进程
 
-## Pitfalls
-- NEVER download or provide ROM files
-- Do NOT send more than 4-5 actions without checking vision
-- Always sidestep after exiting buildings before going north
-- Always add wait_60 x2-3 after door/stair warps
-- Dialog detection via RAM is unreliable — verify with screenshots
-- Save BEFORE risky encounters
-- The tunnel URL changes each time you restart it
+## 常见坑
+- 绝不要下载或提供 ROM 文件
+- 连续 4-5 次动作后就要检查视觉，不要更多
+- 出建筑后要先横移，再向北走
+- 穿门/楼梯后总是要追加 wait_60 x2-3
+- 仅靠 RAM 判断对话不可靠——必须用截图验证
+- 高风险遭遇前先存档
+- 每次重启后，隧道 URL 都会变化

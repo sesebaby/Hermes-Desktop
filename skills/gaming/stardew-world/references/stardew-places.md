@@ -1,40 +1,40 @@
 # Stardew Places Reference
 
-This reference gives broad place meaning. Current observation facts still override this reference.
+这个参考文件提供的是地点的广义含义。当前观察事实始终优先于它。
 
-## Pelican Town
+## 鹈鹕镇
 
-- Town square and fountain: public, social, visible, good for noticing people.
-- Pierre's shop area: errands, shopping, gossip, daily routine.
-- Clinic path: town services and errands.
-- Saloon area: evening social life, noise, rumors, casual conversations.
-- Library and museum area: quiet, learning, Penny-like routines, slower pace.
+- 小镇广场和喷泉：公共、社交、显眼，适合观察别人。
+- Pierre 商店周边：跑腿、购物、八卦、日常作息。
+- 医院小路：镇上的服务和办事路线。
+- 酒吧区域：夜间社交、喧闹、传闻、轻松聊天。
+- 图书馆和博物馆一带：安静、学习、类似 Penny 的日常作息、节奏更慢。
 
-## Homes
+## 家庭空间
 
-- A home is private and routine-oriented. It is good for resting, preparing, tidying, or deciding whether to go outside.
-- Bedrooms and mirrors fit appearance, self-presentation, privacy, and getting ready.
-- Living rooms and kitchens fit family presence and ordinary household life.
-- Front doors are transition points: leaving home, deciding whether to go outside, or pausing before entering public space.
+- 家是私密且围绕日常作息的地方。适合休息、准备、整理，或者决定要不要出门。
+- 卧室和镜子适合打理外表、自我呈现、隐私，以及出门前整理仪容。
+- 客厅和厨房适合家庭成员在场的普通家庭生活。
+- 前门是过渡点：离开家、决定要不要出门，或进入公共空间前短暂停留。
 
-## Beach
+## 海滩
 
-- Beach: open air, water, shells, sunlight, quiet walks, photography, and reflective moods.
-- Shore photo spots fit Haley especially well when the day is bright or she wants something pretty.
-- Docks and bridges are landmarks, but current observation must confirm safe movement.
+- 海滩：开阔、海水、贝壳、阳光、安静散步、摄影和反思情绪。
+- 海边拍照点在天气明亮、或者她想要漂亮景色时，尤其适合 Haley。
+- 码头和桥是地标，但当前观察必须确认移动是否安全。
 
-## Mountain And Lake
+## 山区与湖泊
 
-- Mountain lake: water, quiet, scenic views, fishing, distance from town.
-- Mountain paths feel less socially polished and more outdoorsy.
+- 山湖：水、安静、风景、钓鱼、远离城镇。
+- 山路给人的感觉没那么精致，更偏户外。
 
-## Forest
+## 森林
 
-- Forest paths: quiet, natural, less formal, good for solitude or a softer mood.
-- Forest is less polished than town or beach, so image-conscious NPCs may prefer it only when seeking quiet.
+- 森林小路：安静、自然、没那么正式，适合独处或更柔和的情绪。
+- 森林没有镇上或海滩那么精致，所以重视形象的 NPC 只有在想要安静时才可能更偏好那里。
 
-## Haley-Specific Place Bias
+## Haley 的地点偏好
 
-- Haley tends to prefer bright, clean, photogenic, socially visible places.
-- Good Haley matches: bedroom mirror, front door before going out, town fountain, beach shore, sunny open spaces.
-- Weak Haley matches: muddy, dark, cramped, messy, or isolated places unless her current mood supports withdrawal.
+- Haley 倾向于明亮、干净、上镜、社交可见的地点。
+- 适合 Haley 的地点：卧室镜子、出门前的前门、小镇喷泉、海滩海岸、阳光充足的空旷区域。
+- 不太适合 Haley 的地点：泥泞、昏暗、狭窄、凌乱或偏僻的地点，除非她当前的情绪支持退避。

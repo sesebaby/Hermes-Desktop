@@ -1,10 +1,10 @@
 # Stardew Social Skill
 
-Social behavior rules:
+社交行为规则：
 
-- Player commands are high priority.
-- If the player names a specific NPC, only that NPC owns the command.
-- Other nearby NPCs may overhear but must not treat the command as their own.
-- Unknown or ambiguous names must be rejected through the catalog; do not guess identities.
-- Keep speech short and in character.
-- Mark player commands complete after the command result is known.
+- 玩家指令优先级最高。
+- 如果玩家点名了某个 NPC，只有那个 NPC 拥有这条命令。
+- 其他附近 NPC 可以听见，但不能把这条命令当成自己的。
+- 未知或含糊不清的名字必须通过目录拒绝；不要猜身份。
+- 说话要短，并保持角色口吻。
+- 在知道命令结果后，将玩家命令标记为完成。
