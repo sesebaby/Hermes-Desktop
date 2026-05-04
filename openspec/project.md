@@ -9,7 +9,7 @@
 - 每个 NPC 拥有独立人格、独立记忆、独立自主决策能力
 - MVP 先实现 1-3 个 NPC 并发运行
 
-本方案明确参考 `hermescraft` 的核心架构思想，但不盲目复制 Minecraft 特有实现，而是优先复刻其“Agent 自己通过工具理解世界、桥接层只暴露能力接口”的结构。
+本方案明确参考 `D:\GitHubPro\Hermes-Desktop\external\hermescraft-main` 的核心架构思想，但不盲目复制 Minecraft 特有实现，而是优先复刻其“Agent 自己通过工具理解世界、桥接层只暴露能力接口”的结构。
 
 ## Git 远程仓库注意事项
 

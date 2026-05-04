@@ -10,6 +10,29 @@ internal sealed record BridgePlaceCandidateDefinition(
 
 internal static class BridgeMoveCandidateSelector
 {
+    public static IReadOnlyList<DestinationData> SelectDestinations(
+        string locationName,
+        string npcName,
+        IEnumerable<BridgePlaceCandidateDefinition> definitions)
+    {
+        ArgumentNullException.ThrowIfNull(definitions);
+
+        var curated = definitions
+            .Where(definition => definition.Tile.X >= 0 && definition.Tile.Y >= 0)
+            .Take(5)
+            .Select(definition => new DestinationData(
+                definition.Label,
+                locationName,
+                definition.Tile,
+                definition.Tags,
+                definition.Reason,
+                definition.FacingDirection,
+                definition.EndBehavior))
+            .ToArray();
+
+        return curated;
+    }
+
     public static IReadOnlyList<PlaceCandidateData> SelectPlaceCandidates(
         string locationName,
         string npcName,

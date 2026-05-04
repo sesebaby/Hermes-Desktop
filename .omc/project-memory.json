@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1777199909351,
+  "lastScanned": 1777881979490,
   "projectRoot": "D:\\GitHubPro\\Hermes-Desktop",
   "techStack": {
     "languages": [],
@@ -36,18 +36,25 @@
   },
   "customNotes": [],
   "directoryMap": {
+    "artifacts": {
+      "path": "artifacts",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1777881979464,
+      "keyFiles": []
+    },
     "Desktop": {
       "path": "Desktop",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1777199909298,
+      "lastAccessed": 1777881979465,
       "keyFiles": []
     },
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
-      "fileCount": 13,
-      "lastAccessed": 1777199909299,
+      "fileCount": 18,
+      "lastAccessed": 1777881979465,
       "keyFiles": [
         "agent_architecture_deep_dive.md",
         "all_9_pillars_complete.md",
@@ -59,17 +66,25 @@
     "external": {
       "path": "external",
       "purpose": null,
-      "fileCount": 1,
-      "lastAccessed": 1777199909299,
+      "fileCount": 2,
+      "lastAccessed": 1777881979466,
       "keyFiles": [
+        "hermes-agent-main.zip",
         "hermescraft-main.zip"
       ]
+    },
+    "Mods": {
+      "path": "Mods",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1777881979467,
+      "keyFiles": []
     },
     "openspec": {
       "path": "openspec",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1777199909300,
+      "lastAccessed": 1777881979469,
       "keyFiles": [
         "project.md"
       ]
@@ -77,28 +92,41 @@
     "scripts": {
       "path": "scripts",
       "purpose": "Build/utility scripts",
-      "fileCount": 5,
-      "lastAccessed": 1777199909302,
+      "fileCount": 7,
+      "lastAccessed": 1777881979470,
       "keyFiles": [
         "check-repo-guard.ps1",
         "deploy-desktop.ps1",
+        "fix-dev-temp.ps1",
         "new-msix-dev-cert.ps1",
-        "publish-msix.ps1",
-        "publish-portable.ps1"
+        "publish-msix.ps1"
       ]
     },
     "skills": {
       "path": "skills",
       "purpose": null,
-      "fileCount": 0,
-      "lastAccessed": 1777199909305,
+      "fileCount": 1,
+      "lastAccessed": 1777881979471,
       "keyFiles": []
+    },
+    "souls": {
+      "path": "souls",
+      "purpose": null,
+      "fileCount": 12,
+      "lastAccessed": 1777881979471,
+      "keyFiles": [
+        "claude-soul.md",
+        "creative.md",
+        "default.md",
+        "devops-engineer.md",
+        "mentor.md"
+      ]
     },
     "src": {
       "path": "src",
       "purpose": "Source code",
       "fileCount": 4,
-      "lastAccessed": 1777199909306,
+      "lastAccessed": 1777881979472,
       "keyFiles": [
         "Directory.Build.props",
         "Hermes.Agent.csproj",
@@ -110,14 +138,14 @@
       "path": "tools",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1777199909309,
+      "lastAccessed": 1777881979473,
       "keyFiles": []
     },
     "wiki": {
       "path": "wiki",
       "purpose": null,
       "fileCount": 3,
-      "lastAccessed": 1777199909310,
+      "lastAccessed": 1777881979474,
       "keyFiles": [
         "index.md",
         "log.md",
@@ -128,7 +156,7 @@
       "path": "其他资料",
       "purpose": null,
       "fileCount": 13,
-      "lastAccessed": 1777199909311,
+      "lastAccessed": 1777881979475,
       "keyFiles": [
         "BN-NPC宠物势力群战占点调查.md",
         "Bright Nights调查纪要.md",
@@ -141,27 +169,52 @@
       "path": "参考项目",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1777199909312,
+      "lastAccessed": 1777881979475,
+      "keyFiles": []
+    },
+    "src\\bin": {
+      "path": "src\\bin",
+      "purpose": "Executable scripts",
+      "fileCount": 0,
+      "lastAccessed": 1777881979480,
       "keyFiles": []
     }
   },
   "hotPaths": [
     {
-      "path": "src\\agents\\AgentService.cs",
-      "accessCount": 8,
-      "lastAccessed": 1777246681821,
-      "type": "file"
-    },
-    {
-      "path": "src\\Core\\Agent.cs",
-      "accessCount": 8,
-      "lastAccessed": 1777249715081,
-      "type": "file"
+      "path": "",
+      "accessCount": 26,
+      "lastAccessed": 1777882869765,
+      "type": "directory"
     },
     {
       "path": "external\\hermescraft-main\\bot\\server.js",
+      "accessCount": 11,
+      "lastAccessed": 1777873567076,
+      "type": "file"
+    },
+    {
+      "path": "参考项目\\Mod参考\\Stardew-Nexus-35341-TheStardewSquad",
+      "accessCount": 11,
+      "lastAccessed": 1777882103908,
+      "type": "directory"
+    },
+    {
+      "path": "src\\Core\\Agent.cs",
+      "accessCount": 9,
+      "lastAccessed": 1777873553713,
+      "type": "file"
+    },
+    {
+      "path": "src",
+      "accessCount": 9,
+      "lastAccessed": 1777879437006,
+      "type": "directory"
+    },
+    {
+      "path": "src\\agents\\AgentService.cs",
       "accessCount": 8,
-      "lastAccessed": 1777255868438,
+      "lastAccessed": 1777246681821,
       "type": "file"
     },
     {
@@ -187,12 +240,6 @@
       "accessCount": 4,
       "lastAccessed": 1777250257011,
       "type": "file"
-    },
-    {
-      "path": "src",
-      "accessCount": 4,
-      "lastAccessed": 1777255868474,
-      "type": "directory"
     },
     {
       "path": "src\\Core\\Models.cs",
@@ -225,6 +272,12 @@
       "type": "file"
     },
     {
+      "path": "参考项目\\Mod参考",
+      "accessCount": 3,
+      "lastAccessed": 1777874494504,
+      "type": "directory"
+    },
+    {
       "path": "readme.md",
       "accessCount": 2,
       "lastAccessed": 1777200210011,
@@ -243,15 +296,27 @@
       "type": "file"
     },
     {
-      "path": "ReadmeCn.md",
-      "accessCount": 1,
-      "lastAccessed": 1777200210076,
+      "path": "openspec\\project.md",
+      "accessCount": 2,
+      "lastAccessed": 1777873478052,
       "type": "file"
     },
     {
-      "path": "openspec\\project.md",
+      "path": "external\\hermescraft-main",
+      "accessCount": 2,
+      "lastAccessed": 1777873500931,
+      "type": "directory"
+    },
+    {
+      "path": "external\\hermescraft-main\\bot\\lib\\perception.js",
+      "accessCount": 2,
+      "lastAccessed": 1777873521504,
+      "type": "file"
+    },
+    {
+      "path": "ReadmeCn.md",
       "accessCount": 1,
-      "lastAccessed": 1777200210087,
+      "lastAccessed": 1777200210076,
       "type": "file"
     },
     {
@@ -369,12 +434,6 @@
       "type": "directory"
     },
     {
-      "path": "external\\hermescraft-main\\bot\\lib\\perception.js",
-      "accessCount": 1,
-      "lastAccessed": 1777250091645,
-      "type": "file"
-    },
-    {
       "path": "external\\hermescraft-main\\start-steve.sh",
       "accessCount": 1,
       "lastAccessed": 1777250111074,
@@ -387,12 +446,6 @@
       "type": "file"
     },
     {
-      "path": "external\\hermescraft-main",
-      "accessCount": 1,
-      "lastAccessed": 1777254184804,
-      "type": "directory"
-    },
-    {
       "path": "C:\\Users\\Administrator\\.claude\\projects\\D--GitHubPro-Hermes-Desktop\\memory\\feedback_design_docs_must_include_repo_and_reference_evidence.md",
       "accessCount": 1,
       "lastAccessed": 1777255097961,
@@ -402,6 +455,30 @@
       "path": "docs\\superpowers\\specs",
       "accessCount": 1,
       "lastAccessed": 1777256481934,
+      "type": "directory"
+    },
+    {
+      "path": ".omx\\archives\\NPC自主循环-产品需求文档.md",
+      "accessCount": 1,
+      "lastAccessed": 1777873481371,
+      "type": "file"
+    },
+    {
+      "path": "external\\hermescraft-main\\skills\\minecraft-navigation.md",
+      "accessCount": 1,
+      "lastAccessed": 1777873520360,
+      "type": "file"
+    },
+    {
+      "path": "参考项目\\Mod参考\\Stardew-Nexus-19305-ScheduleViewer",
+      "accessCount": 1,
+      "lastAccessed": 1777873523091,
+      "type": "directory"
+    },
+    {
+      "path": "参考项目\\Mod参考\\StardewValleyMods-spacechase0",
+      "accessCount": 1,
+      "lastAccessed": 1777873529041,
       "type": "directory"
     }
   ],

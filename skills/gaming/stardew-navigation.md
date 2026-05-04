@@ -1,33 +1,51 @@
 # Stardew Navigation Skill
 
-第一阶段导航只覆盖最小可行的 `move` 循环。
+This skill owns the move loop, failure recovery, and mid-journey interruption handling.
 
-## 职责边界
+## Responsibility Boundary
 
-本 skill 是移动循环与失败恢复 owner。它负责“最新观察 -> `stardew_move` -> 查询任务状态 -> 失败后重新观察或换目标”的方法。
+This skill owns: "observe destinations → choose one matching intent → `stardew_move(destination, reason)` → poll task status → handle interruption/failure → re-observe or switch targets".
 
-地点标签、地点理由、`endBehavior` 和 `placeCandidate[n]` 为什么有意义由 `stardew-world` 解释；本 skill 只复制候选里已经存在的字段，不重新发明世界语义。
+`stardew-world` explains why destinations are meaningful; this skill only copies fields that already exist in observed `destination[n]` facts.
 
-## 硬规则：移动不是叙事文本
+## Hard Rule: Movement Is Not Narration Text
 
-物理位移不是台词，也不是内心独白。只要你想让 NPC 在游戏世界里真实改变位置，就必须调用 `stardew_move`。
+Physical movement is not dialogue or inner monologue. When the NPC needs to change position in the game world, you MUST call `stardew_move`.
 
-- 看到或准备写出“走向、走到、回房、出门、靠近、移动到、上楼、下楼、离开、前往”等实际位移动作时，先使用本 skill 的移动流程。
-- 如果没有调用 `stardew_move`，不要写“已经走向/走到/回到/离开/上楼/下楼”这类看起来完成了物理移动的句子；只能等待、观察、说话，或说明没有移动。
-- `stardew_speak` 只负责说话；它不能替代 `stardew_move`，也不能让 NPC 真实换位置。
-- `stardew_move` 的参数必须逐字来自最新观察里的 `moveCandidate[n]` 或 `placeCandidate[n]`：`locationName`、`x`、`y`、`reason`，以及可选的 `facingDirection`。
+- If you see or prepare to write words describing physical movement ("walks to", "goes to", "heads toward", "returns to", "leaves", "approaches"), use this skill's movement flow.
+- If `stardew_move` was NOT called, do NOT write sentences claiming the NPC has already arrived or moved. Only wait, observe, speak, or note that no movement occurred.
+- `stardew_speak` handles talking only; it cannot move the NPC.
 
-在移动前：
+## Destination-Level Movement (Primary)
 
-- 确认目标地点和坐标来自最新的 `moveCandidate[n]` 或 `placeCandidate[n]` 桥接事实，或者来自现有私聊例外路径中已解析好的目标。
-- 选择有意义的世界内目的地时，可以使用 `placeCandidate[n]`，但只复制它给出的 `locationName`、`x`、`y`、`reason` 和可选 `facingDirection`。
-- 将 `placeCandidate[n]` 视为 endpoint candidate；它不是 host 命令，也不是永久路线保证。
-- 如果移动以 `path_blocked` 或 `path_unreachable` 结束，先重新观察或换目标，不要原样重试同一目的地。
-- 当没有合适的有意义地点候选时，再使用 `moveCandidate[n]` 做短距离重新定位。
-- 当最新观察包含一个安全候选，并且移动符合 NPC 当前意图时，直接用该候选的 `locationName`、`x`、`y`、`reason` 和可选的 `facingDirection` 调用 `stardew_move`，不要只说自己要移动。
-- 通过 `move` 任务契约发送移动，不要直接调用 HTTP。
-- 跟踪 `commandId`、状态、失败原因和 `traceId`。
-- 如果目标被阻塞、不可达、已经过时，或者与其他认领冲突，就报告原因并重新观察。
+1. Observe: check the latest `destination[n]` facts from `stardew_status`.
+2. Choose: pick the ONE `destination[n]` whose label and reason best match the NPC's current intent.
+3. Call: `stardew_move(destination=<exact label from destination[n]>, reason=<brief intent>)`.
+   - Copy the label **exactly** — case-sensitive, character-for-character.
+   - Never invent a destination label. If no destination matches, see the fallback rule below.
+4. Poll: check `stardew_task_status` until a terminal status is reached: `completed`, `failed`, `blocked`, `cancelled`, or `interrupted`.
+5. Handle outcome:
+   - `completed`: NPC arrived. Continue the next action.
+   - `failed` / `blocked`: observe again or pick a different destination. Do NOT retry the same destination immediately.
+   - `interrupted`: read `interruption_reason` (e.g. `player_approached`, `event_active`, `dialogue_started`). Decide whether to re-observe, change target, or respond to the interruption.
+   - Timeout (no terminal status after 3 polls): observe again.
 
-第一阶段不要发明高级的 `goto`、`follow`、`interact`、采集、箱子、制作或种田行为。
-不要把普通 host 事件或玩家移动当成移动指令；除非是私聊，否则它们只是上下文。
+## Nearby Fallback (Secondary)
+
+`nearby[n]` facts are short-range (1-2 tile) safe tiles for repositioning. Use ONLY when:
+
+- No `destination[n]` fact matches the NPC's intent AND
+- A small position adjustment is genuinely needed (e.g. to get a better camera angle, or to step aside)
+
+**Never chain multiple `nearby[n]` calls to simulate long-distance movement.** That defeats the purpose of destination-level movement.
+
+## Cross-Location Movement (Future)
+
+When cross-location destinations become available, the bridge handles warps automatically. The NPC chooses a destination in another location; the bridge warps + pathfinds. Same `stardew_move` flow applies.
+
+## Before Moving
+
+- Confirm the destination label is from the LATEST observation — facts can change between ticks.
+- Prefer `destination[n]` over `nearby[n]` for any intentional movement.
+- `destination[n]` and `schedule_entry[n]` (when available) are equally valid — the NPC may follow its schedule or choose freely.
+- Track `commandId`, status, failure reason, and `traceId`.

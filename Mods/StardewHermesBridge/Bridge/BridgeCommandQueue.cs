@@ -2,15 +2,19 @@ namespace StardewHermesBridge.Bridge;
 
 using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
+using Microsoft.Xna.Framework;
 using StardewHermesBridge.Dialogue;
 using StardewHermesBridge.Logging;
 using StardewHermesBridge.Ui;
 using StardewModdingAPI;
 using StardewValley;
+using StardewValley.Menus;
 
 public sealed class BridgeCommandQueue
 {
     private const int MaxReplanAttempts = 2;
+    private const int InterruptProximityTiles = 4;
+    private static readonly TimeSpan InterruptCooldown = TimeSpan.FromSeconds(5);
 
     private readonly ConcurrentQueue<BridgeMoveCommand> _pending = new();
     private readonly ConcurrentQueue<IBridgeUiCommand> _pendingUi = new();
@@ -22,6 +26,7 @@ public sealed class BridgeCommandQueue
     private readonly Action<string>? _privateChatSubmitted;
     private readonly Action<string, string>? _privateChatReplyDisplayed;
     private readonly object _privateChatInputGate = new();
+    private readonly ConcurrentDictionary<string, DateTime> _lastInterruptUtc = new(StringComparer.OrdinalIgnoreCase);
     private BridgePrivateChatInput? _privateChatInput;
     private BridgeMoveCommand? _activeMove;
 
@@ -369,11 +374,32 @@ public sealed class BridgeCommandQueue
             return command.ToStatusData();
         }
 
-        var currentTile = new TileDto((int)npc.Tile.X, (int)npc.Tile.Y);
+        var currentTile = new TileDto((int)(npc.Position.X / Game1.tileSize), (int)(npc.Position.Y / Game1.tileSize));
 
         if (command.Status == "queued")
         {
+            // Take control of NPC movement from the game — clear any existing controllers
+            // (pattern from TheStardewSquad SquadMateStateHelper.PrepareForRecruitment)
+            npc.controller = null;
+            npc.temporaryController = null;
+            npc.DirectionsToNewLocation = null;
+            npc.IsWalkingInSquare = false;
             var initialProbe = ProbeRoute(npc, currentTile, targetLocation, command.TargetTile);
+            if (initialProbe.Status != BridgeRouteProbeStatus.RouteValid
+                && initialProbe.FailureKind == "target_tile_open_false")
+            {
+                var resolved = BridgeMovementPathProbe.FindClosestPassableNeighbor(
+                    npc, targetLocation, command.TargetTile, currentTile);
+                if (resolved is not null)
+                {
+                    command.ReplaceTarget(resolved.Value.StandTile, resolved.Value.FacingDirection);
+                    initialProbe = ProbeRoute(npc, currentTile, targetLocation, command.TargetTile);
+                    _logger.Write("task_target_resolved", command.NpcId, "move",
+                        command.TraceId, command.CommandId, "running",
+                        $"resolved={resolved.Value.StandTile.X},{resolved.Value.StandTile.Y};facing={resolved.Value.FacingDirection}");
+                }
+            }
+
             if (initialProbe.Status != BridgeRouteProbeStatus.RouteValid)
             {
                 FailMoveForProbe(command, initialProbe, initial: true);
@@ -389,6 +415,14 @@ public sealed class BridgeCommandQueue
 
         if (command.ConsumeStepDelayTick())
             return command.ToStatusData();
+
+        var interruptReason = CheckInterrupt(npc, command);
+        if (interruptReason is not null)
+        {
+            command.Interrupt(interruptReason);
+            _logger.Write("task_interrupted", command.NpcId, "move", command.TraceId, command.CommandId, "interrupted", interruptReason);
+            return command.ToStatusData();
+        }
 
         if (currentTile.X == command.TargetTile.X && currentTile.Y == command.TargetTile.Y)
         {
@@ -432,6 +466,8 @@ public sealed class BridgeCommandQueue
         }
 
         npc.Halt();
+        var directionToNext = GetDirection(currentTile, nextTile);
+        npc.faceDirection(directionToNext);
         npc.setTilePosition(nextTile.X, nextTile.Y);
         command.RecordStep();
 
@@ -477,6 +513,44 @@ public sealed class BridgeCommandQueue
     {
         if (command.FacingDirection is >= 0 and <= 3)
             npc.faceDirection(command.FacingDirection.Value);
+    }
+
+    private static int GetDirection(TileDto from, TileDto to)
+    {
+        var dx = to.X - from.X;
+        var dy = to.Y - from.Y;
+        if (Math.Abs(dx) >= Math.Abs(dy))
+            return dx > 0 ? 1 : 3; // right : left
+        return dy > 0 ? 2 : 0;     // down : up
+    }
+
+    private string? CheckInterrupt(NPC npc, BridgeMoveCommand command)
+    {
+        if (_lastInterruptUtc.TryGetValue(command.NpcId, out var lastUtc)
+            && DateTime.UtcNow - lastUtc < InterruptCooldown)
+            return null;
+
+        if (Game1.player is not null
+            && npc.currentLocation == Game1.player.currentLocation
+            && Vector2.Distance(new Vector2((int)(npc.Position.X / Game1.tileSize), (int)(npc.Position.Y / Game1.tileSize)), new Vector2(Game1.player.Position.X / Game1.tileSize, Game1.player.Position.Y / Game1.tileSize)) < InterruptProximityTiles)
+        {
+            _lastInterruptUtc[command.NpcId] = DateTime.UtcNow;
+            return "player_approached";
+        }
+
+        if (Game1.eventUp)
+        {
+            _lastInterruptUtc[command.NpcId] = DateTime.UtcNow;
+            return "event_active";
+        }
+
+        if (Game1.activeClickableMenu is DialogueBox)
+        {
+            _lastInterruptUtc[command.NpcId] = DateTime.UtcNow;
+            return "dialogue_started";
+        }
+
+        return null;
     }
 
     public void Drain(string reason)
@@ -651,6 +725,7 @@ public sealed class BridgeMoveCommand
 
     private Stack<TileDto>? _schedulePath;
     private int _replanAttempts;
+    private TileDto? _resolvedTargetTile;
 
     public BridgeMoveCommand(
         string commandId,
@@ -674,13 +749,14 @@ public sealed class BridgeMoveCommand
     public string TraceId { get; }
     public string NpcId { get; }
     public string LocationName { get; }
-    public TileDto TargetTile { get; }
-    public int? FacingDirection { get; }
+    public TileDto TargetTile { get; private set; }
+    public int? FacingDirection { get; private set; }
     public string? IdempotencyKey { get; }
     public string Status { get; private set; } = "queued";
     public string? BlockedReason { get; private set; }
     public string? ErrorCode { get; private set; }
-    public bool IsTerminal => Status is "completed" or "cancelled" or "failed" or "blocked";
+    public string? InterruptionReason { get; private set; }
+    public bool IsTerminal => Status is "completed" or "cancelled" or "failed" or "blocked" or "interrupted";
     public int PathStepsRemaining => _schedulePath?.Count ?? 0;
 
     public void Start()
@@ -721,6 +797,13 @@ public sealed class BridgeMoveCommand
         BlockedReason = reason;
     }
 
+    public void Interrupt(string reason)
+    {
+        Status = "interrupted";
+        InterruptionReason = reason;
+        BlockedReason = reason;
+    }
+
     public bool ConsumeStepDelayTick()
     {
         if (_stepDelayTicksRemaining <= 0)
@@ -738,6 +821,13 @@ public sealed class BridgeMoveCommand
 
     public void ReplaceSchedulePath(IReadOnlyList<TileDto> route)
         => _schedulePath = BridgeMovementPathProbe.ToSchedulePath(route);
+
+    public void ReplaceTarget(TileDto resolvedTile, int resolvedFacing)
+    {
+        _resolvedTargetTile = TargetTile;
+        TargetTile = resolvedTile;
+        FacingDirection = resolvedFacing;
+    }
 
     public bool TryRecordReplanAttempt(int maxAttempts, out int attempt)
     {
@@ -782,5 +872,6 @@ public sealed class BridgeMoveCommand
             (long)(DateTime.UtcNow - (_startedAtUtc ?? _createdAtUtc)).TotalMilliseconds,
             Status == "completed" ? 1.0 : Status == "running" ? Math.Min(0.9, 0.1 + (_stepsTaken * 0.2)) : 0,
             BlockedReason,
-            ErrorCode);
+            ErrorCode,
+            InterruptionReason);
 }

@@ -257,7 +257,7 @@ public sealed class BridgeHttpHost
 
     private BridgeResponse<NpcStatusData> BuildStatusResponse(BridgeEnvelope<StatusQuery> envelope)
     {
-        var requestedNpc = envelope.Payload.NpcId ?? envelope.NpcId;
+        var requestedNpc = envelope.Payload?.NpcId ?? envelope.NpcId;
         if (!Context.IsWorldReady || Game1.player is null)
             return Error<StatusQuery, NpcStatusData>(envelope, "world_not_ready", "The Stardew world is not ready.", retryable: true);
 
@@ -271,22 +271,24 @@ public sealed class BridgeHttpHost
         var isInDialogue = Game1.activeClickableMenu is DialogueBox dialogueBox &&
                            string.Equals(dialogueBox.characterDialogue?.speaker?.Name ?? Game1.currentSpeaker?.Name, npc.Name, StringComparison.OrdinalIgnoreCase);
         var blockedReason = BuildBlockedReason();
-        var moveCandidates = BuildMoveCandidates(npc, blockedReason);
-        var placeCandidates = BuildPlaceCandidates(npc, blockedReason, moveCandidates);
+        var destinations = BuildDestinations(npc, blockedReason);
+        var nearbyTiles = BuildNearbyTiles(npc, blockedReason);
         var data = new NpcStatusData(
             npc.Name.ToLowerInvariant(),
             npc.Name,
             npc.displayName,
             npc.currentLocation?.NameOrUniqueName ?? npc.currentLocation?.Name ?? "unknown",
-            new TileDto((int)npc.Tile.X, (int)npc.Tile.Y),
+            new TileDto((int)(npc.Position.X / Game1.tileSize), (int)(npc.Position.Y / Game1.tileSize)),
             npc.isMoving(),
             isInDialogue,
             blockedReason is null,
             blockedReason,
             null,
             null,
-            moveCandidates,
-            placeCandidates);
+            null,
+            null,
+            destinations,
+            nearbyTiles);
 
         return new BridgeResponse<NpcStatusData>(
             true,
@@ -311,15 +313,15 @@ public sealed class BridgeHttpHost
         return null;
     }
 
-    private static IReadOnlyList<MoveCandidateData> BuildMoveCandidates(NPC npc, string? blockedReason)
+    private static IReadOnlyList<MoveCandidateData> BuildNearbyTiles(NPC npc, string? blockedReason)
     {
         if (!string.IsNullOrWhiteSpace(blockedReason) || npc.currentLocation is null)
             return Array.Empty<MoveCandidateData>();
 
         var location = npc.currentLocation;
         var locationName = location.NameOrUniqueName ?? location.Name;
-        var currentX = (int)npc.Tile.X;
-        var currentY = (int)npc.Tile.Y;
+        var currentX = (int)(npc.Position.X / Game1.tileSize);
+        var currentY = (int)(npc.Position.Y / Game1.tileSize);
         var deltas = new (int X, int Y)[]
         {
             (1, 0),
@@ -345,23 +347,20 @@ public sealed class BridgeHttpHost
             .ToArray();
     }
 
-    private static IReadOnlyList<PlaceCandidateData> BuildPlaceCandidates(
+    private static IReadOnlyList<DestinationData> BuildDestinations(
         NPC npc,
-        string? blockedReason,
-        IReadOnlyList<MoveCandidateData> moveCandidates)
+        string? blockedReason)
     {
         if (!string.IsNullOrWhiteSpace(blockedReason) || npc.currentLocation is null)
-            return Array.Empty<PlaceCandidateData>();
+            return Array.Empty<DestinationData>();
 
         var location = npc.currentLocation;
         var locationName = location.NameOrUniqueName ?? location.Name;
-        var currentTile = new TileDto((int)npc.Tile.X, (int)npc.Tile.Y);
-        return BridgeMoveCandidateSelector.SelectPlaceCandidates(
+        var currentTile = new TileDto((int)(npc.Position.X / Game1.tileSize), (int)(npc.Position.Y / Game1.tileSize));
+        return BridgeMoveCandidateSelector.SelectDestinations(
             locationName,
             npc.Name,
-            BuildPlaceCandidateDefinitions(locationName, npc.Name),
-            moveCandidates,
-            tile => IsRouteValidMoveCandidate(npc, location, currentTile, tile));
+            BuildPlaceCandidateDefinitions(locationName, npc.Name));
     }
 
     private static IEnumerable<BridgePlaceCandidateDefinition> BuildPlaceCandidateDefinitions(string locationName, string npcName)

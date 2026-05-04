@@ -31,7 +31,7 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
-    public void MoveToolDescription_AllowsObservedPlaceCandidate()
+    public void MoveToolDescription_AllowsObservedDestination()
     {
         var tools = StardewNpcToolFactory.CreateDefault(
             new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
@@ -40,26 +40,16 @@ public class StardewNpcToolFactoryTests
         var description = tools.Single(tool => tool.Name == "stardew_move").Description;
         var moveSchema = moveTool.GetParameterSchema().GetRawText();
 
-        StringAssert.Contains(description, "moveCandidate");
-        StringAssert.Contains(description, "placeCandidate");
-        StringAssert.Contains(description, "endpoint candidate");
+        StringAssert.Contains(description, "destination");
+        StringAssert.Contains(description, "destination[n].label");
         StringAssert.Contains(description, "latest observation");
-        StringAssert.Contains(description, "never invent coordinates");
-        StringAssert.Contains(description, "route probing as bridge-owned rather than guaranteed by the tool");
+        StringAssert.Contains(description, "never invent destinations");
         StringAssert.Contains(description, "path_blocked");
         StringAssert.Contains(description, "path_unreachable");
-        StringAssert.Contains(description, "runtime binds npcId, saveId, traceId, and idempotency internally");
-        Assert.IsFalse(
-            description.Contains("route-guaranteed", StringComparison.OrdinalIgnoreCase),
-            "placeCandidate facts are endpoint candidates; the bridge probes routes, but the tool contract must not promise route-guaranteed movement.");
-        Assert.IsFalse(
-            description.Contains("schedule-style", StringComparison.OrdinalIgnoreCase),
-            "World-style destination semantics belong to stardew-world; the tool description should stay at the local executable contract.");
+        StringAssert.Contains(description, "nearby[n]");
 
-        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "x"), "current moveCandidate or placeCandidate");
-        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "y"), "current moveCandidate or placeCandidate");
-        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "reason"), "copied from the current moveCandidate or placeCandidate");
-        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "facingDirection"), "copied from an endpoint placeCandidate");
+        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "destination"), "destination[n].label");
+        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "reason"), "Short reason");
     }
 
     [TestMethod]
@@ -94,9 +84,7 @@ public class StardewNpcToolFactoryTests
 
             var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
             {
-                LocationName = "HaleyHouse",
-                X = 15,
-                Y = 8
+                Destination = "Front door"
             }, CancellationToken.None);
 
             Assert.IsTrue(result.Success);
@@ -128,11 +116,8 @@ public class StardewNpcToolFactoryTests
 
         var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
         {
-            LocationName = "Town",
-            X = 42,
-            Y = 17,
-            Reason = "inspect the town board",
-            FacingDirection = 2
+            Destination = "Town fountain",
+            Reason = "inspect the town board"
         }, CancellationToken.None);
 
         Assert.IsTrue(result.Success);
@@ -163,10 +148,8 @@ public class StardewNpcToolFactoryTests
 
         var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
         {
-            LocationName = "Trailer",
-            X = 3,
-            Y = 7,
-            Reason = "invented coordinate"
+            Destination = "Kitchen",
+            Reason = "invented destination"
         }, CancellationToken.None);
 
         Assert.IsTrue(result.Success);
@@ -249,9 +232,7 @@ public class StardewNpcToolFactoryTests
 
         var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
         {
-            LocationName = "Town",
-            X = 42,
-            Y = 17
+            Destination = "Town fountain"
         }, CancellationToken.None);
 
         Assert.IsTrue(result.Success);
@@ -286,9 +267,7 @@ public class StardewNpcToolFactoryTests
 
             var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
             {
-                LocationName = "Town",
-                X = 42,
-                Y = 17
+                Destination = "Town fountain"
             }, CancellationToken.None);
 
             Assert.IsTrue(result.Success);
@@ -330,9 +309,7 @@ public class StardewNpcToolFactoryTests
 
             var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
             {
-                LocationName = "Town",
-                X = 42,
-                Y = 17
+                Destination = "Town fountain"
             }, CancellationToken.None);
 
             Assert.IsTrue(result.Success);
@@ -431,8 +408,9 @@ public class StardewNpcToolFactoryTests
         {
             _facts = facts ??
             [
-                "moveCandidate[0]=locationName=Town,x=42,y=17,reason=test_candidate",
-                "placeCandidate[0]=label=Front door,locationName=HaleyHouse,x=15,y=8,tags=transition|outdoor,reason=test_candidate,facingDirection=2"
+                "destination[0]=label=Town fountain,locationName=Town,x=42,y=17,tags=public|photogenic,reason=stand somewhere bright and visible in town,facingDirection=2",
+                "destination[1]=label=Front door,locationName=HaleyHouse,x=15,y=8,tags=transition|outdoor,reason=consider going outside,facingDirection=2",
+                "nearby[0]=locationName=Town,x=41,y=17,reason=same_location_safe_reposition"
             ];
         }
 

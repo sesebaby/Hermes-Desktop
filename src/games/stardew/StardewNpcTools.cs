@@ -91,7 +91,7 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_move";
 
-    public string Description => "Ask this NPC to move to one current observed moveCandidate or placeCandidate. A placeCandidate is an endpoint candidate; copy locationName, x, y, reason, and optional facingDirection from the latest observation, never invent coordinates, and treat route probing as bridge-owned rather than guaranteed by the tool. If a move ends with path_blocked or path_unreachable, observe again or choose a different target instead of retrying the same destination. The runtime binds npcId, saveId, traceId, and idempotency internally.";
+    public string Description => "Ask this NPC to move to a semantic destination from the latest observation. Copy the destination label exactly from a destination[n].label fact, never invent destinations. If a move ends with path_blocked, path_unreachable, or interrupted, observe again or choose a different target instead of retrying the same destination. Only use nearby[n] as a last resort for 1-2 tile repositioning when no destination matches your intent.";
 
     public Type ParametersType => typeof(StardewMoveToolParameters);
 
@@ -100,11 +100,12 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
     public async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
     {
         var p = (StardewMoveToolParameters)parameters;
-        if (string.IsNullOrWhiteSpace(p.LocationName))
-            return ToolResult.Fail("locationName is required.");
+        if (string.IsNullOrWhiteSpace(p.Destination))
+            return ToolResult.Fail("destination is required — copy the label from a destination[n] fact in the latest observation.");
 
         var traceId = _traceIdFactory();
-        if (!await IsCurrentObservedCandidateAsync(p, ct))
+        var resolved = await ResolveDestinationAsync(p.Destination, ct);
+        if (resolved is null)
         {
             return ToolResult.Ok(StardewNpcToolJson.Serialize(new StardewNpcActionToolResult(
                 Accepted: false,
@@ -116,9 +117,11 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
                 StatusPolls: [])));
         }
 
+        var (locationName, x, y, facingDirection) = resolved.Value;
+
         var payload = new JsonObject();
-        if (p.FacingDirection.HasValue)
-            payload["facingDirection"] = p.FacingDirection.Value;
+        if (facingDirection.HasValue)
+            payload["facingDirection"] = facingDirection.Value;
 
         var action = new GameAction(
             _descriptor.NpcId,
@@ -126,7 +129,7 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
             GameActionType.Move,
             traceId,
             _idempotencyKeyFactory(),
-            new GameActionTarget("tile", p.LocationName, new GameTile(p.X, p.Y)),
+            new GameActionTarget("destination", locationName, new GameTile(x, y)),
             p.Reason,
             payload,
             BodyBinding: _descriptor.EffectiveBodyBinding);
@@ -182,28 +185,40 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
         return statuses;
     }
 
-    private async Task<bool> IsCurrentObservedCandidateAsync(StardewMoveToolParameters parameters, CancellationToken ct)
+    private async Task<(string LocationName, int X, int Y, int? FacingDirection)?> ResolveDestinationAsync(
+        string destinationLabel,
+        CancellationToken ct)
     {
         var observation = await _queries.ObserveAsync(_descriptor.EffectiveBodyBinding, ct);
-        return observation.Facts.Any(fact => TryReadCandidateTarget(fact, out var locationName, out var x, out var y) &&
-                                             string.Equals(locationName, parameters.LocationName, StringComparison.OrdinalIgnoreCase) &&
-                                             x == parameters.X &&
-                                             y == parameters.Y);
+
+        foreach (var fact in observation.Facts)
+        {
+            if (!fact.StartsWith("destination[", StringComparison.Ordinal))
+                continue;
+
+            if (!TryReadDestinationFact(fact, out var label, out var loc, out var fx, out var fy, out var fd))
+                continue;
+
+            if (string.Equals(label, destinationLabel, StringComparison.Ordinal))
+                return (loc, fx, fy, fd);
+        }
+
+        return null;
     }
 
-    private static bool TryReadCandidateTarget(string fact, out string locationName, out int x, out int y)
+    private static bool TryReadDestinationFact(
+        string fact,
+        out string label,
+        out string locationName,
+        out int x,
+        out int y,
+        out int? facingDirection)
     {
+        label = string.Empty;
         locationName = string.Empty;
         x = 0;
         y = 0;
-        var hasX = false;
-        var hasY = false;
-
-        if (!fact.StartsWith("moveCandidate[", StringComparison.Ordinal) &&
-            !fact.StartsWith("placeCandidate[", StringComparison.Ordinal))
-        {
-            return false;
-        }
+        facingDirection = null;
 
         var payloadStart = fact.IndexOf("]=", StringComparison.Ordinal);
         if (payloadStart < 0 || payloadStart + 2 >= fact.Length)
@@ -217,23 +232,19 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
 
             var key = part[..separator];
             var value = part[(separator + 1)..];
-            if (string.Equals(key, "locationName", StringComparison.Ordinal))
-            {
+            if (string.Equals(key, "label", StringComparison.Ordinal))
+                label = value;
+            else if (string.Equals(key, "locationName", StringComparison.Ordinal))
                 locationName = value;
-            }
             else if (string.Equals(key, "x", StringComparison.Ordinal) && int.TryParse(value, out var parsedX))
-            {
                 x = parsedX;
-                hasX = true;
-            }
             else if (string.Equals(key, "y", StringComparison.Ordinal) && int.TryParse(value, out var parsedY))
-            {
                 y = parsedY;
-                hasY = true;
-            }
+            else if (string.Equals(key, "facingDirection", StringComparison.Ordinal) && int.TryParse(value, out var parsedFd))
+                facingDirection = parsedFd;
         }
 
-        return !string.IsNullOrWhiteSpace(locationName) && hasX && hasY;
+        return !string.IsNullOrWhiteSpace(label) && !string.IsNullOrWhiteSpace(locationName);
     }
 }
 
@@ -635,15 +646,9 @@ public sealed class StardewStatusToolParameters
 
 public sealed class StardewMoveToolParameters
 {
-    public required string LocationName { get; init; }
-
-    public int X { get; init; }
-
-    public int Y { get; init; }
+    public required string Destination { get; init; }
 
     public string? Reason { get; init; }
-
-    public int? FacingDirection { get; init; }
 }
 
 public sealed class StardewSpeakToolParameters
@@ -701,13 +706,10 @@ internal static class StardewNpcToolSchemas
         => Schema(
             new Dictionary<string, object>
             {
-                ["locationName"] = new { type = "string", description = "Stardew location name, for example Town." },
-                ["x"] = new { type = "integer", description = "Target tile X coordinate from a current moveCandidate or placeCandidate fact." },
-                ["y"] = new { type = "integer", description = "Target tile Y coordinate from a current moveCandidate or placeCandidate fact." },
-                ["reason"] = new { type = "string", description = "Short reason copied from the current moveCandidate or placeCandidate fact." },
-                ["facingDirection"] = new { type = "integer", description = "Optional Stardew facing direction copied from an endpoint placeCandidate fact when present." }
+                ["destination"] = new { type = "string", description = "Destination label copied exactly from a destination[n].label fact in the latest observation. Never invent destinations." },
+                ["reason"] = new { type = "string", description = "Short reason copied from the destination[n] fact's reason field, or a brief NPC intent aligned with the destination." }
             },
-            ["locationName", "x", "y"]);
+            ["destination"]);
 
     public static JsonElement Speak()
         => Schema(

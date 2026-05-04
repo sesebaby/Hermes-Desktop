@@ -70,8 +70,9 @@ public class StardewCommandServiceTests
                 0.5,
                 "tile_reserved",
                 "resource_busy",
-                updatedAt,
-                retryAfter),
+                InterruptionReason: null,
+                UpdatedAtUtc: updatedAt,
+                RetryAfterUtc: retryAfter),
             null,
             null);
         var service = new StardewCommandService(client, "save-1");
@@ -140,10 +141,11 @@ public class StardewCommandServiceTests
                 startedAt,
                 8,
                 0.4,
-                null,
-                null,
-                updatedAt,
-                null),
+                BlockedReason: null,
+                ErrorCode: null,
+                InterruptionReason: null,
+                UpdatedAtUtc: updatedAt,
+                RetryAfterUtc: null),
             null,
             null);
         var service = new StardewCommandService(client, "save-1");

@@ -114,7 +114,36 @@ public sealed class StardewQueryService : IGameQueryService
         if (!string.IsNullOrWhiteSpace(status.LastTraceId))
             facts.Add($"lastTraceId={status.LastTraceId}");
 
-        foreach (var (candidate, index) in (status.MoveCandidates ?? Array.Empty<StardewMoveCandidateData>())
+        foreach (var (candidate, index) in (status.Destinations ?? Array.Empty<StardewDestinationData>())
+                 .Take(5)
+                 .Select((candidate, index) => (candidate, index)))
+        {
+            if (string.IsNullOrWhiteSpace(candidate.LocationName) || string.IsNullOrWhiteSpace(candidate.Label))
+                continue;
+
+            var reason = string.IsNullOrWhiteSpace(candidate.Reason)
+                ? "a place of interest in the current location"
+                : candidate.Reason;
+            var tags = candidate.Tags is null
+                ? ""
+                : string.Join("|", candidate.Tags.Where(tag => !string.IsNullOrWhiteSpace(tag)).Select(tag => tag.Trim()));
+            var parts = new List<string>
+            {
+                $"destination[{index}]=label={candidate.Label}",
+                $"locationName={candidate.LocationName}",
+                $"x={candidate.Tile.X}",
+                $"y={candidate.Tile.Y}",
+                $"tags={tags}",
+                $"reason={reason}"
+            };
+            if (candidate.FacingDirection.HasValue)
+                parts.Add($"facingDirection={candidate.FacingDirection.Value}");
+            if (!string.IsNullOrWhiteSpace(candidate.EndBehavior))
+                parts.Add($"endBehavior={candidate.EndBehavior}");
+            facts.Add(string.Join(",", parts));
+        }
+
+        foreach (var (candidate, index) in (status.NearbyTiles ?? Array.Empty<StardewMoveCandidateData>())
                  .Take(3)
                  .Select((candidate, index) => (candidate, index)))
         {
@@ -124,36 +153,7 @@ public sealed class StardewQueryService : IGameQueryService
             var reason = string.IsNullOrWhiteSpace(candidate.Reason)
                 ? "same_location_safe_reposition"
                 : candidate.Reason;
-            facts.Add($"moveCandidate[{index}]=locationName={candidate.LocationName},x={candidate.Tile.X},y={candidate.Tile.Y},reason={reason}");
-        }
-
-        foreach (var (candidate, index) in (status.PlaceCandidates ?? Array.Empty<StardewPlaceCandidateData>())
-                 .Take(3)
-                 .Select((candidate, index) => (candidate, index)))
-        {
-            if (string.IsNullOrWhiteSpace(candidate.LocationName) || string.IsNullOrWhiteSpace(candidate.Label))
-                continue;
-
-            var reason = string.IsNullOrWhiteSpace(candidate.Reason)
-                ? "candidate_matches_current_world_context"
-                : candidate.Reason;
-            var tags = candidate.Tags is null
-                ? ""
-                : string.Join("|", candidate.Tags.Where(tag => !string.IsNullOrWhiteSpace(tag)).Select(tag => tag.Trim()));
-            var scheduleParts = new List<string>
-            {
-                $"placeCandidate[{index}]=label={candidate.Label}",
-                $"locationName={candidate.LocationName}",
-                $"x={candidate.Tile.X}",
-                $"y={candidate.Tile.Y}",
-                $"tags={tags}",
-                $"reason={reason}"
-            };
-            if (candidate.FacingDirection.HasValue)
-                scheduleParts.Add($"facingDirection={candidate.FacingDirection.Value}");
-            if (!string.IsNullOrWhiteSpace(candidate.EndBehavior))
-                scheduleParts.Add($"endBehavior={candidate.EndBehavior}");
-            facts.Add(string.Join(",", scheduleParts));
+            facts.Add($"nearby[{index}]=locationName={candidate.LocationName},x={candidate.Tile.X},y={candidate.Tile.Y},reason={reason}");
         }
 
         return facts;

@@ -40,6 +40,15 @@ public sealed record PlaceCandidateData(
     int? FacingDirection = null,
     string? EndBehavior = null);
 
+public sealed record DestinationData(
+    string Label,
+    string LocationName,
+    TileDto Tile,
+    IReadOnlyList<string> Tags,
+    string Reason,
+    int? FacingDirection = null,
+    string? EndBehavior = null);
+
 public sealed record MoveAcceptedData(bool Accepted, MoveClaim Claim);
 
 public sealed record MoveClaim(string NpcId, TileDto TargetTile, TileDto? InteractionTile);
@@ -68,7 +77,8 @@ public sealed record TaskStatusData(
     long ElapsedMs,
     double Progress,
     string? BlockedReason,
-    string? ErrorCode);
+    string? ErrorCode,
+    string? InterruptionReason = null);
 
 public sealed record StatusQuery(string? NpcId);
 
@@ -87,7 +97,9 @@ public sealed record NpcStatusData(
     string? CurrentCommandId,
     string? LastTraceId,
     IReadOnlyList<MoveCandidateData>? MoveCandidates = null,
-    IReadOnlyList<PlaceCandidateData>? PlaceCandidates = null);
+    IReadOnlyList<PlaceCandidateData>? PlaceCandidates = null,
+    IReadOnlyList<DestinationData>? Destinations = null,
+    IReadOnlyList<MoveCandidateData>? NearbyTiles = null);
 
 public sealed record WorldEntityData(
     string NpcId,

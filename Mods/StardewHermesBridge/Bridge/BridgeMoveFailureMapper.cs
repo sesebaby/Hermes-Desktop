@@ -15,7 +15,7 @@ internal static class BridgeMoveFailureMapper
         return probe.Status switch
         {
             BridgeRouteProbeStatus.TargetUnsafe => new BridgeMoveFailure(
-                "invalid_target",
+                "destination_unreachable",
                 BuildDetail("target_blocked", locationName, probe.FailingTile ?? targetTile, probe.FailureKind ?? "target_blocked")),
             BridgeRouteProbeStatus.PathEmpty => new BridgeMoveFailure(
                 initial ? "path_unreachable" : "path_blocked",

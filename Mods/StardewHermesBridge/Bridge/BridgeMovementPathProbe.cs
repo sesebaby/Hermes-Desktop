@@ -3,6 +3,7 @@ namespace StardewHermesBridge.Bridge;
 using Microsoft.Xna.Framework;
 using StardewValley;
 using StardewValley.Pathfinding;
+using StardewValley.TerrainFeatures;
 
 internal enum BridgeRouteProbeStatus
 {
@@ -180,6 +181,65 @@ internal static class BridgeMovementPathProbe
         return route.Skip(firstStepIndex).ToArray();
     }
 
+    public static (TileDto StandTile, int FacingDirection)? FindClosestPassableNeighbor(
+        NPC npc,
+        GameLocation location,
+        TileDto blockedTarget,
+        TileDto currentTile)
+    {
+        var candidates = new (int X, int Y, int Direction)[]
+        {
+            (blockedTarget.X + 1, blockedTarget.Y, 3),  // right neighbor, face left toward target
+            (blockedTarget.X - 1, blockedTarget.Y, 1),  // left neighbor, face right toward target
+            (blockedTarget.X, blockedTarget.Y + 1, 0),  // below neighbor, face up toward target
+            (blockedTarget.X, blockedTarget.Y - 1, 2),  // above neighbor, face down toward target
+        };
+
+        // Temporarily remove terrain feature at the blocked target tile — oversized features
+        // (trees, large bushes) can make adjacent tiles appear blocked when they aren't.
+        using var _ = new ScopedTerrainFeatureRemoval(location, blockedTarget);
+
+        var passable = new List<(TileDto Tile, int Direction, int Distance)>();
+        foreach (var (x, y, dir) in candidates)
+        {
+            var tile = new TileDto(x, y);
+            if (CheckTargetAffordance(location, tile).IsSafe)
+            {
+                var dist = Math.Abs(x - currentTile.X) + Math.Abs(y - currentTile.Y);
+                passable.Add((tile, dir, dist));
+            }
+        }
+
+        return passable
+            .OrderBy(p => p.Distance)
+            .Select(p => ((TileDto StandTile, int FacingDirection)?)(p.Tile, p.Direction))
+            .FirstOrDefault();
+    }
+
     private static bool SameTile(TileDto left, TileDto right)
         => left.X == right.X && left.Y == right.Y;
+}
+
+internal sealed class ScopedTerrainFeatureRemoval : IDisposable
+{
+    private readonly GameLocation _location;
+    private readonly Vector2 _tile;
+    private readonly TerrainFeature? _removed;
+
+    public ScopedTerrainFeatureRemoval(GameLocation location, TileDto tile)
+    {
+        _location = location;
+        _tile = new Vector2(tile.X, tile.Y);
+        if (location.terrainFeatures.TryGetValue(_tile, out var feature))
+        {
+            _removed = feature;
+            location.terrainFeatures.Remove(_tile);
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_removed is not null)
+            _location.terrainFeatures[_tile] = _removed;
+    }
 }

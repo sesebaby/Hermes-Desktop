@@ -156,7 +156,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             [
                 "location=HaleyHouse",
                 "tile=8,7",
-                "placeCandidate[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out"
+                "destination[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out"
             ]));
         var service = new StardewAutonomyTickDebugService(
             new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
@@ -186,14 +186,14 @@ public sealed class StardewAutonomyTickDebugServiceTests
             message.Contains("## Stardew Required Skills", StringComparison.Ordinal));
         StringAssert.Contains(systemPrompt, "### stardew-world");
         StringAssert.Contains(systemPrompt, "本 skill 是地点意义与候选解释 owner");
-        StringAssert.Contains(systemPrompt, "`placeCandidate[n]` 的 `label`、`tags`、`reason`、`endBehavior`");
+        StringAssert.Contains(systemPrompt, "`destination[n]` 的 `label`、`tags`、`reason`、`endBehavior`");
         StringAssert.Contains(systemPrompt, "### stardew-navigation");
-        StringAssert.Contains(systemPrompt, "本 skill 是移动循环与失败恢复 owner");
-        StringAssert.Contains(systemPrompt, "最新观察 -> `stardew_move` -> 查询任务状态 -> 失败后重新观察或换目标");
-        StringAssert.Contains(systemPrompt, "物理位移不是台词");
-        StringAssert.Contains(systemPrompt, "必须调用 `stardew_move`");
-        StringAssert.Contains(systemPrompt, "如果没有调用 `stardew_move`");
-        StringAssert.Contains(systemPrompt, "不要直接调用 HTTP");
+        StringAssert.Contains(systemPrompt, "This skill owns the move loop");
+        StringAssert.Contains(systemPrompt, "observe destinations");
+        StringAssert.Contains(systemPrompt, "choose one matching intent");
+        StringAssert.Contains(systemPrompt, "`stardew_move(destination, reason)`");
+        StringAssert.Contains(systemPrompt, "Movement Is Not Narration Text");
+        StringAssert.Contains(systemPrompt, "MUST call `stardew_move`");
         Assert.IsFalse(
             systemPrompt.Contains("stardew-world test guidance", StringComparison.Ordinal),
             "Repo-backed prompt supplement coverage must use the real skills/gaming root, not fixture-only text.");
@@ -526,11 +526,11 @@ public sealed class StardewAutonomyTickDebugServiceTests
                     {
                         Id = "call-move",
                         Name = "stardew_move",
-                        Arguments = """{"locationName":"Town","x":43,"y":17,"reason":"same_location_safe_reposition"}"""
+                        Arguments = """{"destination":"Town fountain","reason":"stand somewhere bright and visible in town"}"""
                     }
                 ]
             },
-            new ChatResponse { Content = "Moved toward the safe nearby tile.", FinishReason = "stop" });
+            new ChatResponse { Content = "Moved toward the Town fountain.", FinishReason = "stop" });
         var queries = new FakeQueryService(new GameObservation(
             "haley",
             "stardew-valley",
@@ -540,7 +540,8 @@ public sealed class StardewAutonomyTickDebugServiceTests
                 "location=Town",
                 "tile=42,17",
                 "isAvailableForControl=true",
-                "moveCandidate[0]=locationName=Town,x=43,y=17,reason=same_location_safe_reposition"
+                "destination[0]=label=Town fountain,locationName=Town,x=42,y=17,tags=public|photogenic,reason=stand somewhere bright and visible in town,facingDirection=2",
+                "nearby[0]=locationName=Town,x=43,y=17,reason=same_location_safe_reposition"
             ]));
         var service = new StardewAutonomyTickDebugService(
             new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
@@ -566,16 +567,15 @@ public sealed class StardewAutonomyTickDebugServiceTests
         var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
 
         Assert.IsTrue(result.Success, result.FailureReason);
-        Assert.AreEqual("Moved toward the safe nearby tile.", result.DecisionResponse);
+        Assert.AreEqual("Moved toward the Town fountain.", result.DecisionResponse);
         Assert.IsTrue(
-            chatClient.UserMessages.Any(message => message.Contains("moveCandidate[0]=locationName=Town,x=43,y=17", StringComparison.Ordinal)),
-            "The model-facing autonomy prompt must expose the current candidate before the tool call happens.");
+            chatClient.UserMessages.Any(message => message.Contains("destination[0]=label=Town fountain", StringComparison.Ordinal)),
+            "The model-facing autonomy prompt must expose the current destinations before the tool call happens.");
         Assert.IsNotNull(commands.LastAction);
         Assert.AreEqual(GameActionType.Move, commands.LastAction.Type);
         Assert.AreEqual("Town", commands.LastAction.Target.LocationName);
-        Assert.AreEqual(43, commands.LastAction.Target.Tile?.X);
+        Assert.AreEqual(42, commands.LastAction.Target.Tile?.X);
         Assert.AreEqual(17, commands.LastAction.Target.Tile?.Y);
-        Assert.AreEqual("same_location_safe_reposition", commands.LastAction.Reason);
     }
 
     [TestMethod]
@@ -592,7 +592,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
                 "location=HaleyHouse",
                 "tile=8,7",
                 "isAvailableForControl=true",
-                "placeCandidate[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out"
+                "destination[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out"
             ]));
         var service = new StardewAutonomyTickDebugService(
             new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
@@ -620,7 +620,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
         Assert.IsTrue(result.Success, result.FailureReason);
         Assert.AreEqual("I'll look around first.", result.DecisionResponse);
         Assert.IsTrue(
-            chatClient.UserMessages.Any(message => message.Contains("placeCandidate[0]=label=Bedroom mirror", StringComparison.Ordinal)),
+            chatClient.UserMessages.Any(message => message.Contains("destination[0]=label=Bedroom mirror", StringComparison.Ordinal)),
             "The candidate should be visible to the model, not converted into a host-side movement.");
         Assert.IsNull(commands.LastAction, "A placeCandidate fact must not force host-side movement without an agent tool call.");
     }
@@ -639,7 +639,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
                 "location=Town",
                 "tile=42,17",
                 "isAvailableForControl=true",
-                "placeCandidate[0]=label=Town fountain,locationName=Town,x=42,y=20,tags=public|photogenic,reason=stand somewhere pretty"
+                "destination[0]=label=Town fountain,locationName=Town,x=42,y=20,tags=public|photogenic,reason=stand somewhere pretty"
             ]));
         var events = new FakeEventSource([
             new GameEventRecord("evt-1", "player_nearby", "haley", DateTime.UtcNow, "The player walked near Haley.")

@@ -53,7 +53,7 @@ public class StardewQueryServiceTests
     }
 
     [TestMethod]
-    public async Task ObserveAsync_MapsMoveCandidatesIntoMachineReadableFacts()
+    public async Task ObserveAsync_MapsNearbyTilesIntoMachineReadableFacts()
     {
         var client = new FakeSmapiClient();
         client.StatusResponse = new StardewBridgeResponse<StardewNpcStatusData>(
@@ -74,6 +74,7 @@ public class StardewQueryServiceTests
                 null,
                 null,
                 null,
+                NearbyTiles:
                 [
                     new StardewMoveCandidateData("HaleyHouse", new StardewTile(9, 7), "same_location_safe_reposition"),
                     new StardewMoveCandidateData("HaleyHouse", new StardewTile(8, 8), "same_location_safe_reposition"),
@@ -86,20 +87,20 @@ public class StardewQueryServiceTests
 
         var observation = await service.ObserveAsync("haley", CancellationToken.None);
 
-        var candidateFacts = observation.Facts
-            .Where(fact => fact.StartsWith("moveCandidate[", StringComparison.Ordinal))
+        var nearbyFacts = observation.Facts
+            .Where(fact => fact.StartsWith("nearby[", StringComparison.Ordinal))
             .ToArray();
-        Assert.AreEqual(3, candidateFacts.Length, "Autonomy facts should expose at most three current safe move candidates.");
+        Assert.AreEqual(3, nearbyFacts.Length, "Autonomy facts should expose at most three current safe nearby tiles.");
         CollectionAssert.Contains(
-            candidateFacts,
-            "moveCandidate[0]=locationName=HaleyHouse,x=9,y=7,reason=same_location_safe_reposition");
+            nearbyFacts,
+            "nearby[0]=locationName=HaleyHouse,x=9,y=7,reason=same_location_safe_reposition");
         CollectionAssert.Contains(
-            candidateFacts,
-            "moveCandidate[1]=locationName=HaleyHouse,x=8,y=8,reason=same_location_safe_reposition");
+            nearbyFacts,
+            "nearby[1]=locationName=HaleyHouse,x=8,y=8,reason=same_location_safe_reposition");
     }
 
     [TestMethod]
-    public async Task ObserveAsync_MapsPlaceCandidatesIntoMachineReadableFacts()
+    public async Task ObserveAsync_MapsDestinationsIntoMachineReadableFacts()
     {
         var client = new FakeSmapiClient();
         client.StatusResponse = new StardewBridgeResponse<StardewNpcStatusData>(
@@ -120,13 +121,12 @@ public class StardewQueryServiceTests
                 null,
                 null,
                 null,
-                MoveCandidates: null,
-                PlaceCandidates:
+                Destinations:
                 [
-                    new StardewPlaceCandidateData("Bedroom mirror", "HaleyHouse", new StardewTile(6, 4), ["home", "photogenic"], "check her look before going out"),
-                    new StardewPlaceCandidateData("Living room", "HaleyHouse", new StardewTile(10, 12), ["home", "social"], "see what is happening downstairs"),
-                    new StardewPlaceCandidateData("Front door", "HaleyHouse", new StardewTile(15, 8), ["transition", "outdoor"], "consider going outside"),
-                    new StardewPlaceCandidateData("Kitchen", "HaleyHouse", new StardewTile(4, 11), ["home"], "extra candidate should be clipped")
+                    new StardewDestinationData("Bedroom mirror", "HaleyHouse", new StardewTile(6, 4), ["home", "photogenic"], "check her look before going out"),
+                    new StardewDestinationData("Living room", "HaleyHouse", new StardewTile(10, 12), ["home", "social"], "see what is happening downstairs"),
+                    new StardewDestinationData("Front door", "HaleyHouse", new StardewTile(15, 8), ["transition", "outdoor"], "consider going outside"),
+                    new StardewDestinationData("Kitchen", "HaleyHouse", new StardewTile(4, 11), ["home"], "extra candidate should be clipped")
                 ]),
             null,
             null);
@@ -134,16 +134,16 @@ public class StardewQueryServiceTests
 
         var observation = await service.ObserveAsync("haley", CancellationToken.None);
 
-        var candidateFacts = observation.Facts
-            .Where(fact => fact.StartsWith("placeCandidate[", StringComparison.Ordinal))
+        var destinationFacts = observation.Facts
+            .Where(fact => fact.StartsWith("destination[", StringComparison.Ordinal))
             .ToArray();
-        Assert.AreEqual(3, candidateFacts.Length, "Autonomy facts should expose a compact top-three place candidate set.");
+        Assert.AreEqual(4, destinationFacts.Length, "All valid destinations should be exposed (up to 5).");
         CollectionAssert.Contains(
-            candidateFacts,
-            "placeCandidate[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out");
+            destinationFacts,
+            "destination[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out");
         CollectionAssert.Contains(
-            candidateFacts,
-            "placeCandidate[2]=label=Front door,locationName=HaleyHouse,x=15,y=8,tags=transition|outdoor,reason=consider going outside");
+            destinationFacts,
+            "destination[2]=label=Front door,locationName=HaleyHouse,x=15,y=8,tags=transition|outdoor,reason=consider going outside");
     }
 
     [TestMethod]
