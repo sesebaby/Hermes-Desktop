@@ -151,6 +151,33 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
+    public async Task MoveTool_WhenTargetIsNotCurrentObservedCandidate_ReturnsBlockedWithoutSubmittingCommand()
+    {
+        var commands = new CapturingCommandService();
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"),
+            traceIdFactory: () => "trace-move",
+            idempotencyKeyFactory: () => "idem-move");
+        var moveTool = tools.Single(tool => tool.Name == "stardew_move");
+
+        var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
+        {
+            LocationName = "Trailer",
+            X = 3,
+            Y = 7,
+            Reason = "invented coordinate"
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.IsNull(commands.LastAction);
+        using var doc = JsonDocument.Parse(result.Content);
+        Assert.AreEqual(false, doc.RootElement.GetProperty("accepted").GetBoolean());
+        Assert.AreEqual(StardewCommandStatuses.Blocked, doc.RootElement.GetProperty("status").GetString());
+        Assert.AreEqual(StardewBridgeErrorCodes.InvalidTarget, doc.RootElement.GetProperty("failureReason").GetString());
+    }
+
+    [TestMethod]
     public async Task SpeakTool_BindsRuntimeIdentityAndSubmitsThroughCommandService()
     {
         var commands = new CapturingCommandService();
@@ -398,8 +425,19 @@ public class StardewNpcToolFactoryTests
 
     private sealed class FakeQueryService : IGameQueryService
     {
+        private readonly IReadOnlyList<string> _facts;
+
+        public FakeQueryService(IReadOnlyList<string>? facts = null)
+        {
+            _facts = facts ??
+            [
+                "moveCandidate[0]=locationName=Town,x=42,y=17,reason=test_candidate",
+                "placeCandidate[0]=label=Front door,locationName=HaleyHouse,x=15,y=8,tags=transition|outdoor,reason=test_candidate,facingDirection=2"
+            ];
+        }
+
         public Task<GameObservation> ObserveAsync(string npcId, CancellationToken ct)
-            => Task.FromResult(new GameObservation(npcId, "stardew-valley", DateTime.UtcNow, "status", []));
+            => Task.FromResult(new GameObservation(npcId, "stardew-valley", DateTime.UtcNow, "status", _facts));
 
         public Task<WorldSnapshot> GetWorldSnapshotAsync(string npcId, CancellationToken ct)
             => Task.FromResult(new WorldSnapshot("stardew-valley", "save-1", DateTime.UtcNow, [], []));

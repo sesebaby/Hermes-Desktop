@@ -30,7 +30,7 @@ public static class StardewNpcToolFactory
         return
         [
             new StardewStatusTool(adapter.Queries, descriptor),
-            new StardewMoveTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
+            new StardewMoveTool(adapter.Commands, adapter.Queries, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
             new StardewSpeakTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewOpenPrivateChatTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewTaskStatusTool(adapter.Commands)
@@ -64,6 +64,7 @@ public sealed class StardewStatusTool : ITool, IToolSchemaProvider
 public sealed class StardewMoveTool : ITool, IToolSchemaProvider
 {
     private readonly IGameCommandService _commands;
+    private readonly IGameQueryService _queries;
     private readonly NpcRuntimeDescriptor _descriptor;
     private readonly Func<string> _traceIdFactory;
     private readonly Func<string> _idempotencyKeyFactory;
@@ -72,6 +73,7 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
 
     internal StardewMoveTool(
         IGameCommandService commands,
+        IGameQueryService queries,
         NpcRuntimeDescriptor descriptor,
         Func<string> traceIdFactory,
         Func<string> idempotencyKeyFactory,
@@ -79,6 +81,7 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
         StardewRuntimeActionController runtimeActions)
     {
         _commands = commands;
+        _queries = queries;
         _descriptor = descriptor;
         _traceIdFactory = traceIdFactory;
         _idempotencyKeyFactory = idempotencyKeyFactory;
@@ -100,6 +103,19 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
         if (string.IsNullOrWhiteSpace(p.LocationName))
             return ToolResult.Fail("locationName is required.");
 
+        var traceId = _traceIdFactory();
+        if (!await IsCurrentObservedCandidateAsync(p, ct))
+        {
+            return ToolResult.Ok(StardewNpcToolJson.Serialize(new StardewNpcActionToolResult(
+                Accepted: false,
+                CommandId: string.Empty,
+                Status: StardewCommandStatuses.Blocked,
+                FailureReason: StardewBridgeErrorCodes.InvalidTarget,
+                TraceId: traceId,
+                FinalStatus: null,
+                StatusPolls: [])));
+        }
+
         var payload = new JsonObject();
         if (p.FacingDirection.HasValue)
             payload["facingDirection"] = p.FacingDirection.Value;
@@ -108,7 +124,7 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
             _descriptor.NpcId,
             _descriptor.GameId,
             GameActionType.Move,
-            _traceIdFactory(),
+            traceId,
             _idempotencyKeyFactory(),
             new GameActionTarget("tile", p.LocationName, new GameTile(p.X, p.Y)),
             p.Reason,
@@ -164,6 +180,60 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
         }
 
         return statuses;
+    }
+
+    private async Task<bool> IsCurrentObservedCandidateAsync(StardewMoveToolParameters parameters, CancellationToken ct)
+    {
+        var observation = await _queries.ObserveAsync(_descriptor.EffectiveBodyBinding, ct);
+        return observation.Facts.Any(fact => TryReadCandidateTarget(fact, out var locationName, out var x, out var y) &&
+                                             string.Equals(locationName, parameters.LocationName, StringComparison.OrdinalIgnoreCase) &&
+                                             x == parameters.X &&
+                                             y == parameters.Y);
+    }
+
+    private static bool TryReadCandidateTarget(string fact, out string locationName, out int x, out int y)
+    {
+        locationName = string.Empty;
+        x = 0;
+        y = 0;
+        var hasX = false;
+        var hasY = false;
+
+        if (!fact.StartsWith("moveCandidate[", StringComparison.Ordinal) &&
+            !fact.StartsWith("placeCandidate[", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var payloadStart = fact.IndexOf("]=", StringComparison.Ordinal);
+        if (payloadStart < 0 || payloadStart + 2 >= fact.Length)
+            return false;
+
+        foreach (var part in fact[(payloadStart + 2)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var separator = part.IndexOf('=');
+            if (separator <= 0 || separator == part.Length - 1)
+                continue;
+
+            var key = part[..separator];
+            var value = part[(separator + 1)..];
+            if (string.Equals(key, "locationName", StringComparison.Ordinal))
+            {
+                locationName = value;
+            }
+            else if (string.Equals(key, "x", StringComparison.Ordinal) && int.TryParse(value, out var parsedX))
+            {
+                x = parsedX;
+                hasX = true;
+            }
+            else if (string.Equals(key, "y", StringComparison.Ordinal) && int.TryParse(value, out var parsedY))
+            {
+                y = parsedY;
+                hasY = true;
+            }
+        }
+
+        return !string.IsNullOrWhiteSpace(locationName) && hasX && hasY;
     }
 }
 

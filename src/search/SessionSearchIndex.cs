@@ -1,9 +1,9 @@
 namespace Hermes.Agent.Search;
 
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 using Hermes.Agent.Core;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
@@ -16,9 +16,6 @@ using Microsoft.Extensions.Logging;
 public sealed class SessionSearchIndex : IDisposable
 {
     public const int SchemaVersion = 9;
-
-    private static readonly Regex QuotedPhraseRegex = new("\"[^\"]*\"", RegexOptions.Compiled);
-    private static readonly Regex DottedOrHyphenatedTermRegex = new(@"\b(\w+(?:[.-]\w+)+)\b", RegexOptions.Compiled);
 
     private readonly string _connectionString;
     private readonly ILogger<SessionSearchIndex> _logger;
@@ -780,25 +777,43 @@ public sealed class SessionSearchIndex : IDisposable
 
     private static string SanitizeQuery(string query)
     {
-        var quotedParts = new List<string>();
-        var sanitized = QuotedPhraseRegex.Replace(query, m =>
+        var terms = new List<string>();
+        var current = new StringBuilder();
+
+        foreach (var ch in query)
         {
-            quotedParts.Add(m.Value);
-            return $"\u0000Q{quotedParts.Count - 1}\u0000";
-        });
+            if (char.IsLetterOrDigit(ch) || ch == '_')
+            {
+                current.Append(ch);
+                continue;
+            }
 
-        sanitized = Regex.Replace(sanitized, "[:+{}()\"^]", " ");
-        sanitized = Regex.Replace(sanitized, "\\*+", "*");
-        sanitized = Regex.Replace(sanitized, "(^|\\s)\\*", "$1");
-        sanitized = Regex.Replace(sanitized.Trim(), "(?i)^(AND|OR|NOT)\\b\\s*", "");
-        sanitized = Regex.Replace(sanitized.Trim(), "(?i)\\s+(AND|OR|NOT)\\s*$", "");
-        sanitized = DottedOrHyphenatedTermRegex.Replace(sanitized, "\"$1\"");
+            FlushTerm(current, terms);
+        }
 
-        for (var i = 0; i < quotedParts.Count; i++)
-            sanitized = sanitized.Replace($"\u0000Q{i}\u0000", quotedParts[i], StringComparison.Ordinal);
-
-        return sanitized.Trim();
+        FlushTerm(current, terms);
+        return string.Join(' ', terms);
     }
+
+    private static void FlushTerm(StringBuilder current, List<string> terms)
+    {
+        if (current.Length == 0)
+            return;
+
+        var term = current.ToString();
+        current.Clear();
+
+        if (IsFtsOperator(term))
+            term = term.ToLowerInvariant();
+
+        terms.Add(term);
+    }
+
+    private static bool IsFtsOperator(string term)
+        => string.Equals(term, "AND", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(term, "OR", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(term, "NOT", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(term, "NEAR", StringComparison.OrdinalIgnoreCase);
 
     private static bool ContainsCjk(string text)
     {

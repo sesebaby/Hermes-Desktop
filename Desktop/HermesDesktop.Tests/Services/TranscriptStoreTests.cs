@@ -137,6 +137,19 @@ public class TranscriptStoreTests
     }
 
     [TestMethod]
+    public void SessionSearchIndex_Search_TreatsSentencePunctuationAsPlainSeparators()
+    {
+        var dbPath = Path.Combine(_tempDir, "state.db");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        index.SaveMessage("punctuation-session", new Message { Role = "user", Content = "NPC Haley current route valid" }, source: "desktop");
+
+        var results = index.Search("NPC: Haley. current; route=valid", maxResults: 5);
+
+        Assert.AreEqual(1, results.Count);
+        Assert.AreEqual("punctuation-session", results[0].SessionId);
+    }
+
+    [TestMethod]
     public async Task TranscriptStore_SaveActivityAsync_WritesStateDbWithoutJsonl()
     {
         var store = CreateStore();
