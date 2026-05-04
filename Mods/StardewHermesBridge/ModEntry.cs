@@ -217,7 +217,9 @@ public sealed class ModEntry : Mod
 
         if (!route.IsAccepted)
         {
-            _bridgeLogger.Write(SmapiBridgeLogger.NpcClickRejected, clickedNpcName, FormalEntry, FormalEntry, null, "rejected", BuildInputRejectDetail(e, route.Reason, isActionButton, isUseToolButton, isMouseButton, activeDialogueNpcName));
+            if (ShouldLogNpcClickRejected(route.Reason))
+                _bridgeLogger.Write(SmapiBridgeLogger.NpcClickRejected, clickedNpcName, FormalEntry, FormalEntry, null, "rejected", BuildInputRejectDetail(e, route.Reason, isActionButton, isUseToolButton, isMouseButton, activeDialogueNpcName));
+
             return;
         }
 
@@ -230,6 +232,9 @@ public sealed class ModEntry : Mod
 
     private static string BuildInputAcceptedDetail(ButtonPressedEventArgs e, bool isActionButton, bool isUseToolButton, bool isMouseButton)
         => $"button={e.Button};is_action={isActionButton};is_use_tool={isUseToolButton};is_mouse={isMouseButton}";
+
+    private static bool ShouldLogNpcClickRejected(string reason)
+        => !string.Equals(reason, "unsupported_button", StringComparison.Ordinal);
 
     private void DisplayCustomDialogue(string npcName, string? detail)
     {
