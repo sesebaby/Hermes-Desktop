@@ -1,0 +1,27 @@
+# Ralph Context Snapshot: Stardew NPC Move Reliability
+
+- Task statement: Execute the approved plan in `.omx/plans/星露谷NPC移动执行可靠性修复共识计划.md`.
+- Desired outcome: Fix Stardew Hermes Bridge NPC move execution so endpoint candidates are route-aware, runtime route blockage gets bounded replans, and terminal failures expose stable error codes with diagnostic details separated.
+- Known facts/evidence:
+  - User log shows Haley move was queued/running with `pathSteps=38`, then failed on `step_blocked:HaleyHouse:7,7`.
+  - Approved plan identifies the root cause as endpoint-only candidate filtering diverging from full schedule-path execution.
+  - Existing `BridgeCommandQueue` prepares a schedule path and checks each next step at runtime.
+  - Existing `BridgeMoveCommand.Fail(string)` conflates `ErrorCode` and `BlockedReason`.
+- Constraints:
+  - Use TDD: write failing tests before production code.
+  - No new dependencies.
+  - No cross-location travel, no teleport, no continuous controller/warp model.
+  - Keep behavior scoped and do not revert user changes.
+  - Reply/report in Chinese.
+- Unknowns/open questions:
+  - Exact compile surface for testable helpers in the SMAPI bridge project.
+  - Whether current tests already have helpers for private bridge behavior.
+- Likely codebase touchpoints:
+  - `Mods/StardewHermesBridge/Bridge/BridgeCommandQueue.cs`
+  - `Mods/StardewHermesBridge/Bridge/BridgeHttpHost.cs`
+  - `Mods/StardewHermesBridge/Bridge/BridgeCommandModels.cs`
+  - `Mods/StardewHermesBridge.Tests`
+  - `src/games/stardew/StardewCommandContracts.cs`
+  - `src/games/stardew/StardewNpcTools.cs`
+  - `skills/gaming/stardew-navigation.md`
+  - `skills/gaming/stardew-world/SKILL.md`

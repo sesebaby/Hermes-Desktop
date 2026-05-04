@@ -1,7 +1,15 @@
 # 项目级 OpenSpec 约束
 
 ## 项目定位
+本方案目标是在 Hermes Desktop 现有能力基础上，接入 Stardew Valley（星露谷物语），实现多 NPC 村庄模式。
 
+项目目标来自现有深度访谈规格：
+- 改造 Hermes Desktop 项目，接入星露谷物语
+- 实现多 NPC 村庄模式
+- 每个 NPC 拥有独立人格、独立记忆、独立自主决策能力
+- MVP 先实现 1-3 个 NPC 并发运行
+
+本方案明确参考 `hermescraft` 的核心架构思想，但不盲目复制 Minecraft 特有实现，而是优先复刻其“Agent 自己通过工具理解世界、桥接层只暴露能力接口”的结构。
 
 ## Git 远程仓库注意事项
 
@@ -34,6 +42,15 @@
 - 群聊、私聊、偷听、送礼、交易都必须保持“Agent 自主提意图，宿主负责许可和执行”的边界。
 - 第一阶段不做复杂经济系统，不做自定义素材，不做写死剧情编排。
 - 本项目的能力应当参D:\GitHubPro\Hermes-Desktop\external\hermes-agent-main, 本项目可以视为是这个参考项目的c#实现并做了基于游戏的改造
+
+### NPC 工具 / 世界 / 导航 / 人格分层原则
+
+- tool / action schema 只定义可执行契约、参数来源和运行时绑定，不承载地点意义、角色偏好或长期行为法则。
+- 世界语义写入 skill，例如 `skills/gaming/stardew-world` 解释地点、候选、标签、理由和 endpoint candidate 含义。
+- 移动方法和失败恢复写入 navigation skill，例如 `skills/gaming/stardew-navigation` 负责“最新观察 -> 工具调用 -> 状态查询 -> 失败后重新观察或换目标”。
+- NPC 偏好写入 persona / `SOUL.md` / `facts.md`；memory 只保存耐久事实和经历，不替代 skill 或 persona。
+- runtime / host 只提供事实、事件、工具、执行结果、必要许可、安全门控、路径探测和状态编排，不替 NPC 选择世界内目标、不把观察事实自动转换成行动。
+- 涉及 prompt / skill 边界的测试，必须优先走真实仓库资产注入路径；定位 repo 资产时从 `AppContext.BaseDirectory` 向上查找，不能依赖当前工作目录或只用 fixture 文本。
 
 ## 任务执行规则
 

@@ -336,11 +336,12 @@ public sealed class BridgeHttpHost
             (0, -2)
         };
 
+        var currentTile = new TileDto(currentX, currentY);
         return deltas
             .Select(delta => new TileDto(currentX + delta.X, currentY + delta.Y))
-            .Where(tile => IsSafeMoveCandidate(location, tile, currentX, currentY))
+            .Where(tile => IsRouteValidMoveCandidate(npc, location, currentTile, tile))
             .Take(3)
-            .Select(tile => new MoveCandidateData(locationName, tile, "same_location_safe_reposition"))
+            .Select(tile => new MoveCandidateData(locationName, tile, "same_location_route_valid_reposition"))
             .ToArray();
     }
 
@@ -354,63 +355,34 @@ public sealed class BridgeHttpHost
 
         var location = npc.currentLocation;
         var locationName = location.NameOrUniqueName ?? location.Name;
-        var candidates = new List<PlaceCandidateData>();
-        foreach (var definition in BuildPlaceCandidateDefinitions(locationName, npc.Name))
-        {
-            if (!IsSafeMoveCandidate(location, definition.Tile, int.MinValue, int.MinValue))
-                continue;
-
-            candidates.Add(new PlaceCandidateData(
-                definition.Label,
-                locationName,
-                definition.Tile,
-                definition.Tags,
-                definition.Reason,
-                definition.FacingDirection,
-                definition.EndBehavior));
-            if (candidates.Count >= 3)
-                return candidates;
-        }
-
-        foreach (var move in moveCandidates)
-        {
-            if (candidates.Any(candidate => candidate.Tile.X == move.Tile.X && candidate.Tile.Y == move.Tile.Y))
-                continue;
-
-            candidates.Add(new PlaceCandidateData(
-                BuildLocalCandidateLabel(locationName, npc.Name),
-                move.LocationName,
-                move.Tile,
-                new[] { "nearby", "safe", "current-location" },
-                "nearby safe spot that can start a self-directed move",
-                null,
-                null));
-            if (candidates.Count >= 3)
-                break;
-        }
-
-        return candidates.ToArray();
+        var currentTile = new TileDto((int)npc.Tile.X, (int)npc.Tile.Y);
+        return BridgeMoveCandidateSelector.SelectPlaceCandidates(
+            locationName,
+            npc.Name,
+            BuildPlaceCandidateDefinitions(locationName, npc.Name),
+            moveCandidates,
+            tile => IsRouteValidMoveCandidate(npc, location, currentTile, tile));
     }
 
-    private static IEnumerable<PlaceCandidateDefinition> BuildPlaceCandidateDefinitions(string locationName, string npcName)
+    private static IEnumerable<BridgePlaceCandidateDefinition> BuildPlaceCandidateDefinitions(string locationName, string npcName)
     {
         if (string.Equals(locationName, "HaleyHouse", StringComparison.OrdinalIgnoreCase))
         {
-            yield return new PlaceCandidateDefinition(
+            yield return new BridgePlaceCandidateDefinition(
                 "Bedroom mirror",
                 new TileDto(6, 4),
                 new[] { "home", "photogenic", "Haley" },
                 "check her look before deciding whether to go out",
                 2,
                 "Haley_Mirror");
-            yield return new PlaceCandidateDefinition(
+            yield return new BridgePlaceCandidateDefinition(
                 "Living room",
                 new TileDto(10, 12),
                 new[] { "home", "social" },
                 "see what is happening downstairs",
                 2,
                 null);
-            yield return new PlaceCandidateDefinition(
+            yield return new BridgePlaceCandidateDefinition(
                 "Front door",
                 new TileDto(15, 8),
                 new[] { "transition", "outdoor" },
@@ -422,21 +394,21 @@ public sealed class BridgeHttpHost
 
         if (string.Equals(locationName, "Town", StringComparison.OrdinalIgnoreCase))
         {
-            yield return new PlaceCandidateDefinition(
+            yield return new BridgePlaceCandidateDefinition(
                 "Town fountain",
                 new TileDto(47, 56),
                 new[] { "public", "photogenic", "social" },
                 "stand somewhere bright and visible in town",
                 2,
                 null);
-            yield return new PlaceCandidateDefinition(
+            yield return new BridgePlaceCandidateDefinition(
                 "Town square",
                 new TileDto(52, 68),
                 new[] { "public", "social" },
                 "notice who is passing through town",
                 2,
                 null);
-            yield return new PlaceCandidateDefinition(
+            yield return new BridgePlaceCandidateDefinition(
                 "Clinic path",
                 new TileDto(30, 55),
                 new[] { "public", "errands" },
@@ -448,14 +420,14 @@ public sealed class BridgeHttpHost
 
         if (string.Equals(locationName, "Beach", StringComparison.OrdinalIgnoreCase))
         {
-            yield return new PlaceCandidateDefinition(
+            yield return new BridgePlaceCandidateDefinition(
                 "Shore photo spot",
                 new TileDto(32, 34),
                 new[] { "outdoor", "photogenic", "water" },
                 "look for good light near the water",
                 2,
                 null);
-            yield return new PlaceCandidateDefinition(
+            yield return new BridgePlaceCandidateDefinition(
                 "Beach bridge",
                 new TileDto(55, 14),
                 new[] { "outdoor", "landmark" },
@@ -467,7 +439,7 @@ public sealed class BridgeHttpHost
 
         if (string.Equals(locationName, "Forest", StringComparison.OrdinalIgnoreCase))
         {
-            yield return new PlaceCandidateDefinition(
+            yield return new BridgePlaceCandidateDefinition(
                 "Forest path",
                 new TileDto(34, 48),
                 new[] { "outdoor", "quiet" },
@@ -479,7 +451,7 @@ public sealed class BridgeHttpHost
 
         if (string.Equals(locationName, "Mountain", StringComparison.OrdinalIgnoreCase))
         {
-            yield return new PlaceCandidateDefinition(
+            yield return new BridgePlaceCandidateDefinition(
                 "Lake overlook",
                 new TileDto(32, 20),
                 new[] { "outdoor", "water", "photogenic" },
@@ -489,7 +461,7 @@ public sealed class BridgeHttpHost
             yield break;
         }
 
-        yield return new PlaceCandidateDefinition(
+        yield return new BridgePlaceCandidateDefinition(
             $"{npcName} nearby spot",
             new TileDto(-1, -1),
             new[] { "nearby", "current-location" },
@@ -498,30 +470,19 @@ public sealed class BridgeHttpHost
             null);
     }
 
-    private static bool IsSafeMoveCandidate(GameLocation location, TileDto tile, int currentX, int currentY)
+    private static bool IsRouteValidMoveCandidate(NPC npc, GameLocation location, TileDto currentTile, TileDto targetTile)
     {
-        if (tile.X == currentX && tile.Y == currentY)
+        if (targetTile.X == currentTile.X && targetTile.Y == currentTile.Y)
             return false;
 
-        if (tile.X < 0 || tile.Y < 0)
-            return false;
-
-        var vector = new Microsoft.Xna.Framework.Vector2(tile.X, tile.Y);
-        return location.isTileLocationOpen(vector) && location.CanSpawnCharacterHere(vector);
+        var probe = BridgeMovementPathProbe.Probe(
+            currentTile,
+            targetTile,
+            tile => BridgeMovementPathProbe.CheckTargetAffordance(location, tile),
+            () => BridgeMovementPathProbe.FindSchedulePath(npc, location, currentTile, targetTile),
+            tile => BridgeMovementPathProbe.CheckRouteStepSafety(location, tile));
+        return probe.Status == BridgeRouteProbeStatus.RouteValid;
     }
-
-    private static string BuildLocalCandidateLabel(string locationName, string npcName)
-        => string.Equals(npcName, "Haley", StringComparison.OrdinalIgnoreCase)
-            ? $"{locationName} photo angle"
-            : $"{locationName} nearby spot";
-
-    private sealed record PlaceCandidateDefinition(
-        string Label,
-        TileDto Tile,
-        IReadOnlyList<string> Tags,
-        string Reason,
-        int? FacingDirection,
-        string? EndBehavior);
 
     private static IReadOnlyList<string> BuildWorldFacts()
     {

@@ -42,10 +42,77 @@ public class StardewNpcToolFactoryTests
 
         StringAssert.Contains(description, "moveCandidate");
         StringAssert.Contains(description, "placeCandidate");
-        StringAssert.Contains(description, "schedule-style destination");
-        StringAssert.Contains(moveSchema, "moveCandidate");
-        StringAssert.Contains(moveSchema, "placeCandidate");
-        StringAssert.Contains(moveSchema, "facingDirection");
+        StringAssert.Contains(description, "endpoint candidate");
+        StringAssert.Contains(description, "latest observation");
+        StringAssert.Contains(description, "never invent coordinates");
+        StringAssert.Contains(description, "route probing as bridge-owned rather than guaranteed by the tool");
+        StringAssert.Contains(description, "path_blocked");
+        StringAssert.Contains(description, "path_unreachable");
+        StringAssert.Contains(description, "runtime binds npcId, saveId, traceId, and idempotency internally");
+        Assert.IsFalse(
+            description.Contains("route-guaranteed", StringComparison.OrdinalIgnoreCase),
+            "placeCandidate facts are endpoint candidates; the bridge probes routes, but the tool contract must not promise route-guaranteed movement.");
+        Assert.IsFalse(
+            description.Contains("schedule-style", StringComparison.OrdinalIgnoreCase),
+            "World-style destination semantics belong to stardew-world; the tool description should stay at the local executable contract.");
+
+        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "x"), "current moveCandidate or placeCandidate");
+        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "y"), "current moveCandidate or placeCandidate");
+        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "reason"), "copied from the current moveCandidate or placeCandidate");
+        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "facingDirection"), "copied from an endpoint placeCandidate");
+    }
+
+    [TestMethod]
+    public async Task MoveTool_WithRuntimeDriver_ReleasesClaimAfterTerminalPathBlockedStatus()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-tool-path-blocked-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var commands = new CapturingCommandService(
+                [
+                    new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null),
+                    new GameCommandStatus(
+                        "cmd-1",
+                        "haley",
+                        "move",
+                        StardewCommandStatuses.Failed,
+                        0,
+                        "path_blocked:HaleyHouse:7,7;step_tile_open_false",
+                        StardewBridgeErrorCodes.PathBlocked)
+                ]);
+            var supervisor = new NpcRuntimeSupervisor();
+            var driver = await supervisor.GetOrCreateDriverAsync(CreateDescriptor("haley"), tempDir, CancellationToken.None);
+            var coordination = new WorldCoordinationService(new ResourceClaimRegistry());
+            var tools = StardewNpcToolFactory.CreateDefault(
+                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+                CreateDescriptor("haley"),
+                traceIdFactory: () => "trace-move",
+                idempotencyKeyFactory: () => "idem-move",
+                runtimeDriver: driver,
+                worldCoordination: coordination);
+            var moveTool = tools.Single(tool => tool.Name == "stardew_move");
+
+            var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
+            {
+                LocationName = "HaleyHouse",
+                X = 15,
+                Y = 8
+            }, CancellationToken.None);
+
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual(2, commands.StatusCalls);
+            var snapshot = driver.Snapshot();
+            Assert.IsNull(snapshot.PendingWorkItem);
+            Assert.IsNull(snapshot.ActionSlot);
+            Assert.IsTrue(
+                coordination.TryClaimMove("work-2", "penny", "trace-2", new ClaimedTile("HaleyHouse", 15, 8), null, "idem-2").Accepted,
+                "Terminal failed/path_blocked must release the short claim so the next action does not get action_slot_busy.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
     }
 
     [TestMethod]
@@ -269,6 +336,16 @@ public class StardewNpcToolFactoryTests
             "pack-root",
             $"sdv_save-1_{npcId}_default",
             new NpcBodyBinding(npcId, "Haley", "Haley", "Haley", "stardew"));
+
+    private static string GetSchemaPropertyDescription(string schema, string propertyName)
+    {
+        using var document = JsonDocument.Parse(schema);
+        return document.RootElement
+            .GetProperty("properties")
+            .GetProperty(propertyName)
+            .GetProperty("description")
+            .GetString() ?? string.Empty;
+    }
 
     private sealed class FakeGameAdapter : IGameAdapter
     {

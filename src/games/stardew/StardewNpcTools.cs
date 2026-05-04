@@ -88,7 +88,7 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_move";
 
-    public string Description => "Ask this NPC to move to one of the current observed moveCandidate or placeCandidate facts. Treat placeCandidate as a schedule-style destination: locationName, x, y, reason, and optional facingDirection come from the latest observation; do not invent coordinates. The runtime binds npcId, saveId, traceId, and idempotency internally.";
+    public string Description => "Ask this NPC to move to one current observed moveCandidate or placeCandidate. A placeCandidate is an endpoint candidate; copy locationName, x, y, reason, and optional facingDirection from the latest observation, never invent coordinates, and treat route probing as bridge-owned rather than guaranteed by the tool. If a move ends with path_blocked or path_unreachable, observe again or choose a different target instead of retrying the same destination. The runtime binds npcId, saveId, traceId, and idempotency internally.";
 
     public Type ParametersType => typeof(StardewMoveToolParameters);
 
@@ -635,7 +635,7 @@ internal static class StardewNpcToolSchemas
                 ["x"] = new { type = "integer", description = "Target tile X coordinate from a current moveCandidate or placeCandidate fact." },
                 ["y"] = new { type = "integer", description = "Target tile Y coordinate from a current moveCandidate or placeCandidate fact." },
                 ["reason"] = new { type = "string", description = "Short reason copied from the current moveCandidate or placeCandidate fact." },
-                ["facingDirection"] = new { type = "integer", description = "Optional Stardew facing direction copied from a schedule-style placeCandidate fact when present." }
+                ["facingDirection"] = new { type = "integer", description = "Optional Stardew facing direction copied from an endpoint placeCandidate fact when present." }
             },
             ["locationName", "x", "y"]);
 

@@ -41,6 +41,8 @@ public class StardewCommandContractTests
     {
         Assert.AreEqual("bridge_unauthorized", StardewBridgeErrorCodes.BridgeUnauthorized);
         Assert.AreEqual("command_conflict", StardewBridgeErrorCodes.CommandConflict);
+        Assert.AreEqual("path_blocked", StardewBridgeErrorCodes.PathBlocked);
+        Assert.AreEqual("path_unreachable", StardewBridgeErrorCodes.PathUnreachable);
         Assert.IsFalse(StardewBridgeErrorCodes.FestivalBlocked.Any(char.IsUpper));
     }
 

@@ -59,11 +59,16 @@ public sealed class BridgeMoveCommandQueueRegressionTests
     public void MovePumpUsesStardewSchedulePathfindingInsteadOfStraightLineSteps()
     {
         var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+        var pathProbe = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeMovementPathProbe.cs");
 
         StringAssert.Contains(
-            commandQueue,
+            pathProbe,
             "PathFindController.findPathForNPCSchedules",
-            "NPC movement must borrow Stardew's schedule pathing instead of walking a naive straight-line path through blocked tiles.");
+            "NPC movement must borrow Stardew's schedule pathing through the shared route probe instead of walking a naive straight-line path through blocked tiles.");
+        StringAssert.Contains(
+            commandQueue,
+            "ProbeRoute(",
+            "Move execution should use the same shared route probe that candidate filtering uses.");
         StringAssert.Contains(
             commandQueue,
             "NextScheduleStepFrom",
@@ -85,6 +90,49 @@ public sealed class BridgeMoveCommandQueueRegressionTests
         Assert.IsFalse(
             commandQueue.Contains("npc.currentLocation = targetLocation;", StringComparison.Ordinal),
             "Phase 1 must not silently transfer the NPC between locations.");
+    }
+
+    [TestMethod]
+    public void MoveCommandCanKeepStableErrorCodeSeparateFromDiagnosticBlockedReason()
+    {
+        var command = new StardewHermesBridge.Bridge.BridgeMoveCommand(
+            "cmd-1",
+            "trace-1",
+            "Haley",
+            "HaleyHouse",
+            new StardewHermesBridge.Bridge.TileDto(15, 8),
+            null,
+            null);
+
+        command.Fail("path_blocked", "path_blocked:HaleyHouse:7,7;step_tile_open_false");
+
+        var status = command.ToStatusData();
+        Assert.AreEqual("failed", status.Status);
+        Assert.AreEqual("path_blocked", status.ErrorCode);
+        Assert.AreEqual("path_blocked:HaleyHouse:7,7;step_tile_open_false", status.BlockedReason);
+    }
+
+    [TestMethod]
+    public void MovePumpReplansRuntimeStepBlocksBeforeTerminalPathBlocked()
+    {
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(
+            commandQueue,
+            "MaxReplanAttempts = 2",
+            "Runtime route blockage must be bounded: initial prepare is free, then at most two replans.");
+        StringAssert.Contains(
+            commandQueue,
+            "route_replanned;blockedStep=",
+            "A successful runtime replan should be logged and keep the command running.");
+        StringAssert.Contains(
+            commandQueue,
+            "BridgeMoveFailureMapper.PathBlocked",
+            "Runtime step blockage after exhausted or invalid replans must use a stable path_blocked error code.");
+        StringAssert.Contains(
+            commandQueue,
+            "BridgeMoveFailureMapper.FromProbe",
+            "Dynamic blocked tile and failure kind belong in BlockedReason, not ErrorCode.");
     }
 
     private static string ReadRepositoryFile(params string[] relativePath)

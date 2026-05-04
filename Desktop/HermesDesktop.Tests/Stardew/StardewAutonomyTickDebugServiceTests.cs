@@ -144,6 +144,59 @@ public sealed class StardewAutonomyTickDebugServiceTests
     }
 
     [TestMethod]
+    public async Task RunOneTickAsync_WithRepositoryGamingSkillRootInjectsWorldAndNavigationOwnerGuidance()
+    {
+        var repositoryGamingRoot = FindRepositoryPath("skills", "gaming");
+        var chatClient = new ToolSnapshotChatClient("I will observe before moving.");
+        var queries = new FakeQueryService(new GameObservation(
+            "haley",
+            "stardew-valley",
+            DateTime.UtcNow,
+            "Haley is in her room.",
+            [
+                "location=HaleyHouse",
+                "tile=8,7",
+                "placeCandidate[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out"
+            ]));
+        var service = new StardewAutonomyTickDebugService(
+            new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+                new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+                DateTimeOffset.UtcNow,
+                1234,
+                "save-42")),
+            _ => new FakeGameAdapter(new FakeCommandService(), queries, new FakeEventSource([])),
+            chatClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            new NpcRuntimeSupervisor(),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            CreatePromptSupplementBuilder(new FixedStardewGamingSkillRootProvider(repositoryGamingRoot)),
+            discoveredToolProvider: null,
+            worldCoordination: CreateWorldCoordination(),
+            includeMemory: true,
+            includeUser: true,
+            maxToolIterations: 2,
+            runtimeRoot: _tempDir);
+
+        var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.FailureReason);
+        var systemPrompt = chatClient.SystemMessages.First(message =>
+            message.Contains("## Stardew Required Skills", StringComparison.Ordinal));
+        StringAssert.Contains(systemPrompt, "### stardew-world");
+        StringAssert.Contains(systemPrompt, "本 skill 是地点意义与候选解释 owner");
+        StringAssert.Contains(systemPrompt, "`placeCandidate[n]` 的 `label`、`tags`、`reason`、`endBehavior`");
+        StringAssert.Contains(systemPrompt, "### stardew-navigation");
+        StringAssert.Contains(systemPrompt, "本 skill 是移动循环与失败恢复 owner");
+        StringAssert.Contains(systemPrompt, "最新观察 -> `stardew_move` -> 查询任务状态 -> 失败后重新观察或换目标");
+        StringAssert.Contains(systemPrompt, "不要直接调用 HTTP");
+        Assert.IsFalse(
+            systemPrompt.Contains("stardew-world test guidance", StringComparison.Ordinal),
+            "Repo-backed prompt supplement coverage must use the real skills/gaming root, not fixture-only text.");
+    }
+
+    [TestMethod]
     public async Task RunOneTickAsync_WhenPackPromptFilesChange_RebindsWithLatestPersonaAndRequiredSkills()
     {
         var chatClient = new ToolSnapshotChatClient("I will wait near the library.");
@@ -660,6 +713,22 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
     private StardewNpcAutonomyPromptSupplementBuilder CreatePromptSupplementBuilder(IStardewGamingSkillRootProvider? provider = null)
         => new(provider ?? new FixedStardewGamingSkillRootProvider(_gamingSkillRoot));
+
+    private static string FindRepositoryPath(params string[] relativePath)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(new[] { directory.FullName }.Concat(relativePath).ToArray());
+            if (Directory.Exists(candidate) || File.Exists(candidate))
+                return candidate;
+
+            directory = directory.Parent;
+        }
+
+        Assert.Fail($"Could not find repository path: {Path.Combine(relativePath)}");
+        return string.Empty;
+    }
 
     private static void CreateGamingSkillFixtures(string gamingSkillRoot)
     {

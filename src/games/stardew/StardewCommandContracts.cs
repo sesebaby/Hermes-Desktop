@@ -35,6 +35,8 @@ public static class StardewBridgeErrorCodes
     public const string MenuBlocked = "menu_blocked";
     public const string DayTransition = "day_transition";
     public const string InvalidTarget = "invalid_target";
+    public const string PathBlocked = "path_blocked";
+    public const string PathUnreachable = "path_unreachable";
     public const string InvalidState = "invalid_state";
     public const string CommandConflict = "command_conflict";
     public const string CommandNotFound = "command_not_found";

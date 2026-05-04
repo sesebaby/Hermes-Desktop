@@ -2,16 +2,16 @@ namespace StardewHermesBridge.Bridge;
 
 using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
-using Microsoft.Xna.Framework;
 using StardewHermesBridge.Dialogue;
 using StardewHermesBridge.Logging;
 using StardewHermesBridge.Ui;
 using StardewModdingAPI;
 using StardewValley;
-using StardewValley.Pathfinding;
 
 public sealed class BridgeCommandQueue
 {
+    private const int MaxReplanAttempts = 2;
+
     private readonly ConcurrentQueue<BridgeMoveCommand> _pending = new();
     private readonly ConcurrentQueue<IBridgeUiCommand> _pendingUi = new();
     private readonly ConcurrentDictionary<string, BridgeMoveCommand> _commands = new(StringComparer.OrdinalIgnoreCase);
@@ -369,24 +369,19 @@ public sealed class BridgeCommandQueue
             return command.ToStatusData();
         }
 
-        if (!IsTileSafeForMove(targetLocation, command.TargetTile))
-        {
-            command.Fail("invalid_target");
-            _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", $"tile_blocked:{command.LocationName}:{command.TargetTile.X},{command.TargetTile.Y}");
-            return command.ToStatusData();
-        }
-
         var currentTile = new TileDto((int)npc.Tile.X, (int)npc.Tile.Y);
 
         if (command.Status == "queued")
         {
-            if (!command.TryPrepareSchedulePath(npc, currentTile, targetLocation, out var pathFailure))
+            var initialProbe = ProbeRoute(npc, currentTile, targetLocation, command.TargetTile);
+            if (initialProbe.Status != BridgeRouteProbeStatus.RouteValid)
             {
-                command.Fail(pathFailure ?? "path_unreachable");
+                FailMoveForProbe(command, initialProbe, initial: true);
                 _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", command.BlockedReason);
                 return command.ToStatusData();
             }
 
+            command.ReplaceSchedulePath(initialProbe.Route);
             command.Start();
             _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"started;pathSteps={command.PathStepsRemaining}");
             return command.ToStatusData();
@@ -411,10 +406,28 @@ public sealed class BridgeCommandQueue
             return command.ToStatusData();
         }
 
-        if (!IsTileSafeForMove(targetLocation, nextTile))
+        var nextStepSafety = BridgeMovementPathProbe.CheckRouteStepSafety(targetLocation, nextTile);
+        if (!nextStepSafety.IsSafe)
         {
-            command.Fail("invalid_target");
-            _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", $"step_blocked:{command.LocationName}:{nextTile.X},{nextTile.Y}");
+            _logger.Write("step_blocked", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"step_blocked:{command.LocationName}:{nextTile.X},{nextTile.Y};{nextStepSafety.FailureKind}");
+            if (command.TryRecordReplanAttempt(MaxReplanAttempts, out var attempt))
+            {
+                var replanProbe = ProbeRoute(npc, currentTile, targetLocation, command.TargetTile);
+                if (replanProbe.Status == BridgeRouteProbeStatus.RouteValid && replanProbe.Route.Count > 0)
+                {
+                    command.ReplaceSchedulePath(replanProbe.Route);
+                    _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"route_replanned;blockedStep={nextTile.X},{nextTile.Y};attempt={attempt}");
+                    return command.ToStatusData();
+                }
+
+                FailMoveForProbe(command, replanProbe, initial: false, fallbackTile: nextTile, fallbackFailureKind: nextStepSafety.FailureKind);
+                _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", command.BlockedReason);
+                return command.ToStatusData();
+            }
+
+            var failure = BridgeMoveFailureMapper.PathBlocked(command.LocationName, nextTile, nextStepSafety.FailureKind ?? "step_blocked");
+            command.Fail(failure.ErrorCode, failure.BlockedReason);
+            _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", command.BlockedReason);
             return command.ToStatusData();
         }
 
@@ -435,10 +448,29 @@ public sealed class BridgeCommandQueue
         return command.ToStatusData();
     }
 
-    private static bool IsTileSafeForMove(GameLocation location, TileDto tile)
+    private static BridgeRouteProbeResult ProbeRoute(NPC npc, TileDto currentTile, GameLocation location, TileDto targetTile)
+        => BridgeMovementPathProbe.Probe(
+            currentTile,
+            targetTile,
+            tile => BridgeMovementPathProbe.CheckTargetAffordance(location, tile),
+            () => BridgeMovementPathProbe.FindSchedulePath(npc, location, currentTile, targetTile),
+            tile => BridgeMovementPathProbe.CheckRouteStepSafety(location, tile));
+
+    private static void FailMoveForProbe(
+        BridgeMoveCommand command,
+        BridgeRouteProbeResult probe,
+        bool initial,
+        TileDto? fallbackTile = null,
+        string? fallbackFailureKind = null)
     {
-        var vector = new Microsoft.Xna.Framework.Vector2(tile.X, tile.Y);
-        return location.isTileLocationOpen(vector) && location.CanSpawnCharacterHere(vector);
+        var failure = BridgeMoveFailureMapper.FromProbe(
+            probe,
+            initial,
+            command.LocationName,
+            command.TargetTile,
+            fallbackTile,
+            fallbackFailureKind);
+        command.Fail(failure.ErrorCode, failure.BlockedReason);
     }
 
     private static void ApplyArrivalFacing(NPC npc, BridgeMoveCommand command)
@@ -617,7 +649,8 @@ public sealed class BridgeMoveCommand
     private int _stepDelayTicksRemaining;
     private int _stepsTaken;
 
-    private Stack<Point>? _schedulePath;
+    private Stack<TileDto>? _schedulePath;
+    private int _replanAttempts;
 
     public BridgeMoveCommand(
         string commandId,
@@ -672,10 +705,13 @@ public sealed class BridgeMoveCommand
     }
 
     public void Fail(string errorCode)
+        => Fail(errorCode, errorCode);
+
+    public void Fail(string errorCode, string blockedReason)
     {
         Status = "failed";
         ErrorCode = errorCode;
-        BlockedReason = errorCode;
+        BlockedReason = blockedReason;
     }
 
     public void Block(string reason)
@@ -700,25 +736,20 @@ public sealed class BridgeMoveCommand
     public void RecordStep()
         => _stepsTaken++;
 
-    public bool TryPrepareSchedulePath(NPC npc, TileDto currentTile, GameLocation location, out string? failureReason)
+    public void ReplaceSchedulePath(IReadOnlyList<TileDto> route)
+        => _schedulePath = BridgeMovementPathProbe.ToSchedulePath(route);
+
+    public bool TryRecordReplanAttempt(int maxAttempts, out int attempt)
     {
-        failureReason = null;
-        if (currentTile.X == TargetTile.X && currentTile.Y == TargetTile.Y)
-            return true;
+        if (_replanAttempts >= maxAttempts)
+        {
+            attempt = _replanAttempts;
+            return false;
+        }
 
-        _schedulePath = PathFindController.findPathForNPCSchedules(
-            new Point(currentTile.X, currentTile.Y),
-            new Point(TargetTile.X, TargetTile.Y),
-            location,
-            300,
-            npc);
-
-        TrimCurrentTileFromPath(currentTile);
-        if (_schedulePath is { Count: > 0 })
-            return true;
-
-        failureReason = "path_unreachable";
-        return false;
+        _replanAttempts++;
+        attempt = _replanAttempts;
+        return true;
     }
 
     public TileDto? NextScheduleStepFrom(TileDto currentTile)
@@ -727,8 +758,7 @@ public sealed class BridgeMoveCommand
         if (_schedulePath is not { Count: > 0 })
             return null;
 
-        var next = _schedulePath.Pop();
-        return new TileDto(next.X, next.Y);
+        return _schedulePath.Pop();
     }
 
     private void TrimCurrentTileFromPath(TileDto currentTile)
