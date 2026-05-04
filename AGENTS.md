@@ -43,6 +43,22 @@
   - `TargetFramework`: `net10.0`
   - MSTest + Moq + coverlet
 
+## 项目级 OpenSpec 约束
+
+- 本仓库当前主线是接入 Stardew Valley，目标是多 NPC 村庄模式；MVP 先做 1-3 个 NPC 并发。
+- 方案优先对齐 `external/hermescraft-main` 和 `external/hermes-agent-main` 的架构思想，只复用“Agent 通过工具理解世界、桥接层只暴露能力接口”的部分，不照搬游戏特有实现。
+- 本项目 fork 自 `RedWoodOG/Hermes-Desktop`；禁止直接 push 到 `upstream`，所有修改推送到 `origin`，`upstream` 只用于 fetch。
+- 预发布阶段只允许一条实现路径，禁止双轨、兼容分叉和影子实现。
+- 游戏侧和桥接层只负责把世界接到 Hermes 上，不能接管、替代或干涉 Hermes 原生能力。
+- 不得代写或维护 `SOUL.md`、`MEMORY.md`、`USER.md`，也不得维护任何等价的人格摘要、记忆摘要、身份快照或第二 tool lane。
+- 宿主只提供事实、事件、工具、确认和执行结果，不替 NPC 决策；任何真实世界写操作都必须走宿主执行器。
+- 每个原版 NPC 必须保持独立 `home`、独立会话和独立记忆边界；群聊、私聊、偷听、送礼、交易都要保持“Agent 提意图，宿主负责许可和执行”的边界。
+- `tool` / `action` schema 只承载可执行契约，地点意义、角色偏好、移动与失败恢复分别写入 world / navigation / persona skill。
+- 涉及 prompt / skill 边界的测试，必须走真实仓库资产注入路径；定位 repo 资产时从 `AppContext.BaseDirectory` 向上查找，不能只靠当前工作目录或 fixture 文本。
+- 新问题优先检索 `openspec/errors` 和 `external/hermescraft`，把历史失败和参考方案对齐后再改。
+- 第一阶段不做复杂经济系统、自定义素材或写死剧情编排。
+- 后台自主任务必须有可观测日志、明确超时、资源释放和可重试路径；“看起来对但没生效”的问题先加诊断日志再推断根因。
+
 ## 修改前检查
 
 - 先读用户目标，再定位既有实现，避免重复造轮子。
