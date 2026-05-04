@@ -270,6 +270,38 @@ public class OpenAiClientAuthTests
         }
     }
 
+    [TestMethod]
+    public async Task CompleteWithToolsAsync_BadRequestExceptionIncludesResponseBody()
+    {
+        using var httpClient = new HttpClient(new CaptureHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """{"error":{"message":"Invalid parameter: messages with role 'tool' must follow a tool call."}}""",
+                    Encoding.UTF8,
+                    "application/json")
+            }));
+
+        var client = new OpenAiClient(
+            new LlmConfig
+            {
+                Provider = "openai",
+                Model = "gpt-5.4",
+                BaseUrl = "https://proxy.example/v1",
+                ApiKey = "test-key"
+            },
+            httpClient);
+
+        var ex = await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+            client.CompleteWithToolsAsync(
+                new[] { new Message { Role = "user", Content = "hello" } },
+                Array.Empty<ToolDefinition>(),
+                CancellationToken.None));
+
+        StringAssert.Contains(ex.Message, "400");
+        StringAssert.Contains(ex.Message, "Invalid parameter");
+    }
+
     private static HttpResponseMessage CreateSuccessResponse()
     {
         return new HttpResponseMessage(HttpStatusCode.OK)

@@ -270,15 +270,16 @@ public sealed class BridgeHttpHost
 
         var isInDialogue = Game1.activeClickableMenu is DialogueBox dialogueBox &&
                            string.Equals(dialogueBox.characterDialogue?.speaker?.Name ?? Game1.currentSpeaker?.Name, npc.Name, StringComparison.OrdinalIgnoreCase);
-        var blockedReason = BuildBlockedReason();
-        var destinations = BuildDestinations(npc, blockedReason);
-        var nearbyTiles = BuildNearbyTiles(npc, blockedReason);
+        var blockedReason = BuildBlockedReason(npc);
+        var currentTile = GetCurrentTile(npc);
+        var destinations = BuildDestinations(npc, blockedReason, currentTile);
+        var nearbyTiles = BuildNearbyTiles(npc, blockedReason, currentTile);
         var data = new NpcStatusData(
             npc.Name.ToLowerInvariant(),
             npc.Name,
             npc.displayName,
             npc.currentLocation?.NameOrUniqueName ?? npc.currentLocation?.Name ?? "unknown",
-            new TileDto((int)(npc.Position.X / Game1.tileSize), (int)(npc.Position.Y / Game1.tileSize)),
+            currentTile,
             npc.isMoving(),
             isInDialogue,
             blockedReason is null,
@@ -304,24 +305,27 @@ public sealed class BridgeHttpHost
     private static BridgeResponse<TData> Error<TPayload, TData>(BridgeEnvelope<TPayload> envelope, string code, string message, bool retryable)
         => new(false, envelope.TraceId, envelope.RequestId, null, "failed", default, new BridgeError(code, message, retryable), new { });
 
-    private static string? BuildBlockedReason()
+    private static string? BuildBlockedReason(NPC npc)
     {
         if (Game1.eventUp)
             return "event_active";
         if (Game1.activeClickableMenu is not null)
             return "menu_open";
+        if (npc.isMoving())
+            return "npc_moving";
         return null;
     }
 
-    private static IReadOnlyList<MoveCandidateData> BuildNearbyTiles(NPC npc, string? blockedReason)
+    private static TileDto GetCurrentTile(NPC npc)
+        => new(npc.TilePoint.X, npc.TilePoint.Y);
+
+    private static IReadOnlyList<MoveCandidateData> BuildNearbyTiles(NPC npc, string? blockedReason, TileDto currentTile)
     {
         if (!string.IsNullOrWhiteSpace(blockedReason) || npc.currentLocation is null)
             return Array.Empty<MoveCandidateData>();
 
         var location = npc.currentLocation;
         var locationName = location.NameOrUniqueName ?? location.Name;
-        var currentX = (int)(npc.Position.X / Game1.tileSize);
-        var currentY = (int)(npc.Position.Y / Game1.tileSize);
         var deltas = new (int X, int Y)[]
         {
             (1, 0),
@@ -338,9 +342,8 @@ public sealed class BridgeHttpHost
             (0, -2)
         };
 
-        var currentTile = new TileDto(currentX, currentY);
         return deltas
-            .Select(delta => new TileDto(currentX + delta.X, currentY + delta.Y))
+            .Select(delta => new TileDto(currentTile.X + delta.X, currentTile.Y + delta.Y))
             .Where(tile => IsRouteValidMoveCandidate(npc, location, currentTile, tile))
             .Take(3)
             .Select(tile => new MoveCandidateData(locationName, tile, "same_location_route_valid_reposition"))
@@ -349,134 +352,50 @@ public sealed class BridgeHttpHost
 
     private static IReadOnlyList<DestinationData> BuildDestinations(
         NPC npc,
-        string? blockedReason)
+        string? blockedReason,
+        TileDto currentTile)
     {
         if (!string.IsNullOrWhiteSpace(blockedReason) || npc.currentLocation is null)
             return Array.Empty<DestinationData>();
 
         var location = npc.currentLocation;
         var locationName = location.NameOrUniqueName ?? location.Name;
-        var currentTile = new TileDto((int)(npc.Position.X / Game1.tileSize), (int)(npc.Position.Y / Game1.tileSize));
         return BridgeMoveCandidateSelector.SelectDestinations(
             locationName,
             npc.Name,
-            BuildPlaceCandidateDefinitions(locationName, npc.Name));
+            BridgeDestinationRegistry.GetForLocation(locationName, npc.Name),
+            definition => ResolveDestinationCandidate(npc, location, currentTile, definition));
     }
 
-    private static IEnumerable<BridgePlaceCandidateDefinition> BuildPlaceCandidateDefinitions(string locationName, string npcName)
+    private static BridgeResolvedDestinationCandidate? ResolveDestinationCandidate(
+        NPC npc,
+        GameLocation location,
+        TileDto currentTile,
+        BridgePlaceCandidateDefinition definition)
     {
-        if (string.Equals(locationName, "HaleyHouse", StringComparison.OrdinalIgnoreCase))
-        {
-            yield return new BridgePlaceCandidateDefinition(
-                "Bedroom mirror",
-                new TileDto(6, 4),
-                new[] { "home", "photogenic", "Haley" },
-                "check her look before deciding whether to go out",
-                2,
-                "Haley_Mirror",
-                DestinationId: "haley_house.bedroom_mirror");
-            yield return new BridgePlaceCandidateDefinition(
-                "Living room",
-                new TileDto(10, 12),
-                new[] { "home", "social" },
-                "see what is happening downstairs",
-                2,
-                null,
-                DestinationId: "haley_house.living_room");
-            yield return new BridgePlaceCandidateDefinition(
-                "Front door",
-                new TileDto(15, 8),
-                new[] { "transition", "outdoor" },
-                "consider stepping outside",
-                2,
-                null,
-                DestinationId: "haley_house.front_door");
-            yield break;
-        }
+        var direct = BridgeMovementPathProbe.Probe(
+            currentTile,
+            definition.Tile,
+            tile => BridgeMovementPathProbe.CheckTargetAffordance(location, tile),
+            () => BridgeMovementPathProbe.FindSchedulePath(npc, location, currentTile, definition.Tile),
+            tile => BridgeMovementPathProbe.CheckRouteStepSafety(location, tile));
+        if (direct.Status == BridgeRouteProbeStatus.RouteValid)
+            return new BridgeResolvedDestinationCandidate(definition.Tile, definition.FacingDirection);
 
-        if (string.Equals(locationName, "Town", StringComparison.OrdinalIgnoreCase))
-        {
-            yield return new BridgePlaceCandidateDefinition(
-                "Town fountain",
-                new TileDto(47, 56),
-                new[] { "public", "photogenic", "social" },
-                "stand somewhere bright and visible in town",
-                2,
-                null,
-                DestinationId: "town.fountain");
-            yield return new BridgePlaceCandidateDefinition(
-                "Town square",
-                new TileDto(52, 68),
-                new[] { "public", "social" },
-                "notice who is passing through town",
-                2,
-                null,
-                DestinationId: "town.square");
-            yield return new BridgePlaceCandidateDefinition(
-                "Clinic path",
-                new TileDto(30, 55),
-                new[] { "public", "errands" },
-                "walk near the town services without committing to a visit",
-                2,
-                null,
-                DestinationId: "town.clinic_path");
-            yield break;
-        }
+        if (direct.Status is not (BridgeRouteProbeStatus.TargetUnsafe or BridgeRouteProbeStatus.PathEmpty))
+            return null;
 
-        if (string.Equals(locationName, "Beach", StringComparison.OrdinalIgnoreCase))
-        {
-            yield return new BridgePlaceCandidateDefinition(
-                "Shore photo spot",
-                new TileDto(32, 34),
-                new[] { "outdoor", "photogenic", "water" },
-                "look for good light near the water",
-                2,
-                null,
-                DestinationId: "beach.shore_photo_spot");
-            yield return new BridgePlaceCandidateDefinition(
-                "Beach bridge",
-                new TileDto(55, 14),
-                new[] { "outdoor", "landmark" },
-                "check the beach crossing and horizon",
-                2,
-                null,
-                DestinationId: "beach.bridge");
-            yield break;
-        }
+        var fallback = BridgeMovementPathProbe.FindClosestReachableNeighbor(
+            npc,
+            location,
+            definition.Tile,
+            currentTile);
+        if (fallback is null)
+            return null;
 
-        if (string.Equals(locationName, "Forest", StringComparison.OrdinalIgnoreCase))
-        {
-            yield return new BridgePlaceCandidateDefinition(
-                "Forest path",
-                new TileDto(34, 48),
-                new[] { "outdoor", "quiet" },
-                "walk somewhere quieter and greener",
-                2,
-                null,
-                DestinationId: "forest.path");
-            yield break;
-        }
-
-        if (string.Equals(locationName, "Mountain", StringComparison.OrdinalIgnoreCase))
-        {
-            yield return new BridgePlaceCandidateDefinition(
-                "Lake overlook",
-                new TileDto(32, 20),
-                new[] { "outdoor", "water", "photogenic" },
-                "look toward the mountain lake",
-                2,
-                null,
-                DestinationId: "mountain.lake_overlook");
-            yield break;
-        }
-
-        yield return new BridgePlaceCandidateDefinition(
-            $"{npcName} nearby spot",
-            new TileDto(-1, -1),
-            new[] { "nearby", "current-location" },
-            "fallback nearby place",
-            null,
-            null);
+        return new BridgeResolvedDestinationCandidate(
+            fallback.Value.StandTile,
+            fallback.Value.FacingDirection);
     }
 
     private static bool IsRouteValidMoveCandidate(NPC npc, GameLocation location, TileDto currentTile, TileDto targetTile)

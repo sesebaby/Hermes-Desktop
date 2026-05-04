@@ -258,7 +258,7 @@ public sealed class OpenAiClient : IChatClient
                     continue; // Retry with next key
                 }
 
-                response.EnsureSuccessStatusCode();
+                await EnsureSuccessStatusCodeAsync(response, ct);
                 return response;
             }
         }
@@ -266,8 +266,35 @@ public sealed class OpenAiClient : IChatClient
         // Fallback: use default header auth
         using var fallbackRequest = await CreateRequestAsync(url, json, ct);
         var fallbackResponse = await _httpClient.SendAsync(fallbackRequest, ct);
-        fallbackResponse.EnsureSuccessStatusCode();
+        await EnsureSuccessStatusCodeAsync(fallbackResponse, ct);
         return fallbackResponse;
+    }
+
+    private static async Task EnsureSuccessStatusCodeAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+
+        var statusCode = response.StatusCode;
+        var reasonPhrase = response.ReasonPhrase;
+        var body = response.Content is null
+            ? ""
+            : await response.Content.ReadAsStringAsync(ct);
+        response.Dispose();
+
+        var message = $"Response status code does not indicate success: {(int)statusCode} ({reasonPhrase}).";
+        if (!string.IsNullOrWhiteSpace(body))
+            message += $" Body: {TruncateErrorBody(body)}";
+
+        throw new HttpRequestException(message, null, statusCode);
+    }
+
+    private static string TruncateErrorBody(string body)
+    {
+        const int maxChars = 2000;
+        return body.Length <= maxChars
+            ? body
+            : body[..maxChars] + "...";
     }
 
     private bool UsesApiKeyAuth =>

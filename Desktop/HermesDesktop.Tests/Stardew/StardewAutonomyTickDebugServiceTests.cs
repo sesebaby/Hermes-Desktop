@@ -186,12 +186,13 @@ public sealed class StardewAutonomyTickDebugServiceTests
             message.Contains("## Stardew Required Skills", StringComparison.Ordinal));
         StringAssert.Contains(systemPrompt, "### stardew-world");
         StringAssert.Contains(systemPrompt, "本 skill 是地点意义与候选解释 owner");
-        StringAssert.Contains(systemPrompt, "`destination[n]` 的 `label`、`tags`、`reason`、`endBehavior`");
+        StringAssert.Contains(systemPrompt, "`destination[n]` 的 `destinationId`、`label`、`tags`、`reason`、`endBehavior`");
         StringAssert.Contains(systemPrompt, "### stardew-navigation");
         StringAssert.Contains(systemPrompt, "This skill owns the move loop");
         StringAssert.Contains(systemPrompt, "observe destinations");
         StringAssert.Contains(systemPrompt, "choose one matching intent");
         StringAssert.Contains(systemPrompt, "`stardew_move(destination, reason)`");
+        StringAssert.Contains(systemPrompt, "destination=<exact destinationId from destination[n]>");
         StringAssert.Contains(systemPrompt, "Movement Is Not Narration Text");
         StringAssert.Contains(systemPrompt, "MUST call `stardew_move`");
         Assert.IsFalse(

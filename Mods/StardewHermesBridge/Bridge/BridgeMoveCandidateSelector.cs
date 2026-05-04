@@ -9,30 +9,50 @@ internal sealed record BridgePlaceCandidateDefinition(
     string? EndBehavior,
     string? DestinationId = null);
 
+internal sealed record BridgeResolvedDestinationCandidate(TileDto StandTile, int? FacingDirection);
+
 internal static class BridgeMoveCandidateSelector
 {
     public static IReadOnlyList<DestinationData> SelectDestinations(
         string locationName,
         string npcName,
         IEnumerable<BridgePlaceCandidateDefinition> definitions)
+        => SelectDestinations(
+            locationName,
+            npcName,
+            definitions,
+            definition => new BridgeResolvedDestinationCandidate(definition.Tile, definition.FacingDirection));
+
+    public static IReadOnlyList<DestinationData> SelectDestinations(
+        string locationName,
+        string npcName,
+        IEnumerable<BridgePlaceCandidateDefinition> definitions,
+        Func<BridgePlaceCandidateDefinition, BridgeResolvedDestinationCandidate?> resolve)
     {
         ArgumentNullException.ThrowIfNull(definitions);
+        ArgumentNullException.ThrowIfNull(resolve);
 
-        var curated = definitions
-            .Where(definition => definition.Tile.X >= 0 && definition.Tile.Y >= 0)
-            .Take(5)
-            .Select(definition => new DestinationData(
+        var curated = new List<DestinationData>();
+        foreach (var definition in definitions.Where(definition => definition.Tile.X >= 0 && definition.Tile.Y >= 0))
+        {
+            var resolved = resolve(definition);
+            if (resolved is null)
+                continue;
+
+            curated.Add(new DestinationData(
                 definition.Label,
                 locationName,
-                definition.Tile,
+                resolved.StandTile,
                 definition.Tags,
                 definition.Reason,
-                definition.FacingDirection,
+                resolved.FacingDirection,
                 definition.EndBehavior,
-                definition.DestinationId))
-            .ToArray();
+                definition.DestinationId));
+            if (curated.Count >= 5)
+                break;
+        }
 
-        return curated;
+        return curated.ToArray();
     }
 
     public static IReadOnlyList<PlaceCandidateData> SelectPlaceCandidates(

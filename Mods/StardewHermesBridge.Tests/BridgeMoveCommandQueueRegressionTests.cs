@@ -21,7 +21,7 @@ public sealed class BridgeMoveCommandQueueRegressionTests
             "Short fallback move candidates belong to nearby tile status facts during the destination-first transition.");
         StringAssert.Contains(
             httpHost,
-            "BuildNearbyTiles(npc, blockedReason)",
+            "BuildNearbyTiles(npc, blockedReason, currentTile)",
             "Bridge status must generate nearby candidates from the current NPC/location state.");
         StringAssert.Contains(
             httpHost,
@@ -45,14 +45,48 @@ public sealed class BridgeMoveCommandQueueRegressionTests
 
         var startIndex = commandQueue.IndexOf("command.Start();", StringComparison.Ordinal);
         var firstRunningReturnIndex = commandQueue.IndexOf("return command.ToStatusData();", startIndex, StringComparison.Ordinal);
-        var stepDelayIndex = commandQueue.IndexOf("command.ConsumeStepDelayTick()", startIndex, StringComparison.Ordinal);
 
         Assert.IsTrue(
-            startIndex >= 0 && firstRunningReturnIndex > startIndex && stepDelayIndex > firstRunningReturnIndex,
-            "The first running status must be observable before any tile step can complete the move.");
+            startIndex >= 0 && firstRunningReturnIndex > startIndex,
+            "The first running status must be observable before any movement tick can complete the move.");
         Assert.IsFalse(
             commandQueue.Contains("command.Start();\r\n        npc.currentLocation?.characters.Remove(npc);", StringComparison.Ordinal),
             "Starting a move must not immediately teleport/remove/re-add the NPC in the same tick.");
+    }
+
+    [TestMethod]
+    public void MoveQueueResolvesDestinationIdBeforeLegacyTargetFallback()
+    {
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(
+            commandQueue,
+            "BridgeDestinationRegistry.TryResolve(payload.DestinationId",
+            "Bridge must be able to resolve a known destinationId without requiring Agent-supplied target coordinates.");
+        StringAssert.Contains(
+            commandQueue,
+            "invalid_destination_id",
+            "Unknown destinationId should fail at the Bridge boundary with a stable error code.");
+        StringAssert.Contains(
+            commandQueue,
+            "payload.Target",
+            "Legacy target payload remains a fallback during the destination-first transition.");
+    }
+
+    [TestMethod]
+    public void DestinationRegistryOwnsCuratedDestinationsUsedByStatusAndMove()
+    {
+        var registry = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeDestinationRegistry.cs");
+        var httpHost = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeHttpHost.cs");
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(registry, "town.fountain");
+        StringAssert.Contains(registry, "haley_house.bedroom_mirror");
+        StringAssert.Contains(httpHost, "BridgeDestinationRegistry.GetForLocation");
+        StringAssert.Contains(commandQueue, "BridgeDestinationRegistry.TryResolve");
+        Assert.IsFalse(
+            httpHost.Contains("private static IEnumerable<BridgePlaceCandidateDefinition> BuildPlaceCandidateDefinitions", StringComparison.Ordinal),
+            "Destination definitions should live in the shared registry, not inside BridgeHttpHost.");
     }
 
     [TestMethod]
@@ -106,6 +140,115 @@ public sealed class BridgeMoveCommandQueueRegressionTests
         Assert.IsFalse(
             commandQueue.Contains("started;using=PathFindController", StringComparison.Ordinal),
             "Status logs should not indicate delegated PathFindController execution.");
+    }
+
+    [TestMethod]
+    public void MovePumpUsesNaturalAnimatedPixelWalkingInsteadOfTileTeleport()
+    {
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(
+            commandQueue,
+            "Utility.getVelocityTowardPoint",
+            "Natural movement should follow TheStardewSquad style velocity toward the next tile center.");
+        StringAssert.Contains(
+            commandQueue,
+            "var moveSpeed = Math.Max(1, npc.speed)",
+            "Bridge-owned movement must keep moving even if the NPC's current speed was zeroed by vanilla state.");
+        StringAssert.Contains(
+            commandQueue,
+            "npc.Position +=",
+            "Movement should advance the NPC in pixels instead of snapping directly to the next tile.");
+        StringAssert.Contains(
+            commandQueue,
+            "npc.animateInFacingDirection(Game1.currentGameTime)",
+            "Visible walking frames must be advanced while Hermes owns movement.");
+        StringAssert.Contains(
+            commandQueue,
+            "MaintainNpcMovementControl(npc)",
+            "Bridge should clear vanilla movement controllers during owned movement, matching the reference mod's control pattern.");
+        Assert.IsFalse(
+            commandQueue.Contains("npc.setTilePosition", StringComparison.Ordinal),
+            "The main move path must not teleport one tile at a time.");
+        Assert.IsFalse(
+            commandQueue.Contains("private const int StepDelayTicks", StringComparison.Ordinal),
+            "Natural walking should move continuously each update tick, not wait several ticks between tile snaps.");
+    }
+
+    [TestMethod]
+    public void MovePumpClearsVanillaVelocityWhenTakingAndReleasingControl()
+    {
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(
+            commandQueue,
+            "StopNpcMotion(npc)",
+            "Bridge-owned movement must clear vanilla movement velocity when it takes or releases control; otherwise completed moves can keep drifting under vanilla update.");
+        StringAssert.Contains(
+            commandQueue,
+            "npc.xVelocity = 0f;",
+            "Clearing xVelocity is required after manual npc.Position movement to prevent east/west drift after completion.");
+        StringAssert.Contains(
+            commandQueue,
+            "npc.yVelocity = 0f;",
+            "Clearing yVelocity is required after manual npc.Position movement to prevent north/south drift after completion.");
+        StringAssert.Contains(
+            commandQueue,
+            "npc.Sprite.StopAnimation();",
+            "Terminal movement cleanup should leave the NPC in an idle sprite state, matching the reference mod cleanup pattern.");
+    }
+
+    [TestMethod]
+    public void StatusQueryTreatsMovingNpcAsTemporarilyUnavailable()
+    {
+        var httpHost = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeHttpHost.cs");
+
+        StringAssert.Contains(
+            httpHost,
+            "BuildBlockedReason(npc)",
+            "Availability must include the requested NPC's movement state, not only global menu/event state.");
+        StringAssert.Contains(
+            httpHost,
+            "npc.isMoving()",
+            "A vanilla-scheduled or residual moving NPC must be visible as unavailable before the Agent sends another move.");
+        StringAssert.Contains(
+            httpHost,
+            "\"npc_moving\"",
+            "Moving NPCs should expose a stable blockedReason so the Agent observes instead of stacking more movement commands.");
+    }
+
+    [TestMethod]
+    public void StatusQueryUsesNpcTilePointForCurrentTileAndNearbyCandidates()
+    {
+        var httpHost = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeHttpHost.cs");
+
+        StringAssert.Contains(
+            httpHost,
+            "GetCurrentTile(npc)",
+            "Status and move execution must share the same current-tile source; pixel position can be between tiles during animated walking.");
+        Assert.IsFalse(
+            httpHost.Contains("npc.Position.X / Game1.tileSize", StringComparison.Ordinal),
+            "Status must not derive NPC tile facts from raw pixel position while Bridge movement uses TilePoint.");
+    }
+
+    [TestMethod]
+    public void StatusQueryOnlyExposesReachableDestinationStandTiles()
+    {
+        var httpHost = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeHttpHost.cs");
+        var selector = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeMoveCandidateSelector.cs");
+
+        StringAssert.Contains(
+            httpHost,
+            "ResolveDestinationCandidate",
+            "Curated semantic destinations must be resolved against current NPC route state before status exposes them.");
+        StringAssert.Contains(
+            httpHost,
+            "FindClosestReachableNeighbor",
+            "Blocked anchors such as Town fountain must expose a reachable stand tile or be hidden.");
+        StringAssert.Contains(
+            selector,
+            "BridgeResolvedDestinationCandidate",
+            "The selector should publish executable stand tiles, not raw decorative anchors.");
     }
 
     [TestMethod]

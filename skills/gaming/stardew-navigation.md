@@ -19,10 +19,11 @@ Physical movement is not dialogue or inner monologue. When the NPC needs to chan
 ## Destination-Level Movement (Primary)
 
 1. Observe: check the latest `destination[n]` facts from `stardew_status`.
-2. Choose: pick the ONE `destination[n]` whose label and reason best match the NPC's current intent.
-3. Call: `stardew_move(destination=<exact label from destination[n]>, reason=<brief intent>)`.
-   - Copy the label **exactly** — case-sensitive, character-for-character.
-   - Never invent a destination label. If no destination matches, see the fallback rule below.
+2. Choose: pick the ONE `destination[n]` whose `destinationId`, label, and reason best match the NPC's current intent.
+3. Call: `stardew_move(destination=<exact destinationId from destination[n]>, reason=<brief intent>)`.
+   - Copy `destinationId` **exactly** — case-sensitive, character-for-character.
+   - If a destination fact has no `destinationId`, fall back to copying the exact label.
+   - Never invent a destination id or label. If no destination matches, see the fallback rule below.
 4. Poll: check `stardew_task_status` until a terminal status is reached: `completed`, `failed`, `blocked`, `cancelled`, or `interrupted`.
 5. Handle outcome:
    - `completed`: NPC arrived. Continue the next action.
@@ -41,11 +42,11 @@ Physical movement is not dialogue or inner monologue. When the NPC needs to chan
 
 ## Cross-Location Movement (Future)
 
-When cross-location destinations become available, the bridge handles warps automatically. The NPC chooses a destination in another location; the bridge warps + pathfinds. Same `stardew_move` flow applies.
+Cross-location destinations are a planned bridge capability, not something the NPC can assume is working. If a cross-location move returns `cross_location_unsupported`, observe again and choose a same-location destination or another action.
 
 ## Before Moving
 
-- Confirm the destination label is from the LATEST observation — facts can change between ticks.
+- Confirm the destination id or label is from the LATEST observation — facts can change between ticks.
 - Prefer `destination[n]` over `nearby[n]` for any intentional movement.
 - `destination[n]` and `schedule_entry[n]` (when available) are equally valid — the NPC may follow its schedule or choose freely.
 - Track `commandId`, status, failure reason, and `traceId`.

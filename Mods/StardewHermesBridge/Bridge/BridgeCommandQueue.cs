@@ -53,16 +53,20 @@ public sealed class BridgeCommandQueue
             return Accepted(envelope, existing);
         }
 
+        var target = ResolveMoveTarget(envelope.Payload);
+        if (!target.Ok)
+            return Error<MoveAcceptedData>(envelope.TraceId, envelope.RequestId, target.ErrorCode!, target.ErrorMessage!, retryable: false);
+
         var commandId = $"cmd_move_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}_{Guid.NewGuid():N}"[..38];
         var command = new BridgeMoveCommand(
             commandId,
             envelope.TraceId,
             envelope.NpcId,
-            envelope.Payload.Target?.LocationName ?? "unknown",
-            envelope.Payload.Target?.Tile ?? new TileDto(0, 0),
-            envelope.Payload.FacingDirection,
+            target.LocationName!,
+            target.Tile!,
+            target.FacingDirection,
             envelope.IdempotencyKey,
-            envelope.Payload.DestinationId);
+            target.DestinationId);
         _commands[commandId] = command;
         if (!string.IsNullOrWhiteSpace(envelope.IdempotencyKey))
             _idempotency[envelope.IdempotencyKey] = commandId;
@@ -70,6 +74,34 @@ public sealed class BridgeCommandQueue
         _pending.Enqueue(command);
         _logger.Write("task_move_enqueued", command.NpcId, "move", command.TraceId, command.CommandId, "queued", null);
         return Accepted(envelope, command);
+    }
+
+    private static ResolvedMoveTarget ResolveMoveTarget(MovePayload payload)
+    {
+        if (!string.IsNullOrWhiteSpace(payload.DestinationId))
+        {
+            if (!BridgeDestinationRegistry.TryResolve(payload.DestinationId, out var destination))
+            {
+                return ResolvedMoveTarget.Failed(
+                    "invalid_destination_id",
+                    $"Unknown destinationId: {payload.DestinationId}.");
+            }
+
+            return ResolvedMoveTarget.Success(
+                destination.LocationName,
+                destination.Tile,
+                payload.FacingDirection ?? destination.FacingDirection,
+                destination.DestinationId);
+        }
+
+        if (payload.Target is null)
+            return ResolvedMoveTarget.Failed("invalid_target", "target or destinationId is required.");
+
+        return ResolvedMoveTarget.Success(
+            payload.Target.LocationName,
+            payload.Target.Tile,
+            payload.FacingDirection,
+            null);
     }
 
     public BridgeResponse<TaskStatusData> GetStatus(BridgeEnvelope<TaskStatusRequest> envelope)
@@ -114,6 +146,10 @@ public sealed class BridgeCommandQueue
     {
         if (!_commands.TryGetValue(envelope.Payload.CommandId, out var command))
             return Error<TaskStatusData>(envelope.TraceId, envelope.RequestId, "command_not_found", "Command was not found.", retryable: false);
+
+        var npc = BridgeNpcResolver.Resolve(command.NpcId);
+        if (npc is not null)
+            StopNpcMotion(npc);
 
         command.Cancel(envelope.Payload.Reason);
         _logger.Write("task_cancelled", command.NpcId, "move", command.TraceId, command.CommandId, "cancelled", envelope.Payload.Reason);
@@ -372,16 +408,13 @@ public sealed class BridgeCommandQueue
             return command.ToStatusData();
         }
 
-        var currentTile = new TileDto((int)(npc.Position.X / Game1.tileSize), (int)(npc.Position.Y / Game1.tileSize));
+        var currentTile = GetCurrentTile(npc);
 
         if (command.Status == "queued")
         {
             command.SetPhase("resolving_destination", currentLocation?.NameOrUniqueName ?? currentLocation?.Name, incrementRouteRevision: true);
-            // Take control of NPC movement from the game without delegating execution to npc.controller.
-            npc.controller = null;
-            npc.temporaryController = null;
-            npc.DirectionsToNewLocation = null;
-            npc.IsWalkingInSquare = false;
+            MaintainNpcMovementControl(npc);
+            StopNpcMotion(npc);
             command.SetPhase("preflight", command.LocationName);
             var initialProbe = ProbeRoute(npc, currentTile, targetLocation, command.TargetTile);
             if (ShouldTryArrivalFallback(initialProbe))
@@ -402,12 +435,13 @@ public sealed class BridgeCommandQueue
             if (initialProbe.Status != BridgeRouteProbeStatus.RouteValid)
             {
                 command.SetPhase("arriving");
+                StopNpcMotion(npc);
                 FailMoveForProbe(command, initialProbe, initial: true);
                 _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", command.BlockedReason);
                 return command.ToStatusData();
             }
 
-            if (currentTile.X == command.TargetTile.X && currentTile.Y == command.TargetTile.Y)
+            if (IsAtTileCenter(npc, command.TargetTile))
             {
                 command.SetPhase("arriving", command.LocationName);
                 ApplyArrivalFacing(npc, command);
@@ -424,18 +458,18 @@ public sealed class BridgeCommandQueue
             return command.ToStatusData();
         }
 
-        if (command.ConsumeStepDelayTick())
-            return command.ToStatusData();
+        MaintainNpcMovementControl(npc);
 
         var interruptReason = CheckInterrupt();
         if (interruptReason is not null)
         {
+            StopNpcMotion(npc);
             command.Interrupt(interruptReason);
             _logger.Write("task_interrupted", command.NpcId, "move", command.TraceId, command.CommandId, "interrupted", interruptReason);
             return command.ToStatusData();
         }
 
-        if (currentTile.X == command.TargetTile.X && currentTile.Y == command.TargetTile.Y)
+        if (IsAtTileCenter(npc, command.TargetTile))
         {
             command.SetPhase("arriving", command.LocationName);
             ApplyArrivalFacing(npc, command);
@@ -447,8 +481,20 @@ public sealed class BridgeCommandQueue
         var nextTile = command.NextScheduleStepFrom(currentTile);
         if (nextTile is null)
         {
-            command.Fail("path_exhausted");
-            _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", "path_exhausted");
+            if (IsAtTileCenter(npc, command.TargetTile))
+            {
+                command.SetPhase("arriving", command.LocationName);
+                ApplyArrivalFacing(npc, command);
+                command.Complete();
+                _logger.Write("task_completed", command.NpcId, "move", command.TraceId, command.CommandId, "completed", null);
+            }
+            else
+            {
+                StopNpcMotion(npc);
+                command.Fail("path_exhausted");
+                _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", "path_exhausted");
+            }
+
             return command.ToStatusData();
         }
 
@@ -468,21 +514,27 @@ public sealed class BridgeCommandQueue
                     return command.ToStatusData();
                 }
 
+                StopNpcMotion(npc);
                 FailMoveForProbe(command, replanProbe, initial: false, fallbackTile: nextTile, fallbackFailureKind: nextStepSafety.FailureKind);
                 _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", command.BlockedReason);
                 return command.ToStatusData();
             }
 
             var failure = BridgeMoveFailureMapper.PathBlocked(command.LocationName, nextTile, nextStepSafety.FailureKind ?? "step_blocked");
+            StopNpcMotion(npc);
             command.Fail(failure.ErrorCode, failure.BlockedReason);
             _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", command.BlockedReason);
             return command.ToStatusData();
         }
 
-        npc.Halt();
-        var directionToNext = GetDirection(currentTile, nextTile);
-        npc.faceDirection(directionToNext);
-        npc.setTilePosition(nextTile.X, nextTile.Y);
+        var reachedStep = MoveTowardScheduleStep(npc, nextTile);
+        if (!reachedStep)
+        {
+            _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"movingToward={nextTile.X},{nextTile.Y};target={command.TargetTile.X},{command.TargetTile.Y}");
+            return command.ToStatusData();
+        }
+
+        command.CompleteCurrentScheduleStep(nextTile);
         command.RecordStep();
 
         if (nextTile.X == command.TargetTile.X && nextTile.Y == command.TargetTile.Y)
@@ -494,7 +546,6 @@ public sealed class BridgeCommandQueue
             return command.ToStatusData();
         }
 
-        command.ResetStepDelay();
         _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"tile={nextTile.X},{nextTile.Y};target={command.TargetTile.X},{command.TargetTile.Y}");
         return command.ToStatusData();
     }
@@ -529,17 +580,67 @@ public sealed class BridgeCommandQueue
 
     private static void ApplyArrivalFacing(NPC npc, BridgeMoveCommand command)
     {
+        StopNpcMotion(npc);
         if (command.FacingDirection is >= 0 and <= 3)
             npc.faceDirection(command.FacingDirection.Value);
     }
 
-    private static int GetDirection(TileDto from, TileDto to)
+    private static void MaintainNpcMovementControl(NPC npc)
     {
-        var dx = to.X - from.X;
-        var dy = to.Y - from.Y;
-        if (Math.Abs(dx) >= Math.Abs(dy))
-            return dx > 0 ? 1 : 3; // right : left
-        return dy > 0 ? 2 : 0;     // down : up
+        npc.controller = null;
+        if (npc.temporaryController is not null)
+            npc.temporaryController = null;
+        if (npc.DirectionsToNewLocation is not null)
+            npc.DirectionsToNewLocation = null;
+        if (!npc.farmerPassesThrough)
+            npc.farmerPassesThrough = true;
+        if (npc.IsWalkingInSquare)
+            npc.IsWalkingInSquare = false;
+    }
+
+    private static bool MoveTowardScheduleStep(NPC npc, TileDto nextTile)
+    {
+        var moveSpeed = Math.Max(1, npc.speed);
+        var targetPosition = GetTileCenter(nextTile);
+        var directionToNext = GetDirection(npc.getStandingPosition(), targetPosition);
+        npc.faceDirection(directionToNext);
+
+        if (Vector2.Distance(npc.getStandingPosition(), targetPosition) <= moveSpeed)
+        {
+            StopNpcMotion(npc);
+            return true;
+        }
+
+        var velocity = Utility.getVelocityTowardPoint(npc.getStandingPosition(), targetPosition, moveSpeed);
+        npc.Position += velocity;
+        npc.animateInFacingDirection(Game1.currentGameTime);
+        return false;
+    }
+
+    private static void StopNpcMotion(NPC npc)
+    {
+        npc.Halt();
+        npc.xVelocity = 0f;
+        npc.yVelocity = 0f;
+        npc.Sprite.StopAnimation();
+    }
+
+    private static bool IsAtTileCenter(NPC npc, TileDto tile)
+        => Vector2.Distance(npc.getStandingPosition(), GetTileCenter(tile)) <= Math.Max(1, npc.speed);
+
+    private static TileDto GetCurrentTile(NPC npc)
+        => new(npc.TilePoint.X, npc.TilePoint.Y);
+
+    private static Vector2 GetTileCenter(TileDto tile)
+        => new(tile.X * Game1.tileSize + Game1.tileSize / 2f, tile.Y * Game1.tileSize + Game1.tileSize / 2f);
+
+    private static int GetDirection(Vector2 from, Vector2 to)
+    {
+        var delta = to - from;
+        if (Math.Abs(delta.X) >= Math.Abs(delta.Y))
+            return delta.X > 0 ? 1 : 3;
+
+        return delta.Y > 0 ? 2 : 0;
     }
 
     private static string? CheckInterrupt()
@@ -702,6 +803,26 @@ public sealed class BridgeCommandQueue
 
 internal sealed record BridgePrivateChatInput(string NpcName, string ConversationId, string TraceId);
 
+internal sealed record ResolvedMoveTarget(
+    bool Ok,
+    string? LocationName,
+    TileDto? Tile,
+    int? FacingDirection,
+    string? DestinationId,
+    string? ErrorCode,
+    string? ErrorMessage)
+{
+    public static ResolvedMoveTarget Success(
+        string locationName,
+        TileDto tile,
+        int? facingDirection,
+        string? destinationId)
+        => new(true, locationName, tile, facingDirection, destinationId, null, null);
+
+    public static ResolvedMoveTarget Failed(string errorCode, string errorMessage)
+        => new(false, null, null, null, null, errorCode, errorMessage);
+}
+
 internal static class BridgeEnvelopeExtensions
 {
     public static BridgeEnvelope<object> ToUntyped<TPayload>(this BridgeEnvelope<TPayload> envelope)
@@ -716,11 +837,8 @@ internal static class BridgeEnvelopeExtensions
 
 public sealed class BridgeMoveCommand
 {
-    private const int StepDelayTicks = 8;
-
     private readonly DateTime _createdAtUtc = DateTime.UtcNow;
     private DateTime? _startedAtUtc;
-    private int _stepDelayTicksRemaining;
     private int _stepsTaken;
 
     private Stack<TileDto>? _schedulePath;
@@ -781,7 +899,6 @@ public sealed class BridgeMoveCommand
 
         _startedAtUtc = DateTime.UtcNow;
         Status = "running";
-        _stepDelayTicksRemaining = StepDelayTicks;
     }
 
     public void Complete()
@@ -819,18 +936,6 @@ public sealed class BridgeMoveCommand
         BlockedReason = reason;
     }
 
-    public bool ConsumeStepDelayTick()
-    {
-        if (_stepDelayTicksRemaining <= 0)
-            return false;
-
-        _stepDelayTicksRemaining--;
-        return true;
-    }
-
-    public void ResetStepDelay()
-        => _stepDelayTicksRemaining = StepDelayTicks;
-
     public void RecordStep()
         => _stepsTaken++;
 
@@ -859,18 +964,17 @@ public sealed class BridgeMoveCommand
 
     public TileDto? NextScheduleStepFrom(TileDto currentTile)
     {
-        TrimCurrentTileFromPath(currentTile);
         if (_schedulePath is not { Count: > 0 })
             return null;
 
-        return _schedulePath.Pop();
+        return _schedulePath.Peek();
     }
 
-    private void TrimCurrentTileFromPath(TileDto currentTile)
+    public void CompleteCurrentScheduleStep(TileDto completedTile)
     {
-        while (_schedulePath is { Count: > 0 } &&
-               _schedulePath.Peek().X == currentTile.X &&
-               _schedulePath.Peek().Y == currentTile.Y)
+        if (_schedulePath is { Count: > 0 } &&
+            _schedulePath.Peek().X == completedTile.X &&
+            _schedulePath.Peek().Y == completedTile.Y)
         {
             _schedulePath.Pop();
         }
