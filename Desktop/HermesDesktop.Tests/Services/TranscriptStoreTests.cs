@@ -124,6 +124,19 @@ public class TranscriptStoreTests
     }
 
     [TestMethod]
+    public void SessionSearchIndex_Search_TreatsColonLabelsAsPlainTerms()
+    {
+        var dbPath = Path.Combine(_tempDir, "state.db");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        index.SaveMessage("npc-session", new Message { Role = "user", Content = "NPC Haley haley is near the town fountain" }, source: "desktop");
+
+        var results = index.Search("NPC: Haley (haley)", maxResults: 5);
+
+        Assert.AreEqual(1, results.Count);
+        Assert.AreEqual("npc-session", results[0].SessionId);
+    }
+
+    [TestMethod]
     public async Task TranscriptStore_SaveActivityAsync_WritesStateDbWithoutJsonl()
     {
         var store = CreateStore();

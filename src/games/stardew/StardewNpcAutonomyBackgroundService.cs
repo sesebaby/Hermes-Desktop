@@ -417,7 +417,40 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 ct);
 
             var observation = await hostAdapter.Queries.ObserveAsync(binding.Descriptor.EffectiveBodyBinding, ct);
-            var tick = await handle.Loop.RunOneTickAsync(handle.Instance, observation, dispatch.SharedEventBatch, ct);
+            using var llmTurnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            llmTurnCts.CancelAfter(_budget.Options.EffectiveLlmTurnTimeout);
+            NpcAutonomyTickResult tick;
+            try
+            {
+                _logger.LogInformation(
+                    "Stardew autonomy LLM turn started for {NpcId}; timeout={TimeoutSeconds}s",
+                    binding.Descriptor.NpcId,
+                    _budget.Options.EffectiveLlmTurnTimeout.TotalSeconds);
+                tick = await handle.Loop.RunOneTickAsync(handle.Instance, observation, dispatch.SharedEventBatch, llmTurnCts.Token);
+                _logger.LogInformation("Stardew autonomy LLM turn completed for {NpcId}", binding.Descriptor.NpcId);
+            }
+            catch (OperationCanceledException ex) when (!ct.IsCancellationRequested && llmTurnCts.IsCancellationRequested)
+            {
+                tracker.RestartCount++;
+                tracker.Instance.RecordAutonomyRestart(dispatch.BridgeKey, tracker.Instance.Snapshot().CurrentAutonomyHandleGeneration);
+                tracker.Instance.RecordError(NpcAutonomyExitReason.LlmTurnTimeout.ToString());
+
+                if (_budget.CheckRestartLimit(tracker.RestartCount) is NpcAutonomyExitReason.MaxRestarts)
+                {
+                    await PauseTrackerAsync(tracker, deliveredCursor, NpcAutonomyExitReason.MaxRestarts.ToString(), dispatch.BridgeKey, null, ct);
+                    _logger.LogWarning(ex, "Stardew autonomy LLM turn timed out and hit restart limit for {NpcId}", binding.Descriptor.NpcId);
+                    return;
+                }
+
+                var nextWakeAtUtc = DateTime.UtcNow + _budget.Options.EffectiveRestartCooldown;
+                await PauseTrackerAsync(tracker, deliveredCursor, NpcAutonomyExitReason.LlmTurnTimeout.ToString(), dispatch.BridgeKey, nextWakeAtUtc, ct);
+                _logger.LogWarning(
+                    ex,
+                    "Stardew autonomy LLM turn timed out for {NpcId}; will retry after cooldown",
+                    binding.Descriptor.NpcId);
+                return;
+            }
+
             await tracker.Driver.SetControllerStateAsync(tick.NextEventCursor ?? deliveredCursor, null, ct);
             tracker.RestartCount = 0;
             handle.Instance.MarkAutonomyRunning(dispatch.BridgeKey, handle.RebindGeneration, DateTime.UtcNow);

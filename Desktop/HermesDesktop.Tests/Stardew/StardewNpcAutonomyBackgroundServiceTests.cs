@@ -332,6 +332,49 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
+    public async Task RunOneIterationAsync_WhenLlmTurnTimesOut_ReleasesWorkerAndRetriesLater()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new BlockFirstChatClient("I will wait near the library.");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var budget = new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(
+            MaxToolIterations: 2,
+            MaxConcurrentLlmRequests: 1,
+            RestartCooldown: TimeSpan.FromMilliseconds(1),
+            MaxRestartsPerScene: 2,
+            LlmTurnTimeout: TimeSpan.FromMilliseconds(250)));
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"],
+            budget: budget);
+
+        var firstIteration = service.RunOneIterationAsync(CancellationToken.None);
+        await chatClient.WaitUntilFirstCallEnteredAsync(CancellationToken.None);
+        await firstIteration.WaitAsync(TimeSpan.FromSeconds(1));
+
+        var timedOut = supervisor.Snapshot().Single();
+        Assert.AreEqual(NpcAutonomyLoopState.Paused, timedOut.AutonomyLoopState);
+        Assert.AreEqual(NpcAutonomyExitReason.LlmTurnTimeout.ToString(), timedOut.PauseReason);
+        Assert.AreEqual(1, chatClient.CompleteWithToolsCalls);
+        await using (var recoveredSlot = await budget.TryAcquireLlmSlotAsync("external", CancellationToken.None))
+        {
+            Assert.IsNotNull(recoveredSlot, "The timed-out autonomy turn must release the LLM slot so later dispatches can retry.");
+        }
+
+        await Task.Delay(25);
+        await service.RunOneIterationAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2));
+        await chatClient.WaitForCallCountAsync(2, TimeSpan.FromSeconds(1));
+
+        var retried = supervisor.Snapshot().Single();
+        Assert.AreEqual(NpcAutonomyLoopState.Running, retried.AutonomyLoopState);
+        Assert.AreEqual(2, chatClient.CompleteWithToolsCalls);
+    }
+
+    [TestMethod]
     public async Task DispatchOneIterationAsync_WhenWorkerIsBusy_CoalescesQueuedDispatchesPerNpc()
     {
         var discovery = CreateDiscovery("save-42");

@@ -787,7 +787,7 @@ public sealed class SessionSearchIndex : IDisposable
             return $"\u0000Q{quotedParts.Count - 1}\u0000";
         });
 
-        sanitized = Regex.Replace(sanitized, "[+{}()\"^]", " ");
+        sanitized = Regex.Replace(sanitized, "[:+{}()\"^]", " ");
         sanitized = Regex.Replace(sanitized, "\\*+", "*");
         sanitized = Regex.Replace(sanitized, "(^|\\s)\\*", "$1");
         sanitized = Regex.Replace(sanitized.Trim(), "(?i)^(AND|OR|NOT)\\b\\s*", "");

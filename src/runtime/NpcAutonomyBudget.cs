@@ -36,9 +36,15 @@ public sealed record NpcAutonomyBudgetOptions(
     int MaxToolIterations = 100,
     int MaxConcurrentLlmRequests = 1,
     TimeSpan? RestartCooldown = null,
-    int MaxRestartsPerScene = 3)
+    int MaxRestartsPerScene = 3,
+    TimeSpan? LlmTurnTimeout = null)
 {
     public TimeSpan EffectiveRestartCooldown => RestartCooldown ?? TimeSpan.FromSeconds(5);
+
+    public TimeSpan EffectiveLlmTurnTimeout =>
+        LlmTurnTimeout is { } timeout && timeout > TimeSpan.Zero
+            ? timeout
+            : TimeSpan.FromSeconds(60);
 }
 
 public sealed class NpcAutonomyBudgetLease : IAsyncDisposable, IDisposable
@@ -76,6 +82,7 @@ public enum NpcAutonomyExitReason
     MaxToolIterations,
     MaxRestarts,
     LlmConcurrencyLimit,
+    LlmTurnTimeout,
     PausedByWorldState,
     Stopped
 }
