@@ -190,6 +190,9 @@ public sealed class StardewAutonomyTickDebugServiceTests
         StringAssert.Contains(systemPrompt, "### stardew-navigation");
         StringAssert.Contains(systemPrompt, "本 skill 是移动循环与失败恢复 owner");
         StringAssert.Contains(systemPrompt, "最新观察 -> `stardew_move` -> 查询任务状态 -> 失败后重新观察或换目标");
+        StringAssert.Contains(systemPrompt, "物理位移不是台词");
+        StringAssert.Contains(systemPrompt, "必须调用 `stardew_move`");
+        StringAssert.Contains(systemPrompt, "如果没有调用 `stardew_move`");
         StringAssert.Contains(systemPrompt, "不要直接调用 HTTP");
         Assert.IsFalse(
             systemPrompt.Contains("stardew-world test guidance", StringComparison.Ordinal),

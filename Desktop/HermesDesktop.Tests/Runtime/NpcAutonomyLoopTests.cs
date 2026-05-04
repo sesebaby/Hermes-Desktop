@@ -205,6 +205,64 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
+    public async Task RunOneTickAsync_WhenDecisionNarratesMovementWithoutMoveToolCall_WritesDiagnosticLog()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-diagnostic-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            ns.EnsureDirectories();
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var factStore = new NpcObservationFactStore();
+            var adapter = new FakeGameAdapter(
+                new CountingCommandService(),
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Haley is in her room with a safe candidate.",
+                    [
+                        "location=HaleyHouse",
+                        "moveCandidate[0]=locationName=HaleyHouse,x=6,y=4,reason=same_location_safe_reposition"
+                    ])),
+                new FakeEventSource([]));
+            var agent = new FakeAgent(() => { }, "她转身走向床铺。");
+            var loop = new NpcAutonomyLoop(
+                adapter,
+                factStore,
+                agent,
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                traceIdFactory: () => "trace-narrative-move");
+
+            await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+            var records = File.ReadAllLines(logPath)
+                .Select(line => JsonDocument.Parse(line))
+                .ToArray();
+            try
+            {
+                Assert.IsTrue(records.Any(doc =>
+                    doc.RootElement.GetProperty("actionType").GetString() == "diagnostic" &&
+                    doc.RootElement.GetProperty("target").GetString() == "stardew_move" &&
+                    doc.RootElement.GetProperty("stage").GetString() == "warning" &&
+                    doc.RootElement.GetProperty("result").GetString() == "narrative_move_without_stardew_move"),
+                    "A movement-looking final reply without a stardew_move tool call should be visible in runtime.jsonl.");
+            }
+            finally
+            {
+                foreach (var record in records)
+                    record.Dispose();
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task RunOneTickAsync_WithDecisionResponse_WritesNpcLocalMemory()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-memory-tests", Guid.NewGuid().ToString("N"));

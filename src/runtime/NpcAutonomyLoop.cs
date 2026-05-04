@@ -1,3 +1,4 @@
+using Hermes.Agent.Core;
 using Hermes.Agent.Game;
 using Hermes.Agent.Memory;
 
@@ -95,19 +96,22 @@ public sealed class NpcAutonomyLoop
         }
 
         string? decisionResponse = null;
+        Session? decisionSession = null;
         if (_agent is not null)
         {
+            decisionSession = new Session
+            {
+                Id = descriptor.SessionId,
+                Platform = descriptor.AdapterId
+            };
             decisionResponse = await _agent.ChatAsync(
                 BuildDecisionMessage(descriptor, currentFacts),
-                new Hermes.Agent.Core.Session
-                {
-                    Id = descriptor.SessionId,
-                    Platform = descriptor.AdapterId
-                },
+                decisionSession,
                 ct);
         }
 
         await WriteActivityAsync(descriptor, traceId, eventFacts, decisionResponse, ct);
+        await WriteNarrativeMovementDiagnosticAsync(descriptor, traceId, decisionResponse, decisionSession, ct);
         await WriteMemoryAsync(traceId, decisionResponse, ct);
 
         return new NpcAutonomyTickResult(descriptor.NpcId, traceId, 1, eventFacts, decisionResponse, eventBatch.NextCursor);
@@ -182,6 +186,34 @@ public sealed class NpcAutonomyLoop
             decisionResponse ?? $"observed:{eventFacts + 1}"), ct);
     }
 
+    private async Task WriteNarrativeMovementDiagnosticAsync(
+        NpcRuntimeDescriptor descriptor,
+        string traceId,
+        string? decisionResponse,
+        Session? decisionSession,
+        CancellationToken ct)
+    {
+        if (_logWriter is null ||
+            string.IsNullOrWhiteSpace(decisionResponse) ||
+            !LooksLikePhysicalMovement(decisionResponse) ||
+            HasToolCall(decisionSession, "stardew_move"))
+        {
+            return;
+        }
+
+        await _logWriter.WriteAsync(new NpcRuntimeLogRecord(
+            DateTime.UtcNow,
+            traceId,
+            descriptor.NpcId,
+            descriptor.GameId,
+            descriptor.SessionId,
+            "diagnostic",
+            "stardew_move",
+            "warning",
+            "narrative_move_without_stardew_move",
+            Error: Truncate(decisionResponse, 300)), ct);
+    }
+
     private async Task WriteMemoryAsync(string traceId, string? decisionResponse, CancellationToken ct)
     {
         if (_memoryManager is null || string.IsNullOrWhiteSpace(decisionResponse))
@@ -191,6 +223,49 @@ public sealed class NpcAutonomyLoop
             "memory",
             $"Autonomy tick {traceId}: {Truncate(decisionResponse, 300)}",
             ct);
+    }
+
+    private static bool HasToolCall(Session? session, string toolName)
+    {
+        if (session is null)
+            return false;
+
+        return session.Messages.Any(message =>
+            string.Equals(message.ToolName, toolName, StringComparison.OrdinalIgnoreCase) ||
+            (message.ToolCalls?.Any(toolCall => string.Equals(toolCall.Name, toolName, StringComparison.OrdinalIgnoreCase)) ?? false));
+    }
+
+    private static bool LooksLikePhysicalMovement(string value)
+    {
+        string[] markers =
+        [
+            "走向",
+            "走到",
+            "走进",
+            "走出",
+            "走上",
+            "走下",
+            "回到",
+            "回房",
+            "出门",
+            "靠近",
+            "移动到",
+            "上楼",
+            "下楼",
+            "离开",
+            "前往",
+            "walked to",
+            "walks to",
+            "walking to",
+            "moved to",
+            "moves to",
+            "heads to",
+            "headed to",
+            "goes to",
+            "went to"
+        ];
+
+        return markers.Any(marker => value.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string Truncate(string value, int maxLength)

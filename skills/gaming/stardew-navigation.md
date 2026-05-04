@@ -8,6 +8,15 @@
 
 地点标签、地点理由、`endBehavior` 和 `placeCandidate[n]` 为什么有意义由 `stardew-world` 解释；本 skill 只复制候选里已经存在的字段，不重新发明世界语义。
 
+## 硬规则：移动不是叙事文本
+
+物理位移不是台词，也不是内心独白。只要你想让 NPC 在游戏世界里真实改变位置，就必须调用 `stardew_move`。
+
+- 看到或准备写出“走向、走到、回房、出门、靠近、移动到、上楼、下楼、离开、前往”等实际位移动作时，先使用本 skill 的移动流程。
+- 如果没有调用 `stardew_move`，不要写“已经走向/走到/回到/离开/上楼/下楼”这类看起来完成了物理移动的句子；只能等待、观察、说话，或说明没有移动。
+- `stardew_speak` 只负责说话；它不能替代 `stardew_move`，也不能让 NPC 真实换位置。
+- `stardew_move` 的参数必须逐字来自最新观察里的 `moveCandidate[n]` 或 `placeCandidate[n]`：`locationName`、`x`、`y`、`reason`，以及可选的 `facingDirection`。
+
 在移动前：
 
 - 确认目标地点和坐标来自最新的 `moveCandidate[n]` 或 `placeCandidate[n]` 桥接事实，或者来自现有私聊例外路径中已解析好的目标。
