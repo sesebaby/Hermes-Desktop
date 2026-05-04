@@ -91,7 +91,7 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_move";
 
-    public string Description => "Ask this NPC to move to a semantic destination from the latest observation. Copy the destination label exactly from a destination[n].label fact, never invent destinations. If a move ends with path_blocked, path_unreachable, or interrupted, observe again or choose a different target instead of retrying the same destination. Only use nearby[n] as a last resort for 1-2 tile repositioning when no destination matches your intent.";
+    public string Description => "Ask this NPC to move to a semantic destination from the latest observation. Copy the destination id from a destination[n].destinationId fact (preferred), or the destination label from a destination[n].label fact. Never invent destinations. If a move ends with path_blocked, path_unreachable, or interrupted, observe again or choose a different target instead of retrying the same destination. Only use nearby[n] as a last resort for 1-2 tile repositioning when no destination matches your intent.";
 
     public Type ParametersType => typeof(StardewMoveToolParameters);
 
@@ -117,9 +117,12 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
                 StatusPolls: [])));
         }
 
-        var (locationName, x, y, facingDirection) = resolved.Value;
+        var (locationName, x, y, facingDirection, destinationId) = resolved.Value;
 
-        var payload = new JsonObject();
+        var payload = new JsonObject
+        {
+            ["destinationId"] = destinationId
+        };
         if (facingDirection.HasValue)
             payload["facingDirection"] = facingDirection.Value;
 
@@ -185,8 +188,8 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
         return statuses;
     }
 
-    private async Task<(string LocationName, int X, int Y, int? FacingDirection)?> ResolveDestinationAsync(
-        string destinationLabel,
+    private async Task<(string LocationName, int X, int Y, int? FacingDirection, string DestinationId)?> ResolveDestinationAsync(
+        string destination,
         CancellationToken ct)
     {
         var observation = await _queries.ObserveAsync(_descriptor.EffectiveBodyBinding, ct);
@@ -196,24 +199,70 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
             if (!fact.StartsWith("destination[", StringComparison.Ordinal))
                 continue;
 
-            if (!TryReadDestinationFact(fact, out var label, out var loc, out var fx, out var fy, out var fd))
+            if (!TryReadDestinationFact(fact, out var destinationId, out var label, out var loc, out var fx, out var fy, out var fd))
                 continue;
 
-            if (string.Equals(label, destinationLabel, StringComparison.Ordinal))
-                return (loc, fx, fy, fd);
+            if (string.Equals(destinationId, destination, StringComparison.Ordinal) ||
+                string.Equals(label, destination, StringComparison.Ordinal))
+            {
+                return (loc, fx, fy, fd, string.IsNullOrWhiteSpace(destinationId)
+                    ? BuildDestinationId(loc, label)
+                    : destinationId);
+            }
         }
 
         return null;
     }
 
+    private static string BuildDestinationId(string locationName, string destinationLabel)
+    {
+        var normalizedLocation = NormalizeDestinationSegment(locationName);
+        var labelRemainder = destinationLabel.Trim();
+        if (!string.IsNullOrWhiteSpace(locationName) &&
+            labelRemainder.StartsWith(locationName, StringComparison.OrdinalIgnoreCase))
+        {
+            labelRemainder = labelRemainder[locationName.Length..].TrimStart(' ', '-', '_', '.');
+        }
+
+        var normalizedLabel = NormalizeDestinationSegment(labelRemainder);
+        return string.IsNullOrWhiteSpace(normalizedLabel)
+            ? normalizedLocation
+            : $"{normalizedLocation}.{normalizedLabel}";
+    }
+
+    private static string NormalizeDestinationSegment(string value)
+    {
+        var builder = new System.Text.StringBuilder(value.Length);
+        var pendingSeparator = false;
+        foreach (var ch in value)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                if (pendingSeparator && builder.Length > 0)
+                    builder.Append('.');
+
+                builder.Append(char.ToLowerInvariant(ch));
+                pendingSeparator = false;
+            }
+            else
+            {
+                pendingSeparator = builder.Length > 0;
+            }
+        }
+
+        return builder.ToString();
+    }
+
     private static bool TryReadDestinationFact(
         string fact,
+        out string destinationId,
         out string label,
         out string locationName,
         out int x,
         out int y,
         out int? facingDirection)
     {
+        destinationId = string.Empty;
         label = string.Empty;
         locationName = string.Empty;
         x = 0;
@@ -232,7 +281,9 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
 
             var key = part[..separator];
             var value = part[(separator + 1)..];
-            if (string.Equals(key, "label", StringComparison.Ordinal))
+            if (string.Equals(key, "destinationId", StringComparison.Ordinal))
+                destinationId = value;
+            else if (string.Equals(key, "label", StringComparison.Ordinal))
                 label = value;
             else if (string.Equals(key, "locationName", StringComparison.Ordinal))
                 locationName = value;
@@ -438,11 +489,14 @@ internal sealed class StardewRuntimeActionController
         var claimId = RequiresMoveClaim(action) ? workItemId : null;
         if (claimId is not null && _worldCoordination is not null)
         {
+            var claimTargetTile = action.Target.Tile is not null && !string.IsNullOrWhiteSpace(action.Target.LocationName)
+                ? new ClaimedTile(action.Target.LocationName, action.Target.Tile.X, action.Target.Tile.Y)
+                : null;
             var claimResult = _worldCoordination.TryClaimMove(
                 claimId,
                 action.NpcId,
                 action.TraceId,
-                new ClaimedTile(action.Target.LocationName!, action.Target.Tile!.X, action.Target.Tile.Y),
+                claimTargetTile,
                 interactionTile: null,
                 action.IdempotencyKey);
             if (!claimResult.Accepted)
@@ -508,6 +562,13 @@ internal sealed class StardewRuntimeActionController
         }
 
         var snapshot = _runtimeDriver.Snapshot();
+        if (!string.IsNullOrWhiteSpace(commandResult.CommandId) &&
+            !string.IsNullOrWhiteSpace(preparedAction.ClaimId) &&
+            _worldCoordination is not null)
+        {
+            _worldCoordination.RekeyClaim(preparedAction.ClaimId, commandResult.CommandId);
+        }
+
         if (snapshot.PendingWorkItem is not null)
         {
             await _runtimeDriver.SetPendingWorkItemAsync(
@@ -565,21 +626,28 @@ internal sealed class StardewRuntimeActionController
         if (!IsTerminalStatus(status.Status))
             return;
 
-        var claimId = snapshot.ActionSlot?.WorkItemId ?? snapshot.PendingWorkItem?.WorkItemId ?? status.CommandId;
-        await ClearAsync(claimId, GetCooldownAtUtc(status.Status, status.RetryAfterUtc), ct);
+        await _runtimeDriver.SetLastTerminalCommandStatusAsync(status, ct);
+        var primaryClaimId = !string.IsNullOrWhiteSpace(status.CommandId)
+            ? status.CommandId
+            : snapshot.ActionSlot?.CommandId ?? snapshot.PendingWorkItem?.CommandId ?? snapshot.ActionSlot?.WorkItemId ?? snapshot.PendingWorkItem?.WorkItemId;
+        await ClearAsync(primaryClaimId, GetCooldownAtUtc(status.Status, status.RetryAfterUtc), ct, snapshot.ActionSlot?.WorkItemId, snapshot.PendingWorkItem?.WorkItemId);
     }
 
     public Task ClearAsync(DateTime? nextWakeAtUtc, CancellationToken ct)
     {
         var snapshot = _runtimeDriver?.Snapshot();
-        var claimId = snapshot?.ActionSlot?.WorkItemId ?? snapshot?.PendingWorkItem?.WorkItemId;
-        return ClearAsync(claimId, nextWakeAtUtc, ct);
+        var primaryClaimId = snapshot?.ActionSlot?.CommandId
+            ?? snapshot?.PendingWorkItem?.CommandId
+            ?? snapshot?.ActionSlot?.WorkItemId
+            ?? snapshot?.PendingWorkItem?.WorkItemId;
+        return ClearAsync(primaryClaimId, nextWakeAtUtc, ct, snapshot?.ActionSlot?.WorkItemId, snapshot?.PendingWorkItem?.WorkItemId);
     }
 
     public static bool IsTerminalStatus(string? status)
         => string.Equals(status, StardewCommandStatuses.Completed, StringComparison.OrdinalIgnoreCase) ||
            string.Equals(status, StardewCommandStatuses.Failed, StringComparison.OrdinalIgnoreCase) ||
            string.Equals(status, StardewCommandStatuses.Cancelled, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Interrupted, StringComparison.OrdinalIgnoreCase) ||
            string.Equals(status, StardewCommandStatuses.Blocked, StringComparison.OrdinalIgnoreCase) ||
            string.Equals(status, StardewCommandStatuses.Expired, StringComparison.OrdinalIgnoreCase);
 
@@ -587,13 +655,29 @@ internal sealed class StardewRuntimeActionController
         => string.Equals(status, StardewCommandStatuses.Queued, StringComparison.OrdinalIgnoreCase) ||
            string.Equals(status, StardewCommandStatuses.Running, StringComparison.OrdinalIgnoreCase);
 
-    private async Task ClearAsync(string? claimId, DateTime? nextWakeAtUtc, CancellationToken ct)
+    private async Task ClearAsync(string? claimId, DateTime? nextWakeAtUtc, CancellationToken ct, params string?[] fallbackClaimIds)
     {
         if (_runtimeDriver is null)
             return;
 
-        if (!string.IsNullOrWhiteSpace(claimId) && _worldCoordination is not null)
-            _worldCoordination.ReleaseClaim(claimId);
+        if (_worldCoordination is not null)
+        {
+            var released = false;
+            if (!string.IsNullOrWhiteSpace(claimId))
+                released = _worldCoordination.ReleaseClaim(claimId);
+
+            if (!released)
+            {
+                foreach (var fallbackClaimId in fallbackClaimIds.Where(candidate => !string.IsNullOrWhiteSpace(candidate)).Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    if (string.Equals(fallbackClaimId, claimId, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (_worldCoordination.ReleaseClaim(fallbackClaimId!))
+                        break;
+                }
+            }
+        }
 
         await _runtimeDriver.SetActionSlotAsync(null, ct);
         await _runtimeDriver.SetPendingWorkItemAsync(null, ct);
@@ -602,8 +686,17 @@ internal sealed class StardewRuntimeActionController
 
     private static bool RequiresMoveClaim(GameAction action)
         => action.Type == GameActionType.Move &&
-           action.Target.Tile is not null &&
-           !string.IsNullOrWhiteSpace(action.Target.LocationName);
+           (!string.IsNullOrWhiteSpace(ReadPayloadString(action.Payload, "destinationId")) ||
+            (action.Target.Tile is not null && !string.IsNullOrWhiteSpace(action.Target.LocationName)));
+
+    private static string? ReadPayloadString(JsonObject? payload, string propertyName)
+    {
+        if (payload is null || !payload.TryGetPropertyValue(propertyName, out var node) || node is null)
+            return null;
+
+        var value = node.ToString();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
 
     private static string ToWorkType(GameActionType actionType)
         => actionType switch
@@ -706,7 +799,7 @@ internal static class StardewNpcToolSchemas
         => Schema(
             new Dictionary<string, object>
             {
-                ["destination"] = new { type = "string", description = "Destination label copied exactly from a destination[n].label fact in the latest observation. Never invent destinations." },
+                ["destination"] = new { type = "string", description = "Destination identifier from the latest observation. Prefer destination[n].destinationId (stable key), fall back to destination[n].label. Never invent destinations." },
                 ["reason"] = new { type = "string", description = "Short reason copied from the destination[n] fact's reason field, or a brief NPC intent aligned with the destination." }
             },
             ["destination"]);

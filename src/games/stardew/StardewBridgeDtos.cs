@@ -51,15 +51,17 @@ public sealed record StardewDestinationData(
     [property: JsonPropertyName("tags")] IReadOnlyList<string> Tags,
     [property: JsonPropertyName("reason")] string Reason,
     [property: JsonPropertyName("facingDirection")] int? FacingDirection = null,
-    [property: JsonPropertyName("endBehavior")] string? EndBehavior = null);
+    [property: JsonPropertyName("endBehavior")] string? EndBehavior = null,
+    [property: JsonPropertyName("destinationId")] string? DestinationId = null);
 
 public sealed record StardewMoveTarget(
     [property: JsonPropertyName("locationName")] string LocationName,
     [property: JsonPropertyName("tile")] StardewTile Tile);
 
 public sealed record StardewMoveRequest(
-    [property: JsonPropertyName("target")] StardewMoveTarget Target,
-    [property: JsonPropertyName("reason")] string? Reason,
+    [property: JsonPropertyName("target")] StardewMoveTarget? Target,
+    [property: JsonPropertyName("reason")] string? Reason = null,
+    [property: JsonPropertyName("destinationId")] string? DestinationId = null,
     [property: JsonPropertyName("facingDirection")] int? FacingDirection = null);
 
 public sealed record StardewMoveAcceptedData(
@@ -112,7 +114,12 @@ public sealed record StardewTaskStatusData(
     [property: JsonPropertyName("errorCode")] string? ErrorCode,
     [property: JsonPropertyName("interruptionReason")] string? InterruptionReason = null,
     [property: JsonPropertyName("updatedAtUtc")] DateTime? UpdatedAtUtc = null,
-    [property: JsonPropertyName("retryAfterUtc")] DateTime? RetryAfterUtc = null);
+    [property: JsonPropertyName("retryAfterUtc")] DateTime? RetryAfterUtc = null,
+    [property: JsonPropertyName("destinationId")] string? DestinationId = null,
+    [property: JsonPropertyName("phase")] string? Phase = null,
+    [property: JsonPropertyName("currentLocationName")] string? CurrentLocationName = null,
+    [property: JsonPropertyName("resolvedStandTile")] StardewTile? ResolvedStandTile = null,
+    [property: JsonPropertyName("routeRevision")] int? RouteRevision = null);
 
 public sealed record StardewStatusQuery(
     [property: JsonPropertyName("npcId")] string? NpcId);

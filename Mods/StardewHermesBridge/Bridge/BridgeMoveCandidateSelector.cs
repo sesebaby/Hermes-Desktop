@@ -6,7 +6,8 @@ internal sealed record BridgePlaceCandidateDefinition(
     IReadOnlyList<string> Tags,
     string Reason,
     int? FacingDirection,
-    string? EndBehavior);
+    string? EndBehavior,
+    string? DestinationId = null);
 
 internal static class BridgeMoveCandidateSelector
 {
@@ -27,7 +28,8 @@ internal static class BridgeMoveCandidateSelector
                 definition.Tags,
                 definition.Reason,
                 definition.FacingDirection,
-                definition.EndBehavior))
+                definition.EndBehavior,
+                definition.DestinationId))
             .ToArray();
 
         return curated;

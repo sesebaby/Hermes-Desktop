@@ -33,7 +33,7 @@ public sealed class NpcRuntimeStateStore
             using var db = OpenConnection();
             using var cmd = db.CreateCommand();
             cmd.CommandText = """
-                SELECT event_since, event_sequence, next_wake_at_utc, pending_work_item_json, action_slot_json, lease_json, ingress_work_items_json
+                SELECT event_since, event_sequence, next_wake_at_utc, pending_work_item_json, action_slot_json, lease_json, ingress_work_items_json, last_terminal_command_status_json
                 FROM runtime_state
                 WHERE id = 1;
                 """;
@@ -48,6 +48,7 @@ public sealed class NpcRuntimeStateStore
             var actionSlot = Deserialize<NpcRuntimeActionSlotSnapshot>(reader, 4);
             var lease = Deserialize<NpcRuntimeSessionLeaseSnapshot>(reader, 5);
             var ingressWorkItems = Deserialize<IReadOnlyList<NpcRuntimeIngressWorkItemSnapshot>>(reader, 6) ?? [];
+            var lastTerminalCommandStatus = Deserialize<GameCommandStatus>(reader, 7);
 
             return Task.FromResult(new NpcRuntimePersistedState(
                 new NpcRuntimeControllerSnapshot(
@@ -55,7 +56,8 @@ public sealed class NpcRuntimeStateStore
                     pending,
                     actionSlot,
                     nextWakeAtUtc,
-                    ingressWorkItems: ingressWorkItems),
+                    ingressWorkItems: ingressWorkItems,
+                    lastTerminalCommandStatus: lastTerminalCommandStatus),
                 lease));
         }
     }
@@ -79,6 +81,7 @@ public sealed class NpcRuntimeStateStore
                     action_slot_json,
                     ingress_work_items_json,
                     lease_json,
+                    last_terminal_command_status_json,
                     updated_at_utc)
                 VALUES (
                     1,
@@ -89,6 +92,7 @@ public sealed class NpcRuntimeStateStore
                     $action_slot_json,
                     $ingress_work_items_json,
                     $lease_json,
+                    $last_terminal_command_status_json,
                     $updated_at_utc)
                 ON CONFLICT(id) DO UPDATE SET
                     event_since = excluded.event_since,
@@ -98,6 +102,7 @@ public sealed class NpcRuntimeStateStore
                     action_slot_json = excluded.action_slot_json,
                     ingress_work_items_json = excluded.ingress_work_items_json,
                     lease_json = excluded.lease_json,
+                    last_terminal_command_status_json = excluded.last_terminal_command_status_json,
                     updated_at_utc = excluded.updated_at_utc;
                 """;
             cmd.Parameters.AddWithValue("$event_since", (object?)state.Controller.EventCursor.Since ?? DBNull.Value);
@@ -107,6 +112,7 @@ public sealed class NpcRuntimeStateStore
             cmd.Parameters.AddWithValue("$action_slot_json", Serialize(state.Controller.ActionSlot));
             cmd.Parameters.AddWithValue("$ingress_work_items_json", Serialize(state.Controller.IngressWorkItems));
             cmd.Parameters.AddWithValue("$lease_json", Serialize(state.LeaseSnapshot));
+            cmd.Parameters.AddWithValue("$last_terminal_command_status_json", Serialize(state.Controller.LastTerminalCommandStatus));
             cmd.Parameters.AddWithValue("$updated_at_utc", DateTime.UtcNow.ToString("O"));
             cmd.ExecuteNonQuery();
         }
@@ -143,11 +149,13 @@ public sealed class NpcRuntimeStateStore
                     action_slot_json TEXT,
                     ingress_work_items_json TEXT,
                     lease_json TEXT,
+                    last_terminal_command_status_json TEXT,
                     updated_at_utc TEXT NOT NULL
                 );
                 """;
             cmd.ExecuteNonQuery();
             EnsureColumn(db, "runtime_state", "ingress_work_items_json", "TEXT");
+            EnsureColumn(db, "runtime_state", "last_terminal_command_status_json", "TEXT");
         }
     }
 

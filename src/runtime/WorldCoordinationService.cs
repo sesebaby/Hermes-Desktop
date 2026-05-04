@@ -13,7 +13,7 @@ public sealed class WorldCoordinationService
         string commandId,
         string npcId,
         string traceId,
-        ClaimedTile targetTile,
+        ClaimedTile? targetTile,
         ClaimedTile? interactionTile,
         string? idempotencyKey)
     {
@@ -32,4 +32,7 @@ public sealed class WorldCoordinationService
 
     public bool ReleaseCommand(string commandId)
         => ReleaseClaim(commandId);
+
+    public bool RekeyClaim(string currentCommandId, string newCommandId)
+        => _claims.Rekey(currentCommandId, newCommandId);
 }

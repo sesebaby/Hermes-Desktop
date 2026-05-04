@@ -21,6 +21,7 @@ public static class StardewCommandStatuses
     public const string Completed = "completed";
     public const string Failed = "failed";
     public const string Cancelled = "cancelled";
+    public const string Interrupted = "interrupted";
     public const string Blocked = "blocked";
     public const string Expired = "expired";
 }

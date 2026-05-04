@@ -183,20 +183,32 @@
   "hotPaths": [
     {
       "path": "",
-      "accessCount": 26,
-      "lastAccessed": 1777882869765,
+      "accessCount": 50,
+      "lastAccessed": 1777896071898,
+      "type": "directory"
+    },
+    {
+      "path": "src",
+      "accessCount": 14,
+      "lastAccessed": 1777893502576,
+      "type": "directory"
+    },
+    {
+      "path": "参考项目\\Mod参考\\Stardew-Nexus-35341-TheStardewSquad",
+      "accessCount": 13,
+      "lastAccessed": 1777897519402,
       "type": "directory"
     },
     {
       "path": "external\\hermescraft-main\\bot\\server.js",
-      "accessCount": 11,
-      "lastAccessed": 1777873567076,
+      "accessCount": 12,
+      "lastAccessed": 1777885738938,
       "type": "file"
     },
     {
-      "path": "参考项目\\Mod参考\\Stardew-Nexus-35341-TheStardewSquad",
+      "path": "参考项目\\Mod参考",
       "accessCount": 11,
-      "lastAccessed": 1777882103908,
+      "lastAccessed": 1777898123473,
       "type": "directory"
     },
     {
@@ -204,12 +216,6 @@
       "accessCount": 9,
       "lastAccessed": 1777873553713,
       "type": "file"
-    },
-    {
-      "path": "src",
-      "accessCount": 9,
-      "lastAccessed": 1777879437006,
-      "type": "directory"
     },
     {
       "path": "src\\agents\\AgentService.cs",
@@ -272,9 +278,9 @@
       "type": "file"
     },
     {
-      "path": "参考项目\\Mod参考",
+      "path": "external\\hermescraft-main",
       "accessCount": 3,
-      "lastAccessed": 1777874494504,
+      "lastAccessed": 1777885613478,
       "type": "directory"
     },
     {
@@ -300,12 +306,6 @@
       "accessCount": 2,
       "lastAccessed": 1777873478052,
       "type": "file"
-    },
-    {
-      "path": "external\\hermescraft-main",
-      "accessCount": 2,
-      "lastAccessed": 1777873500931,
-      "type": "directory"
     },
     {
       "path": "external\\hermescraft-main\\bot\\lib\\perception.js",

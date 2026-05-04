@@ -35,7 +35,9 @@ public sealed record GameCommandResult(
     string Status,
     string? FailureReason,
     string TraceId,
-    bool Retryable = false);
+    bool Retryable = false,
+    string? DestinationId = null,
+    string? InitialPhase = null);
 
 public sealed record GameCommandStatus(
     string CommandId,
@@ -48,4 +50,9 @@ public sealed record GameCommandStatus(
     DateTime? StartedAtUtc = null,
     DateTime? UpdatedAtUtc = null,
     long? ElapsedMs = null,
-    DateTime? RetryAfterUtc = null);
+    DateTime? RetryAfterUtc = null,
+    string? DestinationId = null,
+    string? Phase = null,
+    string? CurrentLocationName = null,
+    GameTile? ResolvedStandTile = null,
+    int? RouteRevision = null);

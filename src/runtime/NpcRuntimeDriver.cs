@@ -53,6 +53,12 @@ public sealed class NpcRuntimeDriver
         await SyncAsync(ct);
     }
 
+    public async Task SetLastTerminalCommandStatusAsync(GameCommandStatus? status, CancellationToken ct)
+    {
+        _instance.SetLastTerminalCommandStatus(status);
+        await SyncAsync(ct);
+    }
+
     public async Task EnqueueIngressWorkItemAsync(NpcRuntimeIngressWorkItemSnapshot workItem, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(workItem);

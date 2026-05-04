@@ -37,6 +37,18 @@ public class StardewCommandContractTests
     }
 
     [TestMethod]
+    public void GameCommandStatus_ExposesPublicMoveStatusFields()
+    {
+        var statusType = typeof(Hermes.Agent.Game.GameCommandStatus);
+
+        Assert.IsNotNull(statusType.GetProperty("DestinationId"));
+        Assert.IsNotNull(statusType.GetProperty("Phase"));
+        Assert.IsNotNull(statusType.GetProperty("CurrentLocationName"));
+        Assert.IsNotNull(statusType.GetProperty("ResolvedStandTile"));
+        Assert.IsNotNull(statusType.GetProperty("RouteRevision"));
+    }
+
+    [TestMethod]
     public void ErrorCodes_UseLowerSnakeCase()
     {
         Assert.AreEqual("bridge_unauthorized", StardewBridgeErrorCodes.BridgeUnauthorized);

@@ -216,6 +216,49 @@ internal static class BridgeMovementPathProbe
             .FirstOrDefault();
     }
 
+    public static (TileDto StandTile, int FacingDirection, BridgeRouteProbeResult Route)? FindClosestReachableNeighbor(
+        NPC npc,
+        GameLocation location,
+        TileDto target,
+        TileDto currentTile)
+    {
+        var candidates = FindPassableNeighbors(location, target)
+            .OrderBy(p => Math.Abs(p.Tile.X - currentTile.X) + Math.Abs(p.Tile.Y - currentTile.Y));
+
+        foreach (var candidate in candidates)
+        {
+            var route = Probe(
+                currentTile,
+                candidate.Tile,
+                tile => CheckTargetAffordance(location, tile),
+                () => FindSchedulePath(npc, location, currentTile, candidate.Tile),
+                tile => CheckRouteStepSafety(location, tile));
+            if (route.Status == BridgeRouteProbeStatus.RouteValid)
+                return (candidate.Tile, candidate.Direction, route);
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<(TileDto Tile, int Direction)> FindPassableNeighbors(GameLocation location, TileDto target)
+    {
+        var candidates = new (int X, int Y, int Direction)[]
+        {
+            (target.X + 1, target.Y, 3),
+            (target.X - 1, target.Y, 1),
+            (target.X, target.Y + 1, 0),
+            (target.X, target.Y - 1, 2),
+        };
+
+        using var _ = new ScopedTerrainFeatureRemoval(location, target);
+        foreach (var (x, y, direction) in candidates)
+        {
+            var tile = new TileDto(x, y);
+            if (CheckTargetAffordance(location, tile).IsSafe)
+                yield return (tile, direction);
+        }
+    }
+
     private static bool SameTile(TileDto left, TileDto right)
         => left.X == right.X && left.Y == right.Y;
 }

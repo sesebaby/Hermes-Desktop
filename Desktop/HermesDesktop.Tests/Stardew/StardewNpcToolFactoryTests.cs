@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Hermes.Agent.Core;
 using Hermes.Agent.Game;
 using Hermes.Agent.Games.Stardew;
@@ -41,13 +42,15 @@ public class StardewNpcToolFactoryTests
         var moveSchema = moveTool.GetParameterSchema().GetRawText();
 
         StringAssert.Contains(description, "destination");
+        StringAssert.Contains(description, "destination[n].destinationId");
         StringAssert.Contains(description, "destination[n].label");
         StringAssert.Contains(description, "latest observation");
-        StringAssert.Contains(description, "never invent destinations");
+        StringAssert.Contains(description, "Never invent destinations");
         StringAssert.Contains(description, "path_blocked");
         StringAssert.Contains(description, "path_unreachable");
         StringAssert.Contains(description, "nearby[n]");
 
+        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "destination"), "destination[n].destinationId");
         StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "destination"), "destination[n].label");
         StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "reason"), "Short reason");
     }
@@ -131,8 +134,37 @@ public class StardewNpcToolFactoryTests
         Assert.AreEqual("idem-move", commands.LastAction.IdempotencyKey);
         Assert.AreEqual("Town", commands.LastAction.Target.LocationName);
         Assert.AreEqual(42, commands.LastAction.Target.Tile?.X);
+        Assert.AreEqual("town.fountain", commands.LastAction.Payload?["destinationId"]?.ToString());
         Assert.AreEqual("2", commands.LastAction.Payload?["facingDirection"]?.ToString());
         Assert.AreEqual("cmd-1", JsonDocument.Parse(result.Content).RootElement.GetProperty("commandId").GetString());
+    }
+
+    [TestMethod]
+    public async Task MoveTool_WhenDestinationIdIsProvided_ResolvesObservedDestination()
+    {
+        var commands = new CapturingCommandService();
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(commands, new FakeQueryService(
+            [
+                "destination[0]=label=Town fountain,locationName=Town,x=42,y=17,tags=public|photogenic,reason=stand somewhere bright and visible in town,destinationId=town.fountain,facingDirection=2"
+            ]), new FakeEventSource()),
+            CreateDescriptor("haley"),
+            traceIdFactory: () => "trace-move",
+            idempotencyKeyFactory: () => "idem-move");
+        var moveTool = tools.Single(tool => tool.Name == "stardew_move");
+
+        var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
+        {
+            Destination = "town.fountain",
+            Reason = "inspect the fountain"
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.IsNotNull(commands.LastAction);
+        Assert.AreEqual("Town", commands.LastAction.Target.LocationName);
+        Assert.AreEqual(42, commands.LastAction.Target.Tile?.X);
+        Assert.AreEqual(17, commands.LastAction.Target.Tile?.Y);
+        Assert.AreEqual("town.fountain", commands.LastAction.Payload?["destinationId"]?.ToString());
     }
 
     [TestMethod]
@@ -278,6 +310,134 @@ public class StardewNpcToolFactoryTests
             Assert.IsTrue(
                 coordination.TryClaimMove("work-2", "penny", "trace-2", new ClaimedTile("Town", 42, 17), null, "idem-2").Accepted,
                 "Terminal completion must release the short claim so another NPC can use the same tile.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task MoveTool_WithRuntimeDriver_ReleasesClaimAfterInterruptedTerminalStatus()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-tool-interrupted-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var commands = new CapturingCommandService(
+                [
+                    new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null),
+                    new GameCommandStatus("cmd-1", "haley", "move", "interrupted", 1, null, null)
+                ]);
+            var supervisor = new NpcRuntimeSupervisor();
+            var driver = await supervisor.GetOrCreateDriverAsync(CreateDescriptor("haley"), tempDir, CancellationToken.None);
+            var coordination = new WorldCoordinationService(new ResourceClaimRegistry());
+            var tools = StardewNpcToolFactory.CreateDefault(
+                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+                CreateDescriptor("haley"),
+                traceIdFactory: () => "trace-move",
+                idempotencyKeyFactory: () => "idem-move",
+                runtimeDriver: driver,
+                worldCoordination: coordination);
+            var moveTool = tools.Single(tool => tool.Name == "stardew_move");
+
+            var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
+            {
+                Destination = "Town fountain"
+            }, CancellationToken.None);
+
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual(2, commands.StatusCalls);
+            var snapshot = driver.Snapshot();
+            Assert.IsNull(snapshot.PendingWorkItem);
+            Assert.IsNull(snapshot.ActionSlot);
+            Assert.IsNotNull(snapshot.LastTerminalCommandStatus);
+            Assert.AreEqual("cmd-1", snapshot.LastTerminalCommandStatus.CommandId);
+            Assert.AreEqual(StardewCommandStatuses.Interrupted, snapshot.LastTerminalCommandStatus.Status);
+            Assert.IsTrue(
+                coordination.TryClaimMove("work-2", "penny", "trace-2", new ClaimedTile("Town", 42, 17), null, "idem-2").Accepted,
+                "Interrupted terminal status must also release the short claim and clear runtime slots.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RuntimeActionController_WithDestinationIdOnlyMove_CreatesMoveClaim()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-runtime-claim-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var registry = new ResourceClaimRegistry();
+            var coordination = new WorldCoordinationService(registry);
+            var controller = new StardewRuntimeActionController(driver, coordination, actionTimeout: null, nowUtc: () => new DateTime(2026, 5, 4, 12, 0, 0, DateTimeKind.Utc));
+            var action = new GameAction(
+                "haley",
+                "stardew-valley",
+                GameActionType.Move,
+                "trace-move",
+                "idem-move",
+                new GameActionTarget("destination"),
+                "inspect fountain",
+                Payload: new JsonObject
+                {
+                    ["destinationId"] = "town.fountain"
+                },
+                BodyBinding: descriptor.EffectiveBodyBinding);
+
+            var prepared = await controller.TryBeginAsync(action, CancellationToken.None);
+
+            Assert.IsNotNull(prepared);
+            Assert.IsNull(prepared?.BlockedResult);
+            var claims = registry.Snapshot();
+            Assert.AreEqual(1, claims.Count, "Destination-only moves should still create a Desktop runtime claim.");
+            Assert.AreEqual("work_idem-move", claims[0].CommandId);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RuntimeActionController_AfterAcceptedMove_RekeysClaimToCommandId()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-runtime-claim-rekey-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var registry = new ResourceClaimRegistry();
+            var coordination = new WorldCoordinationService(registry);
+            var controller = new StardewRuntimeActionController(driver, coordination, actionTimeout: null, nowUtc: () => new DateTime(2026, 5, 4, 12, 0, 0, DateTimeKind.Utc));
+            var action = new GameAction(
+                "haley",
+                "stardew-valley",
+                GameActionType.Move,
+                "trace-move",
+                "idem-move",
+                new GameActionTarget("destination"),
+                "inspect fountain",
+                Payload: new JsonObject
+                {
+                    ["destinationId"] = "town.fountain"
+                },
+                BodyBinding: descriptor.EffectiveBodyBinding);
+
+            var prepared = await controller.TryBeginAsync(action, CancellationToken.None);
+            await controller.RecordSubmitResultAsync(prepared, new GameCommandResult(true, "cmd-1", StardewCommandStatuses.Queued, null, "trace-move"), CancellationToken.None);
+
+            var claims = registry.Snapshot();
+            Assert.AreEqual(1, claims.Count, "Accepted move should keep exactly one claim after rekey.");
+            Assert.AreEqual("cmd-1", claims[0].CommandId, "Claim identity should be upgraded from work item id to command id after accept.");
         }
         finally
         {

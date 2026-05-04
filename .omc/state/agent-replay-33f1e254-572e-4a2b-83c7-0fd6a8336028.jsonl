@@ -1,8 +1,0 @@
-{"t":0,"agent":"system","event":"keyword_detected","keyword":"deep-interview"}
-{"t":0,"agent":"system","event":"skill_invoked","skill_name":"superpowers:using-superpowers"}
-{"t":0,"agent":"system","event":"skill_invoked","skill_name":"superpowers:brainstorming"}
-{"t":0,"agent":"ad6bcbd","agent_type":"unknown","event":"agent_stop","success":true}
-{"t":0,"agent":"a2486cd","agent_type":"Explore","event":"agent_start","parent_mode":"none"}
-{"t":0,"agent":"a2486cd","agent_type":"Explore","event":"agent_stop","success":true,"duration_ms":163092}
-{"t":0,"agent":"ab97cf5","agent_type":"unknown","event":"agent_stop","success":true}
-{"t":0,"agent":"a8e7f88","agent_type":"unknown","event":"agent_stop","success":true}

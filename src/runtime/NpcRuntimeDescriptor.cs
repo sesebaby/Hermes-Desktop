@@ -76,7 +76,8 @@ public sealed record NpcRuntimeControllerSnapshot
         NpcRuntimeActionSlotSnapshot? actionSlot,
         DateTime? nextWakeAtUtc,
         int inboxDepth = 0,
-        IReadOnlyList<NpcRuntimeIngressWorkItemSnapshot>? ingressWorkItems = null)
+        IReadOnlyList<NpcRuntimeIngressWorkItemSnapshot>? ingressWorkItems = null,
+        GameCommandStatus? lastTerminalCommandStatus = null)
     {
         EventCursor = eventCursor;
         PendingWorkItem = pendingWorkItem;
@@ -84,6 +85,7 @@ public sealed record NpcRuntimeControllerSnapshot
         NextWakeAtUtc = nextWakeAtUtc;
         InboxDepth = Math.Max(0, inboxDepth);
         IngressWorkItems = ingressWorkItems?.ToArray() ?? [];
+        LastTerminalCommandStatus = lastTerminalCommandStatus;
     }
 
     public GameEventCursor EventCursor { get; init; }
@@ -97,6 +99,8 @@ public sealed record NpcRuntimeControllerSnapshot
     public int InboxDepth { get; init; }
 
     public IReadOnlyList<NpcRuntimeIngressWorkItemSnapshot> IngressWorkItems { get; init; }
+
+    public GameCommandStatus? LastTerminalCommandStatus { get; init; }
 
     public static NpcRuntimeControllerSnapshot Empty { get; } = new(new GameEventCursor(), null, null, null);
 }

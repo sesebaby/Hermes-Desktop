@@ -23,7 +23,7 @@ public sealed record BridgeResponse<TData>(
 
 public sealed record BridgeError(string Code, string Message, bool Retryable);
 
-public sealed record MovePayload(MoveTarget Target, string? Reason, int? FacingDirection = null);
+public sealed record MovePayload(MoveTarget? Target, string? Reason, string? DestinationId = null, int? FacingDirection = null);
 
 public sealed record MoveTarget(string LocationName, TileDto Tile);
 
@@ -47,7 +47,8 @@ public sealed record DestinationData(
     IReadOnlyList<string> Tags,
     string Reason,
     int? FacingDirection = null,
-    string? EndBehavior = null);
+    string? EndBehavior = null,
+    string? DestinationId = null);
 
 public sealed record MoveAcceptedData(bool Accepted, MoveClaim Claim);
 
@@ -78,7 +79,12 @@ public sealed record TaskStatusData(
     double Progress,
     string? BlockedReason,
     string? ErrorCode,
-    string? InterruptionReason = null);
+    string? InterruptionReason = null,
+    string? DestinationId = null,
+    string? Phase = null,
+    string? CurrentLocationName = null,
+    TileDto? ResolvedStandTile = null,
+    int? RouteRevision = null);
 
 public sealed record StatusQuery(string? NpcId);
 

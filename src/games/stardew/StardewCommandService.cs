@@ -24,16 +24,23 @@ public sealed class StardewCommandService : IGameCommandService
         if (action.Type != GameActionType.Move)
             return new GameCommandResult(false, "", StardewCommandStatuses.Failed, "unsupported_action", action.TraceId);
 
-        if (action.Target.Tile is null || string.IsNullOrWhiteSpace(action.Target.LocationName))
+        var destinationId = action.Payload?["destinationId"]?.ToString();
+        if (string.IsNullOrWhiteSpace(destinationId) &&
+            (action.Target.Tile is null || string.IsNullOrWhiteSpace(action.Target.LocationName)))
+        {
             return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.InvalidTarget, action.TraceId);
+        }
 
         var requestId = $"req_{Guid.NewGuid():N}";
         var payload = new StardewMoveRequest(
-            new StardewMoveTarget(
-                action.Target.LocationName,
-                new StardewTile(action.Target.Tile.X, action.Target.Tile.Y)),
-            action.Reason,
-            ReadOptionalInt(action.Payload, "facingDirection"));
+            Target: action.Target.Tile is null || string.IsNullOrWhiteSpace(action.Target.LocationName)
+                ? null
+                : new StardewMoveTarget(
+                    action.Target.LocationName,
+                    new StardewTile(action.Target.Tile.X, action.Target.Tile.Y)),
+            Reason: action.Reason,
+            DestinationId: destinationId,
+            FacingDirection: ReadOptionalInt(action.Payload, "facingDirection"));
         var envelope = new StardewBridgeEnvelope<StardewMoveRequest>(
             requestId,
             action.TraceId,
@@ -47,7 +54,12 @@ public sealed class StardewCommandService : IGameCommandService
             envelope,
             ct);
 
-        return ToCommandResult(response, action.TraceId);
+        var commandResult = ToCommandResult(response, action.TraceId);
+        return commandResult with
+        {
+            DestinationId = destinationId,
+            InitialPhase = response.Status ?? (response.Ok ? StardewCommandStatuses.Queued : StardewCommandStatuses.Failed)
+        };
     }
 
     private async Task<GameCommandResult> SubmitOpenPrivateChatAsync(GameAction action, CancellationToken ct)
@@ -213,6 +225,13 @@ public sealed class StardewCommandService : IGameCommandService
             response.Data.StartedAtUtc,
             response.Data.UpdatedAtUtc,
             response.Data.ElapsedMs,
-            response.Data.RetryAfterUtc);
+            response.Data.RetryAfterUtc,
+            response.Data.DestinationId,
+            response.Data.Phase,
+            response.Data.CurrentLocationName,
+            response.Data.ResolvedStandTile is null
+                ? null
+                : new GameTile(response.Data.ResolvedStandTile.X, response.Data.ResolvedStandTile.Y),
+            response.Data.RouteRevision);
     }
 }

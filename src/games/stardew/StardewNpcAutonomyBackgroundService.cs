@@ -608,9 +608,13 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
 
     private void ReleaseTrackedActionClaim(NpcAutonomyTracker tracker)
     {
-        var workItemId = tracker.Driver.Snapshot().ActionSlot?.WorkItemId ?? tracker.Driver.Snapshot().PendingWorkItem?.WorkItemId;
-        if (!string.IsNullOrWhiteSpace(workItemId))
-            _worldCoordination.ReleaseClaim(workItemId);
+        var snapshot = tracker.Driver.Snapshot();
+        var claimId = snapshot.ActionSlot?.CommandId
+            ?? snapshot.PendingWorkItem?.CommandId
+            ?? snapshot.ActionSlot?.WorkItemId
+            ?? snapshot.PendingWorkItem?.WorkItemId;
+        if (!string.IsNullOrWhiteSpace(claimId))
+            _worldCoordination.ReleaseClaim(claimId);
     }
 
     private async Task<bool> TryAdvancePendingActionAsync(

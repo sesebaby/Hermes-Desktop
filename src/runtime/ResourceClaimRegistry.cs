@@ -62,6 +62,25 @@ public sealed class ResourceClaimRegistry
         }
     }
 
+    public bool Rekey(string currentCommandId, string newCommandId)
+    {
+        if (string.IsNullOrWhiteSpace(currentCommandId) || string.IsNullOrWhiteSpace(newCommandId))
+            return false;
+
+        lock (_gate)
+        {
+            if (!_claimsByCommand.Remove(currentCommandId, out var claim))
+                return false;
+
+            var updated = claim with { CommandId = newCommandId };
+            _claimsByCommand[newCommandId] = updated;
+            if (!string.IsNullOrWhiteSpace(updated.IdempotencyKey))
+                _commandsByIdempotencyKey[updated.IdempotencyKey] = newCommandId;
+
+            return true;
+        }
+    }
+
     public IReadOnlyList<ResourceClaim> Snapshot()
     {
         lock (_gate)

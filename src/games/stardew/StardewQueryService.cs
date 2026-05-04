@@ -136,6 +136,8 @@ public sealed class StardewQueryService : IGameQueryService
                 $"tags={tags}",
                 $"reason={reason}"
             };
+            if (!string.IsNullOrWhiteSpace(candidate.DestinationId))
+                parts.Add($"destinationId={candidate.DestinationId}");
             if (candidate.FacingDirection.HasValue)
                 parts.Add($"facingDirection={candidate.FacingDirection.Value}");
             if (!string.IsNullOrWhiteSpace(candidate.EndBehavior))

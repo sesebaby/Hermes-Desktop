@@ -1,6 +1,7 @@
 using Hermes.Agent.Game;
 using Hermes.Agent.Games.Stardew;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace HermesDesktop.Tests.Stardew;
@@ -48,6 +49,81 @@ public class StardewCommandServiceTests
     }
 
     [TestMethod]
+    public async Task SubmitAsync_Move_WithDestinationIdOnlyPayload_PostsDestinationFirstEnvelope()
+    {
+        var client = new FakeSmapiClient();
+        client.MoveResponse = new StardewBridgeResponse<StardewMoveAcceptedData>(
+            true,
+            "trace-destination",
+            "req-destination",
+            "cmd-destination",
+            StardewCommandStatuses.Queued,
+            new StardewMoveAcceptedData(true, new StardewMoveClaim("haley", new StardewTile(42, 17), null)),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.Move,
+            "trace-destination",
+            "idem-destination",
+            new GameActionTarget("destination"),
+            "inspect fountain",
+            Payload: new JsonObject
+            {
+                ["destinationId"] = "town.fountain",
+                ["facingDirection"] = 2
+            });
+
+        var result = await service.SubmitAsync(action, CancellationToken.None);
+
+        Assert.IsTrue(result.Accepted);
+        Assert.AreEqual(StardewBridgeRoutes.TaskMove, client.LastRoute);
+        Assert.IsInstanceOfType(client.LastEnvelope, typeof(StardewBridgeEnvelope<StardewMoveRequest>));
+        var envelope = (StardewBridgeEnvelope<StardewMoveRequest>)client.LastEnvelope!;
+        using var payloadJson = JsonDocument.Parse(JsonSerializer.Serialize(envelope.Payload));
+        Assert.AreEqual("town.fountain", payloadJson.RootElement.GetProperty("destinationId").GetString());
+    }
+
+    [TestMethod]
+    public async Task SubmitAsync_Move_WithDestinationIdOnlyPayload_MapsDestinationIdAndInitialPhaseInCommandResult()
+    {
+        var client = new FakeSmapiClient();
+        client.MoveResponse = new StardewBridgeResponse<StardewMoveAcceptedData>(
+            true,
+            "trace-destination",
+            "req-destination",
+            "cmd-destination",
+            StardewCommandStatuses.Queued,
+            new StardewMoveAcceptedData(true, new StardewMoveClaim("haley", new StardewTile(42, 17), null)),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.Move,
+            "trace-destination",
+            "idem-destination",
+            new GameActionTarget("destination"),
+            "inspect fountain",
+            Payload: new JsonObject
+            {
+                ["destinationId"] = "town.fountain"
+            });
+
+        var result = await service.SubmitAsync(action, CancellationToken.None);
+
+        var destinationIdProperty = typeof(GameCommandResult).GetProperty("DestinationId");
+        var initialPhaseProperty = typeof(GameCommandResult).GetProperty("InitialPhase");
+        Assert.IsNotNull(destinationIdProperty, "GameCommandResult 应暴露 DestinationId，避免 destinationId 只停留在 Bridge DTO。 ");
+        Assert.IsNotNull(initialPhaseProperty, "GameCommandResult 应暴露 InitialPhase，避免公共回执面缺少 phase 语义。 ");
+        Assert.AreEqual("town.fountain", destinationIdProperty.GetValue(result) as string);
+        Assert.AreEqual(StardewCommandStatuses.Queued, initialPhaseProperty.GetValue(result) as string);
+    }
+
+    [TestMethod]
     public async Task GetStatusAsync_MapsBridgeStatusData()
     {
         var startedAt = new DateTime(2026, 4, 30, 9, 0, 0, DateTimeKind.Utc);
@@ -60,19 +136,26 @@ public class StardewCommandServiceTests
             "req-status",
             "cmd-1",
             StardewCommandStatuses.Running,
-            new StardewTaskStatusData(
-                "cmd-1",
-                "haley",
-                "move",
-                StardewCommandStatuses.Running,
-                startedAt,
-                25,
-                0.5,
-                "tile_reserved",
-                "resource_busy",
-                InterruptionReason: null,
-                UpdatedAtUtc: updatedAt,
-                RetryAfterUtc: retryAfter),
+            JsonSerializer.Deserialize<StardewTaskStatusData>("""
+            {
+              "commandId": "cmd-1",
+              "npcId": "haley",
+              "action": "move",
+              "status": "running",
+              "startedAtUtc": "2026-04-30T09:00:00Z",
+              "elapsedMs": 25,
+              "progress": 0.5,
+              "blockedReason": "tile_reserved",
+              "errorCode": "resource_busy",
+              "updatedAtUtc": "2026-04-30T09:00:15Z",
+              "retryAfterUtc": "2026-04-30T09:00:45Z",
+              "destinationId": "town.fountain",
+              "phase": "planning_route",
+              "currentLocationName": "Town",
+              "resolvedStandTile": { "x": 41, "y": 17 },
+              "routeRevision": 3
+            }
+            """)!,
             null,
             null);
         var service = new StardewCommandService(client, "save-1");
@@ -88,6 +171,13 @@ public class StardewCommandServiceTests
         Assert.AreEqual(retryAfter, status.RetryAfterUtc);
         Assert.AreEqual("tile_reserved", status.BlockedReason);
         Assert.AreEqual("resource_busy", status.ErrorCode);
+        Assert.AreEqual("town.fountain", status.DestinationId);
+        Assert.AreEqual("planning_route", status.Phase);
+        Assert.AreEqual("Town", status.CurrentLocationName);
+        Assert.IsNotNull(status.ResolvedStandTile);
+        Assert.AreEqual(41, status.ResolvedStandTile.X);
+        Assert.AreEqual(17, status.ResolvedStandTile.Y);
+        Assert.AreEqual(3, status.RouteRevision);
         Assert.AreEqual(StardewBridgeRoutes.TaskStatus, client.LastRoute);
     }
 

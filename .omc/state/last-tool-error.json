@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"cd \\\"D:\\\\GitHubPro\\\\Hermes-Desktop\\\" && dotnet build Mods/StardewHermesBridge/StardewHermesBridge.csproj 2>&1\",\"timeout\":120000,\"description\":\"Build with tile fix\"}",
-  "error": "Exit code 1\n  正在确定要还原的项目…\r\n  已还原 D:\\GitHubPro\\Hermes-Desktop\\Mods\\StardewHermesBridge\\StardewHermesBridge.csproj (用时 140 毫秒)。\r\nD:\\GitHubPro\\Hermes-Desktop\\Mods\\StardewHermesBridge\\Bridge\\BridgeCommandQueue.cs(377,43): error CS1061: “NPC”未包含“getTileX”的定义，并且找不到可接受第一个“NPC”类型参数的可访问扩展方法“getTileX”(是否缺少 using 指令或程序集引用?) [D:\\GitHubPro\\Hermes-Desktop\\Mods\\StardewHermesBridge\\StardewHermesBridge.csproj]\r\nD:\\GitHubPro\\Hermes-Desktop\\Mods\\StardewHermesBridge\\Bridge\\BridgeCommandQueue.cs(377,59): error CS106...",
-  "timestamp": "2026-05-04T08:35:21.503Z",
-  "retry_count": 1
-}

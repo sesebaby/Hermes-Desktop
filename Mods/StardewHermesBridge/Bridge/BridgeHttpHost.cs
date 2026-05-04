@@ -373,21 +373,24 @@ public sealed class BridgeHttpHost
                 new[] { "home", "photogenic", "Haley" },
                 "check her look before deciding whether to go out",
                 2,
-                "Haley_Mirror");
+                "Haley_Mirror",
+                DestinationId: "haley_house.bedroom_mirror");
             yield return new BridgePlaceCandidateDefinition(
                 "Living room",
                 new TileDto(10, 12),
                 new[] { "home", "social" },
                 "see what is happening downstairs",
                 2,
-                null);
+                null,
+                DestinationId: "haley_house.living_room");
             yield return new BridgePlaceCandidateDefinition(
                 "Front door",
                 new TileDto(15, 8),
                 new[] { "transition", "outdoor" },
                 "consider stepping outside",
                 2,
-                null);
+                null,
+                DestinationId: "haley_house.front_door");
             yield break;
         }
 
@@ -399,21 +402,24 @@ public sealed class BridgeHttpHost
                 new[] { "public", "photogenic", "social" },
                 "stand somewhere bright and visible in town",
                 2,
-                null);
+                null,
+                DestinationId: "town.fountain");
             yield return new BridgePlaceCandidateDefinition(
                 "Town square",
                 new TileDto(52, 68),
                 new[] { "public", "social" },
                 "notice who is passing through town",
                 2,
-                null);
+                null,
+                DestinationId: "town.square");
             yield return new BridgePlaceCandidateDefinition(
                 "Clinic path",
                 new TileDto(30, 55),
                 new[] { "public", "errands" },
                 "walk near the town services without committing to a visit",
                 2,
-                null);
+                null,
+                DestinationId: "town.clinic_path");
             yield break;
         }
 
@@ -425,14 +431,16 @@ public sealed class BridgeHttpHost
                 new[] { "outdoor", "photogenic", "water" },
                 "look for good light near the water",
                 2,
-                null);
+                null,
+                DestinationId: "beach.shore_photo_spot");
             yield return new BridgePlaceCandidateDefinition(
                 "Beach bridge",
                 new TileDto(55, 14),
                 new[] { "outdoor", "landmark" },
                 "check the beach crossing and horizon",
                 2,
-                null);
+                null,
+                DestinationId: "beach.bridge");
             yield break;
         }
 
@@ -444,7 +452,8 @@ public sealed class BridgeHttpHost
                 new[] { "outdoor", "quiet" },
                 "walk somewhere quieter and greener",
                 2,
-                null);
+                null,
+                DestinationId: "forest.path");
             yield break;
         }
 
@@ -456,7 +465,8 @@ public sealed class BridgeHttpHost
                 new[] { "outdoor", "water", "photogenic" },
                 "look toward the mountain lake",
                 2,
-                null);
+                null,
+                DestinationId: "mountain.lake_overlook");
             yield break;
         }
 

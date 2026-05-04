@@ -1,6 +1,7 @@
 using Hermes.Agent.Game;
 using Hermes.Agent.Games.Stardew;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Text.Json;
 
 namespace HermesDesktop.Tests.Stardew;
 
@@ -18,18 +19,30 @@ public class StardewQueryServiceTests
             "req-status",
             null,
             null,
-            new StardewNpcStatusData(
-                "haley",
-                "Haley",
-                "Haley",
-                "Town",
-                new StardewTile(42, 17),
-                false,
-                false,
-                true,
-                null,
-                "cmd-1",
-                "trace-1"),
+            JsonSerializer.Deserialize<StardewNpcStatusData>("""
+            {
+              "npcId": "haley",
+              "smapiName": "Haley",
+              "displayName": "Haley",
+              "locationName": "Town",
+              "tile": { "x": 42, "y": 17 },
+              "isMoving": false,
+              "isInDialogue": false,
+              "isAvailableForControl": true,
+              "currentCommandId": "cmd-1",
+              "lastTraceId": "trace-1",
+              "destinations": [
+                {
+                  "label": "Town fountain",
+                  "locationName": "Town",
+                  "tile": { "x": 42, "y": 17 },
+                  "tags": ["public", "photogenic"],
+                  "reason": "stand somewhere bright and visible in town",
+                  "destinationId": "town.fountain"
+                }
+              ]
+            }
+            """)!,
             null,
             null);
         var service = new StardewQueryService(client, "save-1", nowUtc: () => at);
@@ -50,6 +63,7 @@ public class StardewQueryServiceTests
         CollectionAssert.Contains(observation.Facts.ToList(), "tile=42,17");
         CollectionAssert.Contains(observation.Facts.ToList(), "isAvailableForControl=true");
         CollectionAssert.Contains(observation.Facts.ToList(), "currentCommandId=cmd-1");
+        Assert.IsTrue(observation.Facts.Any(fact => fact.Contains("destinationId=town.fountain", StringComparison.Ordinal)), "Observed destination facts should include destinationId as the stable key.");
     }
 
     [TestMethod]

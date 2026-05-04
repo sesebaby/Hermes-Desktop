@@ -17,12 +17,12 @@ public sealed class BridgeMoveCommandQueueRegressionTests
             "Status data must carry current safe move candidates so the agent can decide before calling another tool.");
         StringAssert.Contains(
             models,
-            "IReadOnlyList<MoveCandidateData>? MoveCandidates",
-            "Move candidates belong to status observation data, not to a separate event-driven ingress.");
+            "IReadOnlyList<MoveCandidateData>? NearbyTiles",
+            "Short fallback move candidates belong to nearby tile status facts during the destination-first transition.");
         StringAssert.Contains(
             httpHost,
-            "BuildMoveCandidates(npc, blockedReason)",
-            "Bridge status must generate candidates from the current NPC/location state.");
+            "BuildNearbyTiles(npc, blockedReason)",
+            "Bridge status must generate nearby candidates from the current NPC/location state.");
         StringAssert.Contains(
             httpHost,
             ".Take(3)",
@@ -86,10 +86,26 @@ public sealed class BridgeMoveCommandQueueRegressionTests
         StringAssert.Contains(
             commandQueue,
             "command.Block(\"cross_location_unsupported\")",
-            "Phase 1 move only supports same-location short moves; cross-location requests must be blocked.");
+            "Cross-location requests must not be faked as completed until the transition state machine is implemented.");
         Assert.IsFalse(
             commandQueue.Contains("npc.currentLocation = targetLocation;", StringComparison.Ordinal),
-            "Phase 1 must not silently transfer the NPC between locations.");
+            "Move execution must not silently transfer the NPC between locations.");
+        Assert.IsFalse(
+            commandQueue.Contains("Game1.warpCharacter", StringComparison.Ordinal),
+            "Move execution must not use warpCharacter to fake cross-location completion.");
+    }
+
+    [TestMethod]
+    public void MovePumpDoesNotDelegateExecutionToNpcController()
+    {
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        Assert.IsFalse(
+            commandQueue.Contains("npc.controller = new PathFindController", StringComparison.Ordinal),
+            "Bridge should use Stardew pathfinding only as a route probe and keep execution in its own stepper.");
+        Assert.IsFalse(
+            commandQueue.Contains("started;using=PathFindController", StringComparison.Ordinal),
+            "Status logs should not indicate delegated PathFindController execution.");
     }
 
     [TestMethod]
