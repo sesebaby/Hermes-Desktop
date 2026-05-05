@@ -67,6 +67,320 @@ public class StardewAutonomyContextBudgetTests
     }
 
     [TestMethod]
+    public void BudgetPolicy_LargeRelevantMemoriesSystemBlock_TrimsDynamicRecallToMeetBudget()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var currentUser = "CURRENT AUTONOMY DECISION";
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM: use session_search when more history is needed." },
+            new() { Role = "system", Content = "[Relevant Memories]\n" + new string('r', 12000) },
+            new() { Role = "assistant", Content = new string('a', 3400) },
+            new() { Role = "tool", ToolName = "stardew_status", ToolCallId = "old-status", Content = new string('s', 3400) },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        var result = policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+        var output = result.Messages.ToList();
+        var completed = CompletedLog(logger);
+
+        Assert.IsTrue(result.BudgetMet, $"Expected dynamic recall to be capped; reason={result.BudgetUnmetReason}.");
+        Assert.AreNotEqual("recall_block", result.BudgetUnmetReason);
+        Assert.IsTrue(StardewAutonomyFirstCallContextBudgetPolicy.CountCharacters(output) <= 5000);
+        Assert.IsTrue(output.Any(message => message.Content.Contains("[trimmed dynamic recall", StringComparison.Ordinal)));
+        Assert.IsTrue(ExtractIntField(completed, "dynamicRecallCharsBefore") > ExtractIntField(completed, "dynamicRecallCharsAfter"));
+        Assert.IsTrue(ExtractIntField(completed, "dynamicRecallCharsAfter") <= 1000, completed);
+        Assert.IsTrue(CountDynamicRecallSurfaceChars(output) <= 1000);
+        Assert.IsTrue(ExtractIntField(completed, "systemChars") < 200, completed);
+        StringAssert.Contains(completed, "dynamic_recall_trimmed");
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_LargeMemoryContextInCurrentUser_TrimsRecallButKeepsDecisionText()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        const string decision = "DECISION: continue walking to Haley's photo spot.";
+        var currentUser = decision + "\n<memory-context>\n" + new string('m', 12000) + "\n</memory-context>";
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM" },
+            new() { Role = "assistant", Content = new string('a', 3200) },
+            new() { Role = "tool", ToolName = "stardew_status", ToolCallId = "old-status", Content = new string('s', 3200) },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        var result = policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+        var outputUser = result.Messages.Last(message => message.Role == "user").Content;
+
+        Assert.IsTrue(result.BudgetMet, $"Expected current-user recall segment to be capped; reason={result.BudgetUnmetReason}.");
+        Assert.IsTrue(outputUser.StartsWith(decision, StringComparison.Ordinal));
+        Assert.IsTrue(outputUser.Contains("<memory-context>", StringComparison.Ordinal));
+        Assert.IsTrue(outputUser.Contains("[trimmed dynamic recall", StringComparison.Ordinal));
+        Assert.IsFalse(outputUser.Contains(new string('m', 2000), StringComparison.Ordinal));
+        Assert.IsTrue(StardewAutonomyFirstCallContextBudgetPolicy.CountCharacters(result.Messages) <= 5000);
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_MalformedMemoryContext_TrimsFromOpeningTagAndKeepsDecisionPrefix()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        const string decision = "DECISION PREFIX MUST SURVIVE";
+        var currentUser = decision + "\n<memory-context>\n" + new string('u', 9000);
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM" },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        var result = policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+        var outputUser = result.Messages.Last(message => message.Role == "user").Content;
+
+        Assert.IsTrue(outputUser.StartsWith(decision, StringComparison.Ordinal));
+        Assert.IsTrue(outputUser.Contains("[trimmed dynamic recall", StringComparison.Ordinal));
+        Assert.IsFalse(outputUser.Contains(new string('u', 2000), StringComparison.Ordinal));
+        Assert.AreNotEqual("recall_block", result.BudgetUnmetReason);
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_DynamicRecallAcrossSystemAndUser_UsesSharedCap()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var currentUser = "DECISION\n<memory-context>\n" + new string('u', 6000) + "\n</memory-context>";
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM" },
+            new() { Role = "system", Content = "[Relevant Memories]\n" + new string('s', 6000) },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        var result = policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+        var completed = CompletedLog(logger);
+
+        Assert.IsTrue(result.BudgetMet, $"Expected shared dynamic recall cap to meet budget; reason={result.BudgetUnmetReason}.");
+        Assert.IsTrue(ExtractIntField(completed, "dynamicRecallCharsAfter") <= 1000, completed);
+        Assert.IsTrue(CountDynamicRecallSurfaceChars(result.Messages) <= 1000);
+        Assert.IsTrue(result.Messages.Count(message => message.Content.Contains("[trimmed dynamic recall", StringComparison.Ordinal)) >= 1);
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_RecalledMemorySystemNote_TrimsAsDynamicRecallNotCoreSystem()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var currentUser = "CURRENT";
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM" },
+            new()
+            {
+                Role = "system",
+                Content = "[System note: The following is recalled memory context, NOT new user input.]\n" + new string('n', 9000)
+            },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        var result = policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+        var completed = CompletedLog(logger);
+
+        Assert.IsTrue(result.BudgetMet, $"Expected recalled system note to be capped; reason={result.BudgetUnmetReason}.");
+        Assert.IsTrue(CountDynamicRecallSurfaceChars(result.Messages) <= 1000);
+        Assert.IsTrue(ExtractIntField(completed, "systemChars") < 50, completed);
+        Assert.AreNotEqual("core_system_over_budget", result.BudgetUnmetReason);
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_LogsCompleteCategoryFieldSet()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var currentUser = "CURRENT";
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM" },
+            new() { Role = "system", Content = "MEMORY (your personal notes)\nsmall memory" },
+            new() { Role = "system", Content = "[Relevant Memories]\nsmall recall" },
+            new() { Role = "system", Content = "[Your active task list was preserved across context compression]\n- finish walk" },
+            new()
+            {
+                Role = "assistant",
+                Content = "latest request",
+                ToolCalls = [new ToolCall { Id = "latest", Name = "stardew_task_status", Arguments = "{}" }]
+            },
+            new() { Role = "tool", ToolName = "stardew_task_status", ToolCallId = "latest", Content = "latest tool result" },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+        var completed = CompletedLog(logger);
+
+        foreach (var field in new[]
+                 {
+                     "systemChars", "builtinMemoryChars", "dynamicRecallCharsBefore", "dynamicRecallCharsAfter",
+                     "activeTaskChars", "protectedTailChars", "currentUserChars", "charsBefore", "charsAfter",
+                     "budgetMet", "budgetUnmetReason"
+                 })
+        {
+            StringAssert.Contains(completed, field + "=");
+        }
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_RecallTrimmed_DoesNotEmitRecallBlockMissReason()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var currentUser = "CURRENT";
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM" },
+            new() { Role = "system", Content = "[Relevant Memories]\n" + new string('r', 15000) },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        var result = policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+
+        Assert.AreNotEqual("recall_block", result.BudgetUnmetReason);
+        Assert.IsFalse(CompletedLog(logger).Contains("budgetUnmetReason=recall_block", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_CoreSystemOverBudget_LogsCoreSystemReason()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var currentUser = "CURRENT";
+        var coreSystem = "CORE SYSTEM: session_search is available for on-demand history.\n" + new string('c', 5600);
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = coreSystem },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        var result = policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+
+        Assert.IsFalse(result.BudgetMet);
+        Assert.AreEqual("core_system_over_budget", result.BudgetUnmetReason);
+        StringAssert.Contains(CompletedLog(logger), "budgetUnmetReason=core_system_over_budget");
+        Assert.IsTrue(result.Messages.Any(message => message.Content == coreSystem));
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_BuiltinMemoryOverBudget_LogsBuiltinMemoryReason()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var currentUser = "CURRENT";
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM" },
+            new()
+            {
+                Role = "system",
+                Content = "MEMORY (your personal notes)\n" + new string('m', 3400) +
+                          "\nUSER PROFILE (who the user is)\n" + new string('u', 1800)
+            },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        var result = policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+
+        Assert.IsFalse(result.BudgetMet);
+        Assert.AreEqual("builtin_memory_over_budget", result.BudgetUnmetReason);
+        StringAssert.Contains(CompletedLog(logger), "builtinMemoryChars=");
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_ProtectedTailOverBudget_LogsProtectedTailReason()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var currentUser = "CURRENT";
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM" },
+            new()
+            {
+                Role = "assistant",
+                Content = new string('a', 2600),
+                ToolCalls = [new ToolCall { Id = "latest", Name = "stardew_move", Arguments = new string('x', 2600) }]
+            },
+            new() { Role = "tool", ToolName = "stardew_move", ToolCallId = "latest", Content = new string('t', 2600) },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        var result = policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+
+        Assert.IsFalse(result.BudgetMet);
+        Assert.AreEqual("protected_tail_over_budget", result.BudgetUnmetReason);
+        StringAssert.Contains(CompletedLog(logger), "protectedTailChars=");
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_ActiveTaskOverBudget_LogsActiveTaskReason()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var currentUser = "CURRENT";
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM" },
+            new()
+            {
+                Role = "system",
+                Content = "[Your active task list was preserved across context compression]\n" + new string('t', 5400)
+            },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        var result = policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+
+        Assert.IsFalse(result.BudgetMet);
+        Assert.AreEqual("active_task_context_over_budget", result.BudgetUnmetReason);
+        StringAssert.Contains(CompletedLog(logger), "activeTaskChars=");
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_MixedOverflow_UsesDocumentedReasonPriority()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var currentUser = "CURRENT";
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM\n" + new string('c', 5200) },
+            new() { Role = "system", Content = "USER PROFILE (who the user is)\n" + new string('u', 1200) },
+            new()
+            {
+                Role = "assistant",
+                Content = new string('a', 1600),
+                ToolCalls = [new ToolCall { Id = "latest", Name = "stardew_move", Arguments = new string('x', 1600) }]
+            },
+            new() { Role = "tool", ToolName = "stardew_move", ToolCallId = "latest", Content = new string('t', 1600) },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        var result = policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+
+        Assert.AreEqual("core_system_over_budget", result.BudgetUnmetReason);
+    }
+
+    [TestMethod]
     public void BudgetPolicy_ProtectsLatestAssistantToolRequestAndMatchingToolResults()
     {
         var policy = new StardewAutonomyFirstCallContextBudgetPolicy(NullLogger<StardewAutonomyFirstCallContextBudgetPolicy>.Instance);
@@ -241,6 +555,71 @@ public class StardewAutonomyContextBudgetTests
         session.State["traceId"] = "trace-budget";
         session.State["npcId"] = "haley";
         return session;
+    }
+
+    private static string CompletedLog(CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy> logger)
+        => logger.Messages.LastOrDefault(message => message.Contains("autonomy_context_budget_completed", StringComparison.Ordinal))
+           ?? throw new AssertFailedException("Missing autonomy_context_budget_completed log.");
+
+    private static int ExtractIntField(string log, string fieldName)
+    {
+        var marker = fieldName + "=";
+        var start = log.IndexOf(marker, StringComparison.Ordinal);
+        if (start < 0)
+            throw new AssertFailedException($"Missing field {fieldName} in log: {log}");
+
+        start += marker.Length;
+        var end = log.IndexOf(';', start);
+        if (end < 0)
+            end = log.Length;
+
+        var value = log[start..end].Trim();
+        return int.TryParse(value, out var parsed)
+            ? parsed
+            : throw new AssertFailedException($"Field {fieldName} was not an int in log: {log}");
+    }
+
+    private static int CountDynamicRecallSurfaceChars(IEnumerable<Message> messages)
+        => messages.Sum(message =>
+        {
+            if (!message.Content.Contains("[trimmed dynamic recall", StringComparison.Ordinal))
+                return 0;
+
+            var memoryContextLength = CountMemoryContextSurfaceChars(message.Content);
+            if (memoryContextLength > 0)
+                return memoryContextLength;
+
+            return string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase)
+                ? message.Content.Length
+                : 0;
+        });
+
+    private static int CountMemoryContextSurfaceChars(string content)
+    {
+        const string openTag = "<memory-context>";
+        const string closeTag = "</memory-context>";
+        var total = 0;
+        var cursor = 0;
+
+        while (cursor < content.Length)
+        {
+            var open = content.IndexOf(openTag, cursor, StringComparison.OrdinalIgnoreCase);
+            if (open < 0)
+                break;
+
+            var close = content.IndexOf(closeTag, open + openTag.Length, StringComparison.OrdinalIgnoreCase);
+            if (close < 0)
+            {
+                total += content.Length - open;
+                break;
+            }
+
+            var end = close + closeTag.Length;
+            total += end - open;
+            cursor = end;
+        }
+
+        return total;
     }
 
     private static string FindRepositoryRoot()
