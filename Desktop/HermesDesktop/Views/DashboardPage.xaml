@@ -5,7 +5,6 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:models="using:HermesDesktop.Models"
     Background="Transparent"
     Loaded="OnPageLoaded"
     mc:Ignorable="d"
@@ -96,9 +95,13 @@
             <Border Style="{StaticResource SurfaceCardStyle}">
                 <StackPanel Spacing="10">
                     <StackPanel Orientation="Horizontal" Spacing="12">
-                        <TextBlock Text="NPC Runtime" FontSize="16" FontWeight="SemiBold"/>
-                        <Button Content="Logs" Click="OpenNpcRuntimeLogs_Click" FontSize="11" Padding="10,4"
+                        <TextBlock x:Uid="DashNpcRuntimeCardTitle" FontSize="16" FontWeight="SemiBold"/>
+                        <Button x:Uid="DashNpcRuntimeLogsButton" Click="OpenNpcRuntimeLogs_Click" FontSize="11" Padding="10,4"
+                                AutomationProperties.AutomationId="DashNpcRuntimeLogsButton"
                                 Background="{StaticResource AppInsetBrush}" BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White"/>
+                        <Button x:Uid="DashNpcRuntimeOpenRuntimeButton" Click="OpenNpcRuntimeWorkbench_Click" FontSize="11" Padding="10,4"
+                                AutomationProperties.AutomationId="DashNpcRuntimeOpenRuntimeButton"
+                                Background="{StaticResource AppAccentGradientBrush}" Foreground="#16110D"/>
                     </StackPanel>
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions>
@@ -108,60 +111,24 @@
                             <ColumnDefinition Width="2*"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Spacing="2">
-                            <TextBlock Text="Runtimes" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            <TextBlock x:Uid="DashNpcRuntimeRuntimesLabel" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
                             <TextBlock x:Name="NpcRuntimeCountText" Text="0" FontSize="22" FontWeight="SemiBold"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Spacing="2">
-                            <TextBlock Text="Bridge" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                            <TextBlock x:Name="NpcBridgeHealthText" Text="Not connected" FontSize="13" TextWrapping="Wrap"/>
+                            <TextBlock x:Uid="DashNpcRuntimeBridgeLabel" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            <TextBlock x:Name="NpcBridgeHealthText" x:Uid="DashNpcRuntimeBridgeInitial" FontSize="13" TextWrapping="Wrap"/>
                         </StackPanel>
                         <StackPanel Grid.Column="2" Spacing="2">
-                            <TextBlock Text="Last Trace" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            <TextBlock x:Uid="DashNpcRuntimeLastTraceLabel" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
                             <TextBlock x:Name="NpcLastTraceText" Text="-" FontSize="12" FontFamily="Consolas" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                         <StackPanel Grid.Column="3" Spacing="2">
-                            <TextBlock Text="Last Error" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            <TextBlock x:Uid="DashNpcRuntimeLastErrorLabel" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
                             <TextBlock x:Name="NpcLastErrorText" Text="-" FontSize="12" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Grid>
-                    <ListView x:Name="NpcRuntimeList" Background="Transparent" SelectionMode="None" MaxHeight="240">
-                        <ListView.ItemTemplate>
-                            <DataTemplate x:DataType="models:NpcRuntimeItem">
-                                <StackPanel Margin="0,4" Spacing="2">
-                                    <Grid ColumnDefinitions="*,Auto,Auto">
-                                        <TextBlock Text="{x:Bind DisplayName}" FontSize="13" FontWeight="SemiBold"/>
-                                        <TextBlock Grid.Column="1" Text="{x:Bind State}" FontSize="12"
-                                                   Foreground="{StaticResource AppTextSecondaryBrush}" Margin="12,0,0,0"/>
-                                        <TextBlock Grid.Column="2" Text="{x:Bind LastTraceId}" FontSize="12" FontFamily="Consolas"
-                                                   Foreground="{StaticResource AppTextSecondaryBrush}" Margin="12,0,0,0"
-                                                   TextTrimming="CharacterEllipsis"/>
-                                    </Grid>
-                                    <TextBlock Text="{x:Bind LoopAndWaitSummary}" FontSize="12"
-                                               Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
-                                    <TextBlock Text="{x:Bind LeaseAndActionSummary}" FontSize="12"
-                                               Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
-                                    <TextBlock Text="{x:Bind PendingAndCursorSummary}" FontSize="12"
-                                               Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                    </ListView>
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="Debug-only Stardew speak test" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="HaleySpeakButton" Content="Debug Haley Speak" Click="NpcSpeakHaley_Click"
-                                    FontSize="11" Padding="10,4"
-                                    Background="{StaticResource AppAccentGradientBrush}" Foreground="#16110D"/>
-                            <Button x:Name="PennySpeakButton" Content="Debug Penny Speak" Click="NpcSpeakPenny_Click"
-                                    FontSize="11" Padding="10,4"
-                                    Background="{StaticResource AppAccentGradientBrush}" Foreground="#16110D"/>
-                            <Button x:Name="HaleyTickButton" Content="Run Haley Tick" Click="NpcTickHaley_Click"
-                                    FontSize="11" Padding="10,4"
-                                    Background="{StaticResource AppInsetBrush}" BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White"/>
-                        </StackPanel>
-                        <TextBlock x:Name="NpcManualActionResult" Text="正式路径：在游戏里点击 Haley 只记录对话完成事实；Run Haley Tick 会让 Desktop/core 的 Haley runtime 自己观察并决定下一步。"
-                                   FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                    </StackPanel>
+                    <TextBlock x:Uid="DashNpcRuntimeSummaryHint" FontSize="12" TextWrapping="Wrap"
+                               Foreground="{StaticResource AppTextSecondaryBrush}" Opacity="0.75"/>
                 </StackPanel>
             </Border>
 

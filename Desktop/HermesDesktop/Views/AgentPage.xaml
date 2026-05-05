@@ -4,6 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:models="using:HermesDesktop.Models"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     Background="Transparent"
     NavigationCacheMode="Required"
@@ -29,12 +30,19 @@
 
         <!-- Tab bar -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="4" Margin="0,0,0,16">
-            <Button x:Name="TabAgents" Content="Agents" Click="Tab_Click" Tag="agents"
+            <Button x:Name="TabAgents" x:Uid="AgentTabAgentsButton" Click="Tab_Click" Tag="agents"
+                    AutomationProperties.AutomationId="AgentTabAgentsButton"
                     Background="{StaticResource AppAccentGradientBrush}" Foreground="#16110D" FontSize="13" Padding="16,8" CornerRadius="8"/>
-            <Button x:Name="TabIdentity" Content="Identity" Click="Tab_Click" Tag="identity"
+            <Button x:Name="TabIdentity" x:Uid="AgentTabIdentityButton" Click="Tab_Click" Tag="identity"
+                    AutomationProperties.AutomationId="AgentTabIdentityButton"
                     Background="{StaticResource AppInsetBrush}" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="13" Padding="16,8" CornerRadius="8"
                     BorderBrush="{StaticResource AppStrokeBrush}"/>
-            <Button x:Name="TabSouls" Content="Souls" Click="Tab_Click" Tag="souls"
+            <Button x:Name="TabSouls" x:Uid="AgentTabSoulsButton" Click="Tab_Click" Tag="souls"
+                    AutomationProperties.AutomationId="AgentTabSoulsButton"
+                    Background="{StaticResource AppInsetBrush}" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="13" Padding="16,8" CornerRadius="8"
+                    BorderBrush="{StaticResource AppStrokeBrush}"/>
+            <Button x:Name="TabRuntime" x:Uid="AgentTabRuntimeButton" Click="Tab_Click" Tag="runtime"
+                    AutomationProperties.AutomationId="AgentTabRuntimeButton"
                     Background="{StaticResource AppInsetBrush}" Foreground="{StaticResource AppTextSecondaryBrush}" FontSize="13" Padding="16,8" CornerRadius="8"
                     BorderBrush="{StaticResource AppStrokeBrush}"/>
         </StackPanel>
@@ -250,5 +258,123 @@
                 </StackPanel>
             </Border>
         </Grid>
+
+        <!-- ═══════════════════════════════════════════════ -->
+        <!-- NPC RUNTIME TAB                                 -->
+        <!-- ═══════════════════════════════════════════════ -->
+        <ScrollViewer x:Name="RuntimeContent" Grid.Row="2" Visibility="Collapsed">
+            <StackPanel Spacing="16">
+                <!-- Header summary -->
+                <Border Style="{StaticResource SurfaceCardStyle}">
+                    <StackPanel Spacing="10">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <StackPanel Spacing="2">
+                                <TextBlock x:Uid="AgentRuntimeHeaderTitle" FontSize="16" FontWeight="SemiBold"/>
+                                <TextBlock x:Uid="AgentRuntimeHeaderSubtitle" FontSize="12" TextWrapping="Wrap"
+                                           Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                            </StackPanel>
+                            <Button x:Uid="AgentRuntimeOpenLogsButton" Click="OpenNpcRuntimeLogs_Click"
+                                    AutomationProperties.AutomationId="AgentRuntimeOpenLogsButton"
+                                    FontSize="11" Padding="10,4" HorizontalAlignment="Right"
+                                    Background="{StaticResource AppInsetBrush}" BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White"/>
+                        </StackPanel>
+
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="2*"/>
+                                <ColumnDefinition Width="2*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock x:Uid="AgentRuntimeRuntimesLabel" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                <TextBlock x:Name="AgentRuntimeCountText" Text="0" FontSize="22" FontWeight="SemiBold"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="2">
+                                <TextBlock x:Uid="AgentRuntimeBridgeLabel" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                <TextBlock x:Name="AgentRuntimeBridgeHealthText" x:Uid="AgentRuntimeBridgeInitial" FontSize="13" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Spacing="2">
+                                <TextBlock x:Uid="AgentRuntimeLastTraceLabel" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                <TextBlock x:Name="AgentRuntimeLastTraceText" Text="-" FontSize="12" FontFamily="Consolas" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="3" Spacing="2">
+                                <TextBlock x:Uid="AgentRuntimeLastErrorLabel" FontSize="11" Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                <TextBlock x:Name="AgentRuntimeLastErrorText" Text="-" FontSize="12" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Runtime list -->
+                <Border Style="{StaticResource SurfaceCardStyle}">
+                    <Grid RowDefinitions="Auto,*">
+                        <TextBlock x:Uid="AgentRuntimeListTitle" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{StaticResource AppAccentTextBrush}" Margin="0,0,0,8"/>
+                        <ListView Grid.Row="1" x:Name="AgentNpcRuntimeList" x:Uid="AgentNpcRuntimeList"
+                                  Background="Transparent" SelectionMode="None" MinHeight="180">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="models:NpcRuntimeItem">
+                                    <StackPanel Margin="0,6" Spacing="3">
+                                        <Grid ColumnDefinitions="*,Auto,Auto">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="{x:Bind DisplayName}" FontSize="13" FontWeight="SemiBold"/>
+                                                <TextBlock Text="{x:Bind NpcId}" FontSize="12"
+                                                           Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" Text="{x:Bind State}" FontSize="12"
+                                                       Foreground="{StaticResource AppTextSecondaryBrush}" Margin="12,0,0,0"/>
+                                            <TextBlock Grid.Column="2" Text="{x:Bind LastTraceId}" FontSize="12" FontFamily="Consolas"
+                                                       Foreground="{StaticResource AppTextSecondaryBrush}" Margin="12,0,0,0"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </Grid>
+                                        <TextBlock Text="{x:Bind LoopAndWaitSummary}" FontSize="12"
+                                                   Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{x:Bind LeaseAndActionSummary}" FontSize="12"
+                                                   Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{x:Bind PendingAndCursorSummary}" FontSize="12"
+                                                   Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{x:Bind TaskSummary}" FontSize="12"
+                                                   Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+                                        <TextBlock Text="{x:Bind TaskFailureSummary}" FontSize="12"
+                                                   Foreground="{StaticResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Grid>
+                </Border>
+
+                <!-- Debug controls -->
+                <Border Style="{StaticResource SurfaceCardStyle}">
+                    <StackPanel Spacing="8">
+                        <TextBlock x:Uid="AgentRuntimeDebugTitle" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{StaticResource AppAccentTextBrush}"/>
+                        <TextBlock x:Uid="AgentRuntimeDebugDescription" FontSize="12" TextWrapping="Wrap"
+                                   Foreground="{StaticResource AppTextSecondaryBrush}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="AgentRuntimeHaleySpeakButton" x:Uid="AgentRuntimeHaleySpeakButton"
+                                    Click="NpcSpeakHaley_Click"
+                                    AutomationProperties.AutomationId="AgentRuntimeHaleySpeakButton"
+                                    FontSize="11" Padding="10,4"
+                                    Background="{StaticResource AppAccentGradientBrush}" Foreground="#16110D"/>
+                            <Button x:Name="AgentRuntimePennySpeakButton" x:Uid="AgentRuntimePennySpeakButton"
+                                    Click="NpcSpeakPenny_Click"
+                                    AutomationProperties.AutomationId="AgentRuntimePennySpeakButton"
+                                    FontSize="11" Padding="10,4"
+                                    Background="{StaticResource AppAccentGradientBrush}" Foreground="#16110D"/>
+                            <Button x:Name="AgentRuntimeHaleyTickButton" x:Uid="AgentRuntimeHaleyTickButton"
+                                    Click="NpcTickHaley_Click"
+                                    AutomationProperties.AutomationId="AgentRuntimeHaleyTickButton"
+                                    FontSize="11" Padding="10,4"
+                                    Background="{StaticResource AppInsetBrush}" BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White"/>
+                        </StackPanel>
+                        <TextBlock x:Name="AgentRuntimeManualActionResult" x:Uid="AgentRuntimeManualActionInitial"
+                                   FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource AppTextSecondaryBrush}"
+                                   AutomationProperties.LiveSetting="Polite"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
     </Grid>
 </Page>

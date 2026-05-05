@@ -244,6 +244,90 @@
   <data name="DashNpcRuntimeCursorSequenceFormat" xml:space="preserve">
     <value>seq {0}</value>
   </data>
+  <data name="DashNpcRuntimeTasksFormat" xml:space="preserve">
+    <value>Tasks: {0} active | {1} blocked | {2} failed</value>
+  </data>
+  <data name="DashNpcRuntimeTaskFailureFormat" xml:space="preserve">
+    <value>Task issue: {0}</value>
+  </data>
+  <data name="DashNpcRuntimeCardTitle.Text" xml:space="preserve">
+    <value>NPC Runtime</value>
+  </data>
+  <data name="DashNpcRuntimeLogsButton.Content" xml:space="preserve">
+    <value>Logs</value>
+  </data>
+  <data name="DashNpcRuntimeLogsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Open NPC runtime logs</value>
+  </data>
+  <data name="DashNpcRuntimeRuntimesLabel.Text" xml:space="preserve">
+    <value>Runtimes</value>
+  </data>
+  <data name="DashNpcRuntimeBridgeLabel.Text" xml:space="preserve">
+    <value>Bridge</value>
+  </data>
+  <data name="DashNpcRuntimeBridgeInitial.Text" xml:space="preserve">
+    <value>Not connected</value>
+  </data>
+  <data name="DashNpcRuntimeLastTraceLabel.Text" xml:space="preserve">
+    <value>Last Trace</value>
+  </data>
+  <data name="DashNpcRuntimeLastErrorLabel.Text" xml:space="preserve">
+    <value>Last Error</value>
+  </data>
+  <data name="DashNpcRuntimeDebugLabel.Text" xml:space="preserve">
+    <value>Debug-only Stardew speak test</value>
+  </data>
+  <data name="DashNpcRuntimeDebugHaleySpeakButton.Content" xml:space="preserve">
+    <value>Debug Haley Speak</value>
+  </data>
+  <data name="DashNpcRuntimeDebugHaleySpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Send a debug Haley speech command</value>
+  </data>
+  <data name="DashNpcRuntimeDebugPennySpeakButton.Content" xml:space="preserve">
+    <value>Debug Penny Speak</value>
+  </data>
+  <data name="DashNpcRuntimeDebugPennySpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Send a debug Penny speech command</value>
+  </data>
+  <data name="DashNpcRuntimeRunHaleyTickButton.Content" xml:space="preserve">
+    <value>Run Haley Tick</value>
+  </data>
+  <data name="DashNpcRuntimeRunHaleyTickButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Run one Haley autonomy tick</value>
+  </data>
+  <data name="DashNpcRuntimeManualActionInitial.Text" xml:space="preserve">
+    <value>Normal path: clicking Haley in the game records completed dialogue facts only; Run Haley Tick lets the Desktop/core Haley runtime observe and decide the next step itself.</value>
+  </data>
+  <data name="DashNpcRuntimeDebugHaleySpeakText" xml:space="preserve">
+    <value>Hi, this is Haley speaking through the Hermes Stardew bridge.</value>
+  </data>
+  <data name="DashNpcRuntimeDebugPennySpeakText" xml:space="preserve">
+    <value>Hello, this is Penny speaking through the Hermes Stardew bridge.</value>
+  </data>
+  <data name="DashNpcRuntimeDebugActionsUnavailable" xml:space="preserve">
+    <value>Stardew debug actions are not available in this build.</value>
+  </data>
+  <data name="DashNpcRuntimeSendingDebugDialogueFormat" xml:space="preserve">
+    <value>Sending debug dialogue to {0}...</value>
+  </data>
+  <data name="DashNpcRuntimeDebugDialogueSentFormat" xml:space="preserve">
+    <value>Debug {0} dialogue sent. Check the game window.</value>
+  </data>
+  <data name="DashNpcRuntimeDebugDialogueFailedFormat" xml:space="preserve">
+    <value>Debug {0} dialogue failed: {1}. Restart SMAPI after rebuilding the mod if this is the first test after this update.</value>
+  </data>
+  <data name="DashNpcRuntimeTickDebugUnavailable" xml:space="preserve">
+    <value>Stardew autonomy tick debug is not available in this build.</value>
+  </data>
+  <data name="DashNpcRuntimeRunningTickFormat" xml:space="preserve">
+    <value>Running one {0} autonomy tick...</value>
+  </data>
+  <data name="DashNpcRuntimeTickCompletedFormat" xml:space="preserve">
+    <value>Tick completed: trace={0}, observations={1}, events={2}.</value>
+  </data>
+  <data name="DashNpcRuntimeTickFailedFormat" xml:space="preserve">
+    <value>Tick failed: {0}.</value>
+  </data>
   <data name="ChatPageEyebrow.Text" xml:space="preserve">
     <value>Chat surface</value>
   </data>
@@ -1187,6 +1271,102 @@
   </data>
   <data name="TaskPanelArchiveTurnFormat" xml:space="preserve">
     <value>Turn {0}</value>
+  </data>
+  <data name="DashNpcRuntimeOpenRuntimeButton.Content" xml:space="preserve">
+    <value>Open Runtime</value>
+  </data>
+  <data name="DashNpcRuntimeOpenRuntimeButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Open the Agent Runtime tab</value>
+  </data>
+  <data name="DashNpcRuntimeSummaryHint.Text" xml:space="preserve">
+    <value>This dashboard card is read-only. Use Agent > Runtime for the full NPC runtime list and debug actions.</value>
+  </data>
+  <data name="AgentTabAgentsButton.Content" xml:space="preserve">
+    <value>Agents</value>
+  </data>
+  <data name="AgentTabAgentsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Show saved agents</value>
+  </data>
+  <data name="AgentTabIdentityButton.Content" xml:space="preserve">
+    <value>Identity</value>
+  </data>
+  <data name="AgentTabIdentityButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Show identity files</value>
+  </data>
+  <data name="AgentTabSoulsButton.Content" xml:space="preserve">
+    <value>Souls</value>
+  </data>
+  <data name="AgentTabSoulsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Show soul browser</value>
+  </data>
+  <data name="AgentTabRuntimeButton.Content" xml:space="preserve">
+    <value>Runtime</value>
+  </data>
+  <data name="AgentTabRuntimeButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Show NPC runtime workbench</value>
+  </data>
+  <data name="AgentRuntimeHeaderTitle.Text" xml:space="preserve">
+    <value>NPC Runtime</value>
+  </data>
+  <data name="AgentRuntimeHeaderSubtitle.Text" xml:space="preserve">
+    <value>Runtime state, bridge health, traces, and debug actions for Stardew NPC agents.</value>
+  </data>
+  <data name="AgentRuntimeOpenLogsButton.Content" xml:space="preserve">
+    <value>Open Logs</value>
+  </data>
+  <data name="AgentRuntimeOpenLogsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Open NPC runtime logs</value>
+  </data>
+  <data name="AgentRuntimeRuntimesLabel.Text" xml:space="preserve">
+    <value>Runtimes</value>
+  </data>
+  <data name="AgentRuntimeBridgeLabel.Text" xml:space="preserve">
+    <value>Bridge</value>
+  </data>
+  <data name="AgentRuntimeBridgeInitial.Text" xml:space="preserve">
+    <value>Not connected</value>
+  </data>
+  <data name="AgentRuntimeLastTraceLabel.Text" xml:space="preserve">
+    <value>Last Trace</value>
+  </data>
+  <data name="AgentRuntimeLastErrorLabel.Text" xml:space="preserve">
+    <value>Last Error</value>
+  </data>
+  <data name="AgentRuntimeListTitle.Text" xml:space="preserve">
+    <value>Runtime List</value>
+  </data>
+  <data name="AgentNpcRuntimeList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>NPC runtime list</value>
+  </data>
+  <data name="AgentRuntimeDebugTitle.Text" xml:space="preserve">
+    <value>Debug Actions</value>
+  </data>
+  <data name="AgentRuntimeDebugDescription.Text" xml:space="preserve">
+    <value>Use these controls only for runtime diagnosis. Normal NPC decisions still happen inside the agent loop.</value>
+  </data>
+  <data name="AgentRuntimeHaleySpeakButton.Content" xml:space="preserve">
+    <value>Debug Haley Speak</value>
+  </data>
+  <data name="AgentRuntimeHaleySpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Send a debug Haley speech command</value>
+  </data>
+  <data name="AgentRuntimePennySpeakButton.Content" xml:space="preserve">
+    <value>Debug Penny Speak</value>
+  </data>
+  <data name="AgentRuntimePennySpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Send a debug Penny speech command</value>
+  </data>
+  <data name="AgentRuntimeHaleyTickButton.Content" xml:space="preserve">
+    <value>Run Haley Tick</value>
+  </data>
+  <data name="AgentRuntimeHaleyTickButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Run one Haley autonomy tick</value>
+  </data>
+  <data name="AgentRuntimeManualActionInitial.Text" xml:space="preserve">
+    <value>Normal path: clicking Haley in the game records completed dialogue facts only; Run Haley Tick lets the Desktop/core Haley runtime observe and decide the next step itself.</value>
+  </data>
+  <data name="AgentRuntimeUnavailable" xml:space="preserve">
+    <value>NPC runtime workspace is not available in this build.</value>
   </data>
   
   

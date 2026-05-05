@@ -3,7 +3,6 @@ using HermesDesktop.Services;
 using Hermes.Agent.Analytics;
 using Hermes.Agent.Core;
 using Hermes.Agent.Dreamer;
-using Hermes.Agent.Games.Stardew;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Skills;
 using Hermes.Agent.Soul;
@@ -31,8 +30,6 @@ public sealed partial class DashboardPage : Page
     private static readonly ResourceLoader ResourceLoader = new();
     private readonly RuntimeStatusService _runtimeStatusService = App.Services.GetRequiredService<RuntimeStatusService>();
     private readonly NpcRuntimeWorkspaceService? _npcRuntimeWorkspaceService = App.Services.GetService<NpcRuntimeWorkspaceService>();
-    private readonly StardewNpcDebugActionService? _stardewNpcDebugActions = App.Services.GetService<StardewNpcDebugActionService>();
-    private readonly StardewAutonomyTickDebugService? _stardewAutonomyTickDebug = App.Services.GetService<StardewAutonomyTickDebugService>();
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _dreamerTimer;
 
     /// <summary>
@@ -142,7 +139,6 @@ public sealed partial class DashboardPage : Page
         NpcBridgeHealthText.Text = snapshot.BridgeHealth;
         NpcLastTraceText.Text = string.IsNullOrWhiteSpace(snapshot.LastTraceId) ? "-" : snapshot.LastTraceId;
         NpcLastErrorText.Text = string.IsNullOrWhiteSpace(snapshot.LastError) ? "-" : snapshot.LastError;
-        NpcRuntimeList.ItemsSource = snapshot.Items;
     }
 
     // ── KPI Stats ──
@@ -375,105 +371,9 @@ public sealed partial class DashboardPage : Page
     private void OpenLogs_Click(object sender, RoutedEventArgs e) => HermesEnvironment.OpenLogs();
     private void OpenConfig_Click(object sender, RoutedEventArgs e) => HermesEnvironment.OpenConfig();
     private void OpenNpcRuntimeLogs_Click(object sender, RoutedEventArgs e) => _npcRuntimeWorkspaceService?.OpenRuntimeDirectory();
-    private async void NpcSpeakHaley_Click(object sender, RoutedEventArgs e)
-        => await SpeakNpcAsync("Haley", "Hi, this is Haley speaking through the Hermes Stardew bridge.");
-
-    private async void NpcSpeakPenny_Click(object sender, RoutedEventArgs e)
-        => await SpeakNpcAsync("Penny", "Hello, this is Penny speaking through the Hermes Stardew bridge.");
-
-    private async void NpcTickHaley_Click(object sender, RoutedEventArgs e)
-        => await RunNpcTickAsync("haley");
+    private void OpenNpcRuntimeWorkbench_Click(object sender, RoutedEventArgs e) => MainWindow.ActiveShell?.NavigateToAgentRuntime();
 
     // ── Helpers ──
-
-    private async System.Threading.Tasks.Task SpeakNpcAsync(string npcId, string text)
-    {
-        if (_stardewNpcDebugActions is null)
-        {
-            NpcManualActionResult.Text = "Stardew debug actions are not available in this build.";
-            return;
-        }
-
-        HaleySpeakButton.IsEnabled = false;
-        PennySpeakButton.IsEnabled = false;
-        HaleyTickButton.IsEnabled = false;
-        NpcManualActionResult.Text = $"Sending debug dialogue to {npcId}...";
-        NpcManualActionResult.Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"];
-
-        try
-        {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
-            var result = await _stardewNpcDebugActions.SpeakAsync(npcId, text, cts.Token);
-            if (result.Accepted)
-            {
-                NpcManualActionResult.Text = $"Debug {npcId} dialogue sent. Check the game window.";
-                NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 34, 197, 94));
-            }
-            else
-            {
-                NpcManualActionResult.Text = $"Debug {npcId} dialogue failed: {result.FailureReason ?? "unknown_error"}. Restart SMAPI after rebuilding the mod if this is the first test after this update.";
-                NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68));
-            }
-
-            LoadNpcRuntimeStatus();
-        }
-        catch (Exception ex)
-        {
-            NpcManualActionResult.Text = $"Debug {npcId} dialogue failed: {ex.Message}";
-            NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68));
-        }
-        finally
-        {
-            HaleySpeakButton.IsEnabled = true;
-            PennySpeakButton.IsEnabled = true;
-            HaleyTickButton.IsEnabled = true;
-        }
-    }
-
-    private async System.Threading.Tasks.Task RunNpcTickAsync(string npcId)
-    {
-        if (_stardewAutonomyTickDebug is null)
-        {
-            NpcManualActionResult.Text = "Stardew autonomy tick debug is not available in this build.";
-            return;
-        }
-
-        HaleySpeakButton.IsEnabled = false;
-        PennySpeakButton.IsEnabled = false;
-        HaleyTickButton.IsEnabled = false;
-        NpcManualActionResult.Text = $"Running one {npcId} autonomy tick...";
-        NpcManualActionResult.Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"];
-
-        try
-        {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
-            var result = await _stardewAutonomyTickDebug.RunOneTickAsync(npcId, cts.Token);
-            if (result.Success)
-            {
-                NpcManualActionResult.Text =
-                    $"Tick completed: trace={result.TraceId}, observations={result.ObservationFacts}, events={result.EventFacts}.";
-                NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 34, 197, 94));
-            }
-            else
-            {
-                NpcManualActionResult.Text = $"Tick failed: {result.FailureReason ?? "unknown_error"}.";
-                NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68));
-            }
-
-            LoadNpcRuntimeStatus();
-        }
-        catch (Exception ex)
-        {
-            NpcManualActionResult.Text = $"Tick failed: {ex.Message}";
-            NpcManualActionResult.Foreground = new SolidColorBrush(ColorHelper.FromArgb(255, 239, 68, 68));
-        }
-        finally
-        {
-            HaleySpeakButton.IsEnabled = true;
-            PennySpeakButton.IsEnabled = true;
-            HaleyTickButton.IsEnabled = true;
-        }
-    }
 
     private string FormatTimeAgo(TimeSpan age)
     {

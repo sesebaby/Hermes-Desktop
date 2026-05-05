@@ -11,4 +11,6 @@ internal sealed class NpcRuntimeItem
     public string LoopAndWaitSummary { get; init; } = "";
     public string LeaseAndActionSummary { get; init; } = "";
     public string PendingAndCursorSummary { get; init; } = "";
+    public string TaskSummary { get; init; } = "";
+    public string TaskFailureSummary { get; init; } = "";
 }

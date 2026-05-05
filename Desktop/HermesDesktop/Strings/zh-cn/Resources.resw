@@ -1140,6 +1140,222 @@
   <data name="TaskPanelArchiveTurnFormat" xml:space="preserve">
     <value>第 {0} 轮</value>
   </data>
+  <data name="DashNpcRuntimeBridgeAttached" xml:space="preserve">
+    <value>已连接</value>
+  </data>
+  <data name="DashNpcRuntimeBridgeNotConnected" xml:space="preserve">
+    <value>未连接</value>
+  </data>
+  <data name="DashNpcRuntimeNone" xml:space="preserve">
+    <value>-</value>
+  </data>
+  <data name="DashNpcRuntimeLoopSummaryFormat" xml:space="preserve">
+    <value>循环：{0} | 等待：{1}</value>
+  </data>
+  <data name="DashNpcRuntimeLeaseActionSummaryFormat" xml:space="preserve">
+    <value>会话：{0} | 动作：{1}</value>
+  </data>
+  <data name="DashNpcRuntimeIngressPendingCursorSummaryFormat" xml:space="preserve">
+    <value>入口：{0} | 待处理：{1} | 游标：{2}</value>
+  </data>
+  <data name="DashNpcRuntimePendingCursorSummaryFormat" xml:space="preserve">
+    <value>待处理：{0} | 游标：{1}</value>
+  </data>
+  <data name="DashNpcRuntimeWaitUntilFormat" xml:space="preserve">
+    <value>{0}，直到 {1}</value>
+  </data>
+  <data name="DashNpcRuntimeLeaseValueFormat" xml:space="preserve">
+    <value>{0}#{1}</value>
+  </data>
+  <data name="DashNpcRuntimeActionValueFormat" xml:space="preserve">
+    <value>{0}/{1}</value>
+  </data>
+  <data name="DashNpcRuntimePendingValueFormat" xml:space="preserve">
+    <value>{0}（{1}）</value>
+  </data>
+  <data name="DashNpcRuntimeCursorSequenceFormat" xml:space="preserve">
+    <value>序号 {0}</value>
+  </data>
+  <data name="DashNpcRuntimeTasksFormat" xml:space="preserve">
+    <value>任务：{0} 个活动 | {1} 个阻塞 | {2} 个失败</value>
+  </data>
+  <data name="DashNpcRuntimeTaskFailureFormat" xml:space="preserve">
+    <value>任务问题：{0}</value>
+  </data>
+  <data name="DashNpcRuntimeCardTitle.Text" xml:space="preserve">
+    <value>NPC 运行时</value>
+  </data>
+  <data name="DashNpcRuntimeLogsButton.Content" xml:space="preserve">
+    <value>日志</value>
+  </data>
+  <data name="DashNpcRuntimeLogsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>打开 NPC 运行时日志</value>
+  </data>
+  <data name="DashNpcRuntimeOpenRuntimeButton.Content" xml:space="preserve">
+    <value>打开运行时</value>
+  </data>
+  <data name="DashNpcRuntimeOpenRuntimeButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>打开智能体运行时标签页</value>
+  </data>
+  <data name="DashNpcRuntimeRuntimesLabel.Text" xml:space="preserve">
+    <value>运行实例</value>
+  </data>
+  <data name="DashNpcRuntimeBridgeLabel.Text" xml:space="preserve">
+    <value>桥接</value>
+  </data>
+  <data name="DashNpcRuntimeBridgeInitial.Text" xml:space="preserve">
+    <value>未连接</value>
+  </data>
+  <data name="DashNpcRuntimeLastTraceLabel.Text" xml:space="preserve">
+    <value>最近 Trace</value>
+  </data>
+  <data name="DashNpcRuntimeLastErrorLabel.Text" xml:space="preserve">
+    <value>最近错误</value>
+  </data>
+  <data name="DashNpcRuntimeSummaryHint.Text" xml:space="preserve">
+    <value>Dashboard 这里只读摘要。完整 NPC 运行时列表和调试动作在“智能体 > 运行时”。</value>
+  </data>
+  <data name="DashNpcRuntimeDebugLabel.Text" xml:space="preserve">
+    <value>仅调试用的星露谷说话测试</value>
+  </data>
+  <data name="DashNpcRuntimeDebugHaleySpeakButton.Content" xml:space="preserve">
+    <value>调试 Haley 说话</value>
+  </data>
+  <data name="DashNpcRuntimeDebugHaleySpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>发送 Haley 调试说话命令</value>
+  </data>
+  <data name="DashNpcRuntimeDebugPennySpeakButton.Content" xml:space="preserve">
+    <value>调试 Penny 说话</value>
+  </data>
+  <data name="DashNpcRuntimeDebugPennySpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>发送 Penny 调试说话命令</value>
+  </data>
+  <data name="DashNpcRuntimeRunHaleyTickButton.Content" xml:space="preserve">
+    <value>运行 Haley Tick</value>
+  </data>
+  <data name="DashNpcRuntimeRunHaleyTickButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>运行一次 Haley 自主 Tick</value>
+  </data>
+  <data name="DashNpcRuntimeManualActionInitial.Text" xml:space="preserve">
+    <value>正常路径：在游戏中点击 Haley 只记录已完成的对话事实；运行 Haley Tick 会让 Desktop/core 里的 Haley 运行时自己观察并决定下一步。</value>
+  </data>
+  <data name="DashNpcRuntimeDebugHaleySpeakText" xml:space="preserve">
+    <value>嗨，我是 Haley，正在通过 Hermes 星露谷桥接说话。</value>
+  </data>
+  <data name="DashNpcRuntimeDebugPennySpeakText" xml:space="preserve">
+    <value>你好，我是 Penny，正在通过 Hermes 星露谷桥接说话。</value>
+  </data>
+  <data name="DashNpcRuntimeDebugActionsUnavailable" xml:space="preserve">
+    <value>当前构建不支持星露谷调试动作。</value>
+  </data>
+  <data name="DashNpcRuntimeSendingDebugDialogueFormat" xml:space="preserve">
+    <value>正在向 {0} 发送调试对话...</value>
+  </data>
+  <data name="DashNpcRuntimeDebugDialogueSentFormat" xml:space="preserve">
+    <value>{0} 的调试对话已发送。请查看游戏窗口。</value>
+  </data>
+  <data name="DashNpcRuntimeDebugDialogueFailedFormat" xml:space="preserve">
+    <value>{0} 调试对话失败：{1}。如果这是更新后的首次测试，请重建 mod 后重启 SMAPI。</value>
+  </data>
+  <data name="DashNpcRuntimeTickDebugUnavailable" xml:space="preserve">
+    <value>当前构建不支持星露谷自主 Tick 调试。</value>
+  </data>
+  <data name="DashNpcRuntimeRunningTickFormat" xml:space="preserve">
+    <value>正在运行一次 {0} 自主 Tick...</value>
+  </data>
+  <data name="DashNpcRuntimeTickCompletedFormat" xml:space="preserve">
+    <value>Tick 完成：trace={0}，observations={1}，events={2}。</value>
+  </data>
+  <data name="DashNpcRuntimeTickFailedFormat" xml:space="preserve">
+    <value>Tick 失败：{0}。</value>
+  </data>
+  <data name="AgentTabAgentsButton.Content" xml:space="preserve">
+    <value>智能体</value>
+  </data>
+  <data name="AgentTabAgentsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>显示已保存智能体</value>
+  </data>
+  <data name="AgentTabIdentityButton.Content" xml:space="preserve">
+    <value>身份</value>
+  </data>
+  <data name="AgentTabIdentityButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>显示身份文件</value>
+  </data>
+  <data name="AgentTabSoulsButton.Content" xml:space="preserve">
+    <value>Soul</value>
+  </data>
+  <data name="AgentTabSoulsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>显示 Soul 浏览器</value>
+  </data>
+  <data name="AgentTabRuntimeButton.Content" xml:space="preserve">
+    <value>运行时</value>
+  </data>
+  <data name="AgentTabRuntimeButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>显示 NPC 运行时工作台</value>
+  </data>
+  <data name="AgentRuntimeHeaderTitle.Text" xml:space="preserve">
+    <value>NPC 运行时</value>
+  </data>
+  <data name="AgentRuntimeHeaderSubtitle.Text" xml:space="preserve">
+    <value>查看星露谷 NPC 智能体的运行状态、桥接健康、Trace 和调试动作。</value>
+  </data>
+  <data name="AgentRuntimeOpenLogsButton.Content" xml:space="preserve">
+    <value>打开日志</value>
+  </data>
+  <data name="AgentRuntimeOpenLogsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>打开 NPC 运行时日志</value>
+  </data>
+  <data name="AgentRuntimeRuntimesLabel.Text" xml:space="preserve">
+    <value>运行实例</value>
+  </data>
+  <data name="AgentRuntimeBridgeLabel.Text" xml:space="preserve">
+    <value>桥接</value>
+  </data>
+  <data name="AgentRuntimeBridgeInitial.Text" xml:space="preserve">
+    <value>未连接</value>
+  </data>
+  <data name="AgentRuntimeLastTraceLabel.Text" xml:space="preserve">
+    <value>最近 Trace</value>
+  </data>
+  <data name="AgentRuntimeLastErrorLabel.Text" xml:space="preserve">
+    <value>最近错误</value>
+  </data>
+  <data name="AgentRuntimeListTitle.Text" xml:space="preserve">
+    <value>运行时列表</value>
+  </data>
+  <data name="AgentNpcRuntimeList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>NPC 运行时列表</value>
+  </data>
+  <data name="AgentRuntimeDebugTitle.Text" xml:space="preserve">
+    <value>调试动作</value>
+  </data>
+  <data name="AgentRuntimeDebugDescription.Text" xml:space="preserve">
+    <value>这些按钮只用于运行时诊断。正常 NPC 决策仍然发生在 agent 循环内部。</value>
+  </data>
+  <data name="AgentRuntimeHaleySpeakButton.Content" xml:space="preserve">
+    <value>调试 Haley 说话</value>
+  </data>
+  <data name="AgentRuntimeHaleySpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>发送 Haley 调试说话命令</value>
+  </data>
+  <data name="AgentRuntimePennySpeakButton.Content" xml:space="preserve">
+    <value>调试 Penny 说话</value>
+  </data>
+  <data name="AgentRuntimePennySpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>发送 Penny 调试说话命令</value>
+  </data>
+  <data name="AgentRuntimeHaleyTickButton.Content" xml:space="preserve">
+    <value>运行 Haley Tick</value>
+  </data>
+  <data name="AgentRuntimeHaleyTickButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>运行一次 Haley 自主 Tick</value>
+  </data>
+  <data name="AgentRuntimeManualActionInitial.Text" xml:space="preserve">
+    <value>正常路径：在游戏中点击 Haley 只记录已完成的对话事实；运行 Haley Tick 会让 Desktop/core 里的 Haley 运行时自己观察并决定下一步。</value>
+  </data>
+  <data name="AgentRuntimeUnavailable" xml:space="preserve">
+    <value>当前构建不支持 NPC 运行时工作台。</value>
+  </data>
   
   
   

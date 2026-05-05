@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using HermesDesktop.Views;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -22,14 +23,17 @@ public sealed partial class MainWindow : Window
     };
 
     private static readonly ResourceLoader ResourceLoader = new();
+    internal static MainWindow? ActiveShell { get; private set; }
 
     // Track presenter kind so AppWindow.Changed can detect the
     // overlapped→maximized transition that triggered the v2.4.0 stretch bug.
     private AppWindowPresenterKind _lastPresenterKind;
+    private bool _isUpdatingNavigationSelection;
 
     public MainWindow()
     {
         InitializeComponent();
+        ActiveShell = this;
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
@@ -76,17 +80,41 @@ public sealed partial class MainWindow : Window
 
     private void OnNavigationSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
+        if (_isUpdatingNavigationSelection)
+            return;
+
         if (args.SelectedItemContainer?.Tag is string tag)
         {
             NavigateToTag(tag);
         }
     }
 
-    private void NavigateToTag(string tag)
+    internal void NavigateToAgentRuntime() => NavigateToTag("agent", AgentPage.RuntimeTabParameter);
+
+    private void NavigateToTag(string tag, object? parameter = null)
     {
-        if (PageMap.TryGetValue(tag, out System.Type? pageType) && ContentFrame.CurrentSourcePageType != pageType)
+        if (!PageMap.TryGetValue(tag, out System.Type? pageType))
+            return;
+
+        var selectedItem = ShellNavigation.MenuItems
+            .OfType<NavigationViewItem>()
+            .FirstOrDefault(item => string.Equals(item.Tag as string, tag, System.StringComparison.OrdinalIgnoreCase));
+        if (selectedItem is not null && !ReferenceEquals(ShellNavigation.SelectedItem, selectedItem))
         {
-            ContentFrame.Navigate(pageType);
+            _isUpdatingNavigationSelection = true;
+            try
+            {
+                ShellNavigation.SelectedItem = selectedItem;
+            }
+            finally
+            {
+                _isUpdatingNavigationSelection = false;
+            }
+        }
+
+        if (ContentFrame.CurrentSourcePageType != pageType || parameter is not null)
+        {
+            ContentFrame.Navigate(pageType, parameter);
         }
     }
 }

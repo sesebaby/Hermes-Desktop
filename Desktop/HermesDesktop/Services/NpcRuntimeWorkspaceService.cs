@@ -40,7 +40,7 @@ internal sealed class NpcRuntimeWorkspaceService
         {
             runtimeSnapshots = _supervisor.Snapshot().ToArray();
             var active = runtimeSnapshots
-                .Select(ToItem)
+                .Select(snapshot => ToItem(snapshot, _supervisor.TryGetTaskView(snapshot.SessionId, out var taskView) ? taskView : null))
                 .ToList();
 
             if (active.Count == 0)
@@ -89,7 +89,7 @@ internal sealed class NpcRuntimeWorkspaceService
         });
     }
 
-    private static NpcRuntimeItem ToItem(NpcRuntimeSnapshot snapshot)
+    private static NpcRuntimeItem ToItem(NpcRuntimeSnapshot snapshot, NpcRuntimeTaskView? taskView)
         => new()
         {
             NpcId = snapshot.NpcId,
@@ -100,7 +100,9 @@ internal sealed class NpcRuntimeWorkspaceService
             LastError = snapshot.LastError ?? "",
             LoopAndWaitSummary = FormatLoopAndWaitSummary(snapshot),
             LeaseAndActionSummary = FormatLeaseAndActionSummary(snapshot),
-            PendingAndCursorSummary = FormatIngressPendingCursorSummary(snapshot)
+            PendingAndCursorSummary = FormatIngressPendingCursorSummary(snapshot),
+            TaskSummary = FormatTaskSummary(taskView),
+            TaskFailureSummary = FormatTaskFailureSummary(taskView)
         };
 
     private static string FormatLoopAndWaitSummary(NpcRuntimeSnapshot snapshot)
@@ -195,6 +197,35 @@ internal sealed class NpcRuntimeWorkspaceService
             return cursor.Since;
 
         return GetResource("DashNpcRuntimeNone", "-");
+    }
+
+    private static string FormatTaskSummary(NpcRuntimeTaskView? taskView)
+    {
+        if (taskView is null)
+            return FormatResource("DashNpcRuntimeTasksFormat", "Tasks: {0} active | {1} blocked | {2} failed", 0, 0, 0);
+
+        var summary = taskView.ActiveSnapshot.Summary;
+        var activeCount = summary.Pending + summary.InProgress;
+        return FormatResource(
+            "DashNpcRuntimeTasksFormat",
+            "Tasks: {0} active | {1} blocked | {2} failed",
+            activeCount,
+            summary.Blocked,
+            summary.Failed);
+    }
+
+    private static string FormatTaskFailureSummary(NpcRuntimeTaskView? taskView)
+    {
+        var item = taskView?.ActiveSnapshot.Todos
+            .Where(todo => todo.Status is "blocked" or "failed" or "cancelled")
+            .Reverse()
+            .FirstOrDefault();
+
+        if (item is null)
+            return FormatResource("DashNpcRuntimeTaskFailureFormat", "Task issue: {0}", GetResource("DashNpcRuntimeNone", "-"));
+
+        var reason = string.IsNullOrWhiteSpace(item.Reason) ? item.Status : item.Reason;
+        return FormatResource("DashNpcRuntimeTaskFailureFormat", "Task issue: {0}", reason);
     }
 
     private static bool IsBridgeAttached(NpcRuntimeSnapshot snapshot)

@@ -1,18 +1,29 @@
 using System;
+using System.Globalization;
 using System.Linq;
+using Hermes.Agent.Games.Stardew;
+using HermesDesktop.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Navigation;
+using Microsoft.Windows.ApplicationModel.Resources;
 using Hermes.Agent.Soul;
 
 namespace HermesDesktop.Views;
 
 public sealed partial class AgentPage : Page
 {
+    internal const string RuntimeTabParameter = "tab=runtime";
+
+    private static readonly ResourceLoader ResourceLoader = new();
     private readonly SoulService _soulService = App.Services.GetRequiredService<SoulService>();
     private readonly SoulRegistry _soulRegistry = App.Services.GetRequiredService<SoulRegistry>();
     private readonly AgentProfileManager _profileManager = App.Services.GetRequiredService<AgentProfileManager>();
+    private readonly NpcRuntimeWorkspaceService? _npcRuntimeWorkspaceService = App.Services.GetService<NpcRuntimeWorkspaceService>();
+    private readonly StardewNpcDebugActionService? _stardewNpcDebugActions = App.Services.GetService<StardewNpcDebugActionService>();
+    private readonly StardewAutonomyTickDebugService? _stardewAutonomyTickDebug = App.Services.GetService<StardewAutonomyTickDebugService>();
 
     private string _activeTab = "agents";
     private SoulTemplate? _selectedSoul;
@@ -21,6 +32,17 @@ public sealed partial class AgentPage : Page
     {
         InitializeComponent();
         Loaded += (_, _) => Refresh();
+    }
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+
+        if (e.Parameter is string parameter &&
+            string.Equals(parameter, RuntimeTabParameter, StringComparison.OrdinalIgnoreCase))
+        {
+            SelectTab("runtime");
+        }
     }
 
     private void Refresh()
@@ -32,6 +54,7 @@ public sealed partial class AgentPage : Page
         if (_activeTab == "identity") _ = RefreshIdentityAsync();
         else if (_activeTab == "souls") RefreshSouls();
         else if (_activeTab == "agents") RefreshAgents();
+        else if (_activeTab == "runtime") RefreshRuntime();
     }
 
     // ── Tab switching ──
@@ -39,6 +62,11 @@ public sealed partial class AgentPage : Page
     private void Tab_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button btn || btn.Tag is not string tag) return;
+        SelectTab(tag);
+    }
+
+    private void SelectTab(string tag)
+    {
         _activeTab = tag;
 
         var activeBg = Application.Current.Resources["AppAccentGradientBrush"] as Brush;
@@ -52,10 +80,13 @@ public sealed partial class AgentPage : Page
         TabSouls.Foreground = tag == "souls" ? activeFg : inactiveFg;
         TabAgents.Background = tag == "agents" ? activeBg : inactiveBg;
         TabAgents.Foreground = tag == "agents" ? activeFg : inactiveFg;
+        TabRuntime.Background = tag == "runtime" ? activeBg : inactiveBg;
+        TabRuntime.Foreground = tag == "runtime" ? activeFg : inactiveFg;
 
         IdentityContent.Visibility = tag == "identity" ? Visibility.Visible : Visibility.Collapsed;
         SoulsContent.Visibility = tag == "souls" ? Visibility.Visible : Visibility.Collapsed;
         AgentsContent.Visibility = tag == "agents" ? Visibility.Visible : Visibility.Collapsed;
+        RuntimeContent.Visibility = tag == "runtime" ? Visibility.Visible : Visibility.Collapsed;
 
         Refresh();
     }
@@ -217,6 +248,151 @@ public sealed partial class AgentPage : Page
         if (sender is not Button btn || btn.Tag is not string name) return;
         _profileManager.DeleteProfile(name);
         RefreshAgents();
+    }
+
+    // ── NPC Runtime Tab ──
+
+    private void RefreshRuntime()
+    {
+        if (_npcRuntimeWorkspaceService is null)
+        {
+            AgentRuntimeBridgeHealthText.Text = ResourceLoader.GetString("AgentRuntimeUnavailable");
+            AgentNpcRuntimeList.ItemsSource = Array.Empty<object>();
+            return;
+        }
+
+        var snapshot = _npcRuntimeWorkspaceService.GetSnapshot();
+        AgentRuntimeCountText.Text = snapshot.Items.Count.ToString(CultureInfo.CurrentCulture);
+        AgentRuntimeBridgeHealthText.Text = snapshot.BridgeHealth;
+        AgentRuntimeLastTraceText.Text = string.IsNullOrWhiteSpace(snapshot.LastTraceId) ? "-" : snapshot.LastTraceId;
+        AgentRuntimeLastErrorText.Text = string.IsNullOrWhiteSpace(snapshot.LastError) ? "-" : snapshot.LastError;
+        AgentNpcRuntimeList.ItemsSource = snapshot.Items;
+    }
+
+    private void OpenNpcRuntimeLogs_Click(object sender, RoutedEventArgs e) => _npcRuntimeWorkspaceService?.OpenRuntimeDirectory();
+
+    private async void NpcSpeakHaley_Click(object sender, RoutedEventArgs e)
+        => await SpeakNpcAsync("Haley", ResourceLoader.GetString("DashNpcRuntimeDebugHaleySpeakText"));
+
+    private async void NpcSpeakPenny_Click(object sender, RoutedEventArgs e)
+        => await SpeakNpcAsync("Penny", ResourceLoader.GetString("DashNpcRuntimeDebugPennySpeakText"));
+
+    private async void NpcTickHaley_Click(object sender, RoutedEventArgs e)
+        => await RunNpcTickAsync("haley");
+
+    private async System.Threading.Tasks.Task SpeakNpcAsync(string npcId, string text)
+    {
+        if (_stardewNpcDebugActions is null)
+        {
+            AgentRuntimeManualActionResult.Text = ResourceLoader.GetString("DashNpcRuntimeDebugActionsUnavailable");
+            return;
+        }
+
+        SetRuntimeDebugButtonsEnabled(false);
+        AgentRuntimeManualActionResult.Text = string.Format(
+            CultureInfo.CurrentCulture,
+            ResourceLoader.GetString("DashNpcRuntimeSendingDebugDialogueFormat"),
+            npcId);
+        AgentRuntimeManualActionResult.Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"];
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+            var result = await _stardewNpcDebugActions.SpeakAsync(npcId, text, cts.Token);
+            if (result.Accepted)
+            {
+                AgentRuntimeManualActionResult.Text = string.Format(
+                    CultureInfo.CurrentCulture,
+                    ResourceLoader.GetString("DashNpcRuntimeDebugDialogueSentFormat"),
+                    npcId);
+                AgentRuntimeManualActionResult.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 34, 197, 94));
+            }
+            else
+            {
+                AgentRuntimeManualActionResult.Text = string.Format(
+                    CultureInfo.CurrentCulture,
+                    ResourceLoader.GetString("DashNpcRuntimeDebugDialogueFailedFormat"),
+                    npcId,
+                    result.FailureReason ?? "unknown_error");
+                AgentRuntimeManualActionResult.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 68, 68));
+            }
+
+            RefreshRuntime();
+        }
+        catch (Exception ex)
+        {
+            AgentRuntimeManualActionResult.Text = string.Format(
+                CultureInfo.CurrentCulture,
+                ResourceLoader.GetString("DashNpcRuntimeDebugDialogueFailedFormat"),
+                npcId,
+                ex.Message);
+            AgentRuntimeManualActionResult.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 68, 68));
+        }
+        finally
+        {
+            SetRuntimeDebugButtonsEnabled(true);
+        }
+    }
+
+    private async System.Threading.Tasks.Task RunNpcTickAsync(string npcId)
+    {
+        if (_stardewAutonomyTickDebug is null)
+        {
+            AgentRuntimeManualActionResult.Text = ResourceLoader.GetString("DashNpcRuntimeTickDebugUnavailable");
+            return;
+        }
+
+        SetRuntimeDebugButtonsEnabled(false);
+        AgentRuntimeManualActionResult.Text = string.Format(
+            CultureInfo.CurrentCulture,
+            ResourceLoader.GetString("DashNpcRuntimeRunningTickFormat"),
+            npcId);
+        AgentRuntimeManualActionResult.Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"];
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+            var result = await _stardewAutonomyTickDebug.RunOneTickAsync(npcId, cts.Token);
+            if (result.Success)
+            {
+                AgentRuntimeManualActionResult.Text = string.Format(
+                    CultureInfo.CurrentCulture,
+                    ResourceLoader.GetString("DashNpcRuntimeTickCompletedFormat"),
+                    result.TraceId,
+                    result.ObservationFacts,
+                    result.EventFacts);
+                AgentRuntimeManualActionResult.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 34, 197, 94));
+            }
+            else
+            {
+                AgentRuntimeManualActionResult.Text = string.Format(
+                    CultureInfo.CurrentCulture,
+                    ResourceLoader.GetString("DashNpcRuntimeTickFailedFormat"),
+                    result.FailureReason ?? "unknown_error");
+                AgentRuntimeManualActionResult.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 68, 68));
+            }
+
+            RefreshRuntime();
+        }
+        catch (Exception ex)
+        {
+            AgentRuntimeManualActionResult.Text = string.Format(
+                CultureInfo.CurrentCulture,
+                ResourceLoader.GetString("DashNpcRuntimeTickFailedFormat"),
+                ex.Message);
+            AgentRuntimeManualActionResult.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 68, 68));
+        }
+        finally
+        {
+            SetRuntimeDebugButtonsEnabled(true);
+        }
+    }
+
+    private void SetRuntimeDebugButtonsEnabled(bool isEnabled)
+    {
+        AgentRuntimeHaleySpeakButton.IsEnabled = isEnabled;
+        AgentRuntimePennySpeakButton.IsEnabled = isEnabled;
+        AgentRuntimeHaleyTickButton.IsEnabled = isEnabled;
     }
 }
 
