@@ -5,6 +5,7 @@ using Hermes.Agent.Game;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Memory;
 using Hermes.Agent.Runtime;
+using Hermes.Agent.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -312,6 +313,109 @@ public class NpcAutonomyLoopTests
                 foreach (var record in records)
                     record.Dispose();
             }
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WhenPromisedTaskBlocks_WritesTaskContinuityEvidenceAndRequiresFeedbackAttempt()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-continuity-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            ns.EnsureDirectories();
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("1", "Meet player at the beach", "pending")]);
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var agent = new FakeAgent(
+                () => { },
+                "I told the player the beach path is blocked.",
+                session =>
+                {
+                    session.AddMessage(new Message
+                    {
+                        Role = "assistant",
+                        Content = "",
+                        ToolCalls =
+                        [
+                            new ToolCall
+                            {
+                                Id = "call-move",
+                                Name = "stardew_move",
+                                Arguments = """{"destination":"beach.pier","reason":"continue the beach promise"}"""
+                            },
+                            new ToolCall
+                            {
+                                Id = "call-todo",
+                                Name = "todo",
+                                Arguments = """{"todos":[{"id":"1","content":"Meet player at the beach","status":"blocked","reason":"path_blocked"}]}"""
+                            },
+                            new ToolCall
+                            {
+                                Id = "call-speak",
+                                Name = "stardew_speak",
+                                Arguments = """{"text":"The beach path is blocked right now.","channel":"player"}"""
+                            }
+                        ]
+                    });
+                    session.AddMessage(new Message
+                    {
+                        Role = "tool",
+                        ToolCallId = "call-move",
+                        ToolName = "stardew_move",
+                        Content = """{"accepted":true,"commandId":"cmd-blocked","status":"queued","failureReason":null,"traceId":"trace-continuity","finalStatus":{"commandId":"cmd-blocked","npcId":"haley","action":"move","status":"blocked","progress":1,"blockedReason":"path_blocked","errorCode":"path_blocked"}}"""
+                    });
+                    session.AddMessage(new Message
+                    {
+                        Role = "tool",
+                        ToolCallId = "call-todo",
+                        ToolName = "todo",
+                        Content = """{"todos":[{"id":"1","content":"Meet player at the beach","status":"blocked","reason":"path_blocked"}]}"""
+                    });
+                    session.AddMessage(new Message
+                    {
+                        Role = "tool",
+                        ToolCallId = "call-speak",
+                        ToolName = "stardew_speak",
+                        Content = """{"accepted":true,"commandId":"cmd-speak","status":"completed","failureReason":null,"traceId":"trace-speak","finalStatus":{"commandId":"cmd-speak","npcId":"haley","action":"speak","status":"completed","progress":1}}"""
+                    });
+                });
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation(
+                        "haley",
+                        "stardew-valley",
+                        DateTime.UtcNow,
+                        "Haley is trying to continue a player promise.",
+                        ["location=Town", "destination[0]=destinationId=beach.pier,reason=continue the beach promise"])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                agent,
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                traceIdFactory: () => "trace-continuity");
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertRuntimeRecord(records, "observed_active_todo", "observed", "active");
+            AssertRuntimeRecord(records, "action_submitted", "submitted", "submitted");
+            AssertRuntimeRecord(records, "command_terminal", "terminal", "blocked", "cmd-blocked");
+            AssertRuntimeRecord(records, "todo_update_tool_result", "task_written", "blocked");
+            AssertRuntimeRecord(records, "feedback_attempted", "feedback", "attempted", "cmd-speak");
+            Assert.IsFalse(records.Any(record =>
+                record.GetProperty("actionType").GetString() == "task_continuity" &&
+                record.GetProperty("target").GetString() == "feedback_missing"),
+                "Player-promised blocked tasks must not pass closure with feedback_missing on the main path.");
         }
         finally
         {
@@ -637,6 +741,32 @@ public class NpcAutonomyLoopTests
             "pack-root",
             $"sdv_save-1_{npcId}_default");
 
+    private static IReadOnlyList<JsonElement> ReadRuntimeLogRecords(string logPath)
+    {
+        using var document = JsonDocument.Parse("[" + string.Join(",", File.ReadAllLines(logPath)) + "]");
+        return document.RootElement.EnumerateArray()
+            .Select(element => element.Clone())
+            .ToArray();
+    }
+
+    private static void AssertRuntimeRecord(
+        IReadOnlyList<JsonElement> records,
+        string target,
+        string stage,
+        string result,
+        string? commandId = null)
+    {
+        Assert.IsTrue(records.Any(record =>
+            record.GetProperty("actionType").GetString() == "task_continuity" &&
+            record.GetProperty("target").GetString() == target &&
+            record.GetProperty("stage").GetString() == stage &&
+            record.GetProperty("result").GetString() == result &&
+            (commandId is null ||
+             (record.TryGetProperty("commandId", out var commandProperty) &&
+              commandProperty.GetString() == commandId))),
+            $"Missing task_continuity record target={target}, stage={stage}, result={result}, commandId={commandId ?? "-"}.");
+    }
+
     private sealed class FakeGameAdapter : IGameAdapter
     {
         public FakeGameAdapter(IGameCommandService commands, IGameQueryService queries, IGameEventSource events)
@@ -744,11 +874,13 @@ public class NpcAutonomyLoopTests
         private readonly Action _onChat;
 
         private readonly string _response;
+        private readonly Action<Session>? _mutateSession;
 
-        public FakeAgent(Action onChat, string response = "wait")
+        public FakeAgent(Action onChat, string response = "wait", Action<Session>? mutateSession = null)
         {
             _onChat = onChat;
             _response = response;
+            _mutateSession = mutateSession;
         }
 
         public int ChatCalls { get; private set; }
@@ -763,6 +895,7 @@ public class NpcAutonomyLoopTests
             ChatCalls++;
             LastMessage = message;
             Messages.Add(message);
+            _mutateSession?.Invoke(session);
             return Task.FromResult(_response);
         }
 

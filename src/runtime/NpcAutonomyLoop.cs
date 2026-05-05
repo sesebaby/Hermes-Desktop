@@ -1,7 +1,9 @@
 using Hermes.Agent.Core;
 using Hermes.Agent.Game;
 using Hermes.Agent.Memory;
+using Hermes.Agent.Tasks;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Hermes.Agent.Runtime;
@@ -44,6 +46,7 @@ public sealed class NpcAutonomyLoop
 
         var result = await RunOneTickAsync(instance.Descriptor, eventCursor, ct);
         instance.RecordTrace(result.TraceId);
+        await WriteInstanceTaskContinuityEvidenceAsync(instance, result.TraceId, ct);
         return result;
     }
 
@@ -57,6 +60,7 @@ public sealed class NpcAutonomyLoop
 
         var result = await RunOneTickAsync(instance.Descriptor, observation, eventBatch, ct);
         instance.RecordTrace(result.TraceId);
+        await WriteInstanceTaskContinuityEvidenceAsync(instance, result.TraceId, ct);
         return result;
     }
 
@@ -156,6 +160,7 @@ public sealed class NpcAutonomyLoop
         await WriteToolBudgetDiagnosticAsync(descriptor, traceId, rawDecisionResponse, ct);
         await WriteNarrativeMovementDiagnosticAsync(descriptor, traceId, decisionResponse, decisionSession, ct);
         await WriteNoToolActionDiagnosticAsync(descriptor, traceId, decisionResponse, decisionSession, ct);
+        await WriteSessionTaskContinuityEvidenceAsync(descriptor, traceId, decisionSession, null, ct);
         await WriteMemoryAsync(traceId, decisionResponse, ct);
 
         return new NpcAutonomyTickResult(descriptor.NpcId, traceId, 1, eventFacts, decisionResponse, eventBatch.NextCursor);
@@ -358,6 +363,329 @@ public sealed class NpcAutonomyLoop
             resultOverride ?? $"no_tool_decision:{reason}",
             Error: Truncate(decisionResponse, 300)), ct);
     }
+
+    private async Task WriteInstanceTaskContinuityEvidenceAsync(
+        NpcRuntimeInstance instance,
+        string traceId,
+        CancellationToken ct)
+    {
+        if (_logWriter is null)
+            return;
+
+        var descriptor = instance.Descriptor;
+        if (instance.TryGetTaskView(descriptor.SessionId, out var taskView) &&
+            taskView?.ActiveSnapshot.Todos.Any(IsActiveTodo) is true)
+        {
+            await WriteTaskContinuityAsync(
+                descriptor,
+                traceId,
+                "observed_active_todo",
+                "observed",
+                "active",
+                null,
+                null,
+                ct);
+        }
+
+        await WriteSessionTaskContinuityEvidenceAsync(
+            descriptor,
+            traceId,
+            null,
+            instance.Snapshot().Controller.LastTerminalCommandStatus,
+            ct);
+    }
+
+    private async Task WriteSessionTaskContinuityEvidenceAsync(
+        NpcRuntimeDescriptor descriptor,
+        string traceId,
+        Session? decisionSession,
+        GameCommandStatus? controllerTerminalStatus,
+        CancellationToken ct)
+    {
+        if (_logWriter is null)
+            return;
+
+        if (decisionSession is null)
+        {
+            if (controllerTerminalStatus is not null)
+                await WriteCommandTerminalEvidenceAsync(descriptor, traceId, controllerTerminalStatus, ct);
+            return;
+        }
+
+        var toolMessagesByCallId = decisionSession.Messages
+            .Where(message => string.Equals(message.Role, "tool", StringComparison.OrdinalIgnoreCase) &&
+                              !string.IsNullOrWhiteSpace(message.ToolCallId))
+            .GroupBy(message => message.ToolCallId!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
+
+        var calls = decisionSession.Messages
+            .Where(message => string.Equals(message.Role, "assistant", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(message => message.ToolCalls ?? [])
+            .ToArray();
+        var toolEvidenceByCallId = toolMessagesByCallId.ToDictionary(
+            pair => pair.Key,
+            pair => ReadToolResultEvidence(pair.Value.Content),
+            StringComparer.OrdinalIgnoreCase);
+
+        var needsFeedback = false;
+        foreach (var call in calls.Where(IsStardewActionTool))
+        {
+            var evidence = GetToolResultEvidence(toolEvidenceByCallId, call.Id);
+            await WriteTaskContinuityAsync(
+                descriptor,
+                traceId,
+                "action_submitted",
+                "submitted",
+                "submitted",
+                evidence.CommandId,
+                null,
+                ct);
+
+            if (evidence.TerminalStatus is not null)
+            {
+                await WriteCommandTerminalEvidenceAsync(descriptor, traceId, evidence.TerminalStatus, ct);
+                needsFeedback |= IsBlockedOrFailed(evidence.TerminalStatus.Status);
+            }
+        }
+
+        foreach (var call in calls.Where(IsTodoTool))
+        {
+            if (!toolMessagesByCallId.TryGetValue(call.Id, out var todoMessage) ||
+                !TryReadTodoWriteResult(todoMessage.Content, out var status, out var reason))
+                continue;
+
+            await WriteTaskContinuityAsync(
+                descriptor,
+                traceId,
+                "todo_update_tool_result",
+                "task_written",
+                status,
+                null,
+                reason,
+                ct);
+            needsFeedback |= IsBlockedOrFailed(status);
+        }
+
+        if (!needsFeedback)
+            return;
+
+        var feedbackCalls = calls.Where(IsFeedbackTool).ToArray();
+        foreach (var call in feedbackCalls)
+        {
+            var evidence = GetToolResultEvidence(toolEvidenceByCallId, call.Id);
+            await WriteTaskContinuityAsync(
+                descriptor,
+                traceId,
+                "feedback_attempted",
+                "feedback",
+                "attempted",
+                evidence.CommandId,
+                null,
+                ct);
+        }
+
+        if (feedbackCalls.Length == 0)
+            await WriteTaskContinuityAsync(
+                descriptor,
+                traceId,
+                "feedback_missing",
+                "diagnostic",
+                "missing",
+                null,
+                "blocked_or_failed_task_without_player_feedback_tool",
+                ct);
+    }
+
+    private async Task WriteCommandTerminalEvidenceAsync(
+        NpcRuntimeDescriptor descriptor,
+        string traceId,
+        GameCommandStatus status,
+        CancellationToken ct)
+    {
+        if (!TerminalStatusNames.Contains(status.Status))
+            return;
+
+        await WriteTaskContinuityAsync(
+            descriptor,
+            traceId,
+            "command_terminal",
+            "terminal",
+            status.Status,
+            status.CommandId,
+            status.ErrorCode ?? status.BlockedReason,
+            ct);
+    }
+
+    private async Task WriteTaskContinuityAsync(
+        NpcRuntimeDescriptor descriptor,
+        string traceId,
+        string target,
+        string stage,
+        string result,
+        string? commandId,
+        string? error,
+        CancellationToken ct)
+    {
+        if (_logWriter is null)
+            return;
+
+        await _logWriter.WriteAsync(new NpcRuntimeLogRecord(
+            DateTime.UtcNow,
+            traceId,
+            descriptor.NpcId,
+            descriptor.GameId,
+            descriptor.SessionId,
+            "task_continuity",
+            target,
+            stage,
+            result,
+            CommandId: commandId,
+            Error: string.IsNullOrWhiteSpace(error) ? null : Truncate(error, 300)), ct);
+    }
+
+    private static bool IsActiveTodo(SessionTodoItem todo)
+        => string.Equals(todo.Status, "pending", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(todo.Status, "in_progress", StringComparison.OrdinalIgnoreCase);
+
+    private static readonly HashSet<string> TerminalStatusNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "completed",
+        "failed",
+        "cancelled",
+        "interrupted",
+        "blocked",
+        "expired"
+    };
+
+    private static ToolResultEvidence ReadToolResultEvidence(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return new ToolResultEvidence(null, null);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(content);
+            var commandId = ReadString(doc.RootElement, "commandId");
+            GameCommandStatus? terminalStatus = null;
+            if (doc.RootElement.TryGetProperty("finalStatus", out var finalStatus) &&
+                finalStatus.ValueKind == JsonValueKind.Object &&
+                TryParseCommandStatus(finalStatus, out var finalStatusValue))
+            {
+                terminalStatus = finalStatusValue;
+            }
+            else if (TryParseInlineCommandStatus(doc.RootElement, out var inlineStatus))
+            {
+                terminalStatus = inlineStatus;
+            }
+
+            return new ToolResultEvidence(commandId ?? terminalStatus?.CommandId, terminalStatus);
+        }
+        catch (JsonException)
+        {
+            return new ToolResultEvidence(null, null);
+        }
+    }
+
+    private static bool TryParseInlineCommandStatus(JsonElement element, out GameCommandStatus status)
+    {
+        status = new GameCommandStatus("", "", "", "", 0, null, null);
+        var statusText = ReadString(element, "status");
+        if (string.IsNullOrWhiteSpace(statusText) || !TerminalStatusNames.Contains(statusText))
+            return false;
+
+        status = new GameCommandStatus(
+            ReadString(element, "commandId") ?? "",
+            "",
+            ReadString(element, "action") ?? "",
+            statusText,
+            1,
+            ReadString(element, "failureReason"),
+            ReadString(element, "failureReason"));
+        return true;
+    }
+
+    private static bool TryParseCommandStatus(JsonElement element, out GameCommandStatus status)
+    {
+        status = new GameCommandStatus("", "", "", "", 0, null, null);
+        var statusText = ReadString(element, "status");
+        if (string.IsNullOrWhiteSpace(statusText))
+            return false;
+
+        var progress = element.TryGetProperty("progress", out var progressElement) &&
+                       progressElement.TryGetDouble(out var progressValue)
+            ? progressValue
+            : 0;
+        status = new GameCommandStatus(
+            ReadString(element, "commandId") ?? "",
+            ReadString(element, "npcId") ?? "",
+            ReadString(element, "action") ?? "",
+            statusText,
+            progress,
+            ReadString(element, "blockedReason"),
+            ReadString(element, "errorCode"));
+        return true;
+    }
+
+    private static bool TryReadTodoWriteResult(string content, out string status, out string? reason)
+    {
+        status = "";
+        reason = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(content);
+            if (!doc.RootElement.TryGetProperty("todos", out var todos) ||
+                todos.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            foreach (var todo in todos.EnumerateArray())
+            {
+                var parsedStatus = ReadString(todo, "status");
+                if (string.IsNullOrWhiteSpace(parsedStatus))
+                    continue;
+
+                status = parsedStatus;
+                reason = ReadString(todo, "reason");
+                return true;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return false;
+    }
+
+    private static string? ReadString(JsonElement element, string propertyName)
+        => element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    private static ToolResultEvidence GetToolResultEvidence(
+        IReadOnlyDictionary<string, ToolResultEvidence> evidenceByCallId,
+        string callId)
+        => evidenceByCallId.TryGetValue(callId, out var evidence)
+            ? evidence
+            : new ToolResultEvidence(null, null);
+
+    private static bool IsStardewActionTool(ToolCall call)
+        => string.Equals(call.Name, "stardew_move", StringComparison.OrdinalIgnoreCase) ||
+           IsFeedbackTool(call);
+
+    private static bool IsFeedbackTool(ToolCall call)
+        => string.Equals(call.Name, "stardew_speak", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(call.Name, "stardew_open_private_chat", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsTodoTool(ToolCall call)
+        => string.Equals(call.Name, "todo", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(call.Name, "todo_write", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsBlockedOrFailed(string? status)
+        => string.Equals(status, "blocked", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, "failed", StringComparison.OrdinalIgnoreCase);
+
+    private sealed record ToolResultEvidence(string? CommandId, GameCommandStatus? TerminalStatus);
 
     private async Task WriteMemoryAsync(string traceId, string? decisionResponse, CancellationToken ct)
     {

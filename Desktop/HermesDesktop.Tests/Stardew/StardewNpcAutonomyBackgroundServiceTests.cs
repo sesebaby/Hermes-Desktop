@@ -666,6 +666,71 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
+    public async Task RunOneIterationAsync_WhenPendingActionEndsBlocked_SurfacesTerminalStatusAndWritesRuntimeEvidence()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var commands = new ScriptedCommandService(
+            statusSequence:
+            [
+                new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Blocked, 1, "path_blocked", "path_blocked")
+            ]);
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is blocked while moving.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetPendingWorkItemAsync(
+            new NpcRuntimePendingWorkItemSnapshot("work-1", "move", "cmd-1", StardewCommandStatuses.Running, DateTime.UtcNow),
+            CancellationToken.None);
+        await driver.SetActionSlotAsync(
+            new NpcRuntimeActionSlotSnapshot("action", "work-1", "cmd-1", "trace-1", DateTime.UtcNow, DateTime.UtcNow.AddMinutes(1)),
+            CancellationToken.None);
+        var service = CreateService(discovery, _ => adapter, chatClient, supervisor, enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, chatClient.CompleteWithToolsCalls);
+        var snapshot = supervisor.Snapshot().Single();
+        Assert.AreEqual(StardewCommandStatuses.Blocked, snapshot.Controller.LastTerminalCommandStatus?.Status);
+        Assert.IsTrue(supervisor.TryGetTaskView(binding.Descriptor.SessionId, out var taskView));
+        Assert.IsNotNull(taskView);
+        Assert.AreEqual(0, taskView.ActiveSnapshot.Todos.Count, "Background service must not mutate todo truth from terminal command status.");
+
+        var logPath = Path.Combine(
+            _tempDir,
+            "runtime",
+            "stardew",
+            "games",
+            "stardew-valley",
+            "saves",
+            "save-42",
+            "npc",
+            "haley",
+            "profiles",
+            "default",
+            "activity",
+            "runtime.jsonl");
+        var records = ReadRuntimeLogRecords(logPath);
+        Assert.IsTrue(records.Any(record =>
+            record.GetProperty("actionType").GetString() == "task_continuity" &&
+            record.GetProperty("target").GetString() == "command_terminal" &&
+            record.GetProperty("stage").GetString() == "terminal" &&
+            record.GetProperty("result").GetString() == StardewCommandStatuses.Blocked &&
+            record.TryGetProperty("commandId", out var commandId) &&
+            commandId.GetString() == "cmd-1"),
+            "Terminal blocked command truth must be visible as a structured append-only runtime event.");
+    }
+
+    [TestMethod]
     public async Task RunOneIterationAsync_WhenPendingActionHasNoCommandId_KeepsControllerStateAndClaimUntilTimeout()
     {
         var discovery = CreateDiscovery("save-42");
@@ -1208,6 +1273,14 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         var snapshotMethod = driver.GetType().GetMethod("Snapshot");
         Assert.IsNotNull(snapshotMethod);
         return snapshotMethod.Invoke(driver, null) ?? throw new AssertFailedException("Tracker snapshot missing.");
+    }
+
+    private static IReadOnlyList<JsonElement> ReadRuntimeLogRecords(string logPath)
+    {
+        using var document = JsonDocument.Parse("[" + string.Join(",", File.ReadAllLines(logPath)) + "]");
+        return document.RootElement.EnumerateArray()
+            .Select(element => element.Clone())
+            .ToArray();
     }
 
     private static Task GetTrackerWorkerTask(StardewNpcAutonomyBackgroundService service, string npcId)

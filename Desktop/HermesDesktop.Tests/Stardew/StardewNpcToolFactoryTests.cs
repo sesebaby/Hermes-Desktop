@@ -184,9 +184,23 @@ public class StardewNpcToolFactoryTests
         StringAssert.Contains(description, "path_unreachable");
         Assert.IsFalse(description.Contains("destination[n]." + "label", StringComparison.Ordinal));
         Assert.IsFalse(description.Contains("nearby[n]", StringComparison.Ordinal));
+        Assert.IsFalse(description.Contains("tile", StringComparison.OrdinalIgnoreCase), "Move tool description must not expose tile fields as public inputs.");
+        Assert.IsFalse(description.Contains("facingDirection", StringComparison.OrdinalIgnoreCase), "Move tool description must not expose facing direction as a public input.");
 
-        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "destination"), "destination[n].destinationId");
-        Assert.IsFalse(GetSchemaPropertyDescription(moveSchema, "destination").Contains("destination[n]." + "label", StringComparison.Ordinal));
+        using var document = JsonDocument.Parse(moveSchema);
+        var properties = document.RootElement.GetProperty("properties");
+        Assert.IsTrue(properties.TryGetProperty("destination", out _));
+        Assert.IsFalse(properties.TryGetProperty("label", out _));
+        Assert.IsFalse(properties.TryGetProperty("x", out _));
+        Assert.IsFalse(properties.TryGetProperty("y", out _));
+        Assert.IsFalse(properties.TryGetProperty("tile", out _));
+        Assert.IsFalse(properties.TryGetProperty("facingDirection", out _));
+        var destinationDescription = GetSchemaPropertyDescription(moveSchema, "destination");
+        StringAssert.Contains(destinationDescription, "destination[n].destinationId");
+        Assert.IsFalse(destinationDescription.Contains("destination[n]." + "label", StringComparison.Ordinal));
+        Assert.IsFalse(destinationDescription.Contains("tile", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(destinationDescription.Contains("facingDirection", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(destinationDescription.Contains("coordinate", StringComparison.OrdinalIgnoreCase));
         StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "reason"), "Short reason");
         StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "thought"), "overhead bubble");
     }

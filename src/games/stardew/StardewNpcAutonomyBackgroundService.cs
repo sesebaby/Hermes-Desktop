@@ -793,7 +793,9 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 : null;
             if (lookupStatus is not null)
             {
+                var traceId = controller.ActionSlot?.TraceId ?? lookupStatus.CommandId;
                 await runtimeActions.RecordStatusAsync(lookupStatus, ct);
+                await WriteCommandTerminalEvidenceAsync(binding, tracker, lookupStatus, traceId, ct);
 
                 if (StardewRuntimeActionController.IsInFlightStatus(lookupStatus.Status))
                 {
@@ -816,7 +818,9 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         }
 
         var status = await commandService.GetStatusAsync(commandId, ct);
+        var statusTraceId = controller.ActionSlot?.TraceId ?? status.CommandId;
         await runtimeActions.RecordStatusAsync(status, ct);
+        await WriteCommandTerminalEvidenceAsync(binding, tracker, status, statusTraceId, ct);
 
         if (StardewRuntimeActionController.IsInFlightStatus(status.Status))
         {
@@ -828,6 +832,31 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             return true;
 
         return true;
+    }
+
+    private static async Task WriteCommandTerminalEvidenceAsync(
+        StardewNpcRuntimeBinding binding,
+        NpcAutonomyTracker tracker,
+        GameCommandStatus status,
+        string? traceId,
+        CancellationToken ct)
+    {
+        if (!StardewRuntimeActionController.IsTerminalStatus(status.Status))
+            return;
+
+        var writer = new NpcRuntimeLogWriter(Path.Combine(tracker.Instance.Namespace.ActivityPath, "runtime.jsonl"));
+        await writer.WriteAsync(new NpcRuntimeLogRecord(
+            DateTime.UtcNow,
+            string.IsNullOrWhiteSpace(traceId) ? status.CommandId : traceId,
+            binding.Descriptor.NpcId,
+            binding.Descriptor.GameId,
+            binding.Descriptor.SessionId,
+            "task_continuity",
+            "command_terminal",
+            "terminal",
+            status.Status,
+            CommandId: status.CommandId,
+            Error: status.ErrorCode ?? status.BlockedReason), ct);
     }
 
     private string BuildHostStateDbPath(string saveId)
