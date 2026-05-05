@@ -358,6 +358,45 @@ public class StardewCommandServiceTests
     }
 
     [TestMethod]
+    public async Task SubmitAsync_Speak_PassesPrivateChatSourceToBridge()
+    {
+        var client = new FakeSmapiClient();
+        client.SpeakResponse = new StardewBridgeResponse<StardewSpeakData>(
+            true,
+            "trace-speak",
+            "req-speak",
+            null,
+            StardewCommandStatuses.Completed,
+            new StardewSpeakData("haley", "Hi there.", "private_chat", true),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var payload = new JsonObject
+        {
+            ["text"] = "Hi there.",
+            ["channel"] = "private_chat",
+            ["conversationId"] = "pc_evt_000000000001",
+            ["source"] = "input_menu"
+        };
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.Speak,
+            "trace-speak",
+            "idem-speak",
+            new GameActionTarget("player"),
+            Payload: payload);
+
+        await service.SubmitAsync(action, CancellationToken.None);
+
+        Assert.IsInstanceOfType(client.LastEnvelope, typeof(StardewBridgeEnvelope<StardewSpeakRequest>));
+        var envelope = (StardewBridgeEnvelope<StardewSpeakRequest>)client.LastEnvelope!;
+        Assert.AreEqual("private_chat", envelope.Payload.Channel);
+        Assert.AreEqual("pc_evt_000000000001", envelope.Payload.ConversationId);
+        Assert.AreEqual("input_menu", envelope.Payload.Source);
+    }
+
+    [TestMethod]
     public async Task SubmitAsync_OpenPrivateChat_PostsTypedEnvelopeToActionOpenPrivateChatRoute()
     {
         var client = new FakeSmapiClient();
@@ -400,7 +439,36 @@ public class StardewCommandServiceTests
     }
 
     [TestMethod]
-    public async Task SubmitAsync_OpenPrivateChat_AcceptsPhoneThreadOpenStates()
+    public async Task SubmitAsync_OpenPrivateChat_AcceptsInputMenuOpenState()
+    {
+        var client = new FakeSmapiClient();
+        client.OpenPrivateChatResponse = new StardewBridgeResponse<StardewOpenPrivateChatData>(
+            true,
+            "trace-private-chat",
+            "req-private-chat",
+            null,
+            StardewCommandStatuses.Completed,
+            new StardewOpenPrivateChatData("haley", false, "pc_evt_1", "input_menu_opened"),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.OpenPrivateChat,
+            "trace-private-chat",
+            "idem-private-chat",
+            new GameActionTarget("player"),
+            Payload: new JsonObject { ["conversationId"] = "pc_evt_1" });
+
+        var result = await service.SubmitAsync(action, CancellationToken.None);
+
+        Assert.IsTrue(result.Accepted);
+        Assert.AreEqual(StardewCommandStatuses.Completed, result.Status);
+    }
+
+    [TestMethod]
+    public async Task SubmitAsync_OpenPrivateChat_RejectsPhoneThreadOpenState()
     {
         var client = new FakeSmapiClient();
         client.OpenPrivateChatResponse = new StardewBridgeResponse<StardewOpenPrivateChatData>(
@@ -424,8 +492,8 @@ public class StardewCommandServiceTests
 
         var result = await service.SubmitAsync(action, CancellationToken.None);
 
-        Assert.IsTrue(result.Accepted);
-        Assert.AreEqual(StardewCommandStatuses.Completed, result.Status);
+        Assert.IsFalse(result.Accepted);
+        Assert.AreEqual("open_private_chat_not_opened", result.FailureReason);
     }
 
     [TestMethod]

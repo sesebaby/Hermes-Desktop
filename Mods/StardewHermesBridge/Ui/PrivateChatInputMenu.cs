@@ -7,9 +7,9 @@ using StardewValley;
 using StardewValley.Menus;
 
 /// <summary>
-/// Retired production path. Hermes private chat now uses HermesPhoneOverlay so opening
-/// a phone thread does not set Game1.activeClickableMenu or pause player control.
-/// Keep this only as a temporary compatibility shell until all old menu tests are gone.
+/// Focused Hermes private-chat input opened after the player clicks an NPC.
+/// Remote or proactive messages use the phone overlay; this menu is the explicit
+/// player-initiated private-chat entry point.
 /// </summary>
 public sealed class PrivateChatInputMenu : IClickableMenu
 {

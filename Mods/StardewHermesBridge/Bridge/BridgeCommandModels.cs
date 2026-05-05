@@ -60,7 +60,7 @@ public sealed record TaskLookupRequest(string IdempotencyKey);
 
 public sealed record TaskCancelRequest(string CommandId, string Reason);
 
-public sealed record SpeakPayload(string Text, string? Channel, string? ConversationId = null);
+public sealed record SpeakPayload(string Text, string? Channel, string? ConversationId = null, string? Source = null);
 
 public sealed record SpeakData(string NpcId, string Text, string Channel, bool Displayed);
 

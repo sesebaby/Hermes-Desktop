@@ -31,7 +31,7 @@
 | --- | --- | --- | --- | --- | --- |
 | NPC runtime / 生命周期 | 最高 | 已有 `NpcRuntimeSupervisor`、`NpcRuntimeInstance`、driver、snapshot、lease、action slot、pending work、runtime state store | 每个 Agent 独立 home，长期运行到迭代上限 | 当前更像 Desktop 托管的 runtime 实例，还缺成熟恢复、跨天续跑、长期后台节奏 | 继续强化 supervisor/driver，而不是另起“一 NPC 一进程” |
 | Agent 自主循环 | 最高 | `NpcAutonomyLoop` 能 observe、poll events、构造中文决策消息、调用 Agent、写 trace/memory/diagnostic；已验证能接续 private chat 创建的 active todo | 长会话内持续 observe-think-act，并主动轮询后台 task | P0 任务接续已闭环；跨天续跑、等待策略、失败后恢复旧任务还需长跑验证 | 下一步把同一闭环接到真实移动执行结果，而不是只对当前观察反应 |
-| private chat | 最高 | 已有状态机、输入菜单、reply display；passive phone open 不再占用 private-chat lease，lease 只覆盖玩家提交消息后的回复窗口；runner 使用 NPC 专属 Agent | 对话可打断 Agent，回应后恢复任务 | 私聊任务化已完成首轮验收；剩余是更复杂承诺拆分、失败反馈话术和真实游戏长跑观察 | private chat 已从对白器进入任务入口，后续重点转到执行可靠性 |
+| private chat | 最高 | 已有状态机、玩家点击 NPC 的 `PrivateChatInputMenu`、source-aware reply display；`input_menu` 来源回复走原版样式对话框，手机 overlay 只用于主动/远程消息、手机来源回复与消息历史；passive phone open 不再占用 private-chat lease，lease 只覆盖玩家提交消息后的回复窗口；runner 使用 NPC 专属 Agent | 对话可打断 Agent，回应后恢复任务 | 私聊任务化已完成首轮验收；剩余是更复杂承诺拆分、失败反馈话术和真实游戏长跑观察 | private chat 已从对白器进入任务入口，后续重点转到执行可靠性 |
 | 任务系统 / todo | 最高 | `todo` 已支持 `blocked`、`failed`、`reason`；`SessionTaskProjectionService` 能按 `TaskSessionId` 投影；private chat tool task 已归长期 session | Agent 自己维护长期任务、轮询 task 状态 | P0 的 todo/session 归属已验证；还需把跨地图执行 terminal status 稳定映射到 todo reason 与玩家反馈 | 不新增 NPC task store，继续扩展 `todo` 单一真相 |
 | Session continuity | 最高 | `Session.ToolSessionId` 已存在；private chat transcript session 与 tool task session 已分离，并已有回归测试保护 | 每个 Agent 长会话天然承载任务和记忆 | `session_search`、archive、跨天恢复仍需扩大验证，但 private chat -> long session task 的关键风险已关闭 | 继续用长期 session 承载 NPC 任务，不回退到临时 session 或第二任务面 |
 | 记忆系统 | 最高 | 每 NPC namespace 创建独立 `MemoryManager`；autonomy tick 会写 memory 摘要 | Agent 主动把稳定事实沉淀进长期记忆 | 当前 memory 写入还偏自动摘要，Agent 主动区分 memory/todo/session_search 的习惯刚开始建立 | 用 prompt/skill 约束 Agent 写稳定事实，不让宿主代写人格摘要 |
@@ -140,8 +140,10 @@ UI 只能展示 runtime/task 只读投影，不能解析玩家话术或写回 ta
 3. autonomy tick 能看到并接续 private chat 创建的 active todo。
 4. autonomy 推进任务时走 Stardew 工具与 tool result，而不是只输出叙事文本。
 5. 工具返回 terminal `blocked` / `failed` 时，todo reason、runtime trace/error 和玩家反馈路径有回归保护。
-6. 手机私聊窗口 passive open 不再阻塞 autonomy；private-chat lease 只覆盖玩家提交消息后的回复窗口。
-7. 同一 Agent turn 内重复调用 Stardew status 工具会返回 `status_tool_budget_exceeded`，不再继续真实查询 bridge。
+6. 玩家点击 NPC 的私聊入口已恢复为 `PrivateChatInputMenu`；手机 overlay 不再替代这个入口，只承载主动/远程消息、手机来源回复与消息历史。
+7. 手机窗口 passive open 不再阻塞 autonomy；private-chat lease 只覆盖玩家提交消息后的回复窗口。
+8. private chat reply display 已按 source 分流：`input_menu` 来源回复走原版样式对话框，即使 8 格内也不走气泡；`phone_overlay` / NPC 主动来源才按 8 格规则走气泡或手机。
+9. 同一 Agent turn 内重复调用 Stardew status 工具会返回 `status_tool_budget_exceeded`，不再继续真实查询 bridge。
 
 验收依据：
 
@@ -151,7 +153,13 @@ UI 只能展示 runtime/task 只读投影，不能解析玩家话术或写回 ta
 - `NpcAutonomyLoop` / `StardewNpcAutonomyBackgroundService` 测试
 - `PrivateChatOrchestratorTests`
 - `AgentTests.ChatAsync_WhenStardewStatusToolRepeatsAcrossIterations_ReturnsBudgetResultWithoutExecutingAgain`
-- `RawDialogueDisplayRegressionTests.PassivePhoneCloseRecordsCancellationForVisiblePrivateThread`
+- `RawDialogueDisplayRegressionTests.PlayerClickedNpcPrivateChatUsesInputMenuNotPhoneOverlay`
+- `RawDialogueDisplayRegressionTests.PrivateChatReplyCloseIsRecordedBySourceSpecificUiOwner`
+- `RawDialogueDisplayRegressionTests.ProactiveNpcMessagesRouteToBubbleOrPhoneWithoutRawDialogue`
+- `RawDialogueDisplayRegressionTests.PassivePhoneCloseRecordsCancellationForVisiblePhoneThread`
+- `StardewCommandServiceTests.SubmitAsync_Speak_PassesPrivateChatSourceToBridge`
+- `StardewCommandServiceTests.SubmitAsync_OpenPrivateChat_AcceptsInputMenuOpenState`
+- `StardewCommandServiceTests.SubmitAsync_OpenPrivateChat_RejectsPhoneThreadOpenState`
 - `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug`
 - `dotnet test .\Mods\StardewHermesBridge.Tests\Mods.StardewHermesBridge.Tests.csproj -c Debug`
 - `dotnet build .\Mods\StardewHermesBridge\StardewHermesBridge.csproj -c Debug`

@@ -2,6 +2,7 @@ namespace StardewHermesBridge.Ui;
 
 using System.Text.Json.Nodes;
 using StardewHermesBridge.Bridge;
+using StardewHermesBridge.Dialogue;
 using StardewHermesBridge.Logging;
 using StardewValley;
 
@@ -29,9 +30,16 @@ public sealed class StardewMessageDisplayRouter
         _logger = logger;
     }
 
-    public StardewMessageDisplayResult Display(NPC npc, string text, string channel, string? conversationId)
+    public StardewMessageDisplayResult Display(NPC npc, string text, string channel, string? conversationId, string? source)
     {
         var privateChat = string.Equals(channel, "private_chat", StringComparison.OrdinalIgnoreCase);
+        if (privateChat && string.Equals(source, "input_menu", StringComparison.OrdinalIgnoreCase))
+        {
+            NpcRawDialogueRenderer.Display(npc, text);
+            _logger.Write("private_chat_reply_displayed_original_dialogue", npc.Name, channel, "dialogue", null, "displayed", conversationId);
+            return new StardewMessageDisplayResult("dialogue", "input_menu_dialogue_closed");
+        }
+
         var nearby = IsPlayerWithinNearbyRange(npc);
         if (nearby)
         {

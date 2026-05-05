@@ -365,6 +365,45 @@ public class StardewPrivateChatOrchestratorTests
         Assert.AreEqual(2, commands.Submitted.Count);
         Assert.AreEqual(GameActionType.Speak, commands.Submitted[1].Type);
         Assert.AreEqual("Oh. Hi.", commands.Submitted[1].Payload?["text"]?.GetValue<string>());
+        Assert.AreEqual("input_menu", commands.Submitted[1].Payload?["source"]?.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_PhonePrivateMessageSubmitted_RoutesReplyWithPhoneOverlaySource()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."),
+            new GameEventRecord(
+                "evt-2",
+                "player_private_message_submitted",
+                "Haley",
+                DateTime.UtcNow,
+                "Player submitted a private chat message from phone.",
+                "pc_evt-1",
+                new JsonObject
+                {
+                    ["conversationId"] = "pc_evt-1",
+                    ["text"] = "hi Haley",
+                    ["source"] = "phone_overlay"
+                }));
+        var commands = new FakeCommandService();
+        var agent = new FakePrivateChatAgentRunner { ReplyText = "Oh. Hi." };
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            agent,
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(2, commands.Submitted.Count);
+        Assert.AreEqual(GameActionType.Speak, commands.Submitted[1].Type);
+        Assert.AreEqual("phone_overlay", commands.Submitted[1].Payload?["source"]?.GetValue<string>());
     }
 
     [TestMethod]

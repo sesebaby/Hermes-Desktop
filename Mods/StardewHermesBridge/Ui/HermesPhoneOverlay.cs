@@ -206,6 +206,7 @@ public sealed class HermesPhoneOverlay
                 new JsonObject
                 {
                     ["conversationId"] = thread.ConversationId,
+                    ["source"] = "phone_overlay",
                     ["reason"] = "empty_submit"
                 });
             _logger.Write("phone_private_chat_cancelled", thread.NpcName, "private_chat", "phone", null, "recorded", "empty_submit");
@@ -222,6 +223,7 @@ public sealed class HermesPhoneOverlay
             {
                 ["conversationId"] = thread.ConversationId,
                 ["text"] = text,
+                ["source"] = "phone_overlay",
                 ["submittedAtUtc"] = DateTime.UtcNow
             });
         _privateChatSubmitted?.Invoke(thread.NpcName);
@@ -243,6 +245,7 @@ public sealed class HermesPhoneOverlay
             new JsonObject
             {
                 ["conversationId"] = thread.ConversationId,
+                ["source"] = "phone_overlay",
                 ["reason"] = reason
             });
         _logger.Write("phone_private_chat_cancelled", thread.NpcName, "private_chat", "phone", null, "recorded", reason);

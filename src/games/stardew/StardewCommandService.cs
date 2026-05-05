@@ -91,10 +91,10 @@ public sealed class StardewCommandService : IGameCommandService
         if (data is null)
             return false;
 
-        if (data.Opened)
-            return true;
+        if (!string.IsNullOrWhiteSpace(data.OpenState))
+            return string.Equals(data.OpenState, "input_menu_opened", StringComparison.OrdinalIgnoreCase);
 
-        return data.OpenState is "thread_marked" or "thread_opened" or "focus_pending";
+        return data.Opened;
     }
 
     private async Task<GameCommandResult> SubmitSpeakAsync(GameAction action, CancellationToken ct)
@@ -108,13 +108,14 @@ public sealed class StardewCommandService : IGameCommandService
             channel = "player";
 
         var conversationId = action.Payload?["conversationId"]?.ToString();
+        var source = action.Payload?["source"]?.ToString();
         var envelope = new StardewBridgeEnvelope<StardewSpeakRequest>(
             $"req_{Guid.NewGuid():N}",
             action.TraceId,
             ResolveNpcId(action),
             _saveId,
             action.IdempotencyKey,
-            new StardewSpeakRequest(text, channel, conversationId));
+            new StardewSpeakRequest(text, channel, conversationId, source));
 
         var response = await _client.SendAsync<StardewSpeakRequest, StardewSpeakData>(
             StardewBridgeRoutes.ActionSpeak,

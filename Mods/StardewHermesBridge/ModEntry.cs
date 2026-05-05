@@ -37,6 +37,7 @@ public sealed class ModEntry : Mod
     private SButton? _pendingOriginalStartButton;
     private bool _originalStartRetryAttempted;
     private DateTimeOffset? _bridgeStartedAtUtc;
+    private PendingPrivateChatReplyDialogue? _pendingPrivateChatReplyDialogue;
 
     public override void Entry(IModHelper helper)
     {
@@ -55,7 +56,12 @@ public sealed class ModEntry : Mod
             _bubbleOverlay,
             _ => _overlay.ClearPrivateChatPending(),
             npcName => _overlay.SetPrivateChatThinking(npcName),
-            (npcName, _) => _overlay.ClearPrivateChatPending());
+            (npcName, conversationId, route) =>
+            {
+                _overlay.ClearPrivateChatPending();
+                if (string.Equals(route, "dialogue", StringComparison.OrdinalIgnoreCase))
+                    _pendingPrivateChatReplyDialogue = new PendingPrivateChatReplyDialogue(npcName, conversationId);
+            });
         _debugMenu = new BridgeDebugMenu(_overlay);
         _httpHost = new BridgeHttpHost(_commands, _events, _bridgeLogger);
         _clickRouter = new NpcDialogueClickRouter();
@@ -183,6 +189,25 @@ public sealed class ModEntry : Mod
         if (_menuGuard.ConsumeMenuChange(oldDialogueNpcName, newDialogueNpcName) is not NpcDialogueMenuGuardResult.Unhandled)
             return;
 
+        if (_pendingPrivateChatReplyDialogue is { } pendingReply)
+        {
+            if (string.Equals(newDialogueNpcName, pendingReply.NpcName, StringComparison.OrdinalIgnoreCase))
+            {
+                _bridgeLogger.Write("private_chat_reply_dialogue_observed", pendingReply.NpcName, FormalEntry, FormalEntry, null, "observed", pendingReply.ConversationId);
+                return;
+            }
+
+            if (string.Equals(oldDialogueNpcName, pendingReply.NpcName, StringComparison.OrdinalIgnoreCase) && newDialogueNpcName is null)
+            {
+                RecordPrivateChatReplyClosedFromInputDialogue(pendingReply);
+                _pendingPrivateChatReplyDialogue = null;
+                return;
+            }
+        }
+
+        if (e.OldMenu is not null && e.NewMenu is null)
+            _commands.RecordPrivateChatInputClosedWithoutSubmit();
+
         if (_pendingDialogueFlow is null)
             return;
 
@@ -278,6 +303,21 @@ public sealed class ModEntry : Mod
             npcName,
             $"{npcName} vanilla dialogue follow-up was unavailable ({detail}).");
         _bridgeLogger.Write("vanilla_dialogue_unavailable_fact", npcName, FormalEntry, FormalEntry, null, "recorded", detail);
+    }
+
+    private void RecordPrivateChatReplyClosedFromInputDialogue(PendingPrivateChatReplyDialogue pending)
+    {
+        _events.Record(
+            "private_chat_reply_closed",
+            pending.NpcName,
+            $"{pending.NpcName} private chat reply closed.",
+            pending.ConversationId,
+            new System.Text.Json.Nodes.JsonObject
+            {
+                ["conversationId"] = pending.ConversationId,
+                ["reply_closed_source"] = "input_menu_dialogue_closed"
+            });
+        _bridgeLogger.Write("private_chat_reply_closed_fact", pending.NpcName, FormalEntry, FormalEntry, null, "recorded", "input_menu_dialogue_closed");
     }
 
     private bool TryStartOriginalDialogueIfNeeded()
@@ -445,4 +485,6 @@ public sealed class ModEntry : Mod
         DateTimeOffset StartedAtUtc,
         int ProcessId,
         string? SaveId);
+
+    private sealed record PendingPrivateChatReplyDialogue(string NpcName, string ConversationId);
 }

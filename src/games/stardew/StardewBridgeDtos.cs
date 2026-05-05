@@ -87,7 +87,8 @@ public sealed record StardewTaskCancelRequest(
 public sealed record StardewSpeakRequest(
     [property: JsonPropertyName("text")] string Text,
     [property: JsonPropertyName("channel")] string Channel,
-    [property: JsonPropertyName("conversationId")] string? ConversationId = null);
+    [property: JsonPropertyName("conversationId")] string? ConversationId = null,
+    [property: JsonPropertyName("source")] string? Source = null);
 
 public sealed record StardewSpeakData(
     [property: JsonPropertyName("npcId")] string NpcId,

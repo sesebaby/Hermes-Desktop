@@ -51,6 +51,11 @@ public sealed record PrivateChatPolicy(
     public string? ExtractPlayerText(GameEventRecord record)
         => GetPlayerText?.Invoke(record) ?? GetPayloadString(record, "text");
 
+    public string ExtractReplySource(GameEventRecord record)
+        => string.Equals(GetPayloadString(record, "source"), "phone_overlay", StringComparison.OrdinalIgnoreCase)
+            ? "phone_overlay"
+            : "input_menu";
+
     public bool ShouldRetryOpen(GameCommandResult result)
         => result.Retryable || (IsRetryableOpenFailure?.Invoke(result) ?? false);
 

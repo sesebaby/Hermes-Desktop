@@ -156,7 +156,8 @@ public sealed class PrivateChatOrchestrator : IDisposable
             }
 
             _state = PrivateChatState.ShowingReply;
-            var speakResult = await SubmitSpeakAsync(_activeNpcId!, reply.Text, _conversationId, ct);
+            var replySource = _options.Policy.ExtractReplySource(record);
+            var speakResult = await SubmitSpeakAsync(_activeNpcId!, reply.Text, _conversationId, replySource, ct);
             _turns++;
             if (!speakResult.Accepted || ShouldEndAfterReply())
             {
@@ -272,13 +273,14 @@ public sealed class PrivateChatOrchestrator : IDisposable
         return _commands.SubmitAsync(action, ct);
     }
 
-    private Task<GameCommandResult> SubmitSpeakAsync(string npcId, string text, string conversationId, CancellationToken ct)
+    private Task<GameCommandResult> SubmitSpeakAsync(string npcId, string text, string conversationId, string source, CancellationToken ct)
     {
         var payload = new JsonObject
         {
             ["text"] = text,
             ["channel"] = "private_chat",
-            ["conversationId"] = conversationId
+            ["conversationId"] = conversationId,
+            ["source"] = source
         };
         var action = new GameAction(
             npcId,
