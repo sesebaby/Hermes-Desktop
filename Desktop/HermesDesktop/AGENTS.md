@@ -1,211 +1,276 @@
-# Copilot Agent Instructions -- WinUI 3 / WinAppSDK
+# HermesDesktop Agent 指南
 
-## Project Overview
+本文件作用于 `Desktop/HermesDesktop/**`。仓库根 `AGENTS.md` 仍然生效；若两者冲突，以本文件为准。
 
-This is a **WinUI 3** desktop application built on the **Windows App SDK**. It uses MSIX packaging and supports x86, x64, and ARM64 architectures.
+## 先看这些文件
 
-> **Source of truth for versions & names:** Always read the project `.csproj` to determine the current `TargetFramework`, `RuntimeIdentifiers`, `Platforms`, `RootNamespace`, and `Microsoft.WindowsAppSDK` package version. Never hard-code project names or version numbers in instruction files.
->
-> Throughout this document and the instruction files, `<ProjectName>` is a placeholder -- replace it with the actual project folder/assembly name (derived from the `.csproj` filename).
+- `HermesDesktop.csproj`：当前 TFM、平台、打包模式、WinAppSDK 版本的唯一准确信息源。
+- `App.xaml.cs`：桌面宿主的组合根；所有核心运行时能力都在这里注册与启动。
+- `run-dev.ps1`：当前子项目目录下最可靠的本地启动/注册脚本。
+- `README.md`：桌面壳的运行入口与启动排障。
+- `.github/instructions/*.instructions.md`：按改动类型读取对应规则文件。
 
-| Property | How to determine |
-|---|---|
-| UI Framework | WinUI 3 (`Microsoft.UI.Xaml`) -- always used |
-| App SDK | Read `Microsoft.WindowsAppSDK` version from `.csproj` `<PackageReference>` |
-| Runtime / TFM | Read `<TargetFramework>` from `.csproj` (e.g., `net10.0-windows10.0.26100.0`) |
-| Target OS | Derived from `<TargetFramework>` and `<TargetPlatformMinVersion>` in `.csproj` |
-| Platforms | Read `<Platforms>` from `.csproj` (e.g., `x86;x64;ARM64`) |
-| Packaging | MSIX (`<EnableMsixTooling>true</EnableMsixTooling>`) |
-| Namespace | Read `<RootNamespace>` from `.csproj` |
-| Nullable | Read `<Nullable>` from `.csproj` |
+## 当前项目事实
 
-> **Default TFM:** Templates ship with `net10.0` by default. Pass
-> `--dotnet-version <tfm>` (for example `net10.0`) when running `dotnet new ...`
-> or edit `<TargetFramework>` inside the generated `.csproj` before the first
-> build if you need a newer framework. Keep `<RuntimeIdentifiers>` synchronized
-> with the framework you pick.
+这些结论以后续代码状态为准，优先级高于旧模板表述。
 
-## Hermes Desktop — product focus
+- 当前桌面项目：`net10.0-windows10.0.26100.0`
+- 当前平台：`x64`
+- 当前 `RuntimeIdentifier`：`win-x64`
+- 当前默认项目配置：`WindowsPackageType=None`
+- 支持 `launchSettings.json` 中的 `Unpackaged` 与 `Package` profile，但**日常开发不要假设这是一个 MSIX-only 项目**。
+- `HermesMsixPublish=true` 时才进入 MSIX 发布路径。
 
-When choosing scope, **prefer reliability and trust over feature count.**
+## 常用命令
 
-- **Gateway (messengers):** The gateway surface has been retired in this runtime. Keep the desktop shell focused on local agent life, memory, Dreamer, skills, and task coordination.
-- **Differentiator:** The product’s value is **native Windows UX** — soul browser, skills library, visual settings, activity log, session manager. Upstream open-source Hermes does not ship this shell; protect and improve it before chasing parity on marginal tools.
-- **Hardening first:** Invest in behaviors that prevent **silent data loss** and **runaway cost** — e.g. compression cooldown, provider fallback, atomic writes, deterministic IDs. **A smaller set of dependable tools beats a large set of flaky ones.**
+优先使用脚本，而不是手写一串易错的 `dotnet` / `Add-AppxPackage` 命令。
 
-## Instruction Files Index
+### 本地开发 / 启动
 
-All detailed agent instructions are organized under `.github/instructions/`:
-
-| File | Scope |
-|---|---|
-| [design-principles.instructions.md](.github/instructions/design-principles.instructions.md) | DRY, KISS, SOLID, YAGNI |
-| [globalization.instructions.md](.github/instructions/globalization.instructions.md) | Globalization & Localization |
-| [accessibility.instructions.md](.github/instructions/accessibility.instructions.md) | Accessibility |
-| [security.instructions.md](.github/instructions/security.instructions.md) | Security |
-| [performance.instructions.md](.github/instructions/performance.instructions.md) | Performance |
-| [code-quality.instructions.md](.github/instructions/code-quality.instructions.md) | Static Analysis, StyleCop, Code Cleanup |
-| [winui-best-practices.instructions.md](.github/instructions/winui-best-practices.instructions.md) | WinUI 3 / WinAppSDK patterns & references |
-| [windows-apis.instructions.md](.github/instructions/windows-apis.instructions.md) | WinAppSDK & Platform SDK API namespace catalog & lookup guidance |
-| [testing.instructions.md](.github/instructions/testing.instructions.md) | Unit Testing, Build & Run |
-
-## Core Agent Workflow
-
-Every time you work on this codebase, follow this checklist:
-
-### Before Writing Code
-1. **Review the original goal** -- Re-read the user's request and confirm you understand the intent.
-2. **Check existing code** -- Search for related implementations to avoid duplication (DRY).
-3. **Find the right API** -- If the task involves a platform capability (AI, UI controls, file access, notifications, windowing, widgets, sensors, etc.), first check the [Windows APIs catalog](.github/instructions/windows-apis.instructions.md) and then look up the correct API in the [WinUI 3 API Reference](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/) before writing code.
-4. **Plan the approach** -- Consider SOLID principles and identify which classes/interfaces are involved.
-
-### While Writing Code
-
-> **Agent Rule -- MANDATORY:** Steps 5-8 are **not** passive references. You **must** actually open and read the linked instruction file before writing code that falls within its scope. Do not skip this -- these files contain rules, anti-patterns, and checklists that must be applied.
-
-5. **Apply Design Principles** -- **Read** [design-principles](.github/instructions/design-principles.instructions.md) before adding/refactoring classes or logic. Apply DRY, KISS, SOLID, YAGNI.
-6. **Follow Fundamentals** -- **Read the applicable instruction files** based on what you're changing:
-   - Adding or changing **UI controls / XAML**? -> Read [accessibility](.github/instructions/accessibility.instructions.md) (AutomationProperties, keyboard nav, contrast) AND [performance](.github/instructions/performance.instructions.md) (x:Bind, x:Load, virtualization).
-   - Adding or changing **user-facing strings** (labels, messages, tooltips)? -> Read [globalization](.github/instructions/globalization.instructions.md) (`.resw` files, `x:Uid`, `ResourceLoader`).
-   - Handling **secrets, user input, HTTP, or permissions**? -> Read [security](.github/instructions/security.instructions.md) (no hard-coded secrets, input validation, least privilege).
-   - Working on **data binding, collections, async/IO, or layout**? -> Read [performance](.github/instructions/performance.instructions.md) (x:Bind, virtualization, async patterns).
-7. **Respect Code Quality Rules** -- **Read** [code-quality](.github/instructions/code-quality.instructions.md) before writing code. Follow all CA*/SA*/IDE* analyzer rules and naming conventions.
-8. **Follow WinUI Patterns** -- **Read** [winui-best-practices](.github/instructions/winui-best-practices.instructions.md) for MVVM, x:Bind, community toolkit, and API verification.
-
-### After Writing Code
-9. **Remove unused code** -- Delete unused `using` statements, dead code, commented-out blocks.
-10. **Write unit tests** -- Every new public method/class needs tests. **Read** [testing](.github/instructions/testing.instructions.md) for framework setup, naming conventions (`MethodName_Scenario_ExpectedResult`), AAA pattern, and `dotnet test` commands.
-11. **Build the project** -- Detect the platform first (`$Platform = $env:PROCESSOR_ARCHITECTURE`), then run `dotnet build -c Debug -p:Platform=$Platform` from the project folder and fix all warnings/errors. **If build errors occur, follow the Troubleshooting Build Errors workflow below.**
-12. **Run tests** -- Run tests related to the change using `--filter` (see [testing](.github/instructions/testing.instructions.md)). Run the full suite only when the change is cross-cutting.
-13. **Register the MSIX package** -- See [Build, Run & Deploy](#build-run--deploy) below.
-14. **Re-review against original goal** -- Confirm the implementation matches the user's request.
-
-### Troubleshooting Build Errors
-
-> **Agent Rule -- MANDATORY:** When a build fails due to an unknown type, missing namespace, unresolved API, or similar definition error, follow this escalation order. **Do NOT jump straight to reading `.winmd` files or using `ildasm`/decompilers** -- always try web search first.
-
-**Step 1 -- Web Search (ALWAYS try first):**
-1. Open and read [windows-apis.instructions.md](.github/instructions/windows-apis.instructions.md) -- it contains the API namespace catalog and lookup guidance.
-2. Translate the unknown type/namespace into search keywords (e.g., `ImageDescription` -> "WinAppSDK ImageDescription API").
-3. Use the official Windows App SDK and Platform SDK references to verify the correct namespace, class name, and method signatures.
-4. Check the [release notes](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/stable-channel) to verify the API is available in the project's SDK version (read from `.csproj`).
-
-**Step 2 -- Sample Repos:**
-If web search finds the API but usage is unclear, search the sample repositories listed in [windows-apis.instructions.md](.github/instructions/windows-apis.instructions.md) for working examples.
-
-**Step 3 -- WinMD / Decompiler (last resort only):**
-Only if Steps 1-2 fail to resolve the issue, then inspect `.winmd` metadata files or use decompilation tools to discover the exact type definitions. This is a fallback, not the default approach.
-
-## Build, Run & Deploy
-
-This is an MSIX-packaged WinUI 3 app. You **must** pass both `-c` (Configuration) and `-p:Platform=` to every `dotnet` command.
-
-### Dotnet CLI Workflow
-
-- Prefer `dotnet new` for scaffolding projects and items so namespaces, GUIDs,
-  and resource wiring stay correct.
-- Common commands:
-  - `dotnet new winui -n MyApp`
-  - `dotnet new winui-page -n SettingsPage --project .\MyApp\MyApp.csproj`
-  - `dotnet new winui-usercontrol -n ProfileCard --project .\MyApp\MyApp.csproj`
-- Discover available scaffolds with `dotnet new winui --list` (shows supported
-  parameters such as `--dotnet-version`).
-- Need a newer TFM? Supply `--dotnet-version net10.0` during scaffold or edit
-  `<TargetFramework>` afterward before the first build.
-
-### Prerequisites
-
-- **Developer Mode must be enabled** on Windows. Verify with:
+- 在当前目录启动桌面应用：
   ```powershell
-  # Check developer mode
-  Get-WindowsDeveloperLicense
-  # If not enabled: Settings -> System -> For developers -> Developer Mode -> On
+  powershell -ExecutionPolicy Bypass -File .\run-dev.ps1
+  ```
+- 启动并显示本地路径/端点细节：
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File .\run-dev.ps1 -ShowLocalDetails
+  ```
+- 从仓库根目录快速启动：
+  ```powershell
+  .\run-desktop.ps1
+  .\run-desktop.ps1 -Rebuild
   ```
 
-### Detect Platform
+### 构建
 
-**Always detect the machine's architecture first** -- never hardcode a platform value. Run this once at the start of every build/test session:
+- 在当前目录构建：
+  ```powershell
+  dotnet build .\HermesDesktop.csproj -c Debug -p:Platform=x64
+  dotnet build .\HermesDesktop.csproj -c Release -p:Platform=x64
+  ```
+
+### 测试
+
+- 运行桌面测试项目：
+  ```powershell
+  dotnet test ..\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug
+  ```
+- 按测试类筛选：
+  ```powershell
+  dotnet test ..\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~HermesDesktop.Tests.Dreamer.DreamerStatusTests"
+  ```
+- 按单个测试方法筛选：
+  ```powershell
+  dotnet test ..\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~HermesDesktop.Tests.Dreamer.DreamerStatusTests.GetSnapshot_InitialState_PhaseIsIdle"
+  ```
+
+### 发布 / 打包
+
+- 生成 portable 版本：
+  ```powershell
+  ..\..\scripts\publish-portable.ps1
+  ..\..\scripts\publish-portable.ps1 -Zip
+  ```
+- 生成签名 MSIX：
+  ```powershell
+  ..\..\scripts\new-msix-dev-cert.ps1 -UpdateManifests
+  ..\..\scripts\publish-msix.ps1 -CertificatePath "Desktop\HermesDesktop\packaging\dev-msix.pfx" -CertificatePassword dev
+  ```
+- 构建 smoke probe：
+  ```powershell
+  dotnet build ..\..\tools\Hermes.SmokeProbe\Hermes.SmokeProbe.csproj -c Release
+  ```
+
+## 组合根：Desktop 不是薄 UI 壳
+
+`App.xaml.cs` 是本项目最重要的运行时入口。它当前会注册并装配：
+
+- `TranscriptStore`、`SessionSearchIndex`
+- `SessionTodoStore`、`SessionTaskProjectionService`
+- `MemoryManager`、`HermesMemoryOrchestrator`、`TurnMemoryCoordinator`
+- `SkillManager` 与 bundled skills reconcile
+- `TaskManager`、`ICronScheduler`
+- `SoulService`、`SoulExtractor`、`AgentProfileManager`
+- `ContextManager`、`Agent`
+- `AgentService`、`CoordinatorService`
+- `McpManager`
+- `DreamerStatus` 与 Dreamer 后台循环
+- `NpcRuntimeSupervisor`、`NpcRuntimeHost`、`NpcRuntimeWorkspaceService`
+- `StardewNpcAutonomyBackgroundService`
+- `HermesChatService`、权限系统、运行时状态服务
+
+启动时还会：
+
+- 注册 Hermes-native 内建工具
+- 初始化 MCP 并注册发现到的工具
+- 启动 Dreamer 后台循环
+- 启动 Stardew NPC autonomy 背景服务
+- 绑定权限弹窗到原生 WinUI 对话框
+
+## UI 大图景
+
+### `MainWindow`
+
+- 这是原生导航壳，不承载业务逻辑。
+- 当前主导航项：`Dashboard`、`Chat`、`Agent`、`Skills`、`Memory`、`Buddy`、`Settings`。
+
+### `Views/ChatPage.xaml`
+
+- 这是主工作台，不只是一个聊天框。
+- 左侧是消息流、输入区、模型切换、权限模式切换。
+- 右侧是与当前会话绑定的 `Sessions / Tasks / Replay` 面板。
+- 如果你改聊天体验，通常还要同时检查：
+  - `Views/Panels/SessionPanel*`
+  - `Views/Panels/TaskPanel*`
+  - `Views/Panels/ReplayPanel*`
+  - `src/Desktop/HermesChatService.cs`
+
+### `Views/DashboardPage.xaml`
+
+- 这是运营/健康总览，不是主编辑面。
+- 当前聚合：
+  - session/tool/skill/LLM 状态
+  - Dreamer 状态
+  - NPC runtime 状态
+  - recent sessions
+  - Hermes home / config / logs 快捷入口
+
+### `Views/AgentPage.xaml`
+
+- 这是身份/人格/代理配置中心，不只是“关于页”。
+- 当前承载：
+  - SOUL / USER / saved agents / souls 模板
+  - Stardew / NPC runtime 的工作台与调试入口
+
+### `Views/SettingsPage.xaml`
+
+- 这是运行时控制面板。
+- 当前配置面覆盖：
+  - 用户画像
+  - provider / model / auth
+  - agent 行为
+  - memory
+  - display/privacy
+  - plugin
+  - Dreamer
+  - runtime 状态与路径
+
+## 当前能力现状与边界
+
+### 聊天运行时：已是纯 C# 主链
+
+- `HermesChatService` 当前是 **pure C# in-process runtime**。
+- 不要再把 Python sidecar 当成当前主链路前提。
+- `README.md` 中仍有 sidecar 叙述时，以代码为准。
+
+### Transcript / Memory / Todo
+
+- `TranscriptStore` 是 SQLite-first 持久化层；不要再按旧 JSONL 主存储去理解会话主线。
+- `MemoryManager` 是固定文件型 curated memory，不是数据库插件系统。
+- `todo` / `todo_write` 的权威运行时状态在 `SessionTodoStore`。
+- `SessionTaskProjectionService` 会从 transcript 中的 tool result 回放当前会话 todo。
+- `TaskManager` 是另一套长期 JSON 文件任务系统；**不要把 `todo` 误认为 `TaskManager` 的 UI 壳**。
+
+### Skills
+
+- skills 当前是真实接线能力，不是文档摆设。
+- `SkillManager` 会递归扫描 `skillsDir` 下的 `SKILL.md`。
+- 启动时会先把 bundled skills reconcile 到活动技能树。
+- 运行时工具面包括：
+  - `skills_list`
+  - `skill_view`
+  - `skill_manage`
+  - `skill_invoke`
+- Chat 页 slash command 也会实际走 skill invocation。
+
+### MCP
+
+- MCP client 能力已接线。
+- 启动时会从 `mcp.json` 搜索路径中加载配置、连接 server、注册发现到的工具。
+- 但“某个具体 MCP 工具一定存在”不受仓库保证，取决于本机 `mcp.json` 和环境。
+
+### Subagent / Coordinator
+
+- `agent` 工具已实现。
+- `AgentService` 与 `CoordinatorService` 已真实接线。
+- 但不要把以下内容当成当前桌面产品面已经完整交付：
+  - `SendMessageTool`
+  - 完整 mailbox/team agent 协作界面
+  - 任何只在 docs / plans / `.omx` 中出现的多 agent 未来设计
+
+### Dreamer
+
+- Dreamer 当前是**已启动的后台主线**，不是计划项。
+- 启动时会 `StartDreamerBackground(...)`。
+- 当前 Dreamer 主线职责：
+  - 周期性读取 transcript / inbox / RSS
+  - 运行 local-model walk
+  - signal scoring
+  - 触发 build sprint
+  - 写本地 digest
+- `DreamerRoom` 工作区位于 `HERMES_HOME/dreamer/`。
+- Dashboard 和 Settings 都已接入 Dreamer 状态与配置。
+- `AutoDreamService` 虽然代码存在，但**不是当前 Desktop 启动主链路**。
+
+### Stardew / NPC runtime
+
+- 这是桌面宿主的真实运行时能力，不是只读展示。
+- 每个 NPC runtime 会走自己的 namespace / transcript / memory / todo / tool registry。
+- Dashboard 和 AgentPage 都已经提供了 NPC runtime 的状态与工作区入口。
+- 修改这条链路时，优先从以下入口追：
+  - `App.xaml.cs`
+  - `src/runtime/*`
+  - `Desktop/HermesDesktop/Services/NpcRuntimeWorkspaceService.cs`
+  - `Views/AgentPage*`
+  - `Views/DashboardPage*`
+
+## 按改动类型读取这些 instruction files
+
+这些文件不是“参考建议”，而是改到相关范围时必须读取的规则源。
+
+- 改 XAML / 控件 / 页面布局：
+  - `accessibility.instructions.md`
+  - `performance.instructions.md`
+  - `winui-best-practices.instructions.md`
+- 改用户可见字符串：
+  - `globalization.instructions.md`
+- 改 secrets / auth / HTTP / 权限 / 文件访问：
+  - `security.instructions.md`
+- 改 analyzer / 风格 / 命名 / 清理：
+  - `code-quality.instructions.md`
+- 改测试：
+  - `testing.instructions.md`
+- 新接 WinAppSDK / Windows API：
+  - `windows-apis.instructions.md`
+
+## 特别注意的当前约束
+
+- 不要再沿用“x86 / ARM64 当前都支持”的旧模板说法；当前项目文件写的是 `x64`。
+- 不要把 MSIX 注册流当成唯一开发路径；日常开发以 `run-dev.ps1` 和根目录 `run-desktop.ps1` 为准。
+- 不要把 README 里 sidecar 的旧描述当成当前聊天主线事实；当前代码是 pure C#。
+- 不要把 `AutoDreamService`、mailbox/team、多 agent 扩展设计或 `.omx` 计划中的内容写成“已实现”。
+- 如果 instruction file 中存在模板化的泛用表述，与当前 `.csproj`、启动脚本或 `App.xaml.cs` 冲突，以真实代码和脚本为准。
+
+## 日志与排障入口
+
+优先看这些位置：
+
+- 桌面启动异常：`%LOCALAPPDATA%\hermes\hermes-cs\logs\desktop-startup.log`
+- 桌面主日志：`%LOCALAPPDATA%\hermes\hermes-cs\logs\hermes.log`
+- Dreamer 工作区：`%LOCALAPPDATA%\hermes\dreamer\`
+- NPC runtime：`%LOCALAPPDATA%\hermes\hermes-cs\runtime\stardew\...`
+- Windows crash 报告：`C:\ProgramData\Microsoft\Windows\WER\ReportArchive`
+
+常用 PowerShell：
 
 ```powershell
-# Detect the current machine's CPU architecture (returns x64, ARM64, or x86)
-$Platform = $env:PROCESSOR_ARCHITECTURE
+Get-Content "$env:LOCALAPPDATA\hermes\hermes-cs\logs\desktop-startup.log" -Tail 200 -Wait
+Get-Content "$env:LOCALAPPDATA\hermes\hermes-cs\logs\hermes.log" -Tail 200 -Wait
 ```
 
-Use `$Platform` in all subsequent `dotnet` commands.
+## 完成标准
 
-### Build
-
-```powershell
-# Run from the project folder containing the .csproj
-cd <ProjectName>
-
-# Detect platform
-$Platform = $env:PROCESSOR_ARCHITECTURE
-
-# Debug build (matches current machine)
-dotnet build -c Debug -p:Platform=$Platform
-
-# Release build
-dotnet build -c Release -p:Platform=$Platform
-```
-
-### Register & Run the MSIX Package (Sideload)
-
-After building, register the app package so Windows can launch it:
-
-```powershell
-$Platform = $env:PROCESSOR_ARCHITECTURE
-$Rid = $Platform.ToLower()   # e.g. arm64, x64, x86
-
-# Register the built MSIX package from the build output
-# Read <TargetFramework> from the project .csproj to build the correct path.
-Add-AppxPackage -Register ".\<ProjectName>\bin\$Platform\Debug\<TargetFramework>\win-$Rid\AppxManifest.xml"
-```
-
-> **Note:** Replace `<TargetFramework>` with the actual value from `.csproj` (e.g., `net10.0-windows10.0.26100.0`).
-
-### Run from the CLI
-
-- Quick smoke tests: `dotnet run -c Debug -p:Platform=$Platform` from the
-  project folder.
-- Launch a packaged build: `winapp run .\<ProjectName>\bin\$Platform\Debug\<TargetFramework>\<ProjectName>.exe` after registering the MSIX output.
-- If the launch fails because an old instance is still running, terminate it
-  with `taskkill /IM <ProjectName>.exe /F` before re-running.
-
-### Run Tests
-
-```powershell
-# Run from the test project folder
-cd <ProjectName>.Tests
-$Platform = $env:PROCESSOR_ARCHITECTURE
-dotnet test -c Debug -p:Platform=$Platform
-```
-
-## Key Rules (Always Enforced)
-
-- **Every change must build and pass tests** -- Run `dotnet build` and `dotnet test` (see [Build, Run & Deploy](#build-run--deploy)) before considering any task complete.
-- **Follow all instruction files** -- The detailed rules in `.github/instructions/` are authoritative. **You must actually open and read them** (not just acknowledge they exist) when working within their scope. See the trigger conditions in steps 5-8 above.
-- **Web search before decompilation** -- When facing unknown types or build errors, always search the web / API docs first. Only use WinMD/ILDASM as a last resort (see [Troubleshooting Build Errors](#troubleshooting-build-errors)).
-
-## Windows AI Prerequisites
-
-When integrating Phi Silica, Windows Vision, or other Windows AI APIs (see
-[windows-apis.instructions.md](.github/instructions/windows-apis.instructions.md)):
-
-1. **Manifest capabilities:** Add the required capabilities (for example
-  `internetClient`, `machineLearning`, `systemManagement`) to the app manifest
-  before calling these APIs.
-2. **LAF token:** Phi Silica endpoints need a Local API key. Acquire it via the
-  Windows AI documentation, store it securely (never in source), and document
-  the manual step in the PR.
-3. **MSBuild overrides:** Some scenarios need temporary
-  `<WindowsAppSDKSelfContained>` or package-version overrides. Capture the
-  reasoning in the PR description and remove overrides once upstream fixes
-  land.
-4. **Fallback path:** If LAF or required hardware is unavailable, use the
-  Windows Vision / AI APIs that do not require the token and describe the
-  limitations in the instruction files or README so Copilot can pick the right
-  approach.
-
-
-
+- 说明改了哪些文件、改动影响哪个 Desktop 主线。
+- 报告实际跑过的 build / test / launch 验证命令。
+- UI 改动如果可运行，优先实际启动验证；不要只靠静态阅读就声称“界面已正常”。
+- 明确剩余风险、未测范围和任何受本机环境限制的点。

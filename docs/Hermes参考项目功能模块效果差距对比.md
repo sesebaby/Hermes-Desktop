@@ -25,6 +25,42 @@
 4. **NPC 行为知识层仍薄**：已有 `stardew-core`、`stardew-social`、`stardew-navigation`、`stardew-task-continuity`、`stardew-world`，但内容还不足以覆盖日程、地点意义、社交偏好、失败恢复和长期生活习惯。
 5. **多 NPC 村庄体验仍未闭环**：private chat 与单 NPC autonomy 基础较强，群聊、偷听、NPC 之间自然互动、资源互斥和并发成本控制仍是后续重点。
 
+## 当前实现边界与易误判点
+
+这些点本身不是“功能差距”，但如果先看错当前实现边界，后面的差距判断和下一步方案就会跑偏。
+
+### 1. Dreamer 当前主线是后台 walk / signal / build / digest，不是默认启用 AutoDreamService
+
+当前桌面宿主真正启动的是 Dreamer 后台循环：周期读取 transcript / inbox / RSS，做 walk、signal scoring、build trigger 和本地 digest 写入。`AutoDreamService` 虽然代码存在，但不是当前 Desktop 默认启动主链。
+
+这意味着：
+
+- 不能把 `AutoDreamService` 当成当前 Dreamer 行为的主要解释入口；
+- 不能把“补 AutoDreamService”误判成当前 Dreamer 差距的优先修复方向；
+- 后续判断 Dreamer 与参考项目的差距，应优先围绕真实在跑的后台循环能力、输入源、signal/build/digest 证据链展开。
+
+### 2. `todo` 是会话级任务循环，`TaskManager` 是另一套长期任务系统，两者当前没打通
+
+当前 NPC 任务连续性的主线，走的是 `todo` / `todo_write`、`SessionTodoStore`、`SessionTaskProjectionService`、`Session.ToolSessionId` 这一套会话级任务面。宿主侧确实还有 `TaskManager`，但它是另一套长期 JSON 任务系统，不是当前 NPC runtime todo 的 UI 壳，也不是其状态真相来源。
+
+这意味着：
+
+- 不能把“NPC 任务连续性还不完整”误读成“应该把任务迁到 `TaskManager`”；
+- 不能把 `todo` 当成 `TaskManager` 的一个前端别名；
+- 后续补差距时，应继续围绕单一 `todo` 真相完善 blocked / failed / terminal status / UI 投影，而不是新建第三套任务存储或强行改道到 `TaskManager`。
+
+### 3. `agent` / `AgentService` / `CoordinatorService` 是真实能力，但完整 mailbox / team 产品面还没完成
+
+当前仓库已经有真实可用的子 agent 与协调能力：`agent` 工具存在，`AgentService` 能拉起 agent，`CoordinatorService` 能做多 worker 编排。这说明底层能力不是文档摆设。
+
+但另一方面，`SendMessageTool` 并没有作为当前桌面产品的已完成能力接通，完整 mailbox / team agent 协作界面也还不能按“已经交付”来描述。
+
+这意味着：
+
+- 不能因为底层有 spawn / coordinate，就误报“桌面多 agent 团队协作产品面已经成熟”；
+- 不能把当前与参考项目的差距简单定义成“缺一个 UI 页面”或“再开个消息面板”；
+- 后续如果要推进多 agent 产品面，应该明确区分底层能力已存在与产品闭环未完成这两个层次。
+
 ## 当前能力与差距表
 
 | 模块 | 对目标是否关键 | 当前项目实际效果 | 参考项目效果 | 主要剩余差距 | 下一步含义 |
