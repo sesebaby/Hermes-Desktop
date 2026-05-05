@@ -88,6 +88,18 @@ public sealed class TranscriptStore
         return Task.FromResult(messages.ToList());
     }
 
+    public Task<IReadOnlyList<Message>> LoadTodoToolResultsByTaskSessionIdAsync(
+        string taskSessionId,
+        string legacyPrivateChatPrefix,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(_sessionStore.LoadTodoToolResultsByTaskSessionId(
+            taskSessionId,
+            legacyPrivateChatPrefix,
+            includeLegacyFallback: true));
+    }
+
     public bool SessionExists(string sessionId)
         => _cache.ContainsKey(sessionId) || _sessionStore.SessionExists(sessionId);
 

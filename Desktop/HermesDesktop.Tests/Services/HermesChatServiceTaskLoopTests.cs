@@ -79,6 +79,74 @@ public sealed class HermesChatServiceTaskLoopTests
     }
 
     [TestMethod]
+    public async Task AgentChatAsync_WithoutToolSessionId_PersistsTaskSessionIdAsSessionId()
+    {
+        var todoStore = new SessionTodoStore();
+        var projection = new SessionTaskProjectionService(todoStore);
+        var transcriptStore = new TranscriptStore(Path.Combine(_tempDir, "transcripts"), messageObserver: projection);
+        var client = new ToolCallingChatClient();
+        var agent = new Agent(client, NullLogger<Agent>.Instance, transcripts: transcriptStore);
+        agent.RegisterTool(new TodoTool(todoStore));
+        var session = new Session { Id = "npc-1" };
+
+        var reply = await agent.ChatAsync("remember root promise", session, CancellationToken.None);
+
+        Assert.AreEqual("done", reply);
+        var transcriptMessages = await transcriptStore.LoadSessionAsync("npc-1", CancellationToken.None);
+        var transcriptToolMessage = transcriptMessages.Single(message => message.Role == "tool" && message.ToolName == "todo");
+        Assert.AreEqual("npc-1", transcriptToolMessage.TaskSessionId);
+    }
+
+    [TestMethod]
+    public async Task AgentChatAsync_WhenPermissionRuleDeniesTool_PersistsTaskSessionIdOnDenialResult()
+    {
+        var transcriptPath = Path.Combine(_tempDir, "transcripts");
+        var transcriptStore = new TranscriptStore(transcriptPath);
+        var client = new ToolCallingChatClient();
+        var permissions = new PermissionManager(
+            new PermissionContext
+            {
+                Mode = PermissionMode.Default,
+                AlwaysDeny = { PermissionRule.DenyAll("todo") }
+            },
+            NullLogger<PermissionManager>.Instance);
+        var agent = new Agent(client, NullLogger<Agent>.Instance, permissions: permissions, transcripts: transcriptStore);
+        agent.RegisterTool(new TodoTool(new SessionTodoStore()));
+        var session = new Session
+        {
+            Id = "npc-1:private_chat:conversation-1",
+            ToolSessionId = "npc-1"
+        };
+
+        var reply = await agent.ChatAsync("try denied todo", session, CancellationToken.None);
+
+        Assert.AreEqual("done", reply);
+        var transcriptToolMessage = await LoadTodoToolMessageFromFreshStoreAsync(transcriptPath, session.Id);
+        Assert.AreEqual("npc-1", transcriptToolMessage.TaskSessionId);
+    }
+
+    [TestMethod]
+    public async Task AgentChatAsync_WhenPermissionPromptDeniesTool_PersistsTaskSessionIdOnDenialResult()
+    {
+        var transcriptPath = Path.Combine(_tempDir, "transcripts");
+        var transcriptStore = new TranscriptStore(transcriptPath);
+        var client = new ToolCallingChatClient();
+        var permissions = new PermissionManager(
+            new PermissionContext { Mode = PermissionMode.Default },
+            NullLogger<PermissionManager>.Instance);
+        var agent = new Agent(client, NullLogger<Agent>.Instance, permissions: permissions, transcripts: transcriptStore);
+        agent.RegisterTool(new TodoTool(new SessionTodoStore()));
+        agent.PermissionPromptCallback = (_, _, _) => Task.FromResult(false);
+        var session = new Session { Id = "npc-1" };
+
+        var reply = await agent.ChatAsync("try user denied todo", session, CancellationToken.None);
+
+        Assert.AreEqual("done", reply);
+        var transcriptToolMessage = await LoadTodoToolMessageFromFreshStoreAsync(transcriptPath, session.Id);
+        Assert.AreEqual("npc-1", transcriptToolMessage.TaskSessionId);
+    }
+
+    [TestMethod]
     public async Task LoadSessionAsync_HydratesTodoProjectionFromTranscriptHistory()
     {
         var transcriptStore = new TranscriptStore(Path.Combine(_tempDir, "transcripts"));
@@ -139,6 +207,13 @@ public sealed class HermesChatServiceTaskLoopTests
             new InMemoryCronScheduler(),
             projection,
             NullLogger<HermesChatService>.Instance);
+    }
+
+    private static async Task<Message> LoadTodoToolMessageFromFreshStoreAsync(string transcriptPath, string sessionId)
+    {
+        var reloadedTranscriptStore = new TranscriptStore(transcriptPath);
+        var transcriptMessages = await reloadedTranscriptStore.LoadSessionAsync(sessionId, CancellationToken.None);
+        return transcriptMessages.Single(message => message.Role == "tool" && message.ToolName == "todo");
     }
 
     private sealed class ToolCallingChatClient : IChatClient

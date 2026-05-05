@@ -425,7 +425,7 @@ public sealed class Agent : IAgent
                         Content = resultContent,
                         ToolCallId = toolCall.Id,
                         ToolName = toolCall.Name,
-                        TaskSessionId = session.ToolSessionId
+                        TaskSessionId = session.ToolSessionId ?? session.Id
                     };
                     session.AddMessage(toolResultMsg);
                     if (_transcripts is not null)
@@ -466,7 +466,8 @@ public sealed class Agent : IAgent
                                 Role = "tool",
                                 Content = $"Permission denied: {decision.DecisionReason ?? decision.Message ?? "Blocked by permission rule"}",
                                 ToolCallId = toolCall.Id,
-                                ToolName = toolCall.Name
+                                ToolName = toolCall.Name,
+                                TaskSessionId = session.ToolSessionId ?? session.Id
                             };
                             session.AddMessage(denialMsg);
                             if (_transcripts is not null)
@@ -516,7 +517,8 @@ public sealed class Agent : IAgent
                                     Role = "tool",
                                     Content = $"Permission denied by user: {permissionMessage}",
                                     ToolCallId = toolCall.Id,
-                                    ToolName = toolCall.Name
+                                    ToolName = toolCall.Name,
+                                    TaskSessionId = session.ToolSessionId ?? session.Id
                                 };
                                 session.AddMessage(askMsg);
                                 if (_transcripts is not null)
@@ -599,7 +601,7 @@ public sealed class Agent : IAgent
                         Content = resultContent,
                         ToolCallId = toolCall.Id,
                         ToolName = toolCall.Name,
-                        TaskSessionId = session.ToolSessionId
+                        TaskSessionId = session.ToolSessionId ?? session.Id
                     };
                 session.AddMessage(toolResultMsg);
                 if (_transcripts is not null)
@@ -895,7 +897,8 @@ public sealed class Agent : IAgent
                                 Role = "tool",
                                 Content = $"Permission denied: {decision.DecisionReason ?? decision.Message ?? "Blocked by permission rule"}",
                                 ToolCallId = toolCall.Id,
-                                ToolName = toolCall.Name
+                                ToolName = toolCall.Name,
+                                TaskSessionId = session.ToolSessionId ?? session.Id
                             };
                             session.AddMessage(denialMsg);
                             if (_transcripts is not null)
@@ -940,7 +943,8 @@ public sealed class Agent : IAgent
                                     Role = "tool",
                                     Content = $"Permission denied by user: {permissionMessage}",
                                     ToolCallId = toolCall.Id,
-                                    ToolName = toolCall.Name
+                                    ToolName = toolCall.Name,
+                                    TaskSessionId = session.ToolSessionId ?? session.Id
                                 };
                                 session.AddMessage(askMsg);
                                 if (_transcripts is not null)
@@ -1024,7 +1028,7 @@ public sealed class Agent : IAgent
                     Content = resultContent,
                     ToolCallId = toolCall.Id,
                     ToolName = toolCall.Name,
-                    TaskSessionId = session.ToolSessionId
+                    TaskSessionId = session.ToolSessionId ?? session.Id
                 };
                 session.AddMessage(toolResultMsg);
                 if (_transcripts is not null)

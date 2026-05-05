@@ -141,6 +141,31 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     }
 
     [TestMethod]
+    public async Task ReplyAsync_AfterSupervisorRestart_HydratesPendingTodoBeforeNewMessage()
+    {
+        var firstSupervisor = new NpcRuntimeSupervisor();
+        var writer = CreateRunner(new TodoWriteThenFinalChatClient(), firstSupervisor);
+
+        await writer.ReplyAsync(
+            new NpcPrivateChatRequest("haley", "save-1", "conversation-promise", "明天陪我去海边好吗？"),
+            CancellationToken.None);
+
+        var secondSupervisor = new NpcRuntimeSupervisor();
+        var reader = CreateRunner(new SnapshotAnswerChatClient("unused"), secondSupervisor);
+        var pack = new FileSystemNpcPackLoader().LoadPacks(_packRoot).Single(pack => pack.Manifest.NpcId == "haley");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
+
+        await secondSupervisor.GetOrStartAsync(descriptor, _tempDir, CancellationToken.None);
+
+        Assert.IsTrue(secondSupervisor.TryGetTaskView(descriptor.SessionId, out var taskView));
+        Assert.IsNotNull(taskView);
+        Assert.AreEqual(1, taskView.ActiveSnapshot.Todos.Count);
+        Assert.AreEqual("明天陪玩家去海边", taskView.ActiveSnapshot.Todos[0].Content);
+        Assert.AreEqual("pending", taskView.ActiveSnapshot.Todos[0].Status);
+        _ = reader;
+    }
+
+    [TestMethod]
     public async Task ReplyAsync_MissingSaveIdFailsInsteadOfUsingManualDebug()
     {
         var runner = CreateRunner(new SnapshotAnswerChatClient("unused"), new NpcRuntimeSupervisor());

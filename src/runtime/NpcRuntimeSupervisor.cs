@@ -12,6 +12,17 @@ public sealed class NpcRuntimeSupervisor
     private readonly object _gate = new();
     private readonly Dictionary<string, NpcRuntimeInstance> _instances = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, NpcRuntimeDriver> _drivers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly INpcRuntimeTaskHydrator _taskHydrator;
+
+    public NpcRuntimeSupervisor()
+        : this(new NpcRuntimeTaskHydrator(Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance))
+    {
+    }
+
+    public NpcRuntimeSupervisor(INpcRuntimeTaskHydrator taskHydrator)
+    {
+        _taskHydrator = taskHydrator ?? throw new ArgumentNullException(nameof(taskHydrator));
+    }
 
     public NpcRuntimeInstance Register(NpcRuntimeDescriptor descriptor, string runtimeRoot)
     {
@@ -37,6 +48,7 @@ public sealed class NpcRuntimeSupervisor
     {
         var instance = Register(descriptor, runtimeRoot);
         await instance.StartAsync(ct);
+        await instance.EnsureTasksHydratedAsync(_taskHydrator, ct);
     }
 
     public async Task<NpcRuntimeInstance> GetOrStartAsync(NpcRuntimeDescriptor descriptor, string runtimeRoot, CancellationToken ct)
@@ -63,6 +75,7 @@ public sealed class NpcRuntimeSupervisor
         }
 
         await instance.StartAsync(ct);
+        await instance.EnsureTasksHydratedAsync(_taskHydrator, ct);
         return instance;
     }
 
@@ -233,7 +246,8 @@ public sealed class NpcRuntimeSupervisor
         int generation)
     {
         var adapter = request.AdapterFactory();
-        var gameTools = request.GameToolFactory(adapter).ToArray();
+        var factStore = new NpcObservationFactStore();
+        var gameTools = request.GameToolFactory(adapter, factStore).ToArray();
         var combinedTools = gameTools.Concat(request.ToolSurface.Tools).ToArray();
         var rebindKey = BuildRebindKey(
             request.ChannelKey,
@@ -260,7 +274,7 @@ public sealed class NpcRuntimeSupervisor
 
         var loop = new NpcAutonomyLoop(
             adapter,
-            new NpcObservationFactStore(),
+            factStore,
             agentHandle.Agent,
             new NpcRuntimeLogWriter(Path.Combine(instance.Namespace.ActivityPath, "runtime.jsonl")),
             agentHandle.Context.MemoryManager,

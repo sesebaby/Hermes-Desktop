@@ -1,5 +1,6 @@
 using Hermes.Agent.Core;
 using Hermes.Agent.Search;
+using Hermes.Agent.Tasks;
 using Hermes.Agent.Transcript;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -53,12 +54,12 @@ public class TranscriptStoreTests
         CollectionAssert.IsSubsetOf(
             new[] { "schema_version", "sessions", "messages", "state_meta", "messages_fts", "activities" },
             ReadTableNames(db));
-        Assert.AreEqual(9L, ExecuteScalarLong(db, "SELECT version FROM schema_version LIMIT 1"));
+        Assert.AreEqual(10L, ExecuteScalarLong(db, "SELECT version FROM schema_version LIMIT 1"));
         CollectionAssert.IsSubsetOf(
             new[] { "id", "source", "user_id", "model", "model_config", "system_prompt", "parent_session_id", "started_at", "ended_at", "end_reason", "message_count", "tool_call_count", "api_call_count" },
             ReadColumnNames(db, "sessions"));
         CollectionAssert.IsSubsetOf(
-            new[] { "id", "session_id", "role", "content", "tool_call_id", "tool_calls", "tool_name", "timestamp", "token_count", "finish_reason", "reasoning", "reasoning_content", "reasoning_details", "codex_reasoning_items", "codex_message_items" },
+            new[] { "id", "session_id", "role", "content", "tool_call_id", "tool_calls", "tool_name", "timestamp", "token_count", "finish_reason", "task_session_id", "reasoning", "reasoning_content", "reasoning_details", "codex_reasoning_items", "codex_message_items" },
             ReadColumnNames(db, "messages"));
     }
 
@@ -326,7 +327,32 @@ public class TranscriptStoreTests
     }
 
     [TestMethod]
-    public async Task Constructor_UpgradesExistingStateDbWithReasoningColumns()
+    public async Task SaveMessageAsync_RoundTripsTaskSessionIdThroughStateDbAndCacheReload()
+    {
+        var store = CreateStore();
+        var msg = new Message
+        {
+            Role = "tool",
+            ToolName = "todo",
+            ToolCallId = "todo-call",
+            TaskSessionId = "sdv_save-1_haley_default",
+            Content = TodoJson("1", "Meet the player at the beach", "pending")
+        };
+
+        await store.SaveMessageAsync("sdv_save-1_haley_default:private_chat:c1", msg, CancellationToken.None);
+        store.ClearCache();
+        var loaded = await store.LoadSessionAsync("sdv_save-1_haley_default:private_chat:c1", CancellationToken.None);
+
+        Assert.AreEqual(1, loaded.Count);
+        Assert.AreEqual("sdv_save-1_haley_default", loaded[0].TaskSessionId);
+        using var db = OpenDefaultStateDb();
+        Assert.AreEqual(
+            "sdv_save-1_haley_default",
+            ExecuteScalarString(db, "SELECT task_session_id FROM messages WHERE session_id = 'sdv_save-1_haley_default:private_chat:c1'"));
+    }
+
+    [TestMethod]
+    public async Task Constructor_UpgradesExistingStateDbWithReasoningAndTaskSessionColumnsWhilePreservingLegacyRows()
     {
         var dbPath = Path.Combine(_tempDir, "state.db");
         using (var db = new SqliteConnection($"Data Source={dbPath}"))
@@ -378,7 +404,11 @@ public class TranscriptStoreTests
                     diff_preview TEXT,
                     screenshot_path TEXT,
                     PRIMARY KEY (session_id, id)
-                );";
+                );
+                INSERT INTO sessions (id, source, started_at)
+                VALUES ('legacy-root', 'desktop', 1.0);
+                INSERT INTO messages (session_id, role, content, tool_name, timestamp)
+                VALUES ('legacy-root', 'tool', '{""todos"":[{""id"":""old"",""content"":""Old root"",""status"":""pending""}]}', 'todo', 2.0);";
             cmd.ExecuteNonQuery();
         }
 
@@ -391,11 +421,145 @@ public class TranscriptStoreTests
         var loaded = await store.LoadSessionAsync("upgraded-reasoning", CancellationToken.None);
 
         Assert.AreEqual("old db can now store reasoning.", GetStringProperty(loaded[0], "ReasoningContent"));
+        var legacy = await store.LoadSessionAsync("legacy-root", CancellationToken.None);
+        Assert.AreEqual(1, legacy.Count);
+        Assert.AreEqual("todo", legacy[0].ToolName);
+        Assert.IsNull(legacy[0].TaskSessionId);
         using var upgradedDb = OpenDefaultStateDb();
         CollectionAssert.IsSubsetOf(
-            new[] { "reasoning", "reasoning_content", "reasoning_details", "codex_reasoning_items", "codex_message_items" },
+            new[] { "task_session_id", "reasoning", "reasoning_content", "reasoning_details", "codex_reasoning_items", "codex_message_items" },
             ReadColumnNames(upgradedDb, "messages"));
-        Assert.AreEqual(9L, ExecuteScalarLong(upgradedDb, "SELECT version FROM schema_version LIMIT 1"));
+        Assert.AreEqual(10L, ExecuteScalarLong(upgradedDb, "SELECT version FROM schema_version LIMIT 1"));
+    }
+
+    [TestMethod]
+    public void SessionSearchIndex_LoadTodoToolResultsByTaskSessionId_UsesExplicitResultsWithoutMixingFallback()
+    {
+        var dbPath = Path.Combine(_tempDir, "state.db");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        const string root = "sdv_save-1_haley_default";
+        index.SaveMessage(root, new Message
+        {
+            Role = "tool",
+            ToolName = "todo",
+            Content = TodoJson("old", "Old fallback root", "pending"),
+            Timestamp = new DateTime(2026, 5, 5, 1, 0, 0, DateTimeKind.Utc)
+        });
+        index.SaveMessage($"{root}:private_chat:c1", new Message
+        {
+            Role = "tool",
+            ToolName = "todo",
+            TaskSessionId = root,
+            Content = TodoJson("new", "Explicit private chat", "pending"),
+            Timestamp = new DateTime(2026, 5, 5, 2, 0, 0, DateTimeKind.Utc)
+        });
+        index.SaveMessage($"{root}:private_chat:c2", new Message
+        {
+            Role = "tool",
+            ToolName = "todo",
+            Content = TodoJson("fallback", "Newer fallback must not mix", "pending"),
+            Timestamp = new DateTime(2026, 5, 5, 3, 0, 0, DateTimeKind.Utc)
+        });
+
+        var results = index.LoadTodoToolResultsByTaskSessionId(root, $"{root}:private_chat:", includeLegacyFallback: true);
+
+        Assert.AreEqual(1, results.Count);
+        Assert.AreEqual(root, results[0].TaskSessionId);
+        StringAssert.Contains(results[0].Content, "Explicit private chat");
+    }
+
+    [TestMethod]
+    public async Task TranscriptStore_LoadTodoToolResultsByTaskSessionIdAsync_UsesSafeFallbackPrefix()
+    {
+        var dbPath = Path.Combine(_tempDir, "state.db");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        var store = new TranscriptStore(_tempDir, sessionStore: index);
+        const string root = "sdv_save-1_haley_default";
+        await store.SaveMessageAsync($"{root}:private_chat:c1", new Message
+        {
+            Role = "tool",
+            ToolName = "todo",
+            Content = TodoJson("good", "Matched private chat", "pending")
+        }, CancellationToken.None);
+        await store.SaveMessageAsync($"{root}:private_chatty:c1", new Message
+        {
+            Role = "tool",
+            ToolName = "todo",
+            Content = TodoJson("bad-chatty", "Must not match private_chatty", "pending")
+        }, CancellationToken.None);
+        await store.SaveMessageAsync("sdvXsave-1XhaleyXdefault:private_chat:c1", new Message
+        {
+            Role = "tool",
+            ToolName = "todo",
+            Content = TodoJson("bad-like", "Must not match LIKE wildcards", "pending")
+        }, CancellationToken.None);
+        await store.SaveMessageAsync($"{root}:private_chat:c2", new Message
+        {
+            Role = "assistant",
+            ToolName = "todo",
+            Content = TodoJson("bad-role", "Wrong role", "pending")
+        }, CancellationToken.None);
+
+        var results = await store.LoadTodoToolResultsByTaskSessionIdAsync(root, $"{root}:private_chat:", CancellationToken.None);
+
+        Assert.AreEqual(1, results.Count);
+        StringAssert.Contains(results[0].Content, "Matched private chat");
+    }
+
+    [TestMethod]
+    public void SessionSearchIndex_LoadTodoToolResultsByTaskSessionId_RejectsUnsafeLegacyPrefix()
+    {
+        var dbPath = Path.Combine(_tempDir, "state.db");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+
+        Assert.ThrowsException<ArgumentException>(() =>
+            index.LoadTodoToolResultsByTaskSessionId(
+                "sdv_save-1_haley_default",
+                "sdv_save-1_haley_default:private_chat",
+                includeLegacyFallback: true));
+    }
+
+    [TestMethod]
+    public async Task LoadTodoToolResultsByTaskSessionId_MixedEraRowsRestoreNewestExplicitRootSnapshot()
+    {
+        var dbPath = Path.Combine(_tempDir, "state.db");
+        using var index = new SessionSearchIndex(dbPath, NullLogger<SessionSearchIndex>.Instance);
+        const string root = "sdv_save-1_haley_default";
+        index.SaveMessage(root, new Message
+        {
+            Role = "tool",
+            ToolName = "todo",
+            Content = TodoJson("old-root", "Old root", "pending"),
+            Timestamp = new DateTime(2026, 5, 5, 1, 0, 0, DateTimeKind.Utc)
+        });
+        index.SaveMessage($"{root}:private_chat:c1", new Message
+        {
+            Role = "tool",
+            ToolName = "todo",
+            TaskSessionId = root,
+            Content = TodoJson("private-chat-update", "Private chat update", "pending"),
+            Timestamp = new DateTime(2026, 5, 5, 2, 0, 0, DateTimeKind.Utc)
+        });
+        index.SaveMessage(root, new Message
+        {
+            Role = "tool",
+            ToolName = "todo",
+            TaskSessionId = root,
+            Content = TodoJson("root-newest", "Root newest", "in_progress"),
+            Timestamp = new DateTime(2026, 5, 5, 3, 0, 0, DateTimeKind.Utc)
+        });
+        var projection = new SessionTaskProjectionService(new SessionTodoStore());
+
+        var results = index.LoadTodoToolResultsByTaskSessionId(root, $"{root}:private_chat:", includeLegacyFallback: true);
+        foreach (var message in results)
+            await projection.OnMessageSavedAsync(root, message, CancellationToken.None);
+
+        Assert.AreEqual(2, results.Count);
+        var snapshot = projection.GetSnapshot(root);
+        Assert.AreEqual(1, snapshot.Todos.Count);
+        Assert.AreEqual("root-newest", snapshot.Todos[0].Id);
+        Assert.AreEqual("Root newest", snapshot.Todos[0].Content);
+        Assert.AreEqual("in_progress", snapshot.Todos[0].Status);
     }
 
     [TestMethod]
@@ -775,6 +939,9 @@ public class TranscriptStoreTests
             sessionId,
             new Message { Role = "user", Content = content, Timestamp = timestamp },
             CancellationToken.None);
+
+    private static string TodoJson(string id, string content, string status)
+        => $$"""{"todos":[{"id":"{{id}}","content":"{{content}}","status":"{{status}}"}]}""";
 
     private static string[] ReadColumnNames(SqliteConnection db, string table)
     {

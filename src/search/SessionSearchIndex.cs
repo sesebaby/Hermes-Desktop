@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 /// </summary>
 public sealed class SessionSearchIndex : IDisposable
 {
-    public const int SchemaVersion = 9;
+    public const int SchemaVersion = 10;
 
     private readonly string _connectionString;
     private readonly ILogger<SessionSearchIndex> _logger;
@@ -98,6 +98,7 @@ public sealed class SessionSearchIndex : IDisposable
                     timestamp REAL NOT NULL,
                     token_count INTEGER,
                     finish_reason TEXT,
+                    task_session_id TEXT,
                     reasoning TEXT,
                     reasoning_content TEXT,
                     reasoning_details TEXT,
@@ -152,6 +153,7 @@ public sealed class SessionSearchIndex : IDisposable
             cmd.ExecuteNonQuery();
 
             EnsureMessagesColumns(db);
+            EnsureMessagesIndexes(db);
 
             using var version = db.CreateCommand();
             version.CommandText = @"
@@ -167,11 +169,21 @@ public sealed class SessionSearchIndex : IDisposable
     private static void EnsureMessagesColumns(SqliteConnection db)
     {
         var existing = ReadColumnNames(db, "messages");
+        AddColumnIfMissing(db, existing, "task_session_id", "TEXT");
         AddColumnIfMissing(db, existing, "reasoning", "TEXT");
         AddColumnIfMissing(db, existing, "reasoning_content", "TEXT");
         AddColumnIfMissing(db, existing, "reasoning_details", "TEXT");
         AddColumnIfMissing(db, existing, "codex_reasoning_items", "TEXT");
         AddColumnIfMissing(db, existing, "codex_message_items", "TEXT");
+    }
+
+    private static void EnsureMessagesIndexes(SqliteConnection db)
+    {
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = @"
+            CREATE INDEX IF NOT EXISTS idx_messages_task_session_tool
+            ON messages(task_session_id, role, tool_name, timestamp, id);";
+        cmd.ExecuteNonQuery();
     }
 
     private static HashSet<string> ReadColumnNames(SqliteConnection db, string tableName)
@@ -264,7 +276,7 @@ public sealed class SessionSearchIndex : IDisposable
             using var db = OpenConnection();
             using var cmd = db.CreateCommand();
             cmd.CommandText = @"
-                SELECT role, content, tool_call_id, tool_calls, tool_name, timestamp,
+                SELECT role, content, tool_call_id, tool_calls, tool_name, timestamp, task_session_id,
                        reasoning, reasoning_content, reasoning_details, codex_reasoning_items
                 FROM messages
                 WHERE session_id = $session_id
@@ -273,24 +285,47 @@ public sealed class SessionSearchIndex : IDisposable
             using var reader = cmd.ExecuteReader();
             var messages = new List<Message>();
             while (reader.Read())
-            {
-                var toolCallsJson = reader.IsDBNull(3) ? null : reader.GetString(3);
-                messages.Add(new Message
-                {
-                    Role = reader.GetString(0),
-                    Content = reader.IsDBNull(1) ? "" : reader.GetString(1),
-                    ToolCallId = reader.IsDBNull(2) ? null : reader.GetString(2),
-                    ToolCalls = DeserializeToolCalls(toolCallsJson),
-                    ToolName = reader.IsDBNull(4) ? null : reader.GetString(4),
-                    Timestamp = FromUnixSeconds(reader.GetDouble(5)),
-                    Reasoning = reader.IsDBNull(6) ? null : reader.GetString(6),
-                    ReasoningContent = reader.IsDBNull(7) ? null : reader.GetString(7),
-                    ReasoningDetails = reader.IsDBNull(8) ? null : reader.GetString(8),
-                    CodexReasoningItems = reader.IsDBNull(9) ? null : reader.GetString(9)
-                });
-            }
+                messages.Add(ReadMessage(reader));
 
             return messages;
+        }
+    }
+
+    public IReadOnlyList<Message> LoadTodoToolResultsByTaskSessionId(
+        string taskSessionId,
+        string legacyPrivateChatPrefix,
+        bool includeLegacyFallback)
+    {
+        if (string.IsNullOrWhiteSpace(taskSessionId))
+            throw new ArgumentException("Task session id cannot be empty.", nameof(taskSessionId));
+        if (includeLegacyFallback && string.IsNullOrWhiteSpace(legacyPrivateChatPrefix))
+            throw new ArgumentException("Legacy private chat prefix cannot be empty when fallback is enabled.", nameof(legacyPrivateChatPrefix));
+        if (includeLegacyFallback && !legacyPrivateChatPrefix.EndsWith(":private_chat:", StringComparison.Ordinal))
+            throw new ArgumentException("Legacy private chat prefix must end with ':private_chat:'.", nameof(legacyPrivateChatPrefix));
+
+        lock (_gate)
+        {
+            using var db = OpenConnection();
+            var explicitResults = LoadTodoToolResults(
+                db,
+                @"
+                task_session_id = $task_session_id",
+                command =>
+                {
+                    command.Parameters.AddWithValue("$task_session_id", taskSessionId);
+                });
+            if (explicitResults.Count > 0 || !includeLegacyFallback)
+                return explicitResults;
+
+            return LoadTodoToolResults(
+                db,
+                @"
+                (session_id = $task_session_id OR substr(session_id, 1, length($legacy_private_chat_prefix)) = $legacy_private_chat_prefix)",
+                command =>
+                {
+                    command.Parameters.AddWithValue("$task_session_id", taskSessionId);
+                    command.Parameters.AddWithValue("$legacy_private_chat_prefix", legacyPrivateChatPrefix);
+                });
         }
     }
 
@@ -626,11 +661,11 @@ public sealed class SessionSearchIndex : IDisposable
         using var cmd = db.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO messages (
-                session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp,
+                session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp, task_session_id,
                 reasoning, reasoning_content, reasoning_details, codex_reasoning_items
             )
             VALUES (
-                $session_id, $role, $content, $tool_call_id, $tool_calls, $tool_name, $timestamp,
+                $session_id, $role, $content, $tool_call_id, $tool_calls, $tool_name, $timestamp, $task_session_id,
                 $reasoning, $reasoning_content, $reasoning_details, $codex_reasoning_items
             )";
         cmd.Parameters.AddWithValue("$session_id", sessionId);
@@ -640,6 +675,7 @@ public sealed class SessionSearchIndex : IDisposable
         cmd.Parameters.AddWithValue("$tool_calls", (object?)toolCallsJson ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$tool_name", (object?)message.ToolName ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$timestamp", ToUnixSeconds(message.Timestamp));
+        cmd.Parameters.AddWithValue("$task_session_id", (object?)message.TaskSessionId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$reasoning", (object?)message.Reasoning ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$reasoning_content", (object?)message.ReasoningContent ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$reasoning_details", (object?)message.ReasoningDetails ?? DBNull.Value);
@@ -660,6 +696,48 @@ public sealed class SessionSearchIndex : IDisposable
         update.Parameters.AddWithValue("$session_id", sessionId);
         update.ExecuteNonQuery();
         return id;
+    }
+
+    private static List<Message> LoadTodoToolResults(
+        SqliteConnection db,
+        string sessionPredicate,
+        Action<SqliteCommand> bindSessionParameters)
+    {
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = $@"
+            SELECT role, content, tool_call_id, tool_calls, tool_name, timestamp, task_session_id,
+                   reasoning, reasoning_content, reasoning_details, codex_reasoning_items
+            FROM messages
+            WHERE {sessionPredicate}
+              AND LOWER(role) = 'tool'
+              AND LOWER(tool_name) IN ('todo', 'todo_write')
+            ORDER BY timestamp, id";
+        bindSessionParameters(cmd);
+        using var reader = cmd.ExecuteReader();
+        var messages = new List<Message>();
+        while (reader.Read())
+            messages.Add(ReadMessage(reader));
+
+        return messages;
+    }
+
+    private static Message ReadMessage(SqliteDataReader reader)
+    {
+        var toolCallsJson = reader.IsDBNull(3) ? null : reader.GetString(3);
+        return new Message
+        {
+            Role = reader.GetString(0),
+            Content = reader.IsDBNull(1) ? "" : reader.GetString(1),
+            ToolCallId = reader.IsDBNull(2) ? null : reader.GetString(2),
+            ToolCalls = DeserializeToolCalls(toolCallsJson),
+            ToolName = reader.IsDBNull(4) ? null : reader.GetString(4),
+            Timestamp = FromUnixSeconds(reader.GetDouble(5)),
+            TaskSessionId = reader.IsDBNull(6) ? null : reader.GetString(6),
+            Reasoning = reader.IsDBNull(7) ? null : reader.GetString(7),
+            ReasoningContent = reader.IsDBNull(8) ? null : reader.GetString(8),
+            ReasoningDetails = reader.IsDBNull(9) ? null : reader.GetString(9),
+            CodexReasoningItems = reader.IsDBNull(10) ? null : reader.GetString(10)
+        };
     }
 
     private static void EnsureSession(

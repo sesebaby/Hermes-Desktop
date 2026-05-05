@@ -75,6 +75,109 @@ public class NpcRuntimeSupervisorTests
     }
 
     [TestMethod]
+    public async Task GetOrStartAsync_HydratesTasksBeforeAnyHandleExists()
+    {
+        var hydrator = new WritingTaskHydrator("Recovered beach promise");
+        var supervisor = new NpcRuntimeSupervisor(hydrator);
+        var descriptor = CreateDescriptor("haley");
+
+        await supervisor.GetOrStartAsync(descriptor, _tempDir, CancellationToken.None);
+
+        Assert.AreEqual(1, hydrator.CallCount);
+        Assert.IsTrue(supervisor.TryGetTaskView(descriptor.SessionId, out var taskView));
+        Assert.IsNotNull(taskView);
+        Assert.AreEqual(1, taskView.ActiveSnapshot.Todos.Count);
+        Assert.AreEqual("Recovered beach promise", taskView.ActiveSnapshot.Todos[0].Content);
+    }
+
+    [TestMethod]
+    public async Task GetOrStartAsync_AndPrivateChatHandleCreation_ShareSingleFlightHydration()
+    {
+        var hydrator = new BlockingTaskHydrator();
+        var supervisor = new NpcRuntimeSupervisor(hydrator);
+        var pack = CreatePack("haley", "Haley");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
+        var services = new NpcRuntimeCompositionServices(
+            new FakeChatClient(),
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler());
+
+        var startTask = supervisor.GetOrStartAsync(descriptor, _tempDir, CancellationToken.None);
+        await hydrator.WaitUntilStartedAsync();
+        var handleTask = supervisor.GetOrCreatePrivateChatHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAgentBindingRequest(
+                ChannelKey: "private_chat",
+                SystemPromptSupplement: "Reply directly.",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")])),
+            CancellationToken.None);
+
+        await Task.Delay(50);
+        Assert.AreEqual(1, hydrator.CallCount);
+
+        hydrator.Release();
+        await Task.WhenAll(startTask, handleTask);
+
+        Assert.AreEqual(1, hydrator.CallCount);
+    }
+
+    [TestMethod]
+    public async Task GetOrStartAsync_CancelledWaiterDoesNotCancelSharedHydration()
+    {
+        var hydrator = new BlockingTaskHydrator();
+        var supervisor = new NpcRuntimeSupervisor(hydrator);
+        var descriptor = CreateDescriptor("haley");
+        using var waiterCts = new CancellationTokenSource();
+
+        var cancelledWaiter = supervisor.GetOrStartAsync(descriptor, _tempDir, waiterCts.Token);
+        await hydrator.WaitUntilStartedAsync();
+        await waiterCts.CancelAsync();
+
+        try
+        {
+            await cancelledWaiter;
+            Assert.Fail("Cancelled waiter should observe cancellation.");
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        Assert.AreEqual(1, hydrator.CallCount);
+
+        hydrator.Release();
+        await supervisor.GetOrStartAsync(descriptor, _tempDir, CancellationToken.None);
+
+        Assert.AreEqual(1, hydrator.CallCount);
+        Assert.IsTrue(supervisor.TryGetTaskView(descriptor.SessionId, out var taskView));
+        Assert.IsNotNull(taskView);
+        Assert.AreEqual("Hydrated after cancellation", taskView.ActiveSnapshot.Todos[0].Content);
+    }
+
+    [TestMethod]
+    public async Task GetOrStartAsync_RetriesHydrationAfterFailure()
+    {
+        var hydrator = new FailingThenWritingTaskHydrator();
+        var supervisor = new NpcRuntimeSupervisor(hydrator);
+        var descriptor = CreateDescriptor("haley");
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(async () =>
+            await supervisor.GetOrStartAsync(descriptor, _tempDir, CancellationToken.None));
+
+        await supervisor.GetOrStartAsync(descriptor, _tempDir, CancellationToken.None);
+
+        Assert.AreEqual(2, hydrator.CallCount);
+        Assert.IsTrue(supervisor.TryGetTaskView(descriptor.SessionId, out var taskView));
+        Assert.IsNotNull(taskView);
+        Assert.AreEqual("Recovered after retry", taskView.ActiveSnapshot.Todos[0].Content);
+    }
+
+    [TestMethod]
     public async Task GetOrCreatePrivateChatHandleAsync_ReusesHandleUntilToolSurfaceChanges()
     {
         var supervisor = new NpcRuntimeSupervisor();
@@ -234,6 +337,56 @@ public class NpcRuntimeSupervisorTests
     }
 
     [TestMethod]
+    public async Task TryGetTaskView_WithMultipleInstances_ReturnsMatchingNpcSnapshot()
+    {
+        var supervisor = new NpcRuntimeSupervisor();
+        var haleyPack = CreatePack("haley", "Haley");
+        var pennyPack = CreatePack("penny", "Penny");
+        var haleyDescriptor = NpcRuntimeDescriptorFactory.Create(haleyPack, "save-1");
+        var pennyDescriptor = NpcRuntimeDescriptorFactory.Create(pennyPack, "save-1");
+        var services = new NpcRuntimeCompositionServices(
+            new FakeChatClient(),
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler());
+        await supervisor.GetOrCreatePrivateChatHandleAsync(
+            haleyDescriptor,
+            haleyPack,
+            _tempDir,
+            new NpcRuntimeAgentBindingRequest(
+                ChannelKey: "private_chat",
+                SystemPromptSupplement: "Reply directly.",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")])),
+            CancellationToken.None);
+        var pennyHandle = await supervisor.GetOrCreatePrivateChatHandleAsync(
+            pennyDescriptor,
+            pennyPack,
+            _tempDir,
+            new NpcRuntimeAgentBindingRequest(
+                ChannelKey: "private_chat",
+                SystemPromptSupplement: "Reply directly.",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")])),
+            CancellationToken.None);
+        pennyHandle.Context.TodoStore.Write(
+            pennyDescriptor.SessionId,
+            [new SessionTodoInput("1", "Penny task", "pending")]);
+
+        var found = supervisor.TryGetTaskView(pennyDescriptor.SessionId, out var taskView);
+
+        Assert.IsTrue(found);
+        Assert.IsNotNull(taskView);
+        Assert.AreEqual("Penny task", taskView.ActiveSnapshot.Todos.Single().Content);
+    }
+
+    [TestMethod]
     public async Task GetOrCreateAutonomyHandleAsync_AfterPrivateChatTodo_SharesLongTermTaskStore()
     {
         var supervisor = new NpcRuntimeSupervisor();
@@ -280,6 +433,57 @@ public class NpcRuntimeSupervisorTests
         var autonomySnapshot = autonomyHandle.AgentHandle.Context.TodoStore.Read(descriptor.SessionId);
         Assert.AreEqual(1, autonomySnapshot.Todos.Count);
         Assert.AreEqual("Meet player at the beach", autonomySnapshot.Todos[0].Content);
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_AfterPrivateChatTodo_InjectsLongTermActiveTaskIntoAutonomyPrompt()
+    {
+        var supervisor = new NpcRuntimeSupervisor();
+        var pack = CreatePack("haley", "Haley");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
+        var chatClient = new ActiveTaskCapturingChatClient("Meet player at the beach");
+        var services = new NpcRuntimeCompositionServices(
+            chatClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler());
+        var privateChatHandle = await supervisor.GetOrCreatePrivateChatHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAgentBindingRequest(
+                ChannelKey: "private_chat",
+                SystemPromptSupplement: "Reply directly.",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")])),
+            CancellationToken.None);
+        privateChatHandle.Context.TodoStore.Write(
+            descriptor.SessionId,
+            [new SessionTodoInput("1", "Meet player at the beach", "pending")]);
+        var autonomyHandle = await supervisor.GetOrCreateAutonomyHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAutonomyBindingRequest(
+                ChannelKey: "autonomy",
+                AdapterKey: "bridge-a",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                AdapterFactory: () => new FakeGameAdapter(),
+                GameToolFactory: adapter => [new FakeTool("stardew_status"), new FakeTool("stardew_move")],
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")])),
+            CancellationToken.None);
+
+        await autonomyHandle.Loop.RunOneTickAsync(autonomyHandle.Instance, new GameEventCursor(), CancellationToken.None);
+
+        Assert.IsTrue(
+            chatClient.SawExpectedActiveTask,
+            "Autonomy prompt must inject the NPC long-term active todo, not only share the backing store.");
     }
 
     [TestMethod]
@@ -610,6 +814,43 @@ public class NpcRuntimeSupervisorTests
         }
     }
 
+    private sealed class ActiveTaskCapturingChatClient(string expectedTask) : IChatClient
+    {
+        public bool SawExpectedActiveTask { get; private set; }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            SawExpectedActiveTask = messages.Any(message =>
+                string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase) &&
+                message.Content.Contains("active task list", StringComparison.OrdinalIgnoreCase) &&
+                message.Content.Contains(expectedTask, StringComparison.Ordinal));
+
+            return Task.FromResult(new ChatResponse { Content = "I will continue the task.", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
     private sealed class NoopCronScheduler : ICronScheduler
     {
         public event EventHandler<CronTaskDueEventArgs>? TaskDue;
@@ -632,6 +873,57 @@ public class NpcRuntimeSupervisorTests
 
     private sealed class NoopParameters
     {
+    }
+
+    private sealed class WritingTaskHydrator(string content) : INpcRuntimeTaskHydrator
+    {
+        public int CallCount { get; private set; }
+
+        public Task HydrateAsync(NpcRuntimeInstance instance, CancellationToken ct)
+        {
+            CallCount++;
+            instance.TodoStore.Write(instance.Descriptor.SessionId, [new SessionTodoInput("1", content, "pending")]);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class BlockingTaskHydrator : INpcRuntimeTaskHydrator
+    {
+        private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int CallCount { get; private set; }
+
+        public async Task HydrateAsync(NpcRuntimeInstance instance, CancellationToken ct)
+        {
+            CallCount++;
+            _started.TrySetResult();
+            await _release.Task;
+            instance.TodoStore.Write(
+                instance.Descriptor.SessionId,
+                [new SessionTodoInput("1", "Hydrated after cancellation", "pending")]);
+        }
+
+        public Task WaitUntilStartedAsync() => _started.Task;
+
+        public void Release() => _release.TrySetResult();
+    }
+
+    private sealed class FailingThenWritingTaskHydrator : INpcRuntimeTaskHydrator
+    {
+        public int CallCount { get; private set; }
+
+        public Task HydrateAsync(NpcRuntimeInstance instance, CancellationToken ct)
+        {
+            CallCount++;
+            if (CallCount == 1)
+                throw new InvalidOperationException("first hydration fails");
+
+            instance.TodoStore.Write(
+                instance.Descriptor.SessionId,
+                [new SessionTodoInput("1", "Recovered after retry", "pending")]);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class FakeGameAdapter : IGameAdapter

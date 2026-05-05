@@ -28,6 +28,9 @@ public sealed class NpcRuntimeInstance
     private GameCommandStatus? _lastTerminalCommandStatus;
     private int _inboxDepth;
     private readonly SessionTodoStore _todoStore = new();
+    private Task? _taskHydrationTask;
+    private bool _tasksHydrated;
+    private Exception? _lastTaskHydrationError;
 
     public NpcRuntimeInstance(NpcRuntimeDescriptor descriptor, NpcNamespace npcNamespace)
     {
@@ -60,6 +63,26 @@ public sealed class NpcRuntimeInstance
         }
 
         return Task.CompletedTask;
+    }
+
+    public async Task EnsureTasksHydratedAsync(INpcRuntimeTaskHydrator hydrator, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(hydrator);
+        ct.ThrowIfCancellationRequested();
+
+        Task hydrationTask;
+        lock (_gate)
+        {
+            if (_tasksHydrated)
+                return;
+
+            if (_taskHydrationTask is null || _taskHydrationTask.IsCompleted)
+                _taskHydrationTask = RunTaskHydrationAsync(hydrator);
+
+            hydrationTask = _taskHydrationTask;
+        }
+
+        await hydrationTask.WaitAsync(ct);
     }
 
     public Task PauseAsync(string reason, CancellationToken ct)
@@ -383,20 +406,45 @@ public sealed class NpcRuntimeInstance
     internal bool TryGetTaskView(string sessionId, out NpcRuntimeTaskView? taskView)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        if (!MatchesDescriptorSession(sessionId))
+        {
+            taskView = null;
+            return false;
+        }
 
         lock (_gate)
         {
-            var handle = _privateChatHandle ?? _autonomyHandle?.AgentHandle;
-            if (handle is null)
-            {
-                taskView = null;
-                return false;
-            }
-
             taskView = new NpcRuntimeTaskView(
                 sessionId,
-                handle.Context.TaskProjectionService.GetSnapshot(sessionId));
+                _todoStore.Read(sessionId));
             return true;
+        }
+    }
+
+    private bool MatchesDescriptorSession(string sessionId)
+        => string.Equals(sessionId, Descriptor.SessionId, StringComparison.OrdinalIgnoreCase) ||
+           sessionId.StartsWith(Descriptor.SessionId + ":", StringComparison.OrdinalIgnoreCase);
+
+    private async Task RunTaskHydrationAsync(INpcRuntimeTaskHydrator hydrator)
+    {
+        try
+        {
+            await hydrator.HydrateAsync(this, CancellationToken.None);
+            lock (_gate)
+            {
+                _tasksHydrated = true;
+                _lastTaskHydrationError = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            lock (_gate)
+            {
+                _taskHydrationTask = null;
+                _lastTaskHydrationError = ex;
+            }
+
+            throw;
         }
     }
 
