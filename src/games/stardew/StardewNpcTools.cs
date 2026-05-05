@@ -323,7 +323,7 @@ public sealed class StardewSpeakTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_speak";
 
-    public string Description => "Ask this NPC to say a short line through the Stardew bridge. The runtime binds npcId, saveId, traceId, and idempotency internally.";
+    public string Description => "Ask this NPC to say a short non-blocking visible line through the Stardew bridge. Nearby players see an overhead bubble; far or cross-map players receive a phone message. Use this to keep the player informed instead of silently doing many move/status turns. The runtime binds npcId, saveId, traceId, and idempotency internally.";
 
     public Type ParametersType => typeof(StardewSpeakToolParameters);
 

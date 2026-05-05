@@ -222,6 +222,19 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
+    public void SpeakToolDescriptionExplainsNonBlockingBubbleAndPhoneDelivery()
+    {
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"));
+        var speakTool = tools.Single(tool => tool.Name == "stardew_speak");
+
+        StringAssert.Contains(speakTool.Description, "non-blocking");
+        StringAssert.Contains(speakTool.Description, "overhead bubble");
+        StringAssert.Contains(speakTool.Description, "phone message");
+    }
+
+    [TestMethod]
     public async Task OpenPrivateChatTool_BindsRuntimeIdentityAndSubmitsThroughCommandService()
     {
         var commands = new CapturingCommandService();

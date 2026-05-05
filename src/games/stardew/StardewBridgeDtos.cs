@@ -144,7 +144,11 @@ public sealed record StardewNpcStatusData(
     [property: JsonPropertyName("moveCandidates")] IReadOnlyList<StardewMoveCandidateData>? MoveCandidates = null,
     [property: JsonPropertyName("placeCandidates")] IReadOnlyList<StardewPlaceCandidateData>? PlaceCandidates = null,
     [property: JsonPropertyName("destinations")] IReadOnlyList<StardewDestinationData>? Destinations = null,
-    [property: JsonPropertyName("nearbyTiles")] IReadOnlyList<StardewMoveCandidateData>? NearbyTiles = null);
+    [property: JsonPropertyName("nearbyTiles")] IReadOnlyList<StardewMoveCandidateData>? NearbyTiles = null,
+    [property: JsonPropertyName("gameTime")] int? GameTime = null,
+    [property: JsonPropertyName("season")] string? Season = null,
+    [property: JsonPropertyName("dayOfMonth")] int? DayOfMonth = null,
+    [property: JsonPropertyName("weather")] string? Weather = null);
 
 public sealed record StardewWorldEntityData(
     [property: JsonPropertyName("npcId")] string NpcId,

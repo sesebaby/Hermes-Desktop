@@ -118,6 +118,29 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     }
 
     [TestMethod]
+    public async Task ReplyAsync_TodoUsesLongTermNpcSessionAndPromptUsesChineseContinuityGuidance()
+    {
+        var runtimeSupervisor = new NpcRuntimeSupervisor();
+        var client = new TodoWriteThenFinalChatClient();
+        var runner = CreateRunner(client, runtimeSupervisor);
+
+        var reply = await runner.ReplyAsync(
+            new NpcPrivateChatRequest("haley", "save-1", "conversation-promise", "明天陪我去海边好吗？"),
+            CancellationToken.None);
+
+        Assert.AreEqual("我记着，明天见。", reply.Text);
+        Assert.IsTrue(client.SawChineseContinuityGuidance, "Private chat prompt must use Chinese plain-language continuity guidance.");
+        var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
+        Assert.IsTrue(runtimeSupervisor.TryGetTaskView(haleySnapshot.SessionId, out var longTermTaskView));
+        Assert.IsNotNull(longTermTaskView);
+        Assert.AreEqual(1, longTermTaskView.ActiveSnapshot.Todos.Count);
+        Assert.AreEqual("明天陪玩家去海边", longTermTaskView.ActiveSnapshot.Todos[0].Content);
+        Assert.IsTrue(runtimeSupervisor.TryGetTaskView($"{haleySnapshot.SessionId}:private_chat:conversation-promise", out var privateChatTaskView));
+        Assert.IsNotNull(privateChatTaskView);
+        Assert.AreEqual(0, privateChatTaskView.ActiveSnapshot.Todos.Count);
+    }
+
+    [TestMethod]
     public async Task ReplyAsync_MissingSaveIdFailsInsteadOfUsingManualDebug()
     {
         var runner = CreateRunner(new SnapshotAnswerChatClient("unused"), new NpcRuntimeSupervisor());
@@ -264,6 +287,65 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                 Content = SawExpectedMemoryInPrompt ? "你叫远古牛哥。" : "不知道。",
                 FinishReason = "stop"
             });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class TodoWriteThenFinalChatClient : IChatClient
+    {
+        private int _calls;
+
+        public bool SawChineseContinuityGuidance { get; private set; }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            _calls++;
+            var snapshot = messages.ToList();
+            SawChineseContinuityGuidance |= snapshot.Any(message =>
+                string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase) &&
+                message.Content.Contains("玩家找你说话时", StringComparison.Ordinal) &&
+                message.Content.Contains("todo", StringComparison.Ordinal) &&
+                message.Content.Contains("不要把工具过程讲给玩家听", StringComparison.Ordinal));
+
+            if (_calls == 1)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = "todo-write",
+                            Name = "todo",
+                            Arguments = "{\"todos\":[{\"id\":\"1\",\"content\":\"明天陪玩家去海边\",\"status\":\"pending\"}]}"
+                        }
+                    ]
+                });
+            }
+
+            return Task.FromResult(new ChatResponse { Content = "我记着，明天见。", FinishReason = "stop" });
         }
 
         public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)

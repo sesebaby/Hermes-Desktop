@@ -89,6 +89,7 @@ public sealed class StardewQueryService : IGameQueryService
 
     private static string BuildStatusSummary(StardewNpcStatusData status)
         => $"{status.DisplayName} is at {status.LocationName} ({status.Tile.X},{status.Tile.Y}); " +
+           (status.GameTime is { } gameTime ? $"gameTime={gameTime} ({FormatGameClock(gameTime)}); " : "") +
            $"available={Bool(status.IsAvailableForControl)}; moving={Bool(status.IsMoving)}; " +
            $"inDialogue={Bool(status.IsInDialogue)}.";
 
@@ -104,6 +105,21 @@ public sealed class StardewQueryService : IGameQueryService
             $"isInDialogue={Bool(status.IsInDialogue)}",
             $"isAvailableForControl={Bool(status.IsAvailableForControl)}"
         };
+
+        if (status.GameTime is { } gameTime)
+        {
+            facts.Add($"gameTime={gameTime}");
+            facts.Add($"gameClock={FormatGameClock(gameTime)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(status.Season))
+            facts.Add($"season={status.Season}");
+
+        if (status.DayOfMonth is { } dayOfMonth)
+            facts.Add($"dayOfMonth={dayOfMonth}");
+
+        if (!string.IsNullOrWhiteSpace(status.Weather))
+            facts.Add($"weather={status.Weather}");
 
         if (!string.IsNullOrWhiteSpace(status.BlockedReason))
             facts.Add($"blockedReason={status.BlockedReason}");
@@ -179,4 +195,7 @@ public sealed class StardewQueryService : IGameQueryService
     }
 
     private static string Bool(bool value) => value ? "true" : "false";
+
+    private static string FormatGameClock(int gameTime)
+        => $"{gameTime / 100:00}:{gameTime % 100:00}";
 }

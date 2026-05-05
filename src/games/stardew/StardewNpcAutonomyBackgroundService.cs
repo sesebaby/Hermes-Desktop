@@ -7,6 +7,7 @@ using Hermes.Agent.Runtime;
 using Hermes.Agent.Skills;
 using Hermes.Agent.Tools;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 
 public sealed record StardewNpcAutonomyBackgroundOptions(
@@ -197,13 +198,29 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
 
     private async Task RunOneIterationCoreAsync(CancellationToken ct, bool waitForWorkerCompletion)
     {
+        var iterationStartedAtUtc = DateTime.UtcNow;
+        var iterationStopwatch = Stopwatch.StartNew();
+        _logger.LogInformation(
+            "Stardew autonomy host iteration started; enabledNpcCount={EnabledNpcCount}; waitForWorkers={WaitForWorkers}; pollIntervalMs={PollIntervalMs}; bridgeCursor={BridgeCursor}; bridgeSequence={BridgeSequence}",
+            _enabledNpcIds.Count,
+            waitForWorkerCompletion,
+            (long)_pollInterval.TotalMilliseconds,
+            _bridgeEventCursor.Since ?? "-",
+            _bridgeEventCursor.Sequence);
+
         if (_enabledNpcIds.Count == 0)
+        {
+            _logger.LogInformation("Stardew autonomy host iteration skipped; reason=no_enabled_npcs");
             return;
+        }
 
         if (!_discovery.TryReadLatest(out var snapshot, out var failureReason) || snapshot is null)
         {
             _privateChatRuntimeAdapter.Reset();
             MarkTrackedInstancesPaused(failureReason ?? StardewBridgeErrorCodes.BridgeUnavailable);
+            _logger.LogInformation(
+                "Stardew autonomy host iteration skipped; reason=discovery_unavailable; failureReason={FailureReason}",
+                failureReason ?? StardewBridgeErrorCodes.BridgeUnavailable);
             return;
         }
 
@@ -211,6 +228,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         {
             _privateChatRuntimeAdapter.Reset();
             MarkTrackedInstancesPaused(StardewBridgeErrorCodes.BridgeStaleDiscovery);
+            _logger.LogInformation("Stardew autonomy host iteration skipped; reason=missing_save_id");
             return;
         }
 
@@ -237,6 +255,16 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             ? hostState.StagedBatch!.ToBatch()
             : await hostAdapter.Events.PollBatchAsync(hostState.SourceCursor, ct);
         var shouldStageBatch = hasStagedBatch || ShouldStageBatch(hostState.SourceCursor, sharedEventBatch);
+        _logger.LogInformation(
+            "Stardew autonomy host batch ready; saveId={SaveId}; hasStagedBatch={HasStagedBatch}; eventCount={EventCount}; sourceCursor={SourceCursor}; sourceSequence={SourceSequence}; nextCursor={NextCursor}; nextSequence={NextSequence}; privateChatDrainOnly={PrivateChatDrainOnly}",
+            saveId,
+            hasStagedBatch,
+            sharedEventBatch.Records.Count,
+            hostState.SourceCursor.Since ?? "-",
+            hostState.SourceCursor.Sequence,
+            sharedEventBatch.NextCursor.Since ?? "-",
+            sharedEventBatch.NextCursor.Sequence,
+            privateChatDrainOnly);
         if (!hasStagedBatch && shouldStageBatch)
         {
             await hostStateStore.StageBatchAsync(
@@ -263,6 +291,17 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             var controller = tracker.Driver.Snapshot();
             var npcEventBatch = FilterBatchForRuntime(binding.Descriptor, sharedEventBatch, controller.EventCursor);
             tracker.Instance.SetInboxDepth(npcEventBatch.Records.Count + controller.IngressWorkItems.Count);
+            _logger.LogInformation(
+                "Stardew autonomy host dispatching NPC; npc={NpcId}; npcEventCount={NpcEventCount}; ingressCount={IngressCount}; trackerCursor={TrackerCursor}; trackerSequence={TrackerSequence}; nextWakeAtUtc={NextWakeAtUtc}; pendingWorkType={PendingWorkType}; pendingCommandId={PendingCommandId}; actionCommandId={ActionCommandId}",
+                binding.Descriptor.NpcId,
+                npcEventBatch.Records.Count,
+                controller.IngressWorkItems.Count,
+                controller.EventCursor.Since ?? "-",
+                controller.EventCursor.Sequence,
+                controller.NextWakeAtUtc,
+                controller.PendingWorkItem?.WorkType ?? "-",
+                controller.PendingWorkItem?.CommandId ?? "-",
+                controller.ActionSlot?.CommandId ?? "-");
             var workerTask = await tracker.EnqueueAsync(
                 new NpcAutonomyDispatch(
                     bridgeKey,
@@ -286,6 +325,13 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         }
 
         _bridgeEventCursor = sharedEventBatch.NextCursor;
+        iterationStopwatch.Stop();
+        _logger.LogInformation(
+            "Stardew autonomy host iteration completed; startedAtUtc={StartedAtUtc:o}; durationMs={DurationMs}; nextCursor={NextCursor}; nextSequence={NextSequence}",
+            iterationStartedAtUtc,
+            iterationStopwatch.ElapsedMilliseconds,
+            _bridgeEventCursor.Since ?? "-",
+            _bridgeEventCursor.Sequence);
     }
 
     private async Task RunLoopAsync(CancellationToken ct)
@@ -356,9 +402,25 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         var binding = tracker.Binding;
         var hostAdapter = _adapterFactory(dispatch.Snapshot);
         var deliveredCursor = dispatch.DeliveredCursor;
+        var dispatchStartedAtUtc = DateTime.UtcNow;
+        var dispatchStopwatch = Stopwatch.StartNew();
         try
         {
             var controller = tracker.Driver.Snapshot();
+            _logger.LogInformation(
+                "Stardew autonomy NPC dispatch started; npc={NpcId}; sharedEventCount={SharedEventCount}; deliveredCursor={DeliveredCursor}; deliveredSequence={DeliveredSequence}; eventCursor={EventCursor}; eventSequence={EventSequence}; nextWakeAtUtc={NextWakeAtUtc}; pendingWorkType={PendingWorkType}; pendingStatus={PendingStatus}; pendingCommandId={PendingCommandId}; actionCommandId={ActionCommandId}; ingressCount={IngressCount}",
+                binding.Descriptor.NpcId,
+                dispatch.SharedEventBatch.Records.Count,
+                deliveredCursor.Since ?? "-",
+                deliveredCursor.Sequence,
+                controller.EventCursor.Since ?? "-",
+                controller.EventCursor.Sequence,
+                controller.NextWakeAtUtc,
+                controller.PendingWorkItem?.WorkType ?? "-",
+                controller.PendingWorkItem?.Status ?? "-",
+                controller.PendingWorkItem?.CommandId ?? "-",
+                controller.ActionSlot?.CommandId ?? "-",
+                controller.IngressWorkItems.Count);
 
             if (await TryAdvancePendingActionAsync(binding, tracker, hostAdapter.Commands, deliveredCursor, dispatch.BridgeKey, ct))
                 return;
@@ -388,6 +450,10 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 await PauseTrackerAsync(tracker, deliveredCursor, NpcAutonomyExitReason.LlmConcurrencyLimit.ToString(), dispatch.BridgeKey, null, ct);
                 return;
             }
+            _logger.LogInformation(
+                "Stardew autonomy LLM slot acquired; npc={NpcId}; maxConcurrentLlmRequests={MaxConcurrentLlmRequests}",
+                binding.Descriptor.NpcId,
+                _budget.Options.MaxConcurrentLlmRequests);
 
             var toolSnapshot = _toolSnapshotProvider.Capture();
             var handle = await _runtimeSupervisor.GetOrCreateAutonomyHandleAsync(
@@ -416,18 +482,44 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                     SystemPromptSupplement: systemPromptSupplement),
                 ct);
 
+            var observeStopwatch = Stopwatch.StartNew();
             var observation = await hostAdapter.Queries.ObserveAsync(binding.Descriptor.EffectiveBodyBinding, ct);
+            observeStopwatch.Stop();
+            _logger.LogInformation(
+                "Stardew autonomy observation completed; npc={NpcId}; observedNpc={ObservedNpcId}; summary={Summary}; gameTime={GameTime}; gameClock={GameClock}; location={Location}; tile={Tile}; factCount={FactCount}; durationMs={DurationMs}",
+                binding.Descriptor.NpcId,
+                observation.NpcId,
+                TruncateForLog(observation.Summary, 180),
+                FindFactValue(observation.Facts, "gameTime") ?? "-",
+                FindFactValue(observation.Facts, "gameClock") ?? "-",
+                FindFactValue(observation.Facts, "location") ?? "-",
+                FindFactValue(observation.Facts, "tile") ?? "-",
+                observation.Facts.Count,
+                observeStopwatch.ElapsedMilliseconds);
             using var llmTurnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             llmTurnCts.CancelAfter(_budget.Options.EffectiveLlmTurnTimeout);
             NpcAutonomyTickResult tick;
             try
             {
-                _logger.LogInformation(
-                    "Stardew autonomy LLM turn started for {NpcId}; timeout={TimeoutSeconds}s",
-                    binding.Descriptor.NpcId,
-                    _budget.Options.EffectiveLlmTurnTimeout.TotalSeconds);
+                var llmStartedAtUtc = DateTime.UtcNow;
+                var llmStopwatch = Stopwatch.StartNew();
+            _logger.LogInformation(
+                "Stardew autonomy LLM turn started; npc={NpcId}; timeoutSeconds={TimeoutSeconds}; maxToolIterations={MaxToolIterations}; observationFacts={ObservationFactCount}; eventCount={EventCount}; toolSurfaceVersion={ToolSurfaceVersion}",
+                binding.Descriptor.NpcId,
+                _budget.Options.EffectiveLlmTurnTimeout.TotalSeconds,
+                _budget.Options.MaxToolIterations,
+                observation.Facts.Count,
+                dispatch.SharedEventBatch.Records.Count,
+                toolSnapshot.SnapshotVersion);
                 tick = await handle.Loop.RunOneTickAsync(handle.Instance, observation, dispatch.SharedEventBatch, llmTurnCts.Token);
-                _logger.LogInformation("Stardew autonomy LLM turn completed for {NpcId}", binding.Descriptor.NpcId);
+                llmStopwatch.Stop();
+                _logger.LogInformation(
+                    "Stardew autonomy LLM turn completed; npc={NpcId}; startedAtUtc={StartedAtUtc:o}; durationMs={DurationMs}; nextCursor={NextCursor}; nextSequence={NextSequence}",
+                    binding.Descriptor.NpcId,
+                    llmStartedAtUtc,
+                    llmStopwatch.ElapsedMilliseconds,
+                    tick.NextEventCursor?.Since ?? "-",
+                    tick.NextEventCursor?.Sequence);
             }
             catch (OperationCanceledException ex) when (!ct.IsCancellationRequested && llmTurnCts.IsCancellationRequested)
             {
@@ -454,6 +546,12 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             await tracker.Driver.SetControllerStateAsync(tick.NextEventCursor ?? deliveredCursor, null, ct);
             tracker.RestartCount = 0;
             handle.Instance.MarkAutonomyRunning(dispatch.BridgeKey, handle.RebindGeneration, DateTime.UtcNow);
+            dispatchStopwatch.Stop();
+            _logger.LogInformation(
+                "Stardew autonomy NPC dispatch completed; npc={NpcId}; startedAtUtc={StartedAtUtc:o}; durationMs={DurationMs}; result=llm_turn_completed",
+                binding.Descriptor.NpcId,
+                dispatchStartedAtUtc,
+                dispatchStopwatch.ElapsedMilliseconds);
         }
         catch (StardewNpcAutonomyPromptResourceException ex)
         {
@@ -490,6 +588,11 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         driver.Instance.Namespace.SeedPersonaPack(binding.Pack);
         var tracker = new NpcAutonomyTracker(binding, driver.Instance, driver, ProcessTrackerDispatchAsync);
         _trackers[binding.Descriptor.NpcId] = tracker;
+        _logger.LogInformation(
+            "Stardew autonomy tracker created; npc={NpcId}; sessionId={SessionId}; saveId={SaveId}",
+            binding.Descriptor.NpcId,
+            binding.Descriptor.SessionId,
+            binding.Descriptor.SaveId);
         return tracker;
     }
 
@@ -506,13 +609,23 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         return Task.CompletedTask;
     }
 
+    private static string? FindFactValue(IReadOnlyList<string> facts, string key)
+    {
+        var prefix = key + "=";
+        var fact = facts.FirstOrDefault(value => value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        return fact is null ? null : fact[prefix.Length..];
+    }
+
+    private static string TruncateForLog(string value, int maxLength)
+        => value.Length <= maxLength ? value : value[..maxLength];
+
     private void MarkTrackedInstancesPaused(string reason)
     {
         foreach (var tracker in _trackers.Values)
             tracker.Instance.MarkAutonomyPaused(reason, _bridgeKey, tracker.Instance.Snapshot().CurrentAutonomyHandleGeneration);
     }
 
-    private static async Task PauseTrackerAsync(
+    private async Task PauseTrackerAsync(
         NpcAutonomyTracker tracker,
         GameEventCursor deliveredCursor,
         string reason,
@@ -522,6 +635,19 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
     {
         tracker.Instance.MarkAutonomyPaused(reason, bridgeKey, tracker.Instance.Snapshot().CurrentAutonomyHandleGeneration);
         await tracker.Driver.SetControllerStateAsync(deliveredCursor, nextWakeAtUtc, ct);
+        var snapshot = tracker.Driver.Snapshot();
+        _logger.LogInformation(
+            "Stardew autonomy NPC dispatch skipped; npc={NpcId}; reason={Reason}; nextWakeAtUtc={NextWakeAtUtc}; deliveredCursor={DeliveredCursor}; deliveredSequence={DeliveredSequence}; pendingWorkType={PendingWorkType}; pendingStatus={PendingStatus}; pendingCommandId={PendingCommandId}; actionCommandId={ActionCommandId}; ingressCount={IngressCount}",
+            tracker.Binding.Descriptor.NpcId,
+            reason,
+            nextWakeAtUtc,
+            deliveredCursor.Since ?? "-",
+            deliveredCursor.Sequence,
+            snapshot.PendingWorkItem?.WorkType ?? "-",
+            snapshot.PendingWorkItem?.Status ?? "-",
+            snapshot.PendingWorkItem?.CommandId ?? "-",
+            snapshot.ActionSlot?.CommandId ?? "-",
+            snapshot.IngressWorkItems.Count);
     }
 
     private static string BuildBridgeKey(StardewBridgeDiscoverySnapshot snapshot, string saveId)

@@ -228,6 +228,7 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
             new Session
             {
                 Id = $"{descriptor.SessionId}:private_chat:{request.ConversationId}",
+                ToolSessionId = descriptor.SessionId,
                 Platform = descriptor.AdapterId
             },
             ct);
@@ -237,14 +238,20 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
 
     private static string BuildPrivateChatMessage(string displayName, string playerText)
         =>
-            $"Private chat for {displayName}.\n" +
-            "The player explicitly typed this message to you. Respond directly in-character.\n\n" +
+            $"{displayName} 的私聊。\n" +
+            "玩家找你说话时，先认真回应玩家；如果原本有没做完的事，回应后再接着处理。\n\n" +
             $"Player: {playerText}";
 
     private static string BuildPrivateChatSystemPrompt(string displayName)
         =>
-            $"You are the Stardew Valley NPC {displayName} in a private chat with the player. " +
-            $"Reply as {displayName} with one concise spoken response. Do not include labels, markdown, or tool narration.";
+            $"你是星露谷里的 {displayName}，现在正在和玩家私聊。\n" +
+            "玩家找你说话时，你先像角色本人一样自然回应，不要装成助手。\n" +
+            "如果玩家给了以后要兑现的约定、邀请、请求或共同计划，你自己判断要不要接；接了就用 todo 记到长期任务里。\n" +
+            "如果玩家告诉你稳定事实、偏好、关系变化或重要地点，用 memory 记住。\n" +
+            "如果你需要想起以前答应过什么，先用 session_search 查旧对话和旧约定。\n" +
+            "你可以先用工具处理任务和记忆，再给玩家一句简短自然的回复。\n" +
+            "如果任务做不了或被卡住，要把 todo 标成 blocked 或 failed，并写清短 reason；能告诉玩家时，要直接告诉玩家卡在哪里。\n" +
+            "不要把工具过程讲给玩家听，不要输出标签、markdown 或系统说明。";
 }
 
 public sealed class StardewPrivateChatRuntimeAdapter : IDisposable

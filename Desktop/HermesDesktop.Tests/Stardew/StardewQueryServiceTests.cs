@@ -26,6 +26,10 @@ public class StardewQueryServiceTests
               "displayName": "Haley",
               "locationName": "Town",
               "tile": { "x": 42, "y": 17 },
+              "gameTime": 1430,
+              "season": "spring",
+              "dayOfMonth": 5,
+              "weather": "sunny",
               "isMoving": false,
               "isInDialogue": false,
               "isAvailableForControl": true,
@@ -61,6 +65,11 @@ public class StardewQueryServiceTests
         Assert.AreEqual(at, observation.TimestampUtc);
         CollectionAssert.Contains(observation.Facts.ToList(), "location=Town");
         CollectionAssert.Contains(observation.Facts.ToList(), "tile=42,17");
+        CollectionAssert.Contains(observation.Facts.ToList(), "gameTime=1430");
+        CollectionAssert.Contains(observation.Facts.ToList(), "gameClock=14:30");
+        CollectionAssert.Contains(observation.Facts.ToList(), "season=spring");
+        CollectionAssert.Contains(observation.Facts.ToList(), "dayOfMonth=5");
+        CollectionAssert.Contains(observation.Facts.ToList(), "weather=sunny");
         CollectionAssert.Contains(observation.Facts.ToList(), "isAvailableForControl=true");
         CollectionAssert.Contains(observation.Facts.ToList(), "currentCommandId=cmd-1");
         Assert.IsTrue(observation.Facts.Any(fact => fact.Contains("destinationId=town.fountain", StringComparison.Ordinal)), "Observed destination facts should include destinationId as the stable key.");
