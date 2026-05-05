@@ -30,6 +30,7 @@ public sealed class Agent : IAgent
     private readonly MemoryReviewService? _memoryReviewService;
     private readonly SoulService? _soulService;
     private readonly PluginManager? _pluginManager;
+    private readonly IFirstCallContextBudgetPolicy _firstCallContextBudgetPolicy;
 
     // INV-004/005: Provider fallback state machine
     private readonly IChatClient? _fallbackChatClient;
@@ -96,7 +97,8 @@ public sealed class Agent : IAgent
         IChatClient? fallbackChatClient = null,
         CredentialPool? credentialPool = null,
         TurnMemoryCoordinator? turnMemoryCoordinator = null,
-        MemoryReviewService? memoryReviewService = null)
+        MemoryReviewService? memoryReviewService = null,
+        IFirstCallContextBudgetPolicy? firstCallContextBudgetPolicy = null)
     {
         _chatClient = chatClient;
         _logger = logger;
@@ -110,6 +112,7 @@ public sealed class Agent : IAgent
         _fallbackChatClient = fallbackChatClient;
         _credentialPool = credentialPool;
         _memoryReviewService = memoryReviewService;
+        _firstCallContextBudgetPolicy = firstCallContextBudgetPolicy ?? NoopFirstCallContextBudgetPolicy.Instance;
         if (_memoryReviewService is not null)
             _memoryReviewService.BackgroundReviewCompleted += HandleBackgroundReviewCompleted;
     }
@@ -197,7 +200,13 @@ public sealed class Agent : IAgent
             durationMs);
     }
 
-    private void LogToolCallSummary(string sessionId, string traceId, int iteration, IReadOnlyList<ToolCall> toolCalls, long durationMs)
+    private void LogToolCallSummary(
+        string sessionId,
+        string traceId,
+        int iteration,
+        IReadOnlyList<ToolCall> toolCalls,
+        long durationMs,
+        bool isAutonomyTurn)
     {
         var toolNames = toolCalls.Select(toolCall => toolCall.Name).ToArray();
         var statusToolNames = toolNames.Where(IsStardewStatusTool).ToArray();
@@ -210,7 +219,7 @@ public sealed class Agent : IAgent
             string.Join("|", toolNames),
             statusToolNames.Length,
             durationMs);
-        if (statusToolNames.Length > 1)
+        if (isAutonomyTurn && statusToolNames.Length > 1)
         {
             _logger.LogWarning(
                 "status_tool_budget_exceeded; session={SessionId}; trace={TraceId}; iteration={Iteration}; statusToolCalls={StatusToolCallCount}; statusToolNames={StatusToolNames}",
@@ -238,21 +247,36 @@ public sealed class Agent : IAgent
 
     private sealed class StardewStatusToolTurnBudget
     {
-        private readonly Dictionary<string, int> _calls = new(StringComparer.OrdinalIgnoreCase);
+        private readonly bool _isAutonomyTurn;
+        private int _broadStatusCalls;
 
-        public bool TryConsume(string toolName, out int alreadyConsumed)
+        public StardewStatusToolTurnBudget(bool isAutonomyTurn)
         {
+            _isAutonomyTurn = isAutonomyTurn;
+        }
+
+        public bool TryConsume(string toolName, out int alreadyConsumed, out string statusClass)
+        {
+            statusClass = GetStardewStatusToolClass(toolName);
             alreadyConsumed = 0;
-            if (!IsStardewStatusTool(toolName))
+            if (!_isAutonomyTurn || statusClass != "broad_status")
                 return true;
 
-            if (_calls.TryGetValue(toolName, out alreadyConsumed) && alreadyConsumed >= 1)
+            alreadyConsumed = _broadStatusCalls;
+            if (_broadStatusCalls >= 1)
                 return false;
 
-            _calls[toolName] = alreadyConsumed + 1;
+            _broadStatusCalls++;
             return true;
         }
     }
+
+    private static string GetStardewStatusToolClass(string toolName)
+        => IsStardewStatusTool(toolName)
+            ? "broad_status"
+            : string.Equals(toolName, "stardew_task_status", StringComparison.OrdinalIgnoreCase)
+                ? "continuation_status"
+                : "other";
 
     /// <summary>Build ToolDefinition list from registered tools for the LLM.</summary>
     public List<ToolDefinition> GetToolDefinitions()
@@ -392,7 +416,8 @@ public sealed class Agent : IAgent
 
             var toolDefs = GetToolDefinitions();
             var iterations = 0;
-            var stardewStatusToolCallsThisTurn = new StardewStatusToolTurnBudget();
+            var isAutonomyTurn = StardewAutonomySessionKeys.IsAutonomyTurnSession(session);
+            var stardewStatusToolCallsThisTurn = new StardewStatusToolTurnBudget(isAutonomyTurn);
 
             while (iterations < MaxToolIterations)
             {
@@ -401,9 +426,15 @@ public sealed class Agent : IAgent
 
             // Use prepared context for first iteration, then fall back to session.Messages
             // because session.Messages accumulates tool results as the loop progresses
-            var messagesToUse = (iterations == 1 && preparedContext is not null)
+            IReadOnlyList<Message> messagesToUse = (iterations == 1 && preparedContext is not null)
                 ? preparedContext
                 : session.Messages;
+            if (iterations == 1 && preparedContext is not null)
+            {
+                var budgetResult = _firstCallContextBudgetPolicy.Apply(
+                    new FirstCallContextBudgetRequest(session, messagesToUse, message, iterations));
+                messagesToUse = budgetResult.Messages;
+            }
 
             // INV-004/005: Use active client with fallback support
             var activeClientForTools = GetActiveChatClient();
@@ -672,7 +703,7 @@ public sealed class Agent : IAgent
             }
             } // end else (sequential path)
             toolSummaryStopwatch.Stop();
-            LogToolCallSummary(session.Id, GetSessionTraceId(session), iterations, toolCallsList, toolSummaryStopwatch.ElapsedMilliseconds);
+            LogToolCallSummary(session.Id, GetSessionTraceId(session), iterations, toolCallsList, toolSummaryStopwatch.ElapsedMilliseconds, isAutonomyTurn);
         }
 
             _logger.LogWarning("Hit max tool iterations ({Max}) for session {SessionId}", MaxToolIterations, session.Id);
@@ -1399,15 +1430,16 @@ public sealed class Agent : IAgent
         StardewStatusToolTurnBudget turnBudget,
         CancellationToken ct)
     {
-        if (!turnBudget.TryConsume(toolCall.Name, out var alreadyConsumed))
+        if (!turnBudget.TryConsume(toolCall.Name, out var alreadyConsumed, out var statusClass))
         {
             _logger.LogWarning(
-                "status_tool_budget_exceeded; tool={ToolName}; previousCalls={PreviousCalls}; session={SessionId}",
+                "status_tool_budget_exceeded; tool={ToolName}; statusClass={StatusClass}; previousCalls={PreviousCalls}; session={SessionId}",
                 toolCall.Name,
+                statusClass,
                 alreadyConsumed,
                 currentSessionId ?? "-");
             return ToolResult.Fail(
-                $"status_tool_budget_exceeded: {toolCall.Name} was already called in this turn. " +
+                $"status_tool_budget_exceeded: {statusClass} already used in this autonomy turn; blocked {toolCall.Name}. " +
                 "Use the previous Stardew status result and continue with an action or final answer.");
         }
 

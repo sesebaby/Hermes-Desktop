@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1777881979490,
+  "lastScanned": 1777973765025,
   "projectRoot": "D:\\GitHubPro\\Hermes-Desktop",
   "techStack": {
     "languages": [],
@@ -40,21 +40,21 @@
       "path": "artifacts",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1777881979464,
+      "lastAccessed": 1777973764999,
       "keyFiles": []
     },
     "Desktop": {
       "path": "Desktop",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1777881979465,
+      "lastAccessed": 1777973765000,
       "keyFiles": []
     },
     "docs": {
       "path": "docs",
       "purpose": "Documentation",
       "fileCount": 18,
-      "lastAccessed": 1777881979465,
+      "lastAccessed": 1777973765001,
       "keyFiles": [
         "agent_architecture_deep_dive.md",
         "all_9_pillars_complete.md",
@@ -67,7 +67,7 @@
       "path": "external",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1777881979466,
+      "lastAccessed": 1777973765001,
       "keyFiles": [
         "hermes-agent-main.zip",
         "hermescraft-main.zip"
@@ -77,14 +77,14 @@
       "path": "Mods",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1777881979467,
+      "lastAccessed": 1777973765002,
       "keyFiles": []
     },
     "openspec": {
       "path": "openspec",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1777881979469,
+      "lastAccessed": 1777973765003,
       "keyFiles": [
         "project.md"
       ]
@@ -93,7 +93,7 @@
       "path": "scripts",
       "purpose": "Build/utility scripts",
       "fileCount": 7,
-      "lastAccessed": 1777881979470,
+      "lastAccessed": 1777973765004,
       "keyFiles": [
         "check-repo-guard.ps1",
         "deploy-desktop.ps1",
@@ -106,14 +106,14 @@
       "path": "skills",
       "purpose": null,
       "fileCount": 1,
-      "lastAccessed": 1777881979471,
+      "lastAccessed": 1777973765004,
       "keyFiles": []
     },
     "souls": {
       "path": "souls",
       "purpose": null,
       "fileCount": 12,
-      "lastAccessed": 1777881979471,
+      "lastAccessed": 1777973765005,
       "keyFiles": [
         "claude-soul.md",
         "creative.md",
@@ -126,7 +126,7 @@
       "path": "src",
       "purpose": "Source code",
       "fileCount": 4,
-      "lastAccessed": 1777881979472,
+      "lastAccessed": 1777973765005,
       "keyFiles": [
         "Directory.Build.props",
         "Hermes.Agent.csproj",
@@ -138,14 +138,14 @@
       "path": "tools",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1777881979473,
+      "lastAccessed": 1777973765006,
       "keyFiles": []
     },
     "wiki": {
       "path": "wiki",
       "purpose": null,
       "fileCount": 3,
-      "lastAccessed": 1777881979474,
+      "lastAccessed": 1777973765006,
       "keyFiles": [
         "index.md",
         "log.md",
@@ -156,7 +156,7 @@
       "path": "其他资料",
       "purpose": null,
       "fileCount": 13,
-      "lastAccessed": 1777881979475,
+      "lastAccessed": 1777973765007,
       "keyFiles": [
         "BN-NPC宠物势力群战占点调查.md",
         "Bright Nights调查纪要.md",
@@ -169,23 +169,40 @@
       "path": "参考项目",
       "purpose": null,
       "fileCount": 0,
-      "lastAccessed": 1777881979475,
+      "lastAccessed": 1777973765007,
       "keyFiles": []
     },
     "src\\bin": {
       "path": "src\\bin",
       "purpose": "Executable scripts",
       "fileCount": 0,
-      "lastAccessed": 1777881979480,
+      "lastAccessed": 1777973765011,
       "keyFiles": []
+    },
+    "其他资料\\test": {
+      "path": "其他资料\\test",
+      "purpose": "Test files",
+      "fileCount": 6,
+      "lastAccessed": 1777973765012,
+      "keyFiles": [
+        "destination_selector_benchmark.py",
+        "lmstudio_agent_eval.py",
+        "npc_walking_benchmark.py"
+      ]
     }
   },
   "hotPaths": [
     {
       "path": "",
-      "accessCount": 50,
-      "lastAccessed": 1777896071898,
+      "accessCount": 82,
+      "lastAccessed": 1777977195915,
       "type": "directory"
+    },
+    {
+      "path": "src\\Core\\Agent.cs",
+      "accessCount": 18,
+      "lastAccessed": 1777976071639,
+      "type": "file"
     },
     {
       "path": "src",
@@ -210,12 +227,6 @@
       "accessCount": 11,
       "lastAccessed": 1777898123473,
       "type": "directory"
-    },
-    {
-      "path": "src\\Core\\Agent.cs",
-      "accessCount": 9,
-      "lastAccessed": 1777873553713,
-      "type": "file"
     },
     {
       "path": "src\\agents\\AgentService.cs",
@@ -249,8 +260,14 @@
     },
     {
       "path": "src\\Core\\Models.cs",
-      "accessCount": 3,
-      "lastAccessed": 1777249715046,
+      "accessCount": 4,
+      "lastAccessed": 1777975769795,
+      "type": "file"
+    },
+    {
+      "path": "src\\Context\\ContextManager.cs",
+      "accessCount": 4,
+      "lastAccessed": 1777977195388,
       "type": "file"
     },
     {
@@ -311,6 +328,12 @@
       "path": "external\\hermescraft-main\\bot\\lib\\perception.js",
       "accessCount": 2,
       "lastAccessed": 1777873521504,
+      "type": "file"
+    },
+    {
+      "path": "src\\transcript\\TranscriptStore.cs",
+      "accessCount": 2,
+      "lastAccessed": 1777975771130,
       "type": "file"
     },
     {
@@ -398,21 +421,9 @@
       "type": "file"
     },
     {
-      "path": "src\\transcript\\TranscriptStore.cs",
-      "accessCount": 1,
-      "lastAccessed": 1777244166492,
-      "type": "file"
-    },
-    {
       "path": "src\\plugins\\BuiltinMemoryPlugin.cs",
       "accessCount": 1,
       "lastAccessed": 1777244166532,
-      "type": "file"
-    },
-    {
-      "path": "src\\Context\\ContextManager.cs",
-      "accessCount": 1,
-      "lastAccessed": 1777244667081,
       "type": "file"
     },
     {

@@ -27,7 +27,8 @@ public sealed class NpcAgentFactory
             soulService: context.SoulService,
             pluginManager: context.PluginManager,
             turnMemoryCoordinator: context.TurnMemoryCoordinator,
-            memoryReviewService: context.MemoryReviewService)
+            memoryReviewService: context.MemoryReviewService,
+            firstCallContextBudgetPolicy: context.FirstCallContextBudgetPolicy)
         {
             MaxToolIterations = Math.Max(2, maxToolIterations)
         };

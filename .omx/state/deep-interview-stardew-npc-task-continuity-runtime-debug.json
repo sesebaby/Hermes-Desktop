@@ -1,0 +1,35 @@
+{
+  "active": true,
+  "current_phase": "deep-interview",
+  "state": {
+    "interview_id": "764c0610-f9e8-4aea-9a9c-62d5f9f32cf1",
+    "profile": "standard",
+    "type": "brownfield",
+    "initial_idea": "D:\\GitHubPro\\Hermes-Desktop\\docs\\superpowers\\specs\\2026-05-05-星露谷NPC任务连续性与运行时调试设计.md",
+    "rounds": [],
+    "current_ambiguity": 0.32,
+    "threshold": 0.2,
+    "max_rounds": 12,
+    "challenge_modes_used": [],
+    "codebase_context": {
+      "source_spec": "docs/superpowers/specs/2026-05-05-星露谷NPC任务连续性与运行时调试设计.md",
+      "context_snapshot_path": ".omx/context/stardew-npc-task-continuity-runtime-debug-20260505T013701Z.md",
+      "runtime_blocker_override": "User waived omx question requirement; continue via plain text interview."
+    },
+    "current_stage": "intent-first",
+    "current_focus": "decision-boundaries",
+    "scores": {
+      "intent": 0.88,
+      "outcome": 0.82,
+      "scope": 0.72,
+      "constraints": 0.86,
+      "success": 0.55,
+      "context": 0.82
+    },
+    "readiness_gates": {
+      "non_goals_explicit": true,
+      "decision_boundaries_explicit": false,
+      "pressure_pass_complete": false
+    }
+  }
+}

@@ -397,6 +397,7 @@ public class AgentTests
         agent.RegisterTool(playerTool.Object);
         agent.RegisterTool(socialTool.Object);
         var session = new Session { Id = "sdv_save-1_haley_default" };
+        session.State[StardewAutonomySessionKeys.IsAutonomyTurn] = true;
         session.State["traceId"] = "trace-turn-1";
         var callSequence = new Queue<ChatResponse>(new[]
         {
@@ -474,6 +475,7 @@ public class AgentTests
             .Returns(() => Task.FromResult(callSequence.Dequeue()));
 
         var session = new Session { Id = "sdv_save-1_haley_default" };
+        session.State[StardewAutonomySessionKeys.IsAutonomyTurn] = true;
         var result = await agent.ChatAsync("run status", session, CancellationToken.None);
 
         Assert.AreEqual("done", result);

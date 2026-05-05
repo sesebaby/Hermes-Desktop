@@ -1,0 +1,8 @@
+{"t":0,"agent":"system","event":"skill_invoked","skill_name":"superpowers:systematic-debugging"}
+{"t":0,"agent":"system","event":"skill_invoked","skill_name":"superpowers:brainstorming"}
+{"t":0,"agent":"ac95cb7","agent_type":"Explore","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"ae3b278","agent_type":"Explore","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"ac95cb7","agent_type":"Explore","event":"agent_stop","success":true,"duration_ms":413851}
+{"t":0,"agent":"ae3b278","agent_type":"Explore","event":"agent_stop","success":true,"duration_ms":434152}
+{"t":0,"agent":"abe08e6","agent_type":"unknown","event":"agent_stop","success":true}
+{"t":0,"agent":"system","event":"skill_invoked","skill_name":"zcf:git-commit"}

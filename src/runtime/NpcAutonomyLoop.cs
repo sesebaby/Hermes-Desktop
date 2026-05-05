@@ -129,6 +129,7 @@ public sealed class NpcAutonomyLoop
             };
             decisionSession.State["traceId"] = traceId;
             decisionSession.State["npcId"] = descriptor.NpcId;
+            decisionSession.State[StardewAutonomySessionKeys.IsAutonomyTurn] = true;
             var decisionMessage = BuildDecisionMessage(descriptor, currentFacts);
             _logger?.LogInformation(
                 "NPC autonomy decision request prepared; npc={NpcId}; trace={TraceId}; facts={FactCount}; messageChars={MessageChars}; gameTime={GameTime}; location={Location}; tile={Tile}",

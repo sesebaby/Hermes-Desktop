@@ -95,6 +95,8 @@ public sealed class NpcRuntimeContextFactory
             MemoryReviewDefaults.NudgeInterval,
             skillManager,
             MemoryReviewDefaults.SkillCreationNudgeInterval);
+        var firstCallContextBudgetPolicy = new StardewAutonomyFirstCallContextBudgetPolicy(
+            loggerFactory.CreateLogger<StardewAutonomyFirstCallContextBudgetPolicy>());
 
         return new NpcRuntimeContextBundle(
             soulService,
@@ -109,7 +111,8 @@ public sealed class NpcRuntimeContextFactory
             memoryReviewService,
             taskProjectionService,
             todoStore,
-            new ToolRegistry());
+            new ToolRegistry(),
+            firstCallContextBudgetPolicy);
     }
 }
 
@@ -126,4 +129,5 @@ public sealed record NpcRuntimeContextBundle(
     MemoryReviewService MemoryReviewService,
     SessionTaskProjectionService TaskProjectionService,
     SessionTodoStore TodoStore,
-    IToolRegistry ToolRegistry);
+    IToolRegistry ToolRegistry,
+    Hermes.Agent.Core.IFirstCallContextBudgetPolicy? FirstCallContextBudgetPolicy = null);

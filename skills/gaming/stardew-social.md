@@ -29,6 +29,8 @@
 
 `stardew_status` 已经在每轮观察里提供现场事实。不要每轮把所有状态工具都查一遍；普通自主回合最多额外查 1 个状态工具，然后就要行动、说话或等待。
 
+每轮先定一个 one turn purpose，再决定是否真的需要补查工具。缺少旧对话、约定或刚才发生过什么时，优先用 `session_search` 按需找历史；只有要写入长期稳定偏好、身份或承诺时才用 `memory`。avoid repeated broad status scans：同一轮不要连续调用多个 broad status 来“看看还有什么”，这会挤占可用于行动和可见反馈的上下文。
+
 优先级：
 
 - 已经知道该移动、说话或打开私聊时，直接用 `stardew_move`、`stardew_speak` 或 `stardew_open_private_chat`，不要先查背景。

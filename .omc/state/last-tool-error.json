@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"apply_patch <<'PATCH'\\n*** Begin Patch\\n*** Delete File: .omx/plans/星露谷NPC任务连续性闭包-产品需求.md\\n*** Add File: .omx/plans/星露谷NPC任务连续性闭包-产品需求.md\\n+# 星露谷 NPC 任务连续性闭包 PRD\\n+\\n+## RALPLAN-DR 摘要\\n+\\n...",
+  "error": "Exit code 2\n/usr/bin/bash: -c: line 1: unexpected EOF while looking for matching `''",
+  "timestamp": "2026-05-05T09:28:05.370Z",
+  "retry_count": 1
+}

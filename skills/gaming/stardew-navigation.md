@@ -8,6 +8,8 @@ This skill owns: "observe destinations → choose one matching intent → `stard
 
 `stardew-world` explains why destinations are meaningful; this skill only copies fields that already exist in observed `destination[n]` facts.
 
+Before calling tools, pick one turn purpose. Use the latest short live context first; if prior promises or route history are missing, use `session_search` on demand instead of carrying long transcript context. Use `memory` only for durable updates, not temporary movement summaries. avoid repeated broad status scans: once a movement intent is clear, do not re-query broad status tools just to be thorough.
+
 ## Hard Rule: Movement Is Not Narration Text
 
 Physical movement is not dialogue or inner monologue. When the NPC needs to change position in the game world, you MUST call `stardew_move`.
@@ -25,6 +27,7 @@ Physical movement is not dialogue or inner monologue. When the NPC needs to chan
    - Do not pass the destination label as `destination`; labels are only human-readable metadata.
    - Never invent a destination id. If no executable destination has a `destinationId`, do not call `stardew_move`.
 4. Poll: check `stardew_task_status` until a terminal status is reached: `completed`, `failed`, `blocked`, `cancelled`, or `interrupted`.
+   - `stardew_task_status` is only for long-action continuation checks after a command exists; do not use it as a broad world scan.
 5. Handle outcome:
    - `completed`: NPC arrived. Continue the next action.
    - `failed` / `blocked`: observe again or pick a different destination. Do NOT retry the same destination immediately.

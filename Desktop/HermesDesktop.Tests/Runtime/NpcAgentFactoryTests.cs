@@ -94,6 +94,36 @@ public class NpcAgentFactoryTests
     }
 
     [TestMethod]
+    public async Task Create_PassesBudgetPolicyFromContextBundleToAgent()
+    {
+        var skillManager = CreateSkillManager();
+        var chatClient = new CaptureFirstToolPromptChatClient();
+        var npcNamespace = new NpcNamespace(_tempDir, "stardew-valley", "save-1", "haley", "default");
+        var context = CreateContext(npcNamespace, chatClient, skillManager);
+        var policy = new ReplacingBudgetPolicy([
+            new Message { Role = "system", Content = "factory policy output" },
+            new Message { Role = "user", Content = "factory trimmed user" }
+        ]);
+        context = context with { FirstCallContextBudgetPolicy = policy };
+        var agent = new NpcAgentFactory().Create(
+            chatClient,
+            context,
+            [new NoopTool("noop")],
+            NullLoggerFactory.Instance,
+            maxToolIterations: 2);
+        var session = new Session { Id = "sdv_save-1_haley_default", Platform = "stardew" };
+        session.State[StardewAutonomySessionKeys.IsAutonomyTurn] = true;
+
+        await agent.ChatAsync("original", session, CancellationToken.None);
+
+        Assert.AreEqual(1, policy.Calls);
+        Assert.IsNotNull(chatClient.FirstToolMessages);
+        CollectionAssert.AreEqual(
+            new[] { "factory policy output", "factory trimmed user" },
+            chatClient.FirstToolMessages.Select(message => message.Content).ToArray());
+    }
+
+    [TestMethod]
     public async Task ChatAsync_MemoryToolPersistsAndFreshAgentRecallsBuiltinSnapshot_ForHaleyAndPenny()
     {
         var skillManager = CreateSkillManager();
@@ -309,4 +339,58 @@ public class NpcAgentFactoryTests
         public IReadOnlyList<CronTask> GetAllTasks() => Array.Empty<CronTask>();
         public DateTimeOffset? GetNextRun(string taskId) => null;
     }
+
+    private sealed class ReplacingBudgetPolicy(IReadOnlyList<Message> replacement) : IFirstCallContextBudgetPolicy
+    {
+        public int Calls { get; private set; }
+
+        public FirstCallContextBudgetResult Apply(FirstCallContextBudgetRequest request)
+        {
+            Calls++;
+            return new FirstCallContextBudgetResult(replacement, Applied: true, BudgetMet: true);
+        }
+    }
+
+    private sealed class CaptureFirstToolPromptChatClient : IChatClient
+    {
+        public List<Message>? FirstToolMessages { get; private set; }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            FirstToolMessages ??= messages.ToList();
+            return Task.FromResult(new ChatResponse { Content = "done", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class NoopTool(string name) : ITool
+    {
+        public string Name { get; } = name;
+        public string Description => $"Description of {Name}";
+        public Type ParametersType => typeof(EmptyParams);
+        public Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct) => Task.FromResult(ToolResult.Ok("{}"));
+    }
+
+    private sealed class EmptyParams { }
 }

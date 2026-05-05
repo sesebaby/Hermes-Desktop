@@ -116,6 +116,32 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
+    public async Task RunOneTickAsync_SetsAutonomySessionMarkerOnDecisionSession()
+    {
+        Session? capturedSession = null;
+        var descriptor = CreateDescriptor("haley");
+        var loop = new NpcAutonomyLoop(
+            new FakeGameAdapter(
+                new CountingCommandService(),
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Haley is idle.",
+                    ["location=Town"])),
+                new FakeEventSource([])),
+            new NpcObservationFactStore(),
+            new FakeAgent(() => { }, mutateSession: session => capturedSession = session));
+
+        await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+        Assert.IsNotNull(capturedSession);
+        Assert.IsTrue(capturedSession.State.TryGetValue(StardewAutonomySessionKeys.IsAutonomyTurn, out var marker));
+        Assert.AreEqual(true, marker);
+        Assert.AreEqual("haley", capturedSession.State["npcId"]);
+    }
+
+    [TestMethod]
     public async Task RunOneTickAsync_DecisionMessageDoesNotReuseHistoricalMoveCandidates()
     {
         var descriptor = CreateDescriptor("haley");
