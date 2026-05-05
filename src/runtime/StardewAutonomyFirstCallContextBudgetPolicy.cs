@@ -514,10 +514,8 @@ public sealed class StardewAutonomyFirstCallContextBudgetPolicy : IFirstCallCont
     }
 
     private static bool LooksLikeActiveTaskContext(Message message)
-        => message.Content.Contains(ActiveTaskContextHeader, StringComparison.Ordinal) ||
-           message.Content.Contains("active todo", StringComparison.OrdinalIgnoreCase) ||
-           message.Content.Contains("active task", StringComparison.OrdinalIgnoreCase) ||
-           message.Content.Contains("Task Context", StringComparison.OrdinalIgnoreCase);
+        => IsRole(message, "system") &&
+           message.Content.StartsWith(ActiveTaskContextHeader, StringComparison.Ordinal);
 
     private static Message CopyMessage(Message message, string content, List<ToolCall>? toolCalls = null)
         => new()

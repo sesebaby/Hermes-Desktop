@@ -355,6 +355,104 @@ public class StardewAutonomyContextBudgetTests
     }
 
     [TestMethod]
+    public void BudgetPolicy_UserPromptWithActiveTodo_RemainsCurrentUser()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var currentUser = """
+                          one turn purpose: continue Haley follow-up
+                          Active todo:
+                          - greet Haley
+                          - continue task context if still valid
+                          """;
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM" },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+        var completed = CompletedLog(logger);
+
+        Assert.AreEqual(0, ExtractIntField(completed, "activeTaskChars"), completed);
+        Assert.IsTrue(ExtractIntField(completed, "currentUserChars") >= currentUser.Length, completed);
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_SystemHeaderBlock_RemainsActiveTaskContext()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        const string currentUser = "CURRENT";
+        const string activeTaskHeader = "[Your active task list was preserved across context compression]";
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM" },
+            new() { Role = "system", Content = activeTaskHeader + "\n- finish Haley follow-up" },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+        var completed = CompletedLog(logger);
+
+        Assert.IsTrue(ExtractIntField(completed, "activeTaskChars") > 0, completed);
+        Assert.IsTrue(ExtractIntField(completed, "currentUserChars") > 0, completed);
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_UserRoleWithActiveTaskHeader_IsNotClassifiedAsActiveTaskContext()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var currentUser = """
+                          [Your active task list was preserved across context compression]
+                          This is still the user prompt, not preserved system task context.
+                          """;
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM" },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+        var completed = CompletedLog(logger);
+
+        Assert.AreEqual(0, ExtractIntField(completed, "activeTaskChars"), completed);
+        Assert.IsTrue(ExtractIntField(completed, "currentUserChars") >= currentUser.Length, completed);
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_ReproductionShape_OnlySystemHeaderCountsAsActiveTaskContext()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var currentUser = """
+                          active todo
+                          - walk to town
+                          - check whether task context is still relevant
+                          - do not restart broad scans
+                          """ + new string('u', 1800);
+        const string activeTaskHeader = "[Your active task list was preserved across context compression]";
+        var activeTaskBlock = activeTaskHeader + "\n- preserved move follow-up";
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "CORE SYSTEM" },
+            new() { Role = "system", Content = activeTaskBlock },
+            new() { Role = "user", Content = currentUser }
+        };
+
+        policy.Apply(new FirstCallContextBudgetRequest(session, messages, currentUser, 1));
+        var completed = CompletedLog(logger);
+
+        Assert.AreEqual(activeTaskBlock.Length + "system".Length, ExtractIntField(completed, "activeTaskChars"));
+        Assert.IsTrue(ExtractIntField(completed, "currentUserChars") >= currentUser.Length, completed);
+    }
+
+    [TestMethod]
     public void BudgetPolicy_MixedOverflow_UsesDocumentedReasonPriority()
     {
         var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
