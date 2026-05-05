@@ -21,6 +21,7 @@ public sealed class BridgeCommandQueue
     private readonly BridgeEventBuffer _events;
     private readonly HermesPhoneState _phoneState;
     private readonly StardewMessageDisplayRouter _messageRouter;
+    private readonly NpcOverheadBubbleOverlay _bubbleOverlay;
     private readonly Action<string>? _privateChatOpened;
     private readonly Action<string>? _privateChatSubmitted;
     private readonly Action<string, string>? _privateChatReplyDisplayed;
@@ -31,6 +32,7 @@ public sealed class BridgeCommandQueue
         BridgeEventBuffer? events = null,
         HermesPhoneState? phoneState = null,
         StardewMessageDisplayRouter? messageRouter = null,
+        NpcOverheadBubbleOverlay? bubbleOverlay = null,
         Action<string>? privateChatOpened = null,
         Action<string>? privateChatSubmitted = null,
         Action<string, string>? privateChatReplyDisplayed = null)
@@ -38,9 +40,10 @@ public sealed class BridgeCommandQueue
         _logger = logger;
         _events = events ?? new BridgeEventBuffer();
         _phoneState = phoneState ?? new HermesPhoneState();
+        _bubbleOverlay = bubbleOverlay ?? new NpcOverheadBubbleOverlay(_events, logger);
         _messageRouter = messageRouter ?? new StardewMessageDisplayRouter(
             _phoneState,
-            new NpcOverheadBubbleOverlay(_events, logger),
+            _bubbleOverlay,
             new HermesPhoneOverlay(_phoneState, _events, logger, null, privateChatSubmitted),
             _events,
             logger);
@@ -74,7 +77,8 @@ public sealed class BridgeCommandQueue
             target.Tile!,
             target.FacingDirection,
             envelope.IdempotencyKey,
-            target.DestinationId);
+            target.DestinationId,
+            envelope.Payload.Thought);
         _commands[commandId] = command;
         if (!string.IsNullOrWhiteSpace(envelope.IdempotencyKey))
             _idempotency[envelope.IdempotencyKey] = commandId;
@@ -398,6 +402,7 @@ public sealed class BridgeCommandQueue
             command.SetPhase("planning_route", command.LocationName);
             command.ReplaceSchedulePath(initialProbe.Route);
             command.Start();
+            ShowMoveThoughtIfPresent(npc, command);
             command.SetPhase("executing_segment", command.LocationName);
             _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"started;pathSteps={command.PathStepsRemaining}");
             return command.ToStatusData();
@@ -497,6 +502,12 @@ public sealed class BridgeCommandQueue
 
     private static bool ShouldTryArrivalFallback(BridgeRouteProbeResult probe)
         => probe.Status is BridgeRouteProbeStatus.TargetUnsafe or BridgeRouteProbeStatus.PathEmpty;
+
+    private void ShowMoveThoughtIfPresent(NPC npc, BridgeMoveCommand command)
+    {
+        if (!string.IsNullOrWhiteSpace(command.Thought))
+            _bubbleOverlay.ShowMoveThought(npc, command.Thought, command.CommandId);
+    }
 
     private static BridgeRouteProbeResult ProbeRoute(NPC npc, TileDto currentTile, GameLocation location, TileDto targetTile)
         => BridgeMovementPathProbe.Probe(
@@ -771,7 +782,8 @@ public sealed class BridgeMoveCommand
         TileDto targetTile,
         int? facingDirection,
         string? idempotencyKey,
-        string? destinationId = null)
+        string? destinationId = null,
+        string? thought = null)
     {
         CommandId = commandId;
         TraceId = traceId;
@@ -781,6 +793,7 @@ public sealed class BridgeMoveCommand
         FacingDirection = facingDirection;
         IdempotencyKey = idempotencyKey;
         DestinationId = destinationId;
+        Thought = thought;
     }
 
     public string CommandId { get; }
@@ -791,6 +804,7 @@ public sealed class BridgeMoveCommand
     public int? FacingDirection { get; private set; }
     public string? IdempotencyKey { get; }
     public string? DestinationId { get; }
+    public string? Thought { get; }
     public string Status { get; private set; } = "queued";
     public string? BlockedReason { get; private set; }
     public string? ErrorCode { get; private set; }

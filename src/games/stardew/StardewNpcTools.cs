@@ -326,7 +326,7 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_move";
 
-    public string Description => "Ask this NPC to move to a semantic destination from the latest observation. Copy the destination id from a destination[n].destinationId fact (preferred), or the destination label from a destination[n].label fact. Never invent destinations. If a move ends with path_blocked, path_unreachable, or interrupted, observe again or choose a different target instead of retrying the same destination. Only use nearby[n] as a last resort for 1-2 tile repositioning when no destination matches your intent.";
+    public string Description => "Ask this NPC to move to a semantic destination from the latest observation. Copy the destination id from a destination[n].destinationId fact (preferred), or the destination label from a destination[n].label fact. Never invent destinations. Optional thought is a short private-feeling movement thought shown as a non-blocking overhead bubble when the move starts. If a move ends with path_blocked, path_unreachable, or interrupted, observe again or choose a different target instead of retrying the same destination. Only use nearby[n] as a last resort for 1-2 tile repositioning when no destination matches your intent.";
 
     public Type ParametersType => typeof(StardewMoveToolParameters);
 
@@ -360,6 +360,8 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
         };
         if (facingDirection.HasValue)
             payload["facingDirection"] = facingDirection.Value;
+        if (!string.IsNullOrWhiteSpace(p.Thought))
+            payload["thought"] = p.Thought;
 
         var action = new GameAction(
             _descriptor.NpcId,
@@ -982,6 +984,8 @@ public sealed class StardewMoveToolParameters
     public required string Destination { get; init; }
 
     public string? Reason { get; init; }
+
+    public string? Thought { get; init; }
 }
 
 public sealed class StardewSpeakToolParameters
@@ -1040,7 +1044,8 @@ internal static class StardewNpcToolSchemas
             new Dictionary<string, object>
             {
                 ["destination"] = new { type = "string", description = "Destination identifier from the latest observation. Prefer destination[n].destinationId (stable key), fall back to destination[n].label. Never invent destinations." },
-                ["reason"] = new { type = "string", description = "Short reason copied from the destination[n] fact's reason field, or a brief NPC intent aligned with the destination." }
+                ["reason"] = new { type = "string", description = "Short reason copied from the destination[n] fact's reason field, or a brief NPC intent aligned with the destination." },
+                ["thought"] = new { type = "string", description = "Optional short inner thought shown as a non-blocking overhead bubble when movement starts. Keep it immersive and under one sentence." }
             },
             ["destination"]);
 

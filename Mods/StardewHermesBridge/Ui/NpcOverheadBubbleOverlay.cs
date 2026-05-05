@@ -28,6 +28,12 @@ public sealed class NpcOverheadBubbleOverlay
         _logger.Write("message_bubble_displayed", npc.Name, privateChat ? "private_chat" : "speak", "bubble", null, "displayed", conversationId);
     }
 
+    public void ShowMoveThought(NPC npc, string text, string? commandId)
+    {
+        _bubbles[npc.Name] = new BubbleEntry(npc.Name, text, commandId, PrivateChat: false, DateTime.UtcNow.Add(BubbleLifetime));
+        _logger.Write("message_bubble_displayed", npc.Name, "move_thought", "bubble", commandId, "displayed", null);
+    }
+
     public void Draw(SpriteBatch spriteBatch)
     {
         var now = DateTime.UtcNow;

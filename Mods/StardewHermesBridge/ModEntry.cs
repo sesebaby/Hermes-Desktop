@@ -52,6 +52,7 @@ public sealed class ModEntry : Mod
             _events,
             _phoneState,
             _messageRouter,
+            _bubbleOverlay,
             _ => _overlay.ClearPrivateChatPending(),
             npcName => _overlay.SetPrivateChatThinking(npcName),
             (npcName, _) => _overlay.ClearPrivateChatPending());

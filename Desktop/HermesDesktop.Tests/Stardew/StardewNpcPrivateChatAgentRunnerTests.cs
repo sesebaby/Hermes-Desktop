@@ -130,6 +130,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
 
         Assert.AreEqual("我记着，明天见。", reply.Text);
         Assert.IsTrue(client.SawChineseContinuityGuidance, "Private chat prompt must use Chinese plain-language continuity guidance.");
+        Assert.IsTrue(client.SawDirectPlayerReplyGuidance, "Private chat prompt must force a direct reply to the player, not inner monologue.");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
         Assert.IsTrue(runtimeSupervisor.TryGetTaskView(haleySnapshot.SessionId, out var longTermTaskView));
         Assert.IsNotNull(longTermTaskView);
@@ -336,6 +337,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         private int _calls;
 
         public bool SawChineseContinuityGuidance { get; private set; }
+        public bool SawDirectPlayerReplyGuidance { get; private set; }
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
             => Task.FromResult("ok");
@@ -352,6 +354,11 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                 message.Content.Contains("玩家找你说话时", StringComparison.Ordinal) &&
                 message.Content.Contains("todo", StringComparison.Ordinal) &&
                 message.Content.Contains("不要把工具过程讲给玩家听", StringComparison.Ordinal));
+            SawDirectPlayerReplyGuidance |= snapshot.Any(message =>
+                string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase) &&
+                message.Content.Contains("最终回复会显示在玩家手机私聊里", StringComparison.Ordinal) &&
+                message.Content.Contains("必须直接对玩家说话", StringComparison.Ordinal) &&
+                message.Content.Contains("不要写内心独白、旁白", StringComparison.Ordinal));
 
             if (_calls == 1)
             {

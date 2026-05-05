@@ -251,6 +251,7 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
             "如果你需要想起以前答应过什么，先用 session_search 查旧对话和旧约定。\n" +
             "你可以先用工具处理任务和记忆，再给玩家一句简短自然的回复。\n" +
             "如果任务做不了或被卡住，要把 todo 标成 blocked 或 failed，并写清短 reason；能告诉玩家时，要直接告诉玩家卡在哪里。\n" +
+            "最终回复会显示在玩家手机私聊里，必须直接对玩家说话；不要写内心独白、旁白、动作描写或只给自己看的想法。\n" +
             "不要把工具过程讲给玩家听，不要输出标签、markdown 或系统说明。";
 }
 

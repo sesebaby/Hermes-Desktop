@@ -40,7 +40,8 @@ public sealed class StardewCommandService : IGameCommandService
                     new StardewTile(action.Target.Tile.X, action.Target.Tile.Y)),
             Reason: action.Reason,
             DestinationId: destinationId,
-            FacingDirection: ReadOptionalInt(action.Payload, "facingDirection"));
+            FacingDirection: ReadOptionalInt(action.Payload, "facingDirection"),
+            Thought: action.Payload?["thought"]?.ToString());
         var envelope = new StardewBridgeEnvelope<StardewMoveRequest>(
             requestId,
             action.TraceId,

@@ -188,6 +188,7 @@ public class StardewNpcToolFactoryTests
         StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "destination"), "destination[n].destinationId");
         StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "destination"), "destination[n].label");
         StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "reason"), "Short reason");
+        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "thought"), "overhead bubble");
     }
 
     [TestMethod]
@@ -272,6 +273,29 @@ public class StardewNpcToolFactoryTests
         Assert.AreEqual("town.fountain", commands.LastAction.Payload?["destinationId"]?.ToString());
         Assert.AreEqual("2", commands.LastAction.Payload?["facingDirection"]?.ToString());
         Assert.AreEqual("cmd-1", JsonDocument.Parse(result.Content).RootElement.GetProperty("commandId").GetString());
+    }
+
+    [TestMethod]
+    public async Task MoveTool_WithThoughtPassesMoveThoughtToBridgePayload()
+    {
+        var commands = new CapturingCommandService();
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"),
+            traceIdFactory: () => "trace-move",
+            idempotencyKeyFactory: () => "idem-move");
+        var moveTool = tools.Single(tool => tool.Name == "stardew_move");
+
+        var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
+        {
+            Destination = "Town fountain",
+            Reason = "inspect the fountain",
+            Thought = "喷泉边的光线正好。"
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.IsNotNull(commands.LastAction);
+        Assert.AreEqual("喷泉边的光线正好。", commands.LastAction.Payload?["thought"]?.ToString());
     }
 
     [TestMethod]

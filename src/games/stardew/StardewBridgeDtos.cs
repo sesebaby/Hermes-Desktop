@@ -62,7 +62,8 @@ public sealed record StardewMoveRequest(
     [property: JsonPropertyName("target")] StardewMoveTarget? Target,
     [property: JsonPropertyName("reason")] string? Reason = null,
     [property: JsonPropertyName("destinationId")] string? DestinationId = null,
-    [property: JsonPropertyName("facingDirection")] int? FacingDirection = null);
+    [property: JsonPropertyName("facingDirection")] int? FacingDirection = null,
+    [property: JsonPropertyName("thought")] string? Thought = null);
 
 public sealed record StardewMoveAcceptedData(
     [property: JsonPropertyName("accepted")] bool Accepted,

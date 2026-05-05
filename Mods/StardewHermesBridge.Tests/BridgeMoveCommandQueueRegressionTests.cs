@@ -272,6 +272,26 @@ public sealed class BridgeMoveCommandQueueRegressionTests
     }
 
     [TestMethod]
+    public void MovePayloadCarriesOptionalThoughtForOverheadBubble()
+    {
+        var models = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandModels.cs");
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(
+            models,
+            "string? Thought",
+            "Move payload should carry the NPC's short movement thought through the bridge contract.");
+        StringAssert.Contains(
+            commandQueue,
+            "_bubbleOverlay.ShowMoveThought",
+            "Move start should display the optional movement thought through the existing overhead bubble overlay.");
+        StringAssert.Contains(
+            commandQueue,
+            "command.Thought",
+            "The queued move command must retain the thought until the game-loop move pump starts execution.");
+    }
+
+    [TestMethod]
     public void MovePumpReplansRuntimeStepBlocksBeforeTerminalPathBlocked()
     {
         var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");

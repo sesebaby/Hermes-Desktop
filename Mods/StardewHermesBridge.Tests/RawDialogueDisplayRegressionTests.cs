@@ -342,6 +342,25 @@ public class RawDialogueDisplayRegressionTests
     }
 
     [TestMethod]
+    public void MoveThoughtBubbleDoesNotEmitPrivateChatReplyClosed()
+    {
+        var bubbleOverlay = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "NpcOverheadBubbleOverlay.cs");
+
+        StringAssert.Contains(
+            bubbleOverlay,
+            "ShowMoveThought",
+            "Movement thoughts should use a named helper instead of pretending to be private-chat replies.");
+        StringAssert.Contains(
+            bubbleOverlay,
+            "move_thought",
+            "Movement thought bubbles need their own diagnostic channel.");
+        StringAssert.Contains(
+            bubbleOverlay,
+            "PrivateChat: false",
+            "Movement thought bubbles must not emit private_chat_reply_closed when they expire.");
+    }
+
+    [TestMethod]
     public void PrivateChatInputUsesPortraitShellAndWrappedInputArea()
     {
         var inputMenu = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "PrivateChatInputMenu.cs");

@@ -49,6 +49,37 @@ public class StardewCommandServiceTests
     }
 
     [TestMethod]
+    public async Task SubmitAsync_Move_IncludesThoughtInMoveEnvelope()
+    {
+        var client = new FakeSmapiClient();
+        client.MoveResponse = new StardewBridgeResponse<StardewMoveAcceptedData>(
+            true,
+            "trace-thought",
+            "req-thought",
+            "cmd-thought",
+            StardewCommandStatuses.Queued,
+            new StardewMoveAcceptedData(true, new StardewMoveClaim("haley", new StardewTile(42, 17), null)),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.Move,
+            "trace-thought",
+            "idem-thought",
+            new GameActionTarget("tile", "Town", new GameTile(42, 17)),
+            "inspect fountain",
+            Payload: new JsonObject { ["thought"] = "喷泉边的光线正好。" });
+
+        var result = await service.SubmitAsync(action, CancellationToken.None);
+
+        Assert.IsTrue(result.Accepted);
+        var envelope = (StardewBridgeEnvelope<StardewMoveRequest>)client.LastEnvelope!;
+        Assert.AreEqual("喷泉边的光线正好。", envelope.Payload.Thought);
+    }
+
+    [TestMethod]
     public async Task SubmitAsync_Move_WithDestinationIdOnlyPayload_PostsDestinationFirstEnvelope()
     {
         var client = new FakeSmapiClient();
