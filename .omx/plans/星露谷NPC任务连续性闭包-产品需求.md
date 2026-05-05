@@ -1,166 +1,166 @@
-# Stardew NPC Task Continuity Closure PRD
+# 星露谷 NPC 任务连续性闭包 PRD
 
-## RALPLAN-DR Summary
+## RALPLAN-DR 摘要
 
-### Principles
+### 原则
 
-1. Preserve the single Hermes-native continuity surface: `todo` + `memory` + `session_search` + per-NPC session/runtime state. No second task system.
-2. Keep the NPC agent as the decision-maker. The host/bridge only exposes facts, tools, command truth, and logs.
-3. Prove closure with action evidence, not narration: a player promise must survive into autonomy, drive Stardew tool use, surface terminal command truth, let the agent update todo state, and leave runtime/UI-visible traces.
-4. Copy reference-project structure, not reference-project baggage: inherit HermesCraft/Hermes Agent continuity patterns and only VillagerAgent's feedback-loop visibility, without importing DAG/task-graph machinery.
+1. 保留唯一的 Hermes 原生连续性表面：`todo` + `memory` + `session_search` + 按 NPC 划分的 session/runtime 状态。不引入第二套任务系统。
+2. 保持 NPC agent 作为决策者。host/bridge 只暴露事实、工具、命令事实和日志。
+3. 用行动证据而不是叙述来证明闭包：玩家承诺必须能延续到 autonomy、驱动 Stardew 工具调用、暴露终态命令事实、让 agent 更新 todo 状态，并留下运行时/UI 可见痕迹。
+4. 复制参考项目的结构，不复制参考项目的包袱：继承 HermesCraft/Hermes Agent 的连续性模式，只借用 VillagerAgent 的反馈回路可见性，不引入 DAG/任务图机制。
 
-### Decision Drivers
+### 决策驱动因素
 
-1. `P0` requires an end-to-end closure proof from private chat promise to autonomy execution, terminal feedback, and visible evidence.
-2. The repository already has the substrate (`ToolSessionId` / `TaskSessionId`, todo projection, restart hydration, `stardew-task-continuity` skill), so the plan must target closure gaps rather than rebuild foundations.
-3. OpenSpec constraints forbid second task stores, host-side promise detection, cross-map movement, public move coordinate inputs, and host-led NPC decisions.
+1. `P0` 需要从私聊承诺到 autonomy 执行、终端反馈和可见证据的端到端闭包证明。
+2. 仓库已经具备基础底座（`ToolSessionId` / `TaskSessionId`、todo 投影、重启 hydration、`stardew-task-continuity` skill），所以计划应聚焦闭包缺口，而不是重建底层。
+3. OpenSpec 约束禁止第二任务存储、host 侧承诺检测、跨地图移动、公开移动坐标输入，以及 host 主导 NPC 决策。
 
-### Viable Options
+### 可行方案
 
-#### Option A: Prompt/skill-first hardening with targeted runtime diagnostics
+#### 方案 A：以 prompt/skill 为先的加固，辅以定向运行时诊断
 
-- Shape: tighten autonomy/private-chat prompts and Stardew skill text, add/adjust small runtime evidence hooks and narrow loop behavior, then lock the closure with integration-style tests.
-- Pros:
-  - Best matches HermesCraft/Hermes Agent: agent-led todo continuity over host orchestration.
-  - Low architectural risk because it reuses existing `todo`, task projection, autonomy loop, and runtime log surfaces.
-  - Keeps the implementation path narrow and reversible.
-- Cons:
-  - Relies on prompt/tool-contract quality; weak assertions can still allow regressions where the model narrates instead of acting.
-  - May need one or two carefully scoped runtime hooks to make failure/feedback evidence machine-checkable.
+- 形态：收紧 autonomy/private-chat prompt 和 Stardew skill 文案，增加/调整少量运行时证据钩子与窄范围循环行为，再用集成式测试锁定闭包。
+- 优点：
+  - 最符合 HermesCraft/Hermes Agent：由 agent 主导 todo 连续性，而不是由 host 编排。
+  - 架构风险最低，因为复用了现有 `todo`、任务投影、autonomy loop 和运行时日志表面。
+  - 实现路径最窄，也最容易回退。
+- 缺点：
+  - 依赖 prompt/工具契约质量；如果断言不够强，模型仍可能只叙述不行动而导致回归。
+  - 可能需要一到两个严格收口的运行时钩子，才能让失败/反馈证据可被机器校验。
 
-#### Option B: Host-mediated continuity controller inside Stardew runtime
+#### 方案 B：在 Stardew runtime 内加入 host 中介式连续性控制器
 
-- Shape: add a runtime-side controller that interprets private chat promises, decides when to update todo, injects player feedback, and converts terminal command status into task transitions.
-- Pros:
-  - More deterministic closure behavior.
-  - Easier to assert mechanically in tests.
-- Cons:
-  - Violates the current architecture and reference direction by shifting intent ownership from agent to host.
-  - Risks becoming a de facto second task system / promise detector.
-  - Encourages brittle game-specific logic rather than Hermes-native continuity habits.
+- 形态：新增运行时控制器，用来解释私聊承诺、决定何时更新 todo、注入玩家反馈，并把终态命令状态转换成任务状态迁移。
+- 优点：
+  - 闭包行为更确定。
+  - 更容易在测试中做机械化断言。
+- 缺点：
+  - 会偏离当前架构和参考方向，把意图所有权从 agent 转移到 host。
+  - 有演变成事实上的第二任务系统/承诺检测器的风险。
+  - 会鼓励脆弱的游戏特化逻辑，而不是 Hermes 原生的连续性习惯。
 
-#### Option C: VillagerAgent-style task graph/state machine overlay
+#### 方案 C：叠加 VillagerAgent 风格的任务图/状态机
 
-- Shape: keep current todo substrate but add graph/state-machine structures to decompose and track NPC work.
-- Pros:
-  - Rich status visibility.
-  - Explicit blocked/running/failed semantics.
-- Cons:
-  - Over-scoped for `P0`.
-  - Conflicts with the “single truth = todo” rule and would reintroduce a second task layer by indirection.
-  - Pulls in reference baggage the user explicitly rejected.
+- 形态：保留现有 todo 底座，但增加图结构/状态机来拆解和追踪 NPC 工作。
+- 优点：
+  - 状态可见性更丰富。
+  - `blocked` / `running` / `failed` 语义更显式。
+- 缺点：
+  - 对 `P0` 来说范围过大。
+  - 与“唯一真相 = todo”规则冲突，并会通过间接方式重新引入第二层任务系统。
+  - 会带入用户已明确拒绝的参考项目包袱。
 
-### Recommended Option
+### 推荐方案
 
-Choose **Option A**.
+选择 **方案 A**。
 
-It best fits the repo’s actual state: the system already routes private-chat tool writes to long-term session, hydrates todo state on restart, injects active todo into autonomy, and exposes runtime task view plus `runtime.jsonl`. The missing work is not a new scheduler or controller; it is closing the proof that the agent uses Stardew tools to advance or explain the task, sees terminal `blocked` / `failed` command truth, writes short todo reasons itself through `todo` / `todo_write`, and leaves coherent player/UI-visible evidence across the same NPC runtime surfaces.
+它最符合仓库的真实现状：系统已经会把私聊工具写入路由到长期 session，能在重启时 hydrate todo 状态，会把 active todo 注入 autonomy，并暴露运行时任务视图和 `runtime.jsonl`。当前缺失的不是新的调度器或控制器，而是补齐这条证明链：agent 使用 Stardew 工具推进或解释任务，看到终态 `blocked` / `failed` 命令事实，通过 `todo` / `todo_write` 自行写入简短 todo 原因，并在同一 NPC runtime 表面留下连贯、对玩家/UI 可见的证据。
 
-## ADR Draft
+## ADR 草案
 
-### Decision
+### 决策
 
-Implement `P0` task continuity closure by reinforcing the existing per-NPC Hermes agent loop: private chat commits to long-term `todo`, autonomy consumes the same active todo, Stardew action tools perform or fail the work, runtime exposes terminal command truth, the agent updates the same todo with short reasons through `todo` / `todo_write`, and runtime/UI surfaces expose that lifecycle without adding a second controller or task store.
+通过加固现有按 NPC 划分的 Hermes agent 循环来实现 `P0` 任务连续性闭包：私聊将承诺写入长期 `todo`，autonomy 消费同一个 active todo，Stardew 动作工具执行或失败，runtime 暴露终态命令事实，agent 通过 `todo` / `todo_write` 给同一个 todo 写入简短原因更新，而 runtime/UI 表面暴露这条生命周期，不增加第二控制器或第二任务存储。
 
-### Drivers
+### 驱动因素
 
-- Existing substrate already supports long-term task continuity across private chat, autonomy, restart hydration, and task-view projection.
-- Reference projects favor standard Hermes tools plus game interface, not game-owned task orchestration.
-- The requested `P0` acceptance criteria are evidence-oriented and can be met with narrow loop/prompt/log changes plus tests.
+- 现有底座已经支持私聊、autonomy、重启 hydration 和任务视图投影之间的长期任务连续性。
+- 参考项目偏向标准 Hermes 工具加游戏接口，而不是游戏自有的任务编排。
+- 所要求的 `P0` 验收标准以证据为导向，可以通过窄范围的 loop/prompt/log 改动加测试满足。
 
-### Alternatives Considered
+### 考虑过的备选方案
 
-- Host-managed continuity controller inside Stardew runtime: rejected because it shifts agency away from the NPC and trends toward a promise detector.
-- DAG / graph-based task manager overlay: rejected because it duplicates `todo` semantics and exceeds `P0`.
+- 在 Stardew runtime 内加入 host 管理的连续性控制器：拒绝，因为它会把 agent 的自主性移走，并逐渐演变成承诺检测器。
+- 基于 DAG/图的任务管理器叠层：拒绝，因为它重复了 `todo` 语义，且超出了 `P0` 范围。
 
-### Why Chosen
+### 选择原因
 
-This path is the smallest change set that satisfies the closure proof while preserving the architecture already converging toward HermesCraft/Hermes Agent.
+这是在保留当前已向 HermesCraft/Hermes Agent 收敛架构的前提下，满足闭包证明所需改动最小的一条路径。
 
-### Consequences
+### 影响
 
-- Prompt, skill, tool-result, and logging contracts become more important and must be regression-tested with real repo skill assets.
-- The system will intentionally fail loudly when the agent narrates actions instead of calling Stardew tools.
-- Some runtime evidence may need expansion so UI/debug consumers can distinguish “observed”, “actioned”, and “terminal failure explained”.
+- Prompt、skill、tool-result 和 logging 契约会变得更关键，必须用真实仓库 skill 资产做回归测试。
+- 当 agent 只叙述动作而不调用 Stardew 工具时，系统将有意大声失败。
+- 可能需要扩展部分运行时证据，以便 UI/debug 消费者区分“已观察”“已执行动作”“已解释终态失败”。
 
-### Follow-ups
+### 后续
 
-1. If `P0` is stable, `P1` can deepen world/social/navigation knowledge without changing the continuity architecture.
-2. If repeated regressions show insufficient observability, add structured runtime events before adding any new control layer.
+1. 如果 `P0` 稳定，`P1` 可以在不改变连续性架构的前提下深化世界/社交/导航知识。
+2. 如果反复回归暴露出可观测性不足，应先增加结构化运行时事件，再考虑任何新的控制层。
 
-## Scope
+## 范围
 
-- Focus on closure gaps only.
-- Preserve completed substrate:
+- 只聚焦闭包缺口。
+- 保留已完成底座：
   - `ToolSessionId` / `TaskSessionId`
-  - `todo` projection into long-term NPC session
+  - 投影进长期 NPC session 的 `todo`
   - restart hydration
   - `skills/gaming/stardew-task-continuity/SKILL.md`
-- Do not add:
-  - second task store
-  - host promise detector
-  - public `stardew_move` coordinate/label inputs
-  - cross-map movement implementation
-  - host-authored NPC decisions
+- 不新增：
+  - 第二任务存储
+  - host 承诺检测器
+  - 公开的 `stardew_move` 坐标/label 输入
+  - 跨地图移动实现
+  - host 代写的 NPC 决策
 
-## Requirements
+## 需求
 
-### Functional Requirements
+### 功能需求
 
-1. A private-chat commitment that the NPC accepts must continue to write/update `todo` in `descriptor.SessionId`, while the transcript session remains `${descriptor.SessionId}:private_chat:{conversationId}`.
-2. A later autonomy tick must receive the existing active todo as concrete prompt/runtime context and treat it as a continuation candidate before freeform idling.
-3. When autonomy progresses a task, success/progress must be grounded in Stardew action tools such as `stardew_move`, `stardew_task_status`, `stardew_speak`, or `stardew_open_private_chat`, not narration-only final text.
-4. When a Stardew command reaches terminal `blocked` or `failed`, runtime surfaces may persist and expose that command truth through controller snapshot, `stardew_recent_activity`, prompt facts, and append-only logs; a subsequent agent/autonomy turn must call `todo` / `todo_write` to update the same long-term todo with a short fact-style `reason`.
-5. When the blocked/failed todo came from a player commitment, the NPC must attempt player-visible feedback through `stardew_speak` or private chat path, still as an agent decision.
-6. The resulting continuity evidence must be readable from both runtime surfaces:
+1. NPC 接受的私聊承诺必须继续把 `todo` 写入/更新到 `descriptor.SessionId`，而 transcript session 仍保持为 `${descriptor.SessionId}:private_chat:{conversationId}`。
+2. 后续 autonomy tick 必须把现有 active todo 作为具体 prompt/runtime 上下文接收，并在自由发呆之前把它视为连续性候选项。
+3. 当 autonomy 推进任务时，成功/进展必须锚定在 `stardew_move`、`stardew_task_status`、`stardew_speak` 或 `stardew_open_private_chat` 等 Stardew 动作工具上，而不是只靠叙述式最终文本。
+4. 当 Stardew 命令进入终态 `blocked` 或 `failed` 时，runtime 表面可以通过 controller snapshot、`stardew_recent_activity`、prompt facts 和 append-only logs 持久化并暴露该命令事实；随后 agent/autonomy 的某一轮必须调用 `todo` / `todo_write`，用简短、事实化的 `reason` 更新同一个长期 todo。
+5. 当 `blocked`/`failed` 的 todo 来自玩家承诺时，NPC 必须尝试通过 `stardew_speak` 或私聊路径提供玩家可见的反馈，并且仍由 agent 自主决定。
+6. 产出的连续性证据必须能从两个运行时表面读取：
   - `NpcRuntimeSupervisor.TryGetTaskView(...)`
   - `runtime.jsonl`
 
-### Non-Functional Requirements
+### 非功能需求
 
-1. Tests involving prompt/skill boundaries must use real repository gaming skill assets where applicable.
-2. Changes must stay narrow: prompt text, runtime evidence hooks, and small autonomy/tool handling adjustments are in scope; new orchestration layers are not.
-3. Behavior must remain per-NPC/per-save/per-profile isolated.
+1. 涉及 prompt/skill 边界的测试，在适用时必须使用仓库中的真实 gaming skill 资产。
+2. 变更必须保持收口：prompt 文案、运行时证据钩子以及少量 autonomy/tool 处理调整在范围内；新编排层不在范围内。
+3. 行为必须继续按 NPC / save / profile 隔离。
 
-## Acceptance Criteria
+## 验收标准
 
-1. A regression test proves private-chat-created todo stays in the root NPC session and remains visible after supervisor restart, while the private-chat transcript session task view stays empty.
-2. A regression test proves an autonomy turn that sees an active todo performs at least one Stardew action tool call rather than only returning narration.
-3. A regression test proves a terminal `blocked` or `failed` Stardew command is first exposed as runtime command truth, then on a later agent/autonomy turn causes:
-   - a `todo` / `todo_write` update in the same long-term session,
-   - a non-empty short `reason` to be stored,
-   - an attempted player feedback action (`stardew_speak` or private-chat path) when the task originated from player commitment.
-4. A regression test proves the same blocked/failed lifecycle is visible in `runtime.jsonl` with machine-checkable entries, not only in freeform final chat text.
-5. A regression test proves task-view/UI-facing snapshots expose the updated blocked/failed todo status and reason from transcript-backed `todo` tool-result projection, without direct runtime-controller mutation and without needing a fresh private-chat handle.
-6. Prompt/skill tests prove the autonomy/private-chat prompts continue to teach:
-   - todo/memory/session_search division of responsibilities,
-   - Stardew tool use over narration,
-   - blocked/failed reason discipline,
-   - player feedback expectations.
-7. A schema/description regression test proves `stardew_move` remains a destinationId-only public tool contract:
-   - allowed public input: semantic `destinationId`;
-   - forbidden public inputs: `label`, `x`, `y`, `tile`, `facingDirection`, or any coordinate/facing substitute.
+1. 回归测试证明：私聊创建的 todo 存在于根 NPC session，并在 supervisor 重启后仍可见，而私聊 transcript session 的 task view 仍然为空。
+2. 回归测试证明：看到 active todo 的 autonomy turn 至少执行一次 Stardew 动作工具调用，而不是只返回叙述。
+3. 回归测试证明：终态为 `blocked` 或 `failed` 的 Stardew 命令，先作为运行时命令事实暴露，随后在稍后的一次 agent/autonomy turn 中触发：
+   - 在同一个长期 session 中进行一次 `todo` / `todo_write` 更新，
+   - 存储一个非空且简短的 `reason`，
+   - 当任务源自玩家承诺时，尝试一次玩家反馈动作（`stardew_speak` 或私聊路径）。
+4. 回归测试证明：同一条 `blocked`/`failed` 生命周期会在 `runtime.jsonl` 中以可机检的条目形式可见，而不只是出现在自由格式最终聊天文本里。
+5. 回归测试证明：面向 task-view/UI 的快照能从 transcript-backed 的 `todo` tool-result projection 中暴露更新后的 `blocked`/`failed` todo 状态与原因，而不依赖直接运行时控制器 mutation，也不需要新的私聊 handle。
+6. Prompt/skill 测试证明：autonomy/private-chat prompt 继续传达以下约束：
+   - `todo` / `memory` / `session_search` 的职责分工，
+   - 优先使用 Stardew 工具而不是叙述，
+   - `blocked` / `failed` 的原因纪律，
+   - 对玩家反馈的预期。
+7. 一项 schema/description 回归测试证明 `stardew_move` 仍保持只接受 `destinationId` 的公开工具契约：
+   - 允许的公开输入：语义化 `destinationId`；
+   - 禁止的公开输入：`label`、`x`、`y`、`tile`、`facingDirection` 或任何坐标/朝向替代项。
 
-## Implementation Steps
+## 实施步骤
 
-### Step 1: Baseline the closure gaps with end-to-end tests
+### 步骤 1：用端到端测试基线化闭包缺口
 
-Files:
+文件：
 - `Desktop/HermesDesktop.Tests/Stardew/StardewNpcPrivateChatAgentRunnerTests.cs`
 - `Desktop/HermesDesktop.Tests/Runtime/NpcRuntimeSupervisorTests.cs`
 - `Desktop/HermesDesktop.Tests/Runtime/NpcAutonomyLoopTests.cs`
 - `Desktop/HermesDesktop.Tests/Stardew/StardewAutonomyTickDebugServiceTests.cs`
 - `Desktop/HermesDesktop.Tests/Stardew/StardewNpcAutonomyBackgroundServiceTests.cs`
 
-Intent:
-- Add or refine tests that currently stop at substrate proof so they assert the missing closure: actual tool progression, terminal todo updates, player feedback attempt, and runtime/UI evidence.
+意图：
+- 新增或收紧当前只停留在底座证明的测试，使其断言缺失的闭包：真实工具推进、终态 todo 更新、玩家反馈尝试，以及运行时/UI 证据。
 
-Acceptance:
-- New failing tests isolate the remaining gap without introducing new infrastructure assumptions.
+验收：
+- 新的失败测试能隔离剩余缺口，而不引入新的基础设施假设。
 
-### Step 2: Tighten autonomy/private-chat continuity contracts at the agent boundary
+### 步骤 2：在 agent 边界收紧 autonomy/private-chat 连续性契约
 
-Files:
+文件：
 - `src/runtime/NpcAutonomyLoop.cs`
 - `src/games/stardew/StardewPrivateChatOrchestrator.cs`
 - `src/games/stardew/StardewNpcTools.cs`
@@ -168,53 +168,53 @@ Files:
 - `skills/gaming/stardew-social.md`
 - `skills/gaming/stardew-navigation.md`
 
-Intent:
-- Keep the existing Chinese continuity guidance but strengthen the minimum behavioral contract around:
-  - resuming player commitments from active todo,
-  - using Stardew tools rather than narration,
-  - updating blocked/failed with short reasons,
-  - attempting visible player feedback when the blocked/failed task is a promise to the player.
-- Add a mechanical guard that `stardew_move` public schema/description still instructs semantic `destinationId` only and does not expose label, tile, coordinate, or facing-direction fields.
+意图：
+- 保留现有中文连续性指导，同时强化以下最小行为契约：
+  - 从 active todo 恢复玩家承诺，
+  - 使用 Stardew 工具而不是叙述，
+  - 用简短原因更新 `blocked`/`failed`，
+  - 当 `blocked`/`failed` 的任务是对玩家的承诺时，尝试提供可见的玩家反馈。
+- 增加一条机械性保护：确保 `stardew_move` 的公开 schema/description 仍只指导使用语义化 `destinationId`，不暴露 label、tile、坐标或朝向字段。
 
-Acceptance:
-- Prompt/skill tests show the required language survives and remains repo-asset-backed.
-- Tool-contract tests fail if `stardew_move` regresses from semantic destination IDs to labels, coordinates, tiles, or facing inputs.
+验收：
+- Prompt/skill 测试表明所需文案仍然存在，且由仓库资产支撑。
+- 一旦 `stardew_move` 从语义化 destination ID 回退到 label、坐标、tile 或朝向输入，工具契约测试就会失败。
 
-### Step 3: Close the runtime loop where terminal command truth meets todo truth
+### 步骤 3：补上终态命令事实与 todo 事实汇合处的 runtime loop
 
-Files:
+文件：
 - `src/games/stardew/StardewNpcTools.cs`
 - `src/games/stardew/StardewNpcAutonomyBackgroundService.cs`
 - `src/runtime/NpcAutonomyLoop.cs`
 - `src/runtime/NpcRuntimeBindings.cs`
 - `src/runtime/NpcRuntimeInstance.cs`
 
-Intent:
-- Ensure the authoritative Stardew command result path is captured as runtime command truth only.
-- Feed that truth back into the next agent/autonomy decision surface through controller snapshot, prompt facts, and `stardew_recent_activity`, so the agent can decide whether to call `todo` / `todo_write`, `stardew_speak`, or private chat.
-- Keep “task truth” agent-authored and transcript-backed; runtime/background code must not directly mutate todo state in response to terminal command status.
+意图：
+- 确保权威性的 Stardew 命令结果路径只作为运行时命令事实被捕获。
+- 再通过 controller snapshot、prompt facts 和 `stardew_recent_activity`，把这些事实反馈给后续 agent/autonomy 的决策表面，让 agent 自己决定是否调用 `todo` / `todo_write`、`stardew_speak` 或私聊。
+- 保持“任务事实”由 agent 编写并以 transcript 为后盾；runtime/background 代码不得直接因为终态命令状态而 mutation todo 状态。
 
-Acceptance:
-- A blocked/failed action becomes visible as runtime command truth first, then produces matching task-view state only after the agent writes the todo update through existing tool-result projection.
+验收：
+- `blocked`/`failed` 动作会先作为运行时命令事实可见，然后只有在 agent 通过现有 tool-result projection 写入 todo 更新之后，才产生匹配的 task-view 状态。
 
-### Step 4: Make runtime evidence first-class and machine-checkable
+### 步骤 4：让运行时证据成为一等且可机器校验的对象
 
-Files:
+文件：
 - `src/runtime/NpcAutonomyLoop.cs`
 - `src/runtime/NpcRuntimeLogWriter.cs`
 - `src/games/stardew/StardewNpcAutonomyBackgroundService.cs`
 - `Desktop/HermesDesktop.Tests/Runtime/NpcAutonomyLoopTests.cs`
 
-Intent:
-- Expand or standardize `runtime.jsonl` entries so reviewers can trace:
-  - tick observed active task
-  - action tool submitted
-  - terminal blocked/failed command result
-  - later todo update tool result
-  - feedback attempt emitted or missing
-- Keep this as log evidence, not a second task record.
+意图：
+- 扩展或标准化 `runtime.jsonl` 条目，使审查者可以追踪：
+  - tick 观察到 active task
+  - 已提交动作工具
+  - 终态 `blocked`/`failed` 命令结果
+  - 后续 todo 更新工具结果
+  - 是否发出了反馈尝试
+- 保持它只是日志证据，而不是第二份任务记录。
 
-Minimum append-only event vocabulary:
+最小 append-only 事件词汇表：
 - `observed_active_todo`
 - `action_submitted`
 - `command_terminal`
@@ -222,104 +222,104 @@ Minimum append-only event vocabulary:
 - `feedback_attempted`
 - `feedback_missing`
 
-Event intent:
-- `observed_active_todo`: current tick/prompt consumed an active root-session todo.
-- `action_submitted`: NPC submitted a Stardew action command such as move/speak/open-chat.
-- `command_terminal`: runtime observed terminal command truth such as `blocked`, `failed`, `completed`, or `cancelled`.
-- `todo_update_tool_result`: agent later used `todo` / `todo_write`, producing transcript-backed task truth update.
-- `feedback_attempted`: agent attempted `stardew_speak` or private-chat feedback after a player-facing blocked/failed outcome.
-- `feedback_missing`: diagnostic-only event for non-player-commitment tasks, tool-unavailable negative tests, or explicit failure-observation tests; it must not satisfy the main player-promise blocked/failed acceptance path.
+事件含义：
+- `observed_active_todo`：当前 tick/prompt 消费了一个 active 的根 session todo。
+- `action_submitted`：NPC 提交了一条 Stardew 动作命令，例如 move/speak/open-chat。
+- `command_terminal`：runtime 观察到了终态命令事实，例如 `blocked`、`failed`、`completed` 或 `cancelled`。
+- `todo_update_tool_result`：agent 随后使用 `todo` / `todo_write`，产出了以 transcript 为后盾的任务事实更新。
+- `feedback_attempted`：在面向玩家的 `blocked`/`failed` 结果后，agent 尝试了 `stardew_speak` 或私聊反馈。
+- `feedback_missing`：仅用于非玩家承诺任务、工具不可用负向测试或显式失败观察测试的诊断事件；它不能满足主线的玩家承诺 `blocked`/`failed` 验收路径。
 
-Minimum `NpcRuntimeLogRecord` mapping:
-- `ActionType = "task_continuity"` for these closure evidence events.
-- `Target` is one of the vocabulary values above.
-- `Stage` carries the lifecycle phase: `observed`, `submitted`, `terminal`, `task_written`, `feedback`, or `diagnostic`.
-- `Result` carries the machine status: `active`, `submitted`, `completed`, `blocked`, `failed`, `attempted`, or `missing`.
-- `CommandId` is populated for action/command events when available.
-- `Error` may contain a short reason/detail string, but tests must assert the structured fields first.
+最小 `NpcRuntimeLogRecord` 映射：
+- 对这些闭包证据事件，`ActionType = "task_continuity"`。
+- `Target` 为上述词汇表值之一。
+- `Stage` 承载生命周期阶段：`observed`、`submitted`、`terminal`、`task_written`、`feedback` 或 `diagnostic`。
+- `Result` 承载机器状态：`active`、`submitted`、`completed`、`blocked`、`failed`、`attempted` 或 `missing`。
+- 可用时，动作/命令事件需填充 `CommandId`。
+- `Error` 可以包含简短原因/细节字符串，但测试必须先断言结构化字段。
 
-Turn-boundary rule:
-- “Later agent/autonomy turn” means “not the background service and not any host/runtime code directly mutating todo”.
-- The todo update may happen in the same Agent chat/tool loop after a Stardew tool result, or in a subsequent autonomy tick after command truth is exposed through `LastTerminalCommandStatus` / `stardew_recent_activity`.
-- The forbidden path is runtime/controller/background code directly writing `SessionTodoStore` or fabricating a `todo` tool result.
+轮次边界规则：
+- “稍后的 agent/autonomy turn” 意味着“不是 background service，也不是任何 host/runtime 代码直接 mutation todo”。
+- todo 更新可以发生在同一条 Agent chat/tool loop 中，即在 Stardew tool result 之后；也可以发生在后续 autonomy tick 中，即在 `LastTerminalCommandStatus` / `stardew_recent_activity` 暴露命令事实之后。
+- 被禁止的路径是 runtime/controller/background 代码直接写 `SessionTodoStore` 或伪造一条 `todo` tool result。
 
-Acceptance:
-- Tests can assert exact runtime log records for the `P0` closure path.
+验收：
+- 测试可以对 `P0` 闭包路径的精确运行时日志记录做断言。
 
-### Step 5: Reconcile UI-facing task snapshots with runtime evidence
+### 步骤 5：对齐面向 UI 的任务快照与运行时证据
 
-Files:
+文件：
 - `src/runtime/NpcRuntimeSupervisor.cs`
 - `src/runtime/NpcRuntimeInstance.cs`
 - `Desktop/HermesDesktop.Tests/Runtime/NpcRuntimeSupervisorTests.cs`
 
-Intent:
-- Verify task-view snapshots surface the same blocked/failed status + reason seen in runtime actions/logs, including after restart and before any new chat handle is created.
+意图：
+- 验证 task-view 快照能暴露与运行时动作/日志中一致的 `blocked`/`failed` 状态和原因，包括重启之后，以及在尚未创建任何新私聊 handle 之前。
 
-Acceptance:
-- UI consumers can read the closure state from existing `TryGetTaskView` APIs only.
+验收：
+- UI 消费方只通过现有 `TryGetTaskView` API 就能读取闭包状态。
 
-## Risks and Mitigations
+## 风险与缓解
 
-### Risk: model still narrates instead of acting
+### 风险：模型仍然只叙述而不行动
 
-- Mitigation:
-  - strengthen prompt/skill wording,
-  - add diagnostics for “no action tool used” and “narrative move without `stardew_move`”,
-  - require tests that assert tool calls, not just final text.
+- 缓解：
+  - 强化 prompt/skill 文案，
+  - 为“未使用动作工具”和“未调用 `stardew_move` 却叙述移动”增加诊断，
+  - 要求测试断言工具调用，而不只是最终文本。
 
-### Risk: todo reason updates drift from actual command failure
+### 风险：todo 原因更新偏离真实命令失败
 
-- Mitigation:
-  - treat command result path as authoritative,
-  - test blocked/failed mapping directly from tool result to task snapshot.
+- 缓解：
+  - 将命令结果路径视为权威来源，
+  - 直接测试从 tool result 到任务快照的 `blocked`/`failed` 映射。
 
-### Risk: player feedback becomes host-authored fallback behavior
+### 风险：玩家反馈退化为 host 代写的兜底行为
 
-- Mitigation:
-  - keep feedback as agent tool usage expectation;
-  - for player-promised blocked/failed tasks, the passing path requires agent-authored `feedback_attempted`;
-  - `feedback_missing` is only a diagnostic/negative-test event and must not be accepted as player-promise closure;
-  - host must not fabricate NPC speech.
+- 缓解：
+  - 保持反馈是对 agent 工具使用的预期；
+  - 对于向玩家承诺过的 `blocked`/`failed` 任务，只有 agent 编写的 `feedback_attempted` 才能构成通过路径；
+  - `feedback_missing` 只用于诊断/负向测试事件，不能被接受为玩家承诺闭包；
+  - host 不得伪造 NPC 发言。
 
-### Risk: observability additions silently become a new state system
+### 风险：可观测性增强悄悄演变成新的状态系统
 
-- Mitigation:
-  - runtime evidence remains append-only logs plus existing task snapshots;
-  - no new persistence model or scheduler.
+- 缓解：
+  - 运行时证据仍然只是 append-only 日志加现有任务快照；
+  - 不新增持久化模型或调度器。
 
-### Risk: reference borrowing drifts into DAG/task-graph expansion
+### 风险：参考借鉴漂移成 DAG/任务图扩张
 
-- Mitigation:
-  - explicitly scope VillagerAgent borrowing to “feedback loop / status visibility only”.
+- 缓解：
+  - 明确将对 VillagerAgent 的借鉴限制为“只借用反馈回路/状态可见性”。
 
-## Verification
+## 验证
 
-### Targeted Test Commands
+### 定向测试命令
 
 ```powershell
 dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~StardewNpcPrivateChatAgentRunnerTests|FullyQualifiedName~NpcRuntimeSupervisorTests|FullyQualifiedName~NpcAutonomyLoopTests|FullyQualifiedName~StardewAutonomyTickDebugServiceTests|FullyQualifiedName~StardewNpcAutonomyBackgroundServiceTests|FullyQualifiedName~StardewNpcToolFactoryTests"
 ```
 
-### Secondary Guardrail
+### 次级兜底
 
 ```powershell
 dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug
 ```
 
-### Evidence Review
+### 证据审查
 
-1. Confirm todo lands in root session, not private-chat transcript session.
-2. Confirm autonomy tick issues Stardew action tool calls for active todo continuation.
-3. Confirm blocked/failed command truth appears in runtime evidence before any todo update.
-4. Confirm a later agent/autonomy turn updates todo `status` + `reason` via `todo` / `todo_write`.
-5. Confirm player-promised blocked/failed tasks include `feedback_attempted` in tool calls or runtime log evidence; `feedback_missing` is not acceptable on this main path.
-6. Confirm `runtime.jsonl` and `TryGetTaskView` agree on the closure outcome, with task-view state sourced from transcript-backed todo projection.
-7. Confirm `stardew_move` schema/description still exposes only semantic `destinationId` and does not expose `label`, coordinates, tile fields, or `facingDirection`.
+1. 确认 todo 落在根 session，而不是私聊 transcript session。
+2. 确认 autonomy tick 会为 active todo 连续性发起 Stardew 动作工具调用。
+3. 确认 `blocked`/`failed` 命令事实会在任何 todo 更新之前先出现在运行时证据中。
+4. 确认稍后的 agent/autonomy turn 会通过 `todo` / `todo_write` 更新 todo 的 `status` + `reason`。
+5. 确认面向玩家承诺的 `blocked`/`failed` 任务会在工具调用或运行时日志证据中包含 `feedback_attempted`；主路径上不接受 `feedback_missing`。
+6. 确认 `runtime.jsonl` 与 `TryGetTaskView` 对闭包结果达成一致，且 task-view 状态来源于 transcript-backed 的 todo 投影。
+7. 确认 `stardew_move` schema/description 仍只暴露语义化 `destinationId`，且不暴露 `label`、坐标、tile 字段或 `facingDirection`。
 
-## Execution Staffing
+## 执行分工
 
-### Available Agent Types
+### 可用 Agent 类型
 
 - `planner`
 - `architect`
@@ -330,46 +330,46 @@ dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug
 - `verifier`
 - `explore`
 
-### Ralph Sequential
+### Ralph 串行路径
 
-Recommended when:
-- the team wants one owner to preserve the continuity model across prompts, tools, runtime logs, and tests;
-- shared files like `NpcAutonomyLoop.cs` and `StardewNpcTools.cs` make parallel edits collision-prone.
+推荐场景：
+- 团队希望由单一 owner 保持 prompts、tools、runtime logs 和 tests 之间的连续性模型；
+- 像 `NpcAutonomyLoop.cs` 和 `StardewNpcTools.cs` 这样的共享文件使并行编辑容易冲突。
 
-Suggested lane order:
-1. `executor` with high reasoning: add failing closure tests.
-2. `executor` with high reasoning: implement narrow runtime/prompt/tool adjustments.
-3. `test-engineer` with medium reasoning: harden test matrix and real-skill-asset coverage.
-4. `verifier` with high reasoning: run targeted suite, inspect logs/task snapshots, then full desktop test suite.
+建议分道顺序：
+1. 高推理 `executor`：补上失败的闭包测试。
+2. 高推理 `executor`：实现窄范围 runtime/prompt/tool 调整。
+3. 中推理 `test-engineer`：加固测试矩阵和真实 skill 资产覆盖。
+4. 高推理 `verifier`：运行定向测试集，检查日志/任务快照，然后跑完整 desktop 测试集。
 
-Launch hint:
+启动提示：
 - `$ralph implement .omx/plans/prd-stardew-npc-task-continuity-closure.md with .omx/plans/test-spec-stardew-npc-task-continuity-closure.md`
 
-### Team Parallel
+### Team 并行路径
 
-Recommended when:
-- you want to shorten cycle time by separating test design, runtime evidence mapping, and prompt/skill contract review.
+推荐场景：
+- 你想通过拆分测试设计、运行时证据映射和 prompt/skill 契约审查来缩短周期。
 
-Suggested staffing:
-1. Lane A: `executor` high reasoning
-   - Own `NpcAutonomyLoop.cs`, `StardewNpcTools.cs`, `StardewNpcAutonomyBackgroundService.cs`
-2. Lane B: `test-engineer` medium reasoning
-   - Own `NpcAutonomyLoopTests`, `NpcRuntimeSupervisorTests`, `StardewNpcAutonomyBackgroundServiceTests`
-3. Lane C: `executor` / `writer` medium reasoning
-   - Own `stardew-task-continuity`, `stardew-social`, `stardew-navigation`, private-chat wording checks
-4. Lane D: `verifier` high reasoning
-   - Own targeted command execution, runtime evidence inspection, and merge-time verification summary
+建议编组：
+1. Lane A：高推理 `executor`
+   - 负责 `NpcAutonomyLoop.cs`、`StardewNpcTools.cs`、`StardewNpcAutonomyBackgroundService.cs`
+2. Lane B：中推理 `test-engineer`
+   - 负责 `NpcAutonomyLoopTests`、`NpcRuntimeSupervisorTests`、`StardewNpcAutonomyBackgroundServiceTests`
+3. Lane C：中推理 `executor` / `writer`
+   - 负责 `stardew-task-continuity`、`stardew-social`、`stardew-navigation`、private-chat 文案检查
+4. Lane D：高推理 `verifier`
+   - 负责定向命令执行、运行时证据检查和合并前验证摘要
 
-Launch hint:
+启动提示：
 - `omx team run .omx/plans/prd-stardew-npc-task-continuity-closure.md`
-- or `$team execute .omx/plans/prd-stardew-npc-task-continuity-closure.md`
+- 或 `$team execute .omx/plans/prd-stardew-npc-task-continuity-closure.md`
 
-### Team Verification Path
+### Team 验证路径
 
-1. Lane B lands failing tests first.
-2. Lane A lands runtime/tool fixes against those tests.
-3. Lane C confirms prompt/skill assertions still use repo assets and no forbidden architecture drift appears.
-4. Lane D runs targeted suite, then full `HermesDesktop.Tests`, and performs an evidence audit over:
-   - task snapshots,
-   - tool calls,
-   - `runtime.jsonl` records.
+1. 由 Lane B 先落失败测试。
+2. 由 Lane A 针对这些测试落 runtime/tool 修复。
+3. 由 Lane C 确认 prompt/skill 断言仍使用仓库资产，且没有出现被禁止的架构漂移。
+4. 由 Lane D 跑定向测试集，然后跑完整 `HermesDesktop.Tests`，并对以下内容做证据审计：
+   - 任务快照，
+   - 工具调用，
+   - `runtime.jsonl` 记录。

@@ -1,153 +1,153 @@
-# Stardew NPC Task Continuity Closure Test Spec
+# 星露谷 NPC 任务连续性闭包测试规范
 
-## Test Strategy
+## 测试策略
 
-Target the closure gaps only. Existing substrate tests already prove `ToolSessionId`/`TaskSessionId`, todo projection, hydration, and required-skill injection. This spec adds end-to-end assertions for:
+只针对闭包缺口。现有底座测试已经证明了 `ToolSessionId` / `TaskSessionId`、todo 投影、hydration 和必需 skill 注入。本规范新增以下端到端断言：
 
-1. autonomy actually advancing player commitments with Stardew tools;
-2. terminal `blocked` / `failed` command truth being surfaced by runtime first, then flowing into todo `status` + `reason` only when the agent later calls `todo` / `todo_write`;
-3. player feedback attempts on blocked/failed promised tasks;
-4. `runtime.jsonl` and task-view/UI evidence staying coherent.
+1. autonomy 确实会通过 Stardew 工具推进玩家承诺；
+2. 终态 `blocked` / `failed` 命令事实会先由 runtime 暴露，然后只有在 agent 随后调用 `todo` / `todo_write` 时，才流入 todo 的 `status` + `reason`；
+3. 对已承诺任务在 `blocked`/`failed` 场景下会尝试玩家反馈；
+4. `runtime.jsonl` 与 task-view/UI 证据保持一致。
 
-## Proposed Tests
+## 拟议测试
 
 ### 1. `StardewNpcPrivateChatAgentRunnerTests.ReplyAsync_PlayerPromiseCreatesLongTermTodo_AndAutonomyLaterConsumesSameTodo`
 
-- Intent:
-  - Extend current private-chat promise coverage so it no longer stops at “todo exists”.
-  - Prove the same NPC long-term session todo is the one later consumed by autonomy.
-- Assertions:
-  - root session contains the promised todo;
-  - private-chat transcript session does not own that todo;
-  - later autonomy handle sees the same active todo content.
+- 意图：
+  - 扩展当前的私聊承诺覆盖，使其不再停留在“todo 已存在”。
+  - 证明后续被 autonomy 消费的就是同一个 NPC 长期 session todo。
+- 断言：
+  - 根 session 包含被承诺的 todo；
+  - 私聊 transcript session 不拥有该 todo；
+  - 后续 autonomy handle 能看到同样的 active todo 内容。
 
 ### 2. `NpcRuntimeSupervisorTests.RunOneTickAsync_AfterPrivateChatPromise_AutonomyUsesStardewActionToolsForContinuation`
 
-- Intent:
-  - Upgrade the current “active task injected into prompt” test into a behavior test.
-- Assertions:
-  - autonomy tool surface includes `stardew_move`, `stardew_task_status`, `stardew_speak`, `stardew_open_private_chat`;
-  - the chat/tool loop uses at least one Stardew action tool when an actionable todo exists;
-  - the result is not accepted as closure if only narration text is produced.
+- 意图：
+  - 把当前“active task 被注入 prompt”测试升级为行为测试。
+- 断言：
+  - autonomy 工具表面包含 `stardew_move`、`stardew_task_status`、`stardew_speak`、`stardew_open_private_chat`；
+  - 当存在可执行 todo 时，chat/tool loop 会至少使用一个 Stardew 动作工具；
+  - 如果只产生叙述文本，则结果不能被接受为闭包。
 
 ### 3. `NpcAutonomyLoopTests.RunOneTickAsync_WhenActiveTodoExists_NarrationOnlyDecisionWritesNoToolClosureDiagnostic`
 
-- Intent:
-  - Keep a hard regression guard against narration masquerading as progression.
-- Assertions:
-  - if no action tool call occurs, `runtime.jsonl` records a warning entry tied to the tick;
-  - the diagnostic is machine-checkable and points at missing visible action / feedback.
+- 意图：
+  - 保留一条强回归保护，防止把叙述伪装成任务推进。
+- 断言：
+  - 如果没有发生动作工具调用，`runtime.jsonl` 会记录一条与该 tick 绑定的 warning 条目；
+  - 该诊断是可机检的，并会指向缺失的可见动作/反馈。
 
 ### 4. `StardewNpcAutonomyBackgroundServiceTests.ProcessAsync_WhenMoveOrSpeakCommandEndsBlocked_SurfacesTerminalStatusAndWritesRuntimeEvidence`
 
-- Intent:
-  - Prove the runtime/background path only surfaces terminal command truth and append-only evidence.
-- Assertions:
-  - runtime/controller snapshot or recent-activity surface exposes terminal `blocked` status;
-  - `runtime.jsonl` contains `command_terminal`;
-  - no assertion expects direct root-session todo mutation from background service.
+- 意图：
+  - 证明 runtime/background 路径只负责暴露终态命令事实和 append-only 证据。
+- 断言：
+  - runtime/controller snapshot 或 recent-activity 表面会暴露终态 `blocked` 状态；
+  - `runtime.jsonl` 包含 `command_terminal`；
+  - 不应有任何断言期待 background service 直接 mutation 根 session todo。
 
 ### 5. `NpcAutonomyLoopTests.RunOneTickAsync_AfterTerminalBlockedOrFailedStatus_AgentWritesTodoReasonAndAttemptsPlayerFeedback`
 
-- Intent:
-  - Cover the second half of the closure: after runtime surfaces blocked/failed command truth, a later agent/autonomy turn authors task truth and feedback.
-  - “Later” means agent-authored rather than background-authored; it may occur in the same Agent chat/tool loop after a Stardew tool result, or in a subsequent autonomy tick after command truth is exposed.
-- Assertions:
-  - agent sees the surfaced terminal status through prompt facts / `stardew_recent_activity` / runtime context;
-  - agent calls `todo` / `todo_write` so the root-session todo becomes `blocked` or `failed` with non-empty short `reason`;
-  - agent attempts `stardew_speak` or private-chat feedback path;
-  - host does not synthesize NPC speech on its own.
+- 意图：
+  - 覆盖闭包的后半段：runtime 暴露 `blocked`/`failed` 命令事实之后，稍后的 agent/autonomy turn 会编写任务事实并尝试反馈。
+  - “稍后”指的是由 agent 编写，而不是由 background 编写；它可以发生在同一条 Agent chat/tool loop 中，即 Stardew tool result 之后，也可以发生在后续 autonomy tick 中，即命令事实已经暴露之后。
+- 断言：
+  - agent 能通过 prompt facts / `stardew_recent_activity` / runtime context 看见已暴露的终态状态；
+  - agent 会调用 `todo` / `todo_write`，使根 session todo 变为 `blocked` 或 `failed`，并附带非空的简短 `reason`；
+  - agent 会尝试 `stardew_speak` 或私聊反馈路径；
+  - host 不会自行合成 NPC 发言。
 
 ### 6. `NpcRuntimeSupervisorTests.TryGetTaskView_AfterBlockedPromise_ReturnsUpdatedStatusAndReasonWithoutFreshChatHandle`
 
-- Intent:
-  - Lock the UI-facing requirement.
-- Assertions:
-  - `TryGetTaskView(descriptor.SessionId, ...)` returns the updated blocked/failed todo from transcript-backed tool-result projection;
-  - this works after runtime start/hydration and before any new private-chat handle.
+- 意图：
+  - 锁定面向 UI 的需求。
+- 断言：
+  - `TryGetTaskView(descriptor.SessionId, ...)` 会从 transcript-backed 的 tool-result projection 返回更新后的 `blocked`/`failed` todo；
+  - 该行为在 runtime start/hydration 之后、且在任何新的私聊 handle 创建之前就成立。
 
 ### 7. `NpcAutonomyLoopTests.RunOneTickAsync_WhenPromisedTaskBlocks_RuntimeJsonlIncludesTaskOutcomeAndFeedbackAttempt`
 
-- Intent:
-  - Ensure runtime evidence is sufficient for operator/debug review.
-- Assertions:
-  - `runtime.jsonl` shows `ActionType = "task_continuity"` records whose `Target` values include `observed_active_todo`, `action_submitted`, `command_terminal`, and then `feedback_attempted`;
-  - for player-promised blocked/failed tasks, `feedback_missing` does not satisfy this test and should fail the main acceptance path;
-  - when the agent updates task truth, `runtime.jsonl` also shows `Target = "todo_update_tool_result"`;
-  - tests assert structured `ActionType` / `Target` / `Stage` / `Result` fields before any freeform `Error` detail;
-  - the log record references the same session/task lifecycle under the NPC runtime.
+- 意图：
+  - 确保运行时证据足以支撑 operator/debug 审查。
+- 断言：
+  - `runtime.jsonl` 中会出现 `ActionType = "task_continuity"` 的记录，其 `Target` 值至少包含 `observed_active_todo`、`action_submitted`、`command_terminal`，然后是 `feedback_attempted`；
+  - 对于向玩家承诺的 `blocked`/`failed` 任务，`feedback_missing` 不能满足该测试，主验收路径必须失败；
+  - 当 agent 更新任务事实时，`runtime.jsonl` 还会出现 `Target = "todo_update_tool_result"`；
+  - 测试必须先断言结构化的 `ActionType` / `Target` / `Stage` / `Result` 字段，再考虑自由格式的 `Error` 细节；
+  - 该日志记录引用的是 NPC runtime 下同一条 session/task 生命周期。
 
 ### 8. `StardewAutonomyTickDebugServiceTests.RunOneTickAsync_WithRepositoryGamingSkillRoot_PreservesTaskContinuityAndVisibleFeedbackGuidance`
 
-- Intent:
-  - Keep repo-asset-backed prompt guarantees.
-- Assertions:
-  - required skill text still includes:
-    - todo/memory/session_search division,
-    - `stardew_task_status`,
-    - blocked/failed short reasons,
-    - player-visible feedback expectation;
-  - no Minecraft/DAG/second-task-system leakage appears.
+- 意图：
+  - 保住以仓库资产为后盾的 prompt 保证。
+- 断言：
+  - 必需 skill 文本仍包含：
+    - `todo` / `memory` / `session_search` 分工，
+    - `stardew_task_status`，
+    - `blocked`/`failed` 的简短原因，
+    - 对玩家可见反馈的预期；
+  - 不应出现 Minecraft / DAG / 第二任务系统渗漏。
 
 ### 9. `StardewNpcToolFactoryTests.StardewMove_PublicContract_RemainsDestinationIdOnly`
 
-- Intent:
-  - Prevent regression from the semantic destination contract back to label/coordinate/facing inputs.
-- Assertions:
-  - `stardew_move` schema/description requires or documents `destinationId` as the public destination input;
-  - public schema/description does not expose `label`, `x`, `y`, `tile`, `facingDirection`, or coordinate/facing substitutes;
-  - repository navigation/world skill guidance still instructs agents to use canonical destination IDs, not labels or raw coordinates.
+- 意图：
+  - 防止语义化目的地契约回退到 label / 坐标 / 朝向输入。
+- 断言：
+  - `stardew_move` 的 schema/description 要求或描述 `destinationId` 作为公开目的地输入；
+  - 公开 schema/description 不暴露 `label`、`x`、`y`、`tile`、`facingDirection` 或任何坐标/朝向替代项；
+  - 仓库中的 navigation/world skill 指导仍要求 agent 使用规范化 destination ID，而不是 label 或原始坐标。
 
-## Test Fixtures / Doubles Needed
+## 所需测试夹具 / 替身
 
-1. Chat client double that:
-   - writes/updates a todo from private chat,
-   - later chooses Stardew action tools in autonomy,
-   - can simulate blocked/failed follow-up decisions.
-2. Command service double that:
-  - returns terminal `blocked` / `failed` statuses for `stardew_move` or `stardew_speak`,
-  - exposes those results to the runtime/background service and later autonomy prompt context.
-3. Runtime log capture fixture around `runtime.jsonl`.
-4. Real repository skill-root fixture for prompt-boundary assertions.
+1. 一个 chat client 替身，能够：
+   - 在私聊中写入/更新 todo，
+   - 在后续 autonomy 中选择 Stardew 动作工具，
+   - 模拟 `blocked`/`failed` 后续决策。
+2. 一个 command service 替身，能够：
+  - 为 `stardew_move` 或 `stardew_speak` 返回终态 `blocked` / `failed` 状态，
+  - 把这些结果暴露给 runtime/background service 以及后续 autonomy prompt context。
+3. 一个围绕 `runtime.jsonl` 的运行时日志捕获夹具。
+4. 一个使用真实仓库 skill-root 的 prompt 边界断言夹具。
 
-## Log Event Mapping
+## 日志事件映射
 
-All closure evidence events must map onto the existing `NpcRuntimeLogRecord` shape:
+所有闭包证据事件都必须映射到现有 `NpcRuntimeLogRecord` 结构：
 
-- `ActionType = "task_continuity"`.
-- `Target` is one of:
+- `ActionType = "task_continuity"`。
+- `Target` 为以下值之一：
   - `observed_active_todo`
   - `action_submitted`
   - `command_terminal`
   - `todo_update_tool_result`
   - `feedback_attempted`
   - `feedback_missing`
-- `Stage` identifies the lifecycle phase.
-- `Result` carries the machine status.
-- `CommandId` is present for command-related events when available.
-- `Error` is optional detail and must not be the only assertion surface.
-- For player-promised blocked/failed task closure, `feedback_attempted` is required. `feedback_missing` is reserved for negative diagnostic coverage or non-player-commitment/tool-unavailable cases.
+- `Stage` 标识生命周期阶段。
+- `Result` 承载机器状态。
+- 可用时，命令相关事件必须包含 `CommandId`。
+- `Error` 是可选细节，不能成为唯一断言表面。
+- 对于向玩家承诺的 `blocked`/`failed` 任务闭包，必须要求 `feedback_attempted`。`feedback_missing` 只保留给负向诊断覆盖或非玩家承诺/工具不可用场景。
 
-## Commands
+## 命令
 
-### Primary
+### 主命令
 
 ```powershell
 dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~StardewNpcPrivateChatAgentRunnerTests|FullyQualifiedName~NpcRuntimeSupervisorTests|FullyQualifiedName~NpcAutonomyLoopTests|FullyQualifiedName~StardewAutonomyTickDebugServiceTests|FullyQualifiedName~StardewNpcAutonomyBackgroundServiceTests|FullyQualifiedName~StardewNpcToolFactoryTests"
 ```
 
-### Full Project Safety Net
+### 全项目兜底
 
 ```powershell
 dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug
 ```
 
-## Review Checklist
+## 审查清单
 
-1. Does every new behavior assertion bind back to the existing root NPC session rather than a shadow session?
-2. Do tests prove action-tool usage, not just prompt wording?
-3. Is blocked/failed `reason` asserted as short fact output rather than long freeform explanation?
-4. Do tests preserve the boundary that runtime surfaces command truth, while only agent `todo` / `todo_write` updates task truth?
-5. Do prompt/skill tests use real repo skill assets where continuity boundaries matter?
-6. Does every player-promised blocked/failed success path require `feedback_attempted`, with `feedback_missing` limited to negative diagnostics or non-player-commitment/tool-unavailable cases?
-7. Does a mechanical tool-contract test prevent `stardew_move` from exposing `label`, raw coordinates, tile fields, or `facingDirection` as public inputs?
+1. 每条新增行为断言是否都回绑到现有根 NPC session，而不是影子 session？
+2. 测试是否证明了动作工具使用，而不只是 prompt 文案？
+3. 是否把 `blocked`/`failed` 的 `reason` 断言为简短事实输出，而不是冗长自由格式说明？
+4. 测试是否保住了这个边界：runtime 只暴露命令事实，而只有 agent 的 `todo` / `todo_write` 才会更新任务事实？
+5. 在连续性边界重要的地方，prompt/skill 测试是否使用了真实仓库 skill 资产？
+6. 每条面向玩家承诺的 `blocked`/`failed` 成功路径，是否都要求 `feedback_attempted`，同时把 `feedback_missing` 限制在负向诊断或非玩家承诺/工具不可用场景？
+7. 是否有机械性的工具契约测试，防止 `stardew_move` 把 `label`、原始坐标、tile 字段或 `facingDirection` 暴露为公开输入？
