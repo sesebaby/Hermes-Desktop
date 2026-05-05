@@ -103,6 +103,26 @@ public sealed class SessionTodoArchiveServiceTests
     }
 
     [TestMethod]
+    public void BuildArchive_PreservesBlockedFailedReasonsAndTreatsThemTerminal()
+    {
+        var entries = SessionTodoArchiveService.BuildArchive("session-a",
+        [
+            AssistantToolCall("call-1"),
+            TodoResult("call-1", "{\"todos\":[{\"id\":\"1\",\"content\":\"Reach beach\",\"status\":\"blocked\",\"reason\":\"npc_moving\"},{\"id\":\"2\",\"content\":\"Bring gift\",\"status\":\"failed\",\"reason\":\"festival_blocked\"}]}"),
+            AssistantFinal("I can't get there today.")
+        ]);
+
+        Assert.AreEqual(1, entries.Count);
+        Assert.IsTrue(entries[0].IsComplete);
+        Assert.IsTrue(entries[0].CollapsedByDefault);
+        Assert.IsFalse(entries[0].HasIncomplete);
+        Assert.AreEqual("blocked", entries[0].Todos[0].Status);
+        Assert.AreEqual("npc_moving", entries[0].Todos[0].Reason);
+        Assert.AreEqual("failed", entries[0].Todos[1].Status);
+        Assert.AreEqual("festival_blocked", entries[0].Todos[1].Reason);
+    }
+
+    [TestMethod]
     public void BuildArchive_MarksIncompleteWhenAnyTodoIsPendingOrInProgress()
     {
         var entries = SessionTodoArchiveService.BuildArchive("session-a",

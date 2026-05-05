@@ -1,6 +1,7 @@
 namespace Hermes.Agent.Runtime;
 
 using Hermes.Agent.Game;
+using Hermes.Agent.Tasks;
 
 public sealed class NpcRuntimeInstance
 {
@@ -26,6 +27,7 @@ public sealed class NpcRuntimeInstance
     private IReadOnlyList<NpcRuntimeIngressWorkItemSnapshot> _ingressWorkItems = [];
     private GameCommandStatus? _lastTerminalCommandStatus;
     private int _inboxDepth;
+    private readonly SessionTodoStore _todoStore = new();
 
     public NpcRuntimeInstance(NpcRuntimeDescriptor descriptor, NpcNamespace npcNamespace)
     {
@@ -36,6 +38,8 @@ public sealed class NpcRuntimeInstance
     public NpcRuntimeDescriptor Descriptor { get; }
 
     public NpcNamespace Namespace { get; }
+
+    internal SessionTodoStore TodoStore => _todoStore;
 
     public NpcRuntimeState State { get; private set; } = NpcRuntimeState.Created;
 
@@ -373,6 +377,26 @@ public sealed class NpcRuntimeInstance
                     _inboxDepth,
                     _ingressWorkItems,
                     _lastTerminalCommandStatus));
+        }
+    }
+
+    internal bool TryGetTaskView(string sessionId, out NpcRuntimeTaskView? taskView)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        lock (_gate)
+        {
+            var handle = _privateChatHandle ?? _autonomyHandle?.AgentHandle;
+            if (handle is null)
+            {
+                taskView = null;
+                return false;
+            }
+
+            taskView = new NpcRuntimeTaskView(
+                sessionId,
+                handle.Context.TaskProjectionService.GetSnapshot(sessionId));
+            return true;
         }
     }
 

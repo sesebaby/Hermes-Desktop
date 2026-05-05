@@ -29,9 +29,9 @@ public class TodoTool : ITool, IToolSchemaProvider
         "Manage your task list for the current session. Use for complex tasks with 3+ steps or when the user provides multiple tasks. " +
         "Call with no parameters to read the current list. Provide a todos array to create/update items. " +
         "merge=false replaces the entire list with a fresh plan; merge=true updates existing items by id and adds new ones. " +
-        "Each item has id, content, and status: pending, in_progress, completed, or cancelled. " +
+        "Each item has id, content, status, and optional reason. Status values: pending, in_progress, completed, cancelled, blocked, or failed. " +
         "List order is priority. Only ONE item in_progress at a time. " +
-        "Mark items completed immediately when done. If something fails, cancel it and add a revised item. " +
+        "Mark items completed immediately when done. If something cannot continue, use blocked or failed with a short reason. " +
         "Always returns the full current list.";
 
     public Type ParametersType => typeof(TodoToolParameters);
@@ -57,8 +57,13 @@ public class TodoTool : ITool, IToolSchemaProvider
                             ["status"] = new
                             {
                                 type = "string",
-                                @enum = new[] { "pending", "in_progress", "completed", "cancelled" },
+                                @enum = new[] { "pending", "in_progress", "completed", "cancelled", "blocked", "failed" },
                                 description = "Current status."
+                            },
+                            ["reason"] = new
+                            {
+                                type = "string",
+                                description = "Optional short reason for blocked, failed, or cancelled items."
                             }
                         },
                         required = new[] { "id", "content", "status" }
@@ -88,7 +93,7 @@ public class TodoTool : ITool, IToolSchemaProvider
                 ? _store.Read(p.CurrentSessionId)
                 : _store.Write(
                     p.CurrentSessionId,
-                    p.Todos.Select(t => new SessionTodoInput(t.Id, t.Content, t.Status)),
+                    p.Todos.Select(t => new SessionTodoInput(t.Id, t.Content, t.Status, t.Reason)),
                     p.Merge);
 
             return Task.FromResult(ToolResult.Ok(JsonSerializer.Serialize(snapshot, JsonOptions)));
@@ -127,4 +132,6 @@ public sealed class TodoItemInput
     public string? Id { get; init; }
     public string? Content { get; init; }
     public string? Status { get; init; }
+
+    public string? Reason { get; init; }
 }

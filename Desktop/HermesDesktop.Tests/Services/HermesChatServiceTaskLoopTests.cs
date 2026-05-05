@@ -52,6 +52,33 @@ public sealed class HermesChatServiceTaskLoopTests
     }
 
     [TestMethod]
+    public async Task AgentChatAsync_WithToolSessionId_ExecutesTodoAgainstToolSessionAndPersistsTranscriptSession()
+    {
+        var todoStore = new SessionTodoStore();
+        var projection = new SessionTaskProjectionService(todoStore);
+        var transcriptStore = new TranscriptStore(Path.Combine(_tempDir, "transcripts"), messageObserver: projection);
+        var client = new ToolCallingChatClient();
+        var agent = new Agent(client, NullLogger<Agent>.Instance, transcripts: transcriptStore);
+        agent.RegisterTool(new TodoTool(todoStore));
+        var session = new Session
+        {
+            Id = "npc-1:private_chat:conversation-1",
+            ToolSessionId = "npc-1"
+        };
+
+        var reply = await agent.ChatAsync("remember this promise", session, CancellationToken.None);
+
+        Assert.AreEqual("done", reply);
+        Assert.AreEqual(1, todoStore.Read("npc-1").Todos.Count);
+        Assert.AreEqual("Visible task", todoStore.Read("npc-1").Todos[0].Content);
+        var transcriptMessages = await transcriptStore.LoadSessionAsync("npc-1:private_chat:conversation-1", CancellationToken.None);
+        var transcriptToolMessage = transcriptMessages.Single(message => message.Role == "tool" && message.ToolName == "todo");
+        Assert.AreEqual("npc-1", transcriptToolMessage.TaskSessionId);
+        Assert.AreEqual(0, todoStore.Read("npc-1:private_chat:conversation-1").Todos.Count);
+        Assert.AreEqual(0, projection.GetSnapshot("npc-1:private_chat:conversation-1").Todos.Count);
+    }
+
+    [TestMethod]
     public async Task LoadSessionAsync_HydratesTodoProjectionFromTranscriptHistory()
     {
         var transcriptStore = new TranscriptStore(Path.Combine(_tempDir, "transcripts"));

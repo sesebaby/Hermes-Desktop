@@ -4,6 +4,7 @@ using Hermes.Agent.Core;
 using Hermes.Agent.Game;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Skills;
+using Hermes.Agent.Tasks;
 using Hermes.Agent.Tools;
 using Microsoft.Extensions.Logging;
 
@@ -114,3 +115,7 @@ public sealed record NpcRuntimeAutonomyHandle(
     string RebindKey,
     int RebindGeneration,
     string ToolFingerprint);
+
+public sealed record NpcRuntimeTaskView(
+    string SessionId,
+    SessionTodoSnapshot ActiveSnapshot);

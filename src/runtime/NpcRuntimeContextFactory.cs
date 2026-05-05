@@ -27,7 +27,8 @@ public sealed class NpcRuntimeContextFactory
         int maxTokens = 8000,
         int recentTurnWindow = 6,
         bool includeMemory = true,
-        bool includeUser = true)
+        bool includeUser = true,
+        SessionTodoStore? sharedTodoStore = null)
     {
         ArgumentNullException.ThrowIfNull(npcNamespace);
         ArgumentNullException.ThrowIfNull(chatClient);
@@ -38,7 +39,7 @@ public sealed class NpcRuntimeContextFactory
 
         var soulService = npcNamespace.CreateSoulService(loggerFactory.CreateLogger<SoulService>());
         var memoryManager = npcNamespace.CreateMemoryManager(chatClient, loggerFactory.CreateLogger<MemoryManager>());
-        var todoStore = new SessionTodoStore();
+        var todoStore = sharedTodoStore ?? new SessionTodoStore();
         var taskProjectionService = new SessionTaskProjectionService(todoStore);
         var sessionSearchIndex = npcNamespace.CreateSessionSearchIndex(loggerFactory.CreateLogger<SessionSearchIndex>());
         var transcriptStore = npcNamespace.CreateTranscriptStore(sessionSearchIndex, taskProjectionService);

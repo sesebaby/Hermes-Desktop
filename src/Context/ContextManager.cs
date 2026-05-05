@@ -73,6 +73,14 @@ public sealed class ContextManager
         string userMessage,
         List<string>? retrievedContext,
         CancellationToken ct)
+        => await PrepareContextAsync(sessionId, toolSessionId: null, userMessage, retrievedContext, ct);
+
+    public async Task<List<Message>> PrepareContextAsync(
+        string sessionId,
+        string? toolSessionId,
+        string userMessage,
+        List<string>? retrievedContext,
+        CancellationToken ct)
     {
         var state = GetOrCreateState(sessionId);
         var sessionLock = _sessionLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
@@ -194,7 +202,7 @@ public sealed class ContextManager
                 RetrievedContext = retrievedContext,
                 SoulContext = soulContext,
                 PluginSystemContext = pluginSystemContext,
-                ActiveTaskContext = _taskProjectionService?.FormatActiveTasksForInjection(sessionId)
+                ActiveTaskContext = _taskProjectionService?.FormatActiveTasksForInjection(toolSessionId ?? sessionId)
             });
 
             return _promptBuilder.ToOpenAiMessages(packet);

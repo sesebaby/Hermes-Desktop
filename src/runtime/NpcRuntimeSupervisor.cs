@@ -184,6 +184,25 @@ public sealed class NpcRuntimeSupervisor
             return _instances.Values.Select(instance => instance.Snapshot()).OrderBy(item => item.NpcId).ToArray();
     }
 
+    public bool TryGetTaskView(string sessionId, out NpcRuntimeTaskView? taskView)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        lock (_gate)
+        {
+            foreach (var instance in _instances.Values)
+            {
+                if (!instance.TryGetTaskView(sessionId, out taskView))
+                    continue;
+
+                return true;
+            }
+        }
+
+        taskView = null;
+        return false;
+    }
+
     private static NpcRuntimeAgentHandle CreatePrivateChatHandle(
         NpcRuntimeInstance instance,
         NpcRuntimeAgentBindingRequest request,
@@ -244,7 +263,8 @@ public sealed class NpcRuntimeSupervisor
             new NpcObservationFactStore(),
             agentHandle.Agent,
             new NpcRuntimeLogWriter(Path.Combine(instance.Namespace.ActivityPath, "runtime.jsonl")),
-            agentHandle.Context.MemoryManager);
+            agentHandle.Context.MemoryManager,
+            request.Services.LoggerFactory.CreateLogger<NpcAutonomyLoop>());
 
         return new NpcRuntimeAutonomyHandle(
             instance,
@@ -277,7 +297,8 @@ public sealed class NpcRuntimeSupervisor
             services.SkillManager,
             systemPromptSupplement,
             includeMemory: includeMemory,
-            includeUser: includeUser);
+            includeUser: includeUser,
+            sharedTodoStore: instance.TodoStore);
 
         var agent = new NpcAgentFactory().Create(
             services.ChatClient,

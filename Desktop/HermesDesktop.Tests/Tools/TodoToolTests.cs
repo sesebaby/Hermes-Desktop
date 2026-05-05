@@ -44,6 +44,45 @@ public sealed class TodoToolTests
     }
 
     [TestMethod]
+    public async Task ExecuteAsync_BlockedAndFailedTodos_PreserveReasonAndSummaryCounts()
+    {
+        var store = new SessionTodoStore();
+        var tool = new TodoTool(store);
+
+        var result = await tool.ExecuteAsync(new TodoToolParameters
+        {
+            CurrentSessionId = "session-a",
+            Todos =
+            [
+                new TodoItemInput
+                {
+                    Id = "1",
+                    Content = "Walk to the beach",
+                    Status = "blocked",
+                    Reason = "path_blocked:Town:12,8"
+                },
+                new TodoItemInput
+                {
+                    Id = "2",
+                    Content = "Bring the player a gift",
+                    Status = "failed",
+                    Reason = "festival_blocked"
+                }
+            ]
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Content);
+        using var json = JsonDocument.Parse(result.Content);
+        Assert.AreEqual(1, json.RootElement.GetProperty("summary").GetProperty("blocked").GetInt32());
+        Assert.AreEqual(1, json.RootElement.GetProperty("summary").GetProperty("failed").GetInt32());
+        var todos = json.RootElement.GetProperty("todos");
+        Assert.AreEqual("blocked", todos[0].GetProperty("status").GetString());
+        Assert.AreEqual("path_blocked:Town:12,8", todos[0].GetProperty("reason").GetString());
+        Assert.AreEqual("failed", todos[1].GetProperty("status").GetString());
+        Assert.AreEqual("festival_blocked", todos[1].GetProperty("reason").GetString());
+    }
+
+    [TestMethod]
     public async Task ExecuteAsync_MergeMode_UpdatesExistingByIdAndAppendsNewItems()
     {
         var store = new SessionTodoStore();
@@ -76,6 +115,39 @@ public sealed class TodoToolTests
         Assert.AreEqual("Original", todos[0].GetProperty("content").GetString());
         Assert.AreEqual("completed", todos[0].GetProperty("status").GetString());
         Assert.AreEqual("2", todos[1].GetProperty("id").GetString());
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_MergeMode_UpdatesExistingReasonWhenProvided()
+    {
+        var store = new SessionTodoStore();
+        var tool = new TodoTool(store);
+
+        await tool.ExecuteAsync(new TodoToolParameters
+        {
+            CurrentSessionId = "session-a",
+            Todos =
+            [
+                new TodoItemInput { Id = "1", Content = "Reach the farm", Status = "in_progress" }
+            ]
+        }, CancellationToken.None);
+
+        var result = await tool.ExecuteAsync(new TodoToolParameters
+        {
+            CurrentSessionId = "session-a",
+            Merge = true,
+            Todos =
+            [
+                new TodoItemInput { Id = "1", Status = "blocked", Reason = "npc_moving" }
+            ]
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.Content);
+        using var json = JsonDocument.Parse(result.Content);
+        var todo = json.RootElement.GetProperty("todos")[0];
+        Assert.AreEqual("Reach the farm", todo.GetProperty("content").GetString());
+        Assert.AreEqual("blocked", todo.GetProperty("status").GetString());
+        Assert.AreEqual("npc_moving", todo.GetProperty("reason").GetString());
     }
 
     [TestMethod]
@@ -181,6 +253,9 @@ public sealed class TodoToolTests
         StringAssert.Contains(description, "Mark items completed immediately");
         StringAssert.Contains(description, "cancel");
         StringAssert.Contains(description, "Always returns the full current list");
+        StringAssert.Contains(description, "blocked");
+        StringAssert.Contains(description, "failed");
+        StringAssert.Contains(description, "reason");
     }
 
     [TestMethod]
@@ -197,8 +272,23 @@ public sealed class TodoToolTests
 
         var values = status.GetProperty("enum").EnumerateArray().Select(v => v.GetString()).ToArray();
         CollectionAssert.AreEqual(
-            new[] { "pending", "in_progress", "completed", "cancelled" },
+            new[] { "pending", "in_progress", "completed", "cancelled", "blocked", "failed" },
             values);
+    }
+
+    [TestMethod]
+    public void GetParameterSchema_DescribesOptionalReasonField()
+    {
+        var schema = new TodoTool(new SessionTodoStore()).GetParameterSchema();
+
+        var properties = schema
+            .GetProperty("properties")
+            .GetProperty("todos")
+            .GetProperty("items")
+            .GetProperty("properties");
+
+        Assert.IsTrue(properties.TryGetProperty("reason", out var reason), schema.GetRawText());
+        Assert.AreEqual("string", reason.GetProperty("type").GetString());
     }
 
     [TestMethod]
@@ -210,7 +300,9 @@ public sealed class TodoToolTests
             new SessionTodoInput("1", "Done", "completed"),
             new SessionTodoInput("2", "Working", "in_progress"),
             new SessionTodoInput("3", "Waiting", "pending"),
-            new SessionTodoInput("4", "Abandoned", "cancelled")
+            new SessionTodoInput("4", "Abandoned", "cancelled"),
+            new SessionTodoInput("5", "Blocked", "blocked", "npc_moving"),
+            new SessionTodoInput("6", "Failed", "failed", "path_blocked")
         ]);
 
         var text = store.FormatActiveTasksForInjection("session-a");
@@ -220,6 +312,8 @@ public sealed class TodoToolTests
         StringAssert.Contains(text, "Waiting");
         Assert.IsFalse(text!.Contains("Done", StringComparison.Ordinal));
         Assert.IsFalse(text.Contains("Abandoned", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("Blocked", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("Failed", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -229,7 +323,9 @@ public sealed class TodoToolTests
         store.Write("session-a",
         [
             new SessionTodoInput("1", "Done", "completed"),
-            new SessionTodoInput("2", "Abandoned", "cancelled")
+            new SessionTodoInput("2", "Abandoned", "cancelled"),
+            new SessionTodoInput("3", "Blocked", "blocked", "npc_moving"),
+            new SessionTodoInput("4", "Failed", "failed", "path_blocked")
         ]);
 
         var text = store.FormatActiveTasksForInjection("session-a");

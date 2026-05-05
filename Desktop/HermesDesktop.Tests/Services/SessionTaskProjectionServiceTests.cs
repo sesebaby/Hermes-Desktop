@@ -58,6 +58,30 @@ public sealed class SessionTaskProjectionServiceTests
     }
 
     [TestMethod]
+    public async Task OnMessageSavedAsync_ProjectsBlockedFailedReasonsIntoSessionSnapshot()
+    {
+        var store = new SessionTodoStore();
+        var projection = new SessionTaskProjectionService(store);
+
+        await projection.OnMessageSavedAsync("session-a", new Message
+        {
+            Role = "tool",
+            ToolName = "todo",
+            ToolCallId = "call-1",
+            Content = "{\"todos\":[{\"id\":\"1\",\"content\":\"Reach beach\",\"status\":\"blocked\",\"reason\":\"npc_moving\"},{\"id\":\"2\",\"content\":\"Bring gift\",\"status\":\"failed\",\"reason\":\"festival_blocked\"}]}"
+        }, CancellationToken.None);
+
+        var snapshot = projection.GetSnapshot("session-a");
+        Assert.AreEqual(2, snapshot.Todos.Count);
+        Assert.AreEqual("blocked", snapshot.Todos[0].Status);
+        Assert.AreEqual("npc_moving", snapshot.Todos[0].Reason);
+        Assert.AreEqual("failed", snapshot.Todos[1].Status);
+        Assert.AreEqual("festival_blocked", snapshot.Todos[1].Reason);
+        Assert.AreEqual(1, snapshot.Summary.Blocked);
+        Assert.AreEqual(1, snapshot.Summary.Failed);
+    }
+
+    [TestMethod]
     public async Task OnMessageSavedAsync_IgnoresMalformedTodoPayloadWithoutClearingPriorSnapshot()
     {
         var store = new SessionTodoStore();
@@ -109,5 +133,32 @@ public sealed class SessionTaskProjectionServiceTests
         Assert.AreEqual(1, snapshot.Todos.Count);
         Assert.AreEqual("new", snapshot.Todos[0].Id);
         Assert.AreEqual("completed", snapshot.Todos[0].Status);
+    }
+
+    [TestMethod]
+    public async Task FormatActiveTasksForInjection_UsesExplicitToolSessionWhenProvided()
+    {
+        var store = new SessionTodoStore();
+        var projection = new SessionTaskProjectionService(store);
+        store.Write("npc-1",
+        [
+            new SessionTodoInput("1", "Long-term task", "pending")
+        ]);
+
+        await projection.OnMessageSavedAsync("npc-1:private_chat:conversation-1", new Message
+        {
+            Role = "tool",
+            ToolName = "todo",
+            ToolCallId = "call-1",
+            Content = "{\"todos\":[{\"id\":\"2\",\"content\":\"Private transcript task\",\"status\":\"pending\"}]}"
+        }, "npc-1", CancellationToken.None);
+
+        var longTermSnapshot = projection.GetSnapshot("npc-1");
+        var privateSnapshot = projection.GetSnapshot("npc-1:private_chat:conversation-1");
+
+        Assert.AreEqual(1, longTermSnapshot.Todos.Count);
+        Assert.AreEqual("Private transcript task", longTermSnapshot.Todos[0].Content);
+        Assert.AreEqual(0, privateSnapshot.Todos.Count);
+        StringAssert.Contains(projection.FormatActiveTasksForInjection("npc-1")!, "Private transcript task");
     }
 }

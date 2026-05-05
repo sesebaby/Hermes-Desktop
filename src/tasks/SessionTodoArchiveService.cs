@@ -96,7 +96,8 @@ public static class SessionTodoArchiveService
                 inputs.Add(new SessionTodoInput(
                     GetString(item, "id"),
                     GetString(item, "content"),
-                    GetString(item, "status")));
+                    GetString(item, "status"),
+                    GetString(item, "reason")));
             }
 
             snapshot = new SessionTodoStore().Write("__archive__", inputs);

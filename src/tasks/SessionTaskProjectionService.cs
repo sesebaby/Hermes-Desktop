@@ -16,13 +16,17 @@ public sealed class SessionTaskProjectionService : ITranscriptMessageObserver
     public event EventHandler<SessionTaskSnapshotChangedEventArgs>? SnapshotChanged;
 
     public Task OnMessageSavedAsync(string sessionId, Message message, CancellationToken ct)
+        => OnMessageSavedAsync(sessionId, message, taskSessionId: null, ct);
+
+    public Task OnMessageSavedAsync(string sessionId, Message message, string? taskSessionId, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         if (!IsTodoToolResult(message))
             return Task.CompletedTask;
 
-        if (TryProjectToolResult(sessionId, message.Content, out var snapshot))
-            SnapshotChanged?.Invoke(this, new SessionTaskSnapshotChangedEventArgs(sessionId, snapshot));
+        var projectionSessionId = ResolveProjectionSessionId(sessionId, message, taskSessionId);
+        if (TryProjectToolResult(projectionSessionId, message.Content, out var snapshot))
+            SnapshotChanged?.Invoke(this, new SessionTaskSnapshotChangedEventArgs(projectionSessionId, snapshot));
 
         return Task.CompletedTask;
     }
@@ -79,6 +83,14 @@ public sealed class SessionTaskProjectionService : ITranscriptMessageObserver
            (string.Equals(message.ToolName, "todo", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(message.ToolName, "todo_write", StringComparison.OrdinalIgnoreCase));
 
+    private static string ResolveProjectionSessionId(string sessionId, Message message, string? explicitTaskSessionId)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitTaskSessionId))
+            return explicitTaskSessionId;
+
+        return string.IsNullOrWhiteSpace(message.TaskSessionId) ? sessionId : message.TaskSessionId;
+    }
+
     private static bool TryParseTodoInputs(string content, out IReadOnlyList<SessionTodoInput> inputs)
     {
         inputs = Array.Empty<SessionTodoInput>();
@@ -100,7 +112,8 @@ public sealed class SessionTaskProjectionService : ITranscriptMessageObserver
                 parsed.Add(new SessionTodoInput(
                     GetString(item, "id"),
                     GetString(item, "content"),
-                    GetString(item, "status")));
+                    GetString(item, "status"),
+                    GetString(item, "reason")));
             }
 
             inputs = parsed;

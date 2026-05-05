@@ -4,6 +4,7 @@ using Hermes.Agent.Game;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Runtime;
 using Hermes.Agent.Skills;
+using Hermes.Agent.Tasks;
 using Hermes.Agent.Tools;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -188,6 +189,97 @@ public class NpcRuntimeSupervisorTests
         Assert.AreSame(first, second);
         Assert.AreNotSame(first, third);
         Assert.AreEqual(2, supervisor.Snapshot().Single().PrivateChatRebindGeneration);
+    }
+
+    [TestMethod]
+    public async Task TryGetTaskView_AfterPrivateChatHandle_ReturnsReadOnlyLongTermTaskSnapshot()
+    {
+        var supervisor = new NpcRuntimeSupervisor();
+        var pack = CreatePack("haley", "Haley");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
+        var services = new NpcRuntimeCompositionServices(
+            new FakeChatClient(),
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler());
+        var handle = await supervisor.GetOrCreatePrivateChatHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAgentBindingRequest(
+                ChannelKey: "private_chat",
+                SystemPromptSupplement: "Reply directly.",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")])),
+            CancellationToken.None);
+        handle.Context.TodoStore.Write(
+            descriptor.SessionId,
+            [
+                new SessionTodoInput("1", "Meet player at the beach", "pending"),
+                new SessionTodoInput("2", "Reach the pier", "blocked", "festival_active")
+            ]);
+
+        var found = supervisor.TryGetTaskView(descriptor.SessionId, out var taskView);
+
+        Assert.IsTrue(found);
+        Assert.IsNotNull(taskView);
+        Assert.AreEqual(descriptor.SessionId, taskView.SessionId);
+        Assert.AreEqual(2, taskView.ActiveSnapshot.Todos.Count);
+        Assert.AreEqual(1, taskView.ActiveSnapshot.Summary.Pending);
+        Assert.AreEqual(1, taskView.ActiveSnapshot.Summary.Blocked);
+        Assert.AreEqual("festival_active", taskView.ActiveSnapshot.Todos[1].Reason);
+    }
+
+    [TestMethod]
+    public async Task GetOrCreateAutonomyHandleAsync_AfterPrivateChatTodo_SharesLongTermTaskStore()
+    {
+        var supervisor = new NpcRuntimeSupervisor();
+        var pack = CreatePack("haley", "Haley");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
+        var services = new NpcRuntimeCompositionServices(
+            new FakeChatClient(),
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler());
+        var privateChatHandle = await supervisor.GetOrCreatePrivateChatHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAgentBindingRequest(
+                ChannelKey: "private_chat",
+                SystemPromptSupplement: "Reply directly.",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")])),
+            CancellationToken.None);
+        privateChatHandle.Context.TodoStore.Write(
+            descriptor.SessionId,
+            [new SessionTodoInput("1", "Meet player at the beach", "pending")]);
+
+        var autonomyHandle = await supervisor.GetOrCreateAutonomyHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAutonomyBindingRequest(
+                ChannelKey: "autonomy",
+                AdapterKey: "bridge-a",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                AdapterFactory: () => new FakeGameAdapter(),
+                GameToolFactory: adapter => [new FakeTool("stardew_status"), new FakeTool("stardew_move")],
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")])),
+            CancellationToken.None);
+
+        var autonomySnapshot = autonomyHandle.AgentHandle.Context.TodoStore.Read(descriptor.SessionId);
+        Assert.AreEqual(1, autonomySnapshot.Todos.Count);
+        Assert.AreEqual("Meet player at the beach", autonomySnapshot.Todos[0].Content);
     }
 
     [TestMethod]

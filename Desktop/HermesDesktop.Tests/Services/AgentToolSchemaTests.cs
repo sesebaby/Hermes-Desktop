@@ -30,8 +30,9 @@ public sealed class AgentToolSchemaTests
         Assert.AreEqual(JsonValueKind.Array, todos.GetProperty("items").GetProperty("required").ValueKind);
         var status = todos.GetProperty("items").GetProperty("properties").GetProperty("status");
         CollectionAssert.AreEqual(
-            new[] { "pending", "in_progress", "completed", "cancelled" },
+            new[] { "pending", "in_progress", "completed", "cancelled", "blocked", "failed" },
             status.GetProperty("enum").EnumerateArray().Select(v => v.GetString()).ToArray());
+        Assert.IsTrue(todos.GetProperty("items").GetProperty("properties").TryGetProperty("reason", out _));
     }
 
     private sealed class CapturingChatClient : IChatClient

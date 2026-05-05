@@ -77,6 +77,7 @@ internal static class AgentContextAssembler
 
     internal static async Task<List<Message>?> PrepareOptimizedContextAsync(
         string sessionId,
+        string? toolSessionId,
         string userMessage,
         ContextManager? contextManager,
         TurnMemoryCoordinator? turnMemoryCoordinator,
@@ -109,6 +110,7 @@ internal static class AgentContextAssembler
         {
             return await contextManager.PrepareContextAsync(
                 sessionId,
+                toolSessionId,
                 userMessage,
                 retrievedContext: null,
                 ct);

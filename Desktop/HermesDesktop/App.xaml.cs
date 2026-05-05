@@ -365,8 +365,8 @@ public partial class App : Application
         services.AddSingleton<WorldCoordinationService>();
         services.AddSingleton<NpcRuntimeTraceIndex>();
         services.AddSingleton(_ => new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(
-            MaxToolIterations: ReadPositiveConfigInt("stardew", "npc_autonomy_max_tool_iterations", 100),
-            MaxConcurrentLlmRequests: ReadPositiveConfigInt("stardew", "npc_autonomy_max_concurrent_llm_requests", 1),
+            MaxToolIterations: ReadPositiveConfigInt("stardew", "npc_autonomy_max_tool_iterations", 6),
+            MaxConcurrentLlmRequests: ReadPositiveConfigInt("stardew", "npc_autonomy_max_concurrent_llm_requests", 2),
             RestartCooldown: TimeSpan.FromSeconds(ReadPositiveConfigInt("stardew", "npc_autonomy_restart_cooldown_seconds", 5)),
             MaxRestartsPerScene: ReadPositiveConfigInt("stardew", "npc_autonomy_max_restarts_per_scene", 3),
             LlmTurnTimeout: TimeSpan.FromSeconds(ReadPositiveConfigInt("stardew", "npc_autonomy_llm_turn_timeout_seconds", 60)))));

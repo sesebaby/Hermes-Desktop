@@ -11,7 +11,9 @@ public sealed class SessionTodoStore
         "pending",
         "in_progress",
         "completed",
-        "cancelled"
+        "cancelled",
+        "blocked",
+        "failed"
     };
 
     private readonly ConcurrentDictionary<string, List<SessionTodoItem>> _todosBySession = new(StringComparer.OrdinalIgnoreCase);
@@ -55,7 +57,8 @@ public sealed class SessionTodoStore
                     byId[itemId] = existing with
                     {
                         Content = string.IsNullOrWhiteSpace(input.Content) ? existing.Content : input.Content.Trim(),
-                        Status = NormalizeStatus(input.Status, existing.Status)
+                        Status = NormalizeStatus(input.Status, existing.Status),
+                        Reason = string.IsNullOrWhiteSpace(input.Reason) ? existing.Reason : input.Reason.Trim()
                     };
                 }
                 else
@@ -121,7 +124,13 @@ public sealed class SessionTodoStore
         if (string.IsNullOrWhiteSpace(content))
             content = "(no description)";
 
-        return new SessionTodoItem(id, content, NormalizeStatus(input.Status, "pending"));
+        var reason = (input.Reason ?? "").Trim();
+
+        return new SessionTodoItem(
+            id,
+            content,
+            NormalizeStatus(input.Status, "pending"),
+            string.IsNullOrWhiteSpace(reason) ? null : reason);
     }
 
     private static string NormalizeStatus(string? status, string fallback)
@@ -138,7 +147,9 @@ public sealed class SessionTodoStore
             copy.Count(t => t.Status == "pending"),
             copy.Count(t => t.Status == "in_progress"),
             copy.Count(t => t.Status == "completed"),
-            copy.Count(t => t.Status == "cancelled"));
+            copy.Count(t => t.Status == "cancelled"),
+            copy.Count(t => t.Status == "blocked"),
+            copy.Count(t => t.Status == "failed"));
         return new SessionTodoSnapshot(copy, summary);
     }
 
@@ -146,19 +157,22 @@ public sealed class SessionTodoStore
         => string.IsNullOrWhiteSpace(sessionId) ? DefaultSessionId : sessionId.Trim();
 }
 
-public sealed record SessionTodoInput(string? Id, string? Content, string? Status);
+public sealed record SessionTodoInput(string? Id, string? Content, string? Status, string? Reason = null);
 
 public sealed record SessionTodoItem(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("content")] string Content,
-    [property: JsonPropertyName("status")] string Status);
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("reason")] string? Reason = null);
 
 public sealed record SessionTodoSummary(
     [property: JsonPropertyName("total")] int Total,
     [property: JsonPropertyName("pending")] int Pending,
     [property: JsonPropertyName("in_progress")] int InProgress,
     [property: JsonPropertyName("completed")] int Completed,
-    [property: JsonPropertyName("cancelled")] int Cancelled);
+    [property: JsonPropertyName("cancelled")] int Cancelled,
+    [property: JsonPropertyName("blocked")] int Blocked = 0,
+    [property: JsonPropertyName("failed")] int Failed = 0);
 
 public sealed record SessionTodoSnapshot(
     [property: JsonPropertyName("todos")] IReadOnlyList<SessionTodoItem> Todos,

@@ -33,7 +33,7 @@ public sealed class NpcAutonomyBudget
 }
 
 public sealed record NpcAutonomyBudgetOptions(
-    int MaxToolIterations = 100,
+    int MaxToolIterations = 6,
     int MaxConcurrentLlmRequests = 1,
     TimeSpan? RestartCooldown = null,
     int MaxRestartsPerScene = 3,

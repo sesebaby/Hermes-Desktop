@@ -9,6 +9,7 @@ public sealed class Message
     public DateTime Timestamp { get; init; } = DateTime.UtcNow;
     public string? ToolCallId { get; init; }
     public string? ToolName { get; init; }
+    public string? TaskSessionId { get; init; }
     /// <summary>Tool calls requested by the assistant in this message.</summary>
     public List<ToolCall>? ToolCalls { get; init; }
     public string? Reasoning { get; init; }
@@ -20,6 +21,7 @@ public sealed class Message
 public sealed class Session
 {
     public required string Id { get; init; }
+    public string? ToolSessionId { get; init; }
     public string? UserId { get; init; }
     public string? Platform { get; init; }
     public List<Message> Messages { get; init; } = new();

@@ -40,4 +40,12 @@ public class NpcAutonomyBudgetTests
         Assert.AreEqual(NpcAutonomyExitReason.None, budget.CheckToolIterationLimit(1));
         Assert.AreEqual(NpcAutonomyExitReason.MaxToolIterations, budget.CheckToolIterationLimit(2));
     }
+
+    [TestMethod]
+    public void DefaultOptions_KeepAutonomyTurnsShortEnoughForLiveNpcFeedback()
+    {
+        var options = new NpcAutonomyBudgetOptions();
+
+        Assert.AreEqual(6, options.MaxToolIterations);
+    }
 }

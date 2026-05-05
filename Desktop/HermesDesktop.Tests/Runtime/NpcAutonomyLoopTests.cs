@@ -83,7 +83,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_ObservesBeforeAgentDecision()
+    public async Task RunOneTickAsync_ObservesBeforeAgentDecisionAndSubmitsVisibleFallbackSpeak()
     {
         var steps = new List<string>();
         var at = new DateTime(2026, 4, 30, 10, 0, 0, DateTimeKind.Utc);
@@ -100,7 +100,7 @@ public class NpcAutonomyLoopTests
         var events = new FakeEventSource(
             [new GameEventRecord("evt-2", "time_changed", null, at.AddMinutes(10), "The clock advanced.")]);
         events.OnPoll = () => steps.Add("poll");
-        var agent = new FakeAgent(() => steps.Add("decide"));
+        var agent = new FakeAgent(() => steps.Add("decide"), "我在喷泉边等一下。");
         var adapter = new FakeGameAdapter(commands, queries, events);
         var loop = new NpcAutonomyLoop(adapter, factStore, agent);
 
@@ -110,7 +110,7 @@ public class NpcAutonomyLoopTests
         Assert.AreEqual(1, agent.ChatCalls);
         Assert.IsTrue(agent.LastMessage?.Contains("location=Town", StringComparison.Ordinal) ?? false);
         Assert.IsTrue(agent.LastMessage?.Contains("evt-2", StringComparison.Ordinal) ?? false);
-        Assert.AreEqual("wait", result.DecisionResponse);
+        Assert.AreEqual("我在喷泉边等一下。", result.DecisionResponse);
         Assert.AreEqual(0, commands.SubmitCalls);
     }
 
@@ -158,6 +158,64 @@ public class NpcAutonomyLoopTests
         Assert.IsTrue(
             factStore.Snapshot(descriptor).Any(fact => fact.Facts.Any(value => value.Contains("x=9,y=7", StringComparison.Ordinal))),
             "The store can retain historical observations for diagnostics; only the live decision prompt must be current-only.");
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_DecisionMessageUsesChineseTaskContinuityGuidance()
+    {
+        var descriptor = CreateDescriptor("haley");
+        var agent = new FakeAgent(() => { });
+        var loop = new NpcAutonomyLoop(
+            new FakeGameAdapter(
+                new CountingCommandService(),
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Haley is idle and can continue prior commitments.",
+                    ["location=Town", "moveCandidate[0]=locationName=Town,x=42,y=17"])),
+                new FakeEventSource([])),
+            new NpcObservationFactStore(),
+            agent);
+
+        await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+        Assert.IsNotNull(agent.LastMessage);
+        StringAssert.Contains(agent.LastMessage, "先看当前观察事实和 active todo");
+        StringAssert.Contains(agent.LastMessage, "玩家给过的约定");
+        StringAssert.Contains(agent.LastMessage, "blocked 或 failed");
+        StringAssert.Contains(agent.LastMessage, "用 stardew_speak");
+        StringAssert.Contains(agent.LastMessage, "不要把事件当成玩家的新命令");
+        Assert.IsFalse(
+            agent.LastMessage.Contains("Use these passive game facts", StringComparison.Ordinal),
+            "Autonomy decision prompt should use Chinese plain-language continuity guidance instead of the old generic English instruction.");
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_DecisionMessageMarksObservationTimestampAsRecordTimeNotGameTime()
+    {
+        var descriptor = CreateDescriptor("haley");
+        var agent = new FakeAgent(() => { });
+        var loop = new NpcAutonomyLoop(
+            new FakeGameAdapter(
+                new CountingCommandService(),
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    new DateTime(2026, 5, 5, 3, 8, 0, DateTimeKind.Utc),
+                    "Haley is in town in the afternoon.",
+                    ["location=Town", "tile=42,17", "gameTime=1430", "gameClock=14:30"])),
+                new FakeEventSource([])),
+            new NpcObservationFactStore(),
+            agent);
+
+        await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+        Assert.IsNotNull(agent.LastMessage);
+        StringAssert.Contains(agent.LastMessage, "记录时间不是星露谷游戏内时间");
+        StringAssert.Contains(agent.LastMessage, "gameTime/gameClock 才是游戏内时间");
+        StringAssert.Contains(agent.LastMessage, "gameTime=1430");
+        StringAssert.Contains(agent.LastMessage, "gameClock=14:30");
     }
 
     [TestMethod]
@@ -263,6 +321,270 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
+    public async Task RunOneTickAsync_WhenDecisionHasOnlyNoVisibleSleepText_DoesNotSubmitFallbackSpeak()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-no-visible-fallback-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            ns.EnsureDirectories();
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var commands = new CountingCommandService();
+            var factStore = new NpcObservationFactStore();
+            var adapter = new FakeGameAdapter(
+                commands,
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Haley is asleep.",
+                    ["location=HaleyHouse"])),
+                new FakeEventSource([]));
+            var agent = new FakeAgent(() => { }, "zzz……💤\n\n*安静地睡着*");
+            var loop = new NpcAutonomyLoop(
+                adapter,
+                factStore,
+                agent,
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                traceIdFactory: () => "trace-no-visible-line");
+
+            await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.AreEqual(0, commands.SubmitCalls);
+            Assert.IsTrue(File.ReadAllText(logPath).Contains("no_tool_decision:no_visible_line", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WhenAgentHitsToolIterationLimit_DoesNotWriteFallbackAsTick()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-tool-limit-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("penny");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            ns.EnsureDirectories();
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var fallback = "I've reached the maximum number of tool call iterations. Here's what I've accomplished so far based on the conversation above.";
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation(
+                        "penny",
+                        "stardew-valley",
+                        DateTime.UtcNow,
+                        "Penny is idle.",
+                        ["location=Trailer"])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                new FakeAgent(() => { }, fallback),
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                traceIdFactory: () => "trace-tool-limit");
+
+            var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.IsNull(result.DecisionResponse, "Agent framework fallback text should not become an NPC decision response.");
+            var records = File.ReadAllLines(logPath)
+                .Select(line => JsonDocument.Parse(line))
+                .ToArray();
+            try
+            {
+                var tick = records.Single(doc => doc.RootElement.GetProperty("actionType").GetString() == "tick");
+                Assert.AreEqual("observed:1", tick.RootElement.GetProperty("result").GetString());
+                Assert.IsFalse(
+                    records.Any(doc => doc.RootElement.GetProperty("result").GetString()?.Contains("maximum number of tool call iterations", StringComparison.Ordinal) == true),
+                    "Framework max-tool fallback must not be written as user-visible NPC activity text.");
+                Assert.IsTrue(records.Any(doc =>
+                    doc.RootElement.GetProperty("actionType").GetString() == "diagnostic" &&
+                    doc.RootElement.GetProperty("target").GetString() == "tool_budget" &&
+                    doc.RootElement.GetProperty("result").GetString() == "max_tool_iterations"),
+                    "The dropped framework fallback still needs an explicit diagnostic record.");
+            }
+            finally
+            {
+                foreach (var record in records)
+                    record.Dispose();
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WhenDecisionIsStatusOnly_DoesNotSubmitFallbackSpeak()
+    {
+        var descriptor = CreateDescriptor("haley");
+        var commands = new CountingCommandService();
+        var loop = new NpcAutonomyLoop(
+            new FakeGameAdapter(
+                commands,
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Haley is asleep.",
+                    ["location=HaleyHouse"])),
+                new FakeEventSource([])),
+            new NpcObservationFactStore(),
+            new FakeAgent(() => { }, "*继续休息——等待天亮再行动。*"));
+
+        await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+        Assert.AreEqual(0, commands.SubmitCalls);
+    }
+
+    [DataTestMethod]
+    [DataRow("*天亮了再说～*")]
+    [DataRow("拖车里很安静。")]
+    [DataRow("那些话已经好好收进心底。")]
+    [DataRow("同一秒钟，潘妮在拖车里继续睡着。")]
+    public async Task RunOneTickAsync_WhenDecisionIsNarrationOnly_DoesNotSubmitFallbackSpeak(string response)
+    {
+        var descriptor = CreateDescriptor("penny");
+        var commands = new CountingCommandService();
+        var loop = new NpcAutonomyLoop(
+            new FakeGameAdapter(
+                commands,
+                new FakeQueryService(new GameObservation(
+                    "penny",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Penny is asleep.",
+                    ["location=Trailer"])),
+                new FakeEventSource([])),
+            new NpcObservationFactStore(),
+            new FakeAgent(() => { }, response));
+
+        await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+        Assert.AreEqual(0, commands.SubmitCalls);
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WhenDecisionIsDirectUnquotedSpeech_DoesNotSubmitFallbackSpeak()
+    {
+        var descriptor = CreateDescriptor("haley");
+        var commands = new CountingCommandService();
+        var loop = new NpcAutonomyLoop(
+            new FakeGameAdapter(
+                commands,
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Haley is awake.",
+                    ["location=HaleyHouse"])),
+                new FakeEventSource([])),
+            new NpcObservationFactStore(),
+            new FakeAgent(() => { }, "我在喷泉边等一下。"));
+
+        await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+        Assert.AreEqual(0, commands.SubmitCalls);
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WhenDecisionContainsQuotedLine_DoesNotSubmitFallbackSpeak()
+    {
+        var descriptor = CreateDescriptor("haley");
+        var commands = new CountingCommandService();
+        var loop = new NpcAutonomyLoop(
+            new FakeGameAdapter(
+                commands,
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Haley is asleep.",
+                    ["location=HaleyHouse"])),
+                new FakeEventSource([])),
+            new NpcObservationFactStore(),
+            new FakeAgent(() => { }, "*她翻了个身，含糊地说——*\n\n\"明天再回你……\""));
+
+        await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+        Assert.AreEqual(0, commands.SubmitCalls);
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WhenDecisionQuotesHistoricalPhoneMessage_DoesNotSubmitFallbackSpeak()
+    {
+        var descriptor = CreateDescriptor("penny");
+        var commands = new CountingCommandService();
+        var loop = new NpcAutonomyLoop(
+            new FakeGameAdapter(
+                commands,
+                new FakeQueryService(new GameObservation(
+                    "penny",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Penny is asleep.",
+                    ["location=Trailer"])),
+                new FakeEventSource([])),
+            new NpcObservationFactStore(),
+            new FakeAgent(() => { }, "她在心里把手机里的那几条消息又默念了一遍。\n\n——*\"我回去的，等我这边农场忙完。\"*\n\n她轻轻嗯了一声。"));
+
+        await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+        Assert.AreEqual(0, commands.SubmitCalls);
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WhenDecisionRecapsSentPhoneMessages_DoesNotSubmitFallbackSpeak()
+    {
+        var descriptor = CreateDescriptor("penny");
+        var commands = new CountingCommandService();
+        var loop = new NpcAutonomyLoop(
+            new FakeGameAdapter(
+                commands,
+                new FakeQueryService(new GameObservation(
+                    "penny",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Penny is asleep.",
+                    ["location=Trailer"])),
+                new FakeEventSource([])),
+            new NpcObservationFactStore(),
+            new FakeAgent(() => { }, "🌙 **凌晨两点半，trailer 里安安静静。**\n\n我刚刚跟他说了\"天亮了再来找我\"，那两条消息应该已经送到他手机上了。\n\n大半夜的不用再催他，让他安心忙完农场再过来吧。\n\n**⏳ 持续等待。暂无新行动。**"));
+
+        await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+        Assert.AreEqual(0, commands.SubmitCalls);
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WhenDecisionQuotesCurrentDreamTalk_DoesNotSubmitFallbackSpeak()
+    {
+        var descriptor = CreateDescriptor("haley");
+        var commands = new CountingCommandService();
+        var loop = new NpcAutonomyLoop(
+            new FakeGameAdapter(
+                commands,
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Haley is asleep.",
+                    ["location=HaleyHouse"])),
+                new FakeEventSource([])),
+            new NpcObservationFactStore(),
+            new FakeAgent(() => { }, "*被窝里翻了个身，迷迷糊糊地嘟囔了一句……*\n\n\"唔……明天再说啦……\""));
+
+        await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+        Assert.AreEqual(0, commands.SubmitCalls);
+    }
+
+    [TestMethod]
     public async Task RunOneTickAsync_WithDecisionResponse_WritesNpcLocalMemory()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-memory-tests", Guid.NewGuid().ToString("N"));
@@ -338,11 +660,13 @@ public class NpcAutonomyLoopTests
         public int SubmitCalls { get; private set; }
         public int StatusCalls { get; private set; }
         public int CancelCalls { get; private set; }
+        public GameAction? LastSubmittedAction { get; private set; }
 
         public Task<GameCommandResult> SubmitAsync(GameAction action, CancellationToken ct)
         {
             SubmitCalls++;
-            return Task.FromResult(new GameCommandResult(false, "", "not-called", "unexpected", action.TraceId));
+            LastSubmittedAction = action;
+            return Task.FromResult(new GameCommandResult(true, "cmd-fallback", "queued", null, action.TraceId));
         }
 
         public Task<GameCommandStatus> GetStatusAsync(string commandId, CancellationToken ct)

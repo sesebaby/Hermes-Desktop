@@ -163,6 +163,40 @@ public sealed class Agent : IAgent
 
     public IReadOnlyDictionary<string, ITool> Tools => _tools;
 
+    private void LogLlmRequestStart(
+        string sessionId,
+        int iteration,
+        IReadOnlyList<Message> messages,
+        IReadOnlyList<ToolDefinition> toolDefs)
+    {
+        var totalChars = messages.Sum(message => message.Content?.Length ?? 0);
+        _logger.LogInformation(
+            "Agent LLM request started; session={SessionId}; iteration={Iteration}; messages={MessageCount}; chars={CharCount}; tools={ToolCount}",
+            sessionId,
+            iteration,
+            messages.Count,
+            totalChars,
+            toolDefs.Count);
+    }
+
+    private void LogLlmRequestComplete(
+        string sessionId,
+        int iteration,
+        ChatResponse response,
+        IReadOnlyList<ToolDefinition> toolDefs,
+        long durationMs)
+    {
+        _logger.LogInformation(
+            "Agent LLM request completed; session={SessionId}; iteration={Iteration}; finishReason={FinishReason}; contentChars={ContentChars}; toolCalls={ToolCallCount}; tools={ToolCount}; durationMs={DurationMs}",
+            sessionId,
+            iteration,
+            response.FinishReason ?? "-",
+            response.Content?.Length ?? 0,
+            response.ToolCalls?.Count ?? 0,
+            toolDefs.Count,
+            durationMs);
+    }
+
     /// <summary>Build ToolDefinition list from registered tools for the LLM.</summary>
     public List<ToolDefinition> GetToolDefinitions()
     {
@@ -256,6 +290,7 @@ public sealed class Agent : IAgent
 
             var preparedContext = await AgentContextAssembler.PrepareOptimizedContextAsync(
                 session.Id,
+                session.ToolSessionId,
                 message,
                 _contextManager,
                 _turnMemoryCoordinator,
@@ -317,12 +352,20 @@ public sealed class Agent : IAgent
             ChatResponse response;
             try
             {
+                LogLlmRequestStart(session.Id, iterations, messagesToUse, toolDefs);
+                var llmStopwatch = System.Diagnostics.Stopwatch.StartNew();
                 response = await activeClientForTools.CompleteWithToolsAsync(messagesToUse, toolDefs, ct);
+                llmStopwatch.Stop();
+                LogLlmRequestComplete(session.Id, iterations, response, toolDefs, llmStopwatch.ElapsedMilliseconds);
             }
             catch (HttpRequestException ex) when (_fallbackChatClient is not null)
             {
                 activeClientForTools = ActivateFallback(ex);
+                LogLlmRequestStart(session.Id, iterations, messagesToUse, toolDefs);
+                var llmStopwatch = System.Diagnostics.Stopwatch.StartNew();
                 response = await activeClientForTools.CompleteWithToolsAsync(messagesToUse, toolDefs, ct);
+                llmStopwatch.Stop();
+                LogLlmRequestComplete(session.Id, iterations, response, toolDefs, llmStopwatch.ElapsedMilliseconds);
             }
 
             if (!response.HasToolCalls)
@@ -354,7 +397,7 @@ public sealed class Agent : IAgent
             {
                 // ── Parallel execution path (read-only tools only) ──
                 _logger.LogInformation("Executing {Count} tool calls in parallel", toolCallsList.Count);
-                var parallelResults = await ExecuteToolCallsParallelAsync(toolCallsList, session.Id, ct);
+                var parallelResults = await ExecuteToolCallsParallelAsync(toolCallsList, session.ToolSessionId ?? session.Id, ct);
 
                 foreach (var (toolCall, result, durationMs) in parallelResults)
                 {
@@ -381,7 +424,8 @@ public sealed class Agent : IAgent
                         Role = "tool",
                         Content = resultContent,
                         ToolCallId = toolCall.Id,
-                        ToolName = toolCall.Name
+                        ToolName = toolCall.Name,
+                        TaskSessionId = session.ToolSessionId
                     };
                     session.AddMessage(toolResultMsg);
                     if (_transcripts is not null)
@@ -501,7 +545,7 @@ public sealed class Agent : IAgent
 
                 _logger.LogInformation("Executing tool {ToolName} (call {CallId})", toolCall.Name, toolCall.Id);
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                var result = await ExecuteToolCallAsync(toolCall, session.Id, ct);
+                var result = await ExecuteToolCallAsync(toolCall, session.ToolSessionId ?? session.Id, ct);
                 sw.Stop();
 
                 // ── Activity tracking: AFTER execution ──
@@ -551,11 +595,12 @@ public sealed class Agent : IAgent
 
                 var toolResultMsg = new Message
                 {
-                    Role = "tool",
-                    Content = resultContent,
-                    ToolCallId = toolCall.Id,
-                    ToolName = toolCall.Name
-                };
+                        Role = "tool",
+                        Content = resultContent,
+                        ToolCallId = toolCall.Id,
+                        ToolName = toolCall.Name,
+                        TaskSessionId = session.ToolSessionId
+                    };
                 session.AddMessage(toolResultMsg);
                 if (_transcripts is not null)
                     await _transcripts.SaveMessageAsync(session.Id, toolResultMsg, ct);
@@ -736,6 +781,7 @@ public sealed class Agent : IAgent
         // ── Context manager integration ──
         var preparedContext = await AgentContextAssembler.PrepareOptimizedContextAsync(
             session.Id,
+            session.ToolSessionId,
             message,
             _contextManager,
             _turnMemoryCoordinator,
@@ -925,7 +971,7 @@ public sealed class Agent : IAgent
 
                 _logger.LogInformation("Executing tool {ToolName} (call {CallId})", toolCall.Name, toolCall.Id);
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                var result = await ExecuteToolCallAsync(toolCall, session.Id, ct);
+                    var result = await ExecuteToolCallAsync(toolCall, session.ToolSessionId ?? session.Id, ct);
                 sw.Stop();
 
                 // ── Activity tracking: AFTER execution ──
@@ -977,7 +1023,8 @@ public sealed class Agent : IAgent
                     Role = "tool",
                     Content = resultContent,
                     ToolCallId = toolCall.Id,
-                    ToolName = toolCall.Name
+                    ToolName = toolCall.Name,
+                    TaskSessionId = session.ToolSessionId
                 };
                 session.AddMessage(toolResultMsg);
                 if (_transcripts is not null)
