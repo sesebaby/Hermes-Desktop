@@ -144,10 +144,19 @@ internal static class AgentSessionWriter
     internal static async Task<Message> AppendAssistantMessageAsync(
         Session session,
         string content,
+        ChatResponse? response,
         TranscriptStore? transcripts,
         CancellationToken ct)
     {
-        var message = new Message { Role = "assistant", Content = content };
+        var message = new Message
+        {
+            Role = "assistant",
+            Content = content,
+            Reasoning = response?.Reasoning,
+            ReasoningContent = response?.ReasoningContent,
+            ReasoningDetails = response?.ReasoningDetails,
+            CodexReasoningItems = response?.CodexReasoningItems
+        };
         session.AddMessage(message);
 
         if (transcripts is not null)
@@ -160,6 +169,7 @@ internal static class AgentSessionWriter
         Session session,
         string content,
         List<ToolCall> toolCalls,
+        ChatResponse? response,
         TranscriptStore? transcripts,
         CancellationToken ct)
     {
@@ -167,7 +177,11 @@ internal static class AgentSessionWriter
         {
             Role = "assistant",
             Content = content,
-            ToolCalls = toolCalls
+            ToolCalls = toolCalls,
+            Reasoning = response?.Reasoning,
+            ReasoningContent = response?.ReasoningContent,
+            ReasoningDetails = response?.ReasoningDetails,
+            CodexReasoningItems = response?.CodexReasoningItems
         };
         session.AddMessage(message);
 

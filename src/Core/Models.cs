@@ -11,6 +11,10 @@ public sealed class Message
     public string? ToolName { get; init; }
     /// <summary>Tool calls requested by the assistant in this message.</summary>
     public List<ToolCall>? ToolCalls { get; init; }
+    public string? Reasoning { get; init; }
+    public string? ReasoningContent { get; init; }
+    public string? ReasoningDetails { get; init; }
+    public string? CodexReasoningItems { get; init; }
 }
 
 public sealed class Session
@@ -111,6 +115,10 @@ public sealed class ChatResponse
     public List<ToolCall>? ToolCalls { get; init; }
     /// <summary>Why the LLM stopped: "stop", "tool_calls", "length", etc.</summary>
     public string? FinishReason { get; init; }
+    public string? Reasoning { get; init; }
+    public string? ReasoningContent { get; init; }
+    public string? ReasoningDetails { get; init; }
+    public string? CodexReasoningItems { get; init; }
 
     public bool HasToolCalls => ToolCalls is { Count: > 0 };
 }

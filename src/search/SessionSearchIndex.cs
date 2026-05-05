@@ -151,6 +151,8 @@ public sealed class SessionSearchIndex : IDisposable
                 END;";
             cmd.ExecuteNonQuery();
 
+            EnsureMessagesColumns(db);
+
             using var version = db.CreateCommand();
             version.CommandText = @"
                 INSERT INTO schema_version (version)
@@ -160,6 +162,38 @@ public sealed class SessionSearchIndex : IDisposable
             version.Parameters.AddWithValue("$version", SchemaVersion);
             version.ExecuteNonQuery();
         }
+    }
+
+    private static void EnsureMessagesColumns(SqliteConnection db)
+    {
+        var existing = ReadColumnNames(db, "messages");
+        AddColumnIfMissing(db, existing, "reasoning", "TEXT");
+        AddColumnIfMissing(db, existing, "reasoning_content", "TEXT");
+        AddColumnIfMissing(db, existing, "reasoning_details", "TEXT");
+        AddColumnIfMissing(db, existing, "codex_reasoning_items", "TEXT");
+        AddColumnIfMissing(db, existing, "codex_message_items", "TEXT");
+    }
+
+    private static HashSet<string> ReadColumnNames(SqliteConnection db, string tableName)
+    {
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = $"PRAGMA table_info({tableName})";
+        using var reader = cmd.ExecuteReader();
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+            columns.Add(reader.GetString(1));
+        return columns;
+    }
+
+    private static void AddColumnIfMissing(SqliteConnection db, HashSet<string> existing, string name, string type)
+    {
+        if (existing.Contains(name))
+            return;
+
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = $"ALTER TABLE messages ADD COLUMN {name} {type}";
+        cmd.ExecuteNonQuery();
+        existing.Add(name);
     }
 
     /// <summary>Compatibility API for older callers; writes into the full SQLite state store.</summary>
@@ -230,7 +264,8 @@ public sealed class SessionSearchIndex : IDisposable
             using var db = OpenConnection();
             using var cmd = db.CreateCommand();
             cmd.CommandText = @"
-                SELECT role, content, tool_call_id, tool_calls, tool_name, timestamp
+                SELECT role, content, tool_call_id, tool_calls, tool_name, timestamp,
+                       reasoning, reasoning_content, reasoning_details, codex_reasoning_items
                 FROM messages
                 WHERE session_id = $session_id
                 ORDER BY id";
@@ -247,7 +282,11 @@ public sealed class SessionSearchIndex : IDisposable
                     ToolCallId = reader.IsDBNull(2) ? null : reader.GetString(2),
                     ToolCalls = DeserializeToolCalls(toolCallsJson),
                     ToolName = reader.IsDBNull(4) ? null : reader.GetString(4),
-                    Timestamp = FromUnixSeconds(reader.GetDouble(5))
+                    Timestamp = FromUnixSeconds(reader.GetDouble(5)),
+                    Reasoning = reader.IsDBNull(6) ? null : reader.GetString(6),
+                    ReasoningContent = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    ReasoningDetails = reader.IsDBNull(8) ? null : reader.GetString(8),
+                    CodexReasoningItems = reader.IsDBNull(9) ? null : reader.GetString(9)
                 });
             }
 
@@ -586,8 +625,14 @@ public sealed class SessionSearchIndex : IDisposable
             : null;
         using var cmd = db.CreateCommand();
         cmd.CommandText = @"
-            INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp)
-            VALUES ($session_id, $role, $content, $tool_call_id, $tool_calls, $tool_name, $timestamp)";
+            INSERT INTO messages (
+                session_id, role, content, tool_call_id, tool_calls, tool_name, timestamp,
+                reasoning, reasoning_content, reasoning_details, codex_reasoning_items
+            )
+            VALUES (
+                $session_id, $role, $content, $tool_call_id, $tool_calls, $tool_name, $timestamp,
+                $reasoning, $reasoning_content, $reasoning_details, $codex_reasoning_items
+            )";
         cmd.Parameters.AddWithValue("$session_id", sessionId);
         cmd.Parameters.AddWithValue("$role", message.Role);
         cmd.Parameters.AddWithValue("$content", (object?)message.Content ?? DBNull.Value);
@@ -595,6 +640,10 @@ public sealed class SessionSearchIndex : IDisposable
         cmd.Parameters.AddWithValue("$tool_calls", (object?)toolCallsJson ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$tool_name", (object?)message.ToolName ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$timestamp", ToUnixSeconds(message.Timestamp));
+        cmd.Parameters.AddWithValue("$reasoning", (object?)message.Reasoning ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$reasoning_content", (object?)message.ReasoningContent ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$reasoning_details", (object?)message.ReasoningDetails ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$codex_reasoning_items", (object?)message.CodexReasoningItems ?? DBNull.Value);
         cmd.ExecuteNonQuery();
 
         using var rowId = db.CreateCommand();

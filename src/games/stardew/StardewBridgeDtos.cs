@@ -100,7 +100,9 @@ public sealed record StardewOpenPrivateChatRequest(
 
 public sealed record StardewOpenPrivateChatData(
     [property: JsonPropertyName("npcId")] string NpcId,
-    [property: JsonPropertyName("opened")] bool Opened);
+    [property: JsonPropertyName("opened")] bool Opened,
+    [property: JsonPropertyName("threadId")] string? ThreadId = null,
+    [property: JsonPropertyName("openState")] string? OpenState = null);
 
 public sealed record StardewTaskStatusData(
     [property: JsonPropertyName("commandId")] string CommandId,

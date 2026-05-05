@@ -6,6 +6,11 @@ using Microsoft.Xna.Framework.Input;
 using StardewValley;
 using StardewValley.Menus;
 
+/// <summary>
+/// Retired production path. Hermes private chat now uses HermesPhoneOverlay so opening
+/// a phone thread does not set Game1.activeClickableMenu or pause player control.
+/// Keep this only as a temporary compatibility shell until all old menu tests are gone.
+/// </summary>
 public sealed class PrivateChatInputMenu : IClickableMenu
 {
     private const int MenuPadding = 32;

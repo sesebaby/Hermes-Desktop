@@ -340,6 +340,48 @@ public class AgentTests
         Assert.AreEqual("assistant", session.Messages[3].Role);
     }
 
+    [TestMethod]
+    public async Task ChatAsync_ToolCallAssistantMessagePreservesReasoningForReplay()
+    {
+        var tool = CreateMockTool("reasoning_tool");
+        tool.Setup(t => t.ExecuteAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ToolResult.Ok("tool_result_payload"));
+        _agent.RegisterTool(tool.Object);
+
+        var session = new Session { Id = "sess-tool-reasoning" };
+        var responses = new Queue<ChatResponse>(new[]
+        {
+            new ChatResponse
+            {
+                Content = "",
+                FinishReason = "tool_calls",
+                ReasoningContent = "I need the tool before answering.",
+                Reasoning = "{\"summary\":\"tool needed\"}",
+                ReasoningDetails = "[{\"type\":\"summary_text\",\"text\":\"tool needed\"}]",
+                CodexReasoningItems = "[{\"id\":\"rs_1\",\"type\":\"reasoning\"}]",
+                ToolCalls = new List<ToolCall>
+                {
+                    new() { Id = "call_1", Name = "reasoning_tool", Arguments = "{}" }
+                }
+            },
+            new ChatResponse { Content = "done", FinishReason = "stop" }
+        });
+        _mockChatClient
+            .Setup(c => c.CompleteWithToolsAsync(
+                It.IsAny<IEnumerable<Message>>(),
+                It.IsAny<IEnumerable<ToolDefinition>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(() => Task.FromResult(responses.Dequeue()));
+
+        await _agent.ChatAsync("Please use reasoning_tool.", session, CancellationToken.None);
+
+        var assistantToolMessage = session.Messages.Single(m => m.Role == "assistant" && m.ToolCalls is { Count: > 0 });
+        Assert.AreEqual("I need the tool before answering.", assistantToolMessage.ReasoningContent);
+        Assert.AreEqual("{\"summary\":\"tool needed\"}", assistantToolMessage.Reasoning);
+        Assert.AreEqual("[{\"type\":\"summary_text\",\"text\":\"tool needed\"}]", assistantToolMessage.ReasoningDetails);
+        Assert.AreEqual("[{\"id\":\"rs_1\",\"type\":\"reasoning\"}]", assistantToolMessage.CodexReasoningItems);
+    }
+
     // ── Helpers ──
 
     private static Mock<ITool> CreateMockTool(string name)
@@ -1377,6 +1419,52 @@ public class AgentStreamChatTests
         Assert.IsTrue(tokenTexts.Any(t => t.Contains("stream final")),
             "Final response text should be yielded as a TokenDelta");
         Assert.AreEqual(2, callCount, "CompleteWithToolsAsync should be called twice (tool loop + final)");
+    }
+
+    [TestMethod]
+    public async Task StreamChatAsync_ToolCallAssistantMessagePreservesReasoningForReplay()
+    {
+        var tool = new Mock<ITool>();
+        tool.Setup(t => t.Name).Returns("stream_reasoning_tool");
+        tool.Setup(t => t.Description).Returns("A streamed reasoning tool");
+        tool.Setup(t => t.ParametersType).Returns(typeof(StreamEmptyParams));
+        tool.Setup(t => t.ExecuteAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ToolResult.Ok("tool output"));
+
+        _agent.RegisterTool(tool.Object);
+
+        var callCount = 0;
+        _stubClient.OnCompleteWithTools = (_, _, _) =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    ToolCalls = new List<ToolCall>
+                    {
+                        new() { Id = "stream-call-1", Name = "stream_reasoning_tool", Arguments = "{}" }
+                    },
+                    FinishReason = "tool_calls",
+                    ReasoningContent = "Streaming path also needs the tool.",
+                    Reasoning = "{\"summary\":\"stream tool needed\"}",
+                    ReasoningDetails = "[{\"type\":\"summary_text\",\"text\":\"stream tool needed\"}]",
+                    CodexReasoningItems = "[{\"id\":\"rs_stream\",\"type\":\"reasoning\"}]"
+                });
+            }
+
+            return Task.FromResult(new ChatResponse { Content = "stream final", FinishReason = "stop" });
+        };
+
+        var session = new Session { Id = "stream-reasoning" };
+
+        await foreach (var _ in _agent.StreamChatAsync("run tool", session, CancellationToken.None)) { }
+
+        var assistantToolMessage = session.Messages.Single(m => m.Role == "assistant" && m.ToolCalls is { Count: > 0 });
+        Assert.AreEqual("Streaming path also needs the tool.", assistantToolMessage.ReasoningContent);
+        Assert.AreEqual("{\"summary\":\"stream tool needed\"}", assistantToolMessage.Reasoning);
+        Assert.AreEqual("[{\"type\":\"summary_text\",\"text\":\"stream tool needed\"}]", assistantToolMessage.ReasoningDetails);
+        Assert.AreEqual("[{\"id\":\"rs_stream\",\"type\":\"reasoning\"}]", assistantToolMessage.CodexReasoningItems);
     }
 
     [TestMethod]

@@ -104,6 +104,7 @@ public class RawDialogueDisplayRegressionTests
         var commandModels = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandModels.cs");
         var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
         var overlay = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "BridgeStatusOverlay.cs");
+        var phoneOverlay = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "HermesPhoneOverlay.cs");
 
         StringAssert.Contains(
             commandModels,
@@ -122,9 +123,9 @@ public class RawDialogueDisplayRegressionTests
             "\"conversationId\"",
             "Private-chat opened/submitted events must include the Desktop-created conversation id.");
         StringAssert.Contains(
-            commandQueue,
+            phoneOverlay,
             "\"text\"",
-            "Player private-chat text must be recorded as typed payload data.");
+            "Player private-chat text must be recorded as typed payload data by the phone input owner.");
         Assert.IsFalse(
             commandQueue.Contains("$\"Player private message to {npc.Name}: {submitted}\"", StringComparison.Ordinal),
             "Raw player text must not be duplicated in the event summary.");
@@ -145,7 +146,11 @@ public class RawDialogueDisplayRegressionTests
             "private_chat_reply_displayed",
             "Private-chat replies should record a displayed event carrying the active conversation id.");
         StringAssert.Contains(
-            commandQueue,
+            phoneOverlay,
+            "player_private_message_submitted",
+            "Phone replies must emit the event consumed by Desktop/core.");
+        StringAssert.Contains(
+            phoneOverlay,
             "player_private_message_cancelled",
             "Empty private-chat submissions should end the Desktop/core session instead of leaving it waiting forever.");
     }
@@ -154,24 +159,23 @@ public class RawDialogueDisplayRegressionTests
     public void PrivateChatInputCloseWithoutEnterRecordsCancellation()
     {
         var modEntry = ReadRepositoryFile("Mods", "StardewHermesBridge", "ModEntry.cs");
-        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+        var phoneOverlay = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "HermesPhoneOverlay.cs");
 
+        Assert.IsFalse(
+            modEntry.Contains("_commands.RecordPrivateChatInputClosedWithoutSubmit()", StringComparison.Ordinal),
+            "Phone overlay private chat is not an activeClickableMenu, so menu changes must not emit stale cancellation events.");
+        Assert.IsFalse(
+            ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs")
+                .Contains("RecordPrivateChatInputClosedWithoutSubmit", StringComparison.Ordinal),
+            "BridgeCommandQueue should not keep the retired menu input lifecycle.");
         StringAssert.Contains(
-            modEntry,
-            "_commands.RecordPrivateChatInputClosedWithoutSubmit()",
-            "Closing Stardew's text-entry menu without pressing Enter must release the Desktop/core private-chat session.");
+            phoneOverlay,
+            "phone_private_chat_cancelled",
+            "The phone overlay should log explicit private-chat cancellation.");
         StringAssert.Contains(
-            commandQueue,
-            "RecordPrivateChatInputClosedWithoutSubmit",
-            "BridgeCommandQueue should own the private-chat cancellation event because it owns the opened conversation id.");
-        StringAssert.Contains(
-            commandQueue,
-            "private_chat_input_closed_without_submit",
-            "The bridge log needs a distinct marker for diagnosing abandoned private-chat input.");
-        StringAssert.Contains(
-            commandQueue,
+            phoneOverlay,
             "player_private_message_cancelled",
-            "Closing the input without Enter should emit the same cancellation event consumed by Desktop/core.");
+            "Closing or cancelling phone input should emit the event consumed by Desktop/core.");
     }
 
     [TestMethod]
@@ -203,34 +207,69 @@ public class RawDialogueDisplayRegressionTests
     }
 
     [TestMethod]
-    public void PrivateChatInputUsesVisibleClickableMenuInsteadOfTextEntryHelper()
+    public void PrivateChatInputUsesPhoneOverlayInsteadOfClickableMenu()
     {
         var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
-        var inputMenu = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "PrivateChatInputMenu.cs");
+        var phoneState = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "HermesPhoneState.cs");
+        var phoneOverlay = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "HermesPhoneOverlay.cs");
 
         StringAssert.Contains(
             commandQueue,
-            "new PrivateChatInputMenu",
-            "Opening private chat must construct a real Stardew menu, not just a text entry helper.");
-        StringAssert.Contains(
-            commandQueue,
-            "Game1.activeClickableMenu =",
-            "The private-chat input must be assigned to Game1.activeClickableMenu so Stardew draws and routes input to it.");
+            "_phoneState.OpenThread",
+            "Opening private chat should mark/open the Hermes phone thread instead of constructing a blocking Stardew menu.");
+        Assert.IsFalse(
+            commandQueue.Contains("new PrivateChatInputMenu", StringComparison.Ordinal),
+            "The production private-chat path must not construct the retired blocking menu.");
+        Assert.IsFalse(
+            commandQueue.Contains("Game1.activeClickableMenu =", StringComparison.Ordinal),
+            "Hermes phone overlay must not assign Game1.activeClickableMenu.");
         Assert.IsFalse(
             commandQueue.Contains("Game1.showTextEntry(textBox)", StringComparison.Ordinal),
             "Game1.showTextEntry only supports the text-entry helper path; it does not by itself draw a visible private-chat menu.");
         StringAssert.Contains(
-            inputMenu,
-            "class PrivateChatInputMenu : IClickableMenu",
-            "The private-chat input should be a first-class Stardew menu.");
+            phoneState,
+            "HermesPhoneUiOwner.PhoneOverlay",
+            "HermesPhoneState should be the single source of truth for phone overlay ownership.");
         StringAssert.Contains(
-            inputMenu,
+            phoneOverlay,
             "Game1.keyboardDispatcher.Subscriber",
-            "The menu must subscribe the textbox to Stardew keyboard input.");
+            "Only the phone input focus path should subscribe the textbox to Stardew keyboard input.");
         StringAssert.Contains(
-            inputMenu,
-            "DrawInputFrame",
-            "The menu must draw a visible input area itself; otherwise the command can complete with no visible UI.");
+            phoneOverlay,
+            "PhoneReplyFocusActive",
+            "The overlay must separate passive phone open from active reply input focus.");
+    }
+
+    [TestMethod]
+    public void ProactiveNpcMessagesRouteToBubbleOrPhoneWithoutRawDialogue()
+    {
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+        var router = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "StardewMessageDisplayRouter.cs");
+        var bubbleOverlay = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "NpcOverheadBubbleOverlay.cs");
+
+        Assert.IsFalse(
+            commandQueue.Contains("NpcRawDialogueRenderer.Display(npc, envelope.Payload.Text)", StringComparison.Ordinal),
+            "Hermes/NPC proactive speak must not open a global DialogueBox.");
+        StringAssert.Contains(
+            commandQueue,
+            "_messageRouter.Display",
+            "ExecuteSpeak should use the shared message display router.");
+        StringAssert.Contains(
+            router,
+            "const int NearbyTileRange = 8",
+            "Nearby routing must use the accepted 8-tile range.");
+        StringAssert.Contains(
+            router,
+            "_bubbleOverlay.Show",
+            "Nearby same-map NPC messages should show a non-blocking overhead bubble.");
+        StringAssert.Contains(
+            router,
+            "_phoneState.AddIncomingMessage",
+            "Far or cross-map NPC messages should enter the phone thread.");
+        StringAssert.Contains(
+            bubbleOverlay,
+            "private_chat_reply_closed",
+            "Bubble expiry must emit the close event that releases private-chat flow without DialogueBox lifecycle.");
     }
 
     [TestMethod]
@@ -290,22 +329,23 @@ public class RawDialogueDisplayRegressionTests
     }
 
     [TestMethod]
-    public void PrivateChatReplyCloseIsRecordedBeforeOptionalReopen()
+    public void PrivateChatReplyCloseIsRecordedByPhoneOrBubbleInsteadOfDialogueBox()
     {
         var modEntry = ReadRepositoryFile("Mods", "StardewHermesBridge", "ModEntry.cs");
+        var phoneOverlay = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "HermesPhoneOverlay.cs");
+        var bubbleOverlay = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "NpcOverheadBubbleOverlay.cs");
 
+        Assert.IsFalse(
+            modEntry.Contains("TryRecordPrivateChatReplyClosed", StringComparison.Ordinal),
+            "Private-chat reply close must no longer depend on Stardew DialogueBox menu changes.");
         StringAssert.Contains(
-            modEntry,
-            "MarkPrivateChatReplyDisplayed",
-            "The bridge should remember which private-chat reply dialogue is currently visible.");
-        StringAssert.Contains(
-            modEntry,
-            "TryRecordPrivateChatReplyClosed",
-            "The bridge should emit a close event after the Stardew reply dialogue leaves the screen.");
-        StringAssert.Contains(
-            modEntry,
+            phoneOverlay,
             "private_chat_reply_closed",
-            "Desktop/core should wait for this event before reopening the next private-chat input.");
+            "Phone messages should emit a reply-closed event after visible/enqueued reply handling.");
+        StringAssert.Contains(
+            bubbleOverlay,
+            "private_chat_reply_closed",
+            "Bubble expiry should emit a reply-closed event for nearby replies.");
     }
 
     [TestMethod]

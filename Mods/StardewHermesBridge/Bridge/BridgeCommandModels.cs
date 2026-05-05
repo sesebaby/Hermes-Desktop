@@ -66,7 +66,7 @@ public sealed record SpeakData(string NpcId, string Text, string Channel, bool D
 
 public sealed record OpenPrivateChatPayload(string? Prompt, string? ConversationId);
 
-public sealed record OpenPrivateChatData(string NpcId, bool Opened);
+public sealed record OpenPrivateChatData(string NpcId, bool Opened, string? ThreadId = null, string? OpenState = null);
 
 public sealed record TaskStatusData(
     string CommandId,

@@ -63,11 +63,16 @@ public sealed class OpenAiClient : IChatClient
         if (msg.TryGetProperty("content", out var contentEl) && contentEl.ValueKind == JsonValueKind.String)
             content = contentEl.GetString();
 
+        var reasoningContent = ReadStringOrRawJson(msg, "reasoning_content");
+        var reasoning = ReadStringOrRawJson(msg, "reasoning");
+        var reasoningDetails = ReadStringOrRawJson(msg, "reasoning_details");
+        var codexReasoningItems = ReadStringOrRawJson(msg, "codex_reasoning_items");
+
         // Fallback: reasoning models (MiniMax, DeepSeek-R1, etc.) may put text in "reasoning" with empty "content"
         if (string.IsNullOrEmpty(content) &&
-            msg.TryGetProperty("reasoning", out var reasoningEl) && reasoningEl.ValueKind == JsonValueKind.String)
+            !string.IsNullOrEmpty(reasoning))
         {
-            content = reasoningEl.GetString();
+            content = reasoning;
         }
 
         List<ToolCall>? toolCalls = null;
@@ -86,7 +91,16 @@ public sealed class OpenAiClient : IChatClient
             }
         }
 
-        return new ChatResponse { Content = content, ToolCalls = toolCalls, FinishReason = finishReason };
+        return new ChatResponse
+        {
+            Content = content,
+            ToolCalls = toolCalls,
+            FinishReason = finishReason,
+            Reasoning = reasoning,
+            ReasoningContent = reasoningContent,
+            ReasoningDetails = reasoningDetails,
+            CodexReasoningItems = codexReasoningItems
+        };
     }
 
     // ── Streaming completion ──
@@ -187,19 +201,40 @@ public sealed class OpenAiClient : IChatClient
 
             // Assistant message with tool calls
             if (m.Role == "assistant" && m.ToolCalls is { Count: > 0 })
-                return new
+                return new Dictionary<string, object?>
                 {
-                    role = "assistant",
-                    content = m.Content ?? (object?)null,
-                    tool_calls = m.ToolCalls.Select(tc => new
+                    ["role"] = "assistant",
+                    ["content"] = m.Content ?? (object?)null,
+                    ["tool_calls"] = m.ToolCalls.Select(tc => new
                     {
                         id = tc.Id,
                         type = "function",
                         function = new { name = tc.Name, arguments = tc.Arguments }
-                    }).ToArray()
-                };
+                    }).ToArray(),
+                    ["reasoning"] = string.IsNullOrEmpty(m.Reasoning) ? null : m.Reasoning,
+                    ["reasoning_content"] = string.IsNullOrEmpty(m.ReasoningContent) ? null : m.ReasoningContent,
+                    ["reasoning_details"] = string.IsNullOrEmpty(m.ReasoningDetails) ? null : m.ReasoningDetails,
+                    ["codex_reasoning_items"] = string.IsNullOrEmpty(m.CodexReasoningItems) ? null : m.CodexReasoningItems
+                }.Where(kvp => kvp.Value is not null).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
             // Regular message
+            if (m.Role == "assistant" &&
+                (!string.IsNullOrEmpty(m.Reasoning) ||
+                 !string.IsNullOrEmpty(m.ReasoningContent) ||
+                 !string.IsNullOrEmpty(m.ReasoningDetails) ||
+                 !string.IsNullOrEmpty(m.CodexReasoningItems)))
+            {
+                return new Dictionary<string, object?>
+                {
+                    ["role"] = m.Role,
+                    ["content"] = m.Content,
+                    ["reasoning"] = string.IsNullOrEmpty(m.Reasoning) ? null : m.Reasoning,
+                    ["reasoning_content"] = string.IsNullOrEmpty(m.ReasoningContent) ? null : m.ReasoningContent,
+                    ["reasoning_details"] = string.IsNullOrEmpty(m.ReasoningDetails) ? null : m.ReasoningDetails,
+                    ["codex_reasoning_items"] = string.IsNullOrEmpty(m.CodexReasoningItems) ? null : m.CodexReasoningItems
+                }.Where(kvp => kvp.Value is not null).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            }
+
             return (object)new { role = m.Role, content = m.Content };
         }).ToArray();
 
@@ -229,6 +264,7 @@ public sealed class OpenAiClient : IChatClient
     {
         var json = JsonSerializer.Serialize(payload);
         var url = $"{_config.BaseUrl}/chat/completions";
+        var llmRequestId = $"req_llm_{Guid.NewGuid():N}";
 
         // If credential pool is available, use it with retry on 401
         if (UsesApiKeyAuth && _credentialPool is not null && _credentialPool.HasHealthyCredentials)
@@ -258,7 +294,7 @@ public sealed class OpenAiClient : IChatClient
                     continue; // Retry with next key
                 }
 
-                await EnsureSuccessStatusCodeAsync(response, ct);
+                await EnsureSuccessStatusCodeAsync(response, ct, llmRequestId, _config);
                 return response;
             }
         }
@@ -266,27 +302,60 @@ public sealed class OpenAiClient : IChatClient
         // Fallback: use default header auth
         using var fallbackRequest = await CreateRequestAsync(url, json, ct);
         var fallbackResponse = await _httpClient.SendAsync(fallbackRequest, ct);
-        await EnsureSuccessStatusCodeAsync(fallbackResponse, ct);
+        await EnsureSuccessStatusCodeAsync(fallbackResponse, ct, llmRequestId, _config);
         return fallbackResponse;
     }
 
-    private static async Task EnsureSuccessStatusCodeAsync(HttpResponseMessage response, CancellationToken ct)
+    private static string? ReadStringOrRawJson(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        return property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : property.GetRawText();
+    }
+
+    private static async Task EnsureSuccessStatusCodeAsync(
+        HttpResponseMessage response,
+        CancellationToken ct,
+        string llmRequestId,
+        LlmConfig config)
     {
         if (response.IsSuccessStatusCode)
             return;
 
         var statusCode = response.StatusCode;
         var reasonPhrase = response.ReasonPhrase;
+        var providerRequestId = ReadProviderRequestId(response);
         var body = response.Content is null
             ? ""
             : await response.Content.ReadAsStringAsync(ct);
         response.Dispose();
 
-        var message = $"Response status code does not indicate success: {(int)statusCode} ({reasonPhrase}).";
+        var reasoningContentError = body.Contains("reasoning_content", StringComparison.OrdinalIgnoreCase);
+        var message = $"Response status code does not indicate success: {(int)statusCode} ({reasonPhrase}). " +
+                      $"llmRequestId={llmRequestId};providerRequestId={providerRequestId ?? "-"};" +
+                      $"reasoning_content_error={reasoningContentError.ToString().ToLowerInvariant()};" +
+                      $"provider={config.Provider};baseUrl={config.BaseUrl};model={config.Model};";
         if (!string.IsNullOrWhiteSpace(body))
             message += $" Body: {TruncateErrorBody(body)}";
 
         throw new HttpRequestException(message, null, statusCode);
+    }
+
+    private static string? ReadProviderRequestId(HttpResponseMessage response)
+    {
+        foreach (var header in new[] { "x-request-id", "openai-request-id", "request-id" })
+        {
+            if (response.Headers.TryGetValues(header, out var values))
+                return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+        }
+
+        return null;
     }
 
     private static string TruncateErrorBody(string body)

@@ -79,10 +79,21 @@ public sealed class StardewCommandService : IGameCommandService
             envelope,
             ct);
 
-        if (response.Ok && response.Data?.Opened is not true)
+        if (response.Ok && !IsAcceptedOpenPrivateChat(response.Data))
             return new GameCommandResult(false, response.CommandId ?? "", StardewCommandStatuses.Failed, "open_private_chat_not_opened", action.TraceId);
 
         return ToCommandResult(response, action.TraceId);
+    }
+
+    private static bool IsAcceptedOpenPrivateChat(StardewOpenPrivateChatData? data)
+    {
+        if (data is null)
+            return false;
+
+        if (data.Opened)
+            return true;
+
+        return data.OpenState is "thread_marked" or "thread_opened" or "focus_pending";
     }
 
     private async Task<GameCommandResult> SubmitSpeakAsync(GameAction action, CancellationToken ct)

@@ -361,6 +361,35 @@ public class StardewCommandServiceTests
     }
 
     [TestMethod]
+    public async Task SubmitAsync_OpenPrivateChat_AcceptsPhoneThreadOpenStates()
+    {
+        var client = new FakeSmapiClient();
+        client.OpenPrivateChatResponse = new StardewBridgeResponse<StardewOpenPrivateChatData>(
+            true,
+            "trace-private-chat",
+            "req-private-chat",
+            null,
+            StardewCommandStatuses.Completed,
+            new StardewOpenPrivateChatData("haley", false, "Haley:pc_evt_1", "thread_opened"),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.OpenPrivateChat,
+            "trace-private-chat",
+            "idem-private-chat",
+            new GameActionTarget("player"),
+            Payload: new JsonObject { ["conversationId"] = "pc_evt_1" });
+
+        var result = await service.SubmitAsync(action, CancellationToken.None);
+
+        Assert.IsTrue(result.Accepted);
+        Assert.AreEqual(StardewCommandStatuses.Completed, result.Status);
+    }
+
+    [TestMethod]
     public async Task SubmitAsync_OpenPrivateChat_NotOpenedFailsCommandResult()
     {
         var client = new FakeSmapiClient();

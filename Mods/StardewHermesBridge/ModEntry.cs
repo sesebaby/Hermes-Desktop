@@ -21,6 +21,10 @@ public sealed class ModEntry : Mod
     private BridgeEventBuffer _events = null!;
     private BridgeHttpHost _httpHost = null!;
     private BridgeStatusOverlay _overlay = null!;
+    private HermesPhoneState _phoneState = null!;
+    private HermesPhoneOverlay _phoneOverlay = null!;
+    private NpcOverheadBubbleOverlay _bubbleOverlay = null!;
+    private StardewMessageDisplayRouter _messageRouter = null!;
     private BridgeDebugMenu _debugMenu = null!;
     private SmapiBridgeLogger _bridgeLogger = null!;
     private NpcDialogueClickRouter _clickRouter = null!;
@@ -32,8 +36,6 @@ public sealed class ModEntry : Mod
     private int _pendingDialogueTicks;
     private SButton? _pendingOriginalStartButton;
     private bool _originalStartRetryAttempted;
-    private string? _privateChatReplyNpcName;
-    private string? _privateChatReplyConversationId;
     private DateTimeOffset? _bridgeStartedAtUtc;
 
     public override void Entry(IModHelper helper)
@@ -41,12 +43,18 @@ public sealed class ModEntry : Mod
         _bridgeLogger = new SmapiBridgeLogger(helper.DirectoryPath, Monitor);
         _events = new BridgeEventBuffer();
         _overlay = new BridgeStatusOverlay();
+        _phoneState = new HermesPhoneState();
+        _phoneOverlay = new HermesPhoneOverlay(_phoneState, _events, _bridgeLogger, npcName => _overlay.SetPrivateChatThinking(npcName));
+        _bubbleOverlay = new NpcOverheadBubbleOverlay(_events, _bridgeLogger);
+        _messageRouter = new StardewMessageDisplayRouter(_phoneState, _bubbleOverlay, _phoneOverlay, _events, _bridgeLogger);
         _commands = new BridgeCommandQueue(
             _bridgeLogger,
             _events,
+            _phoneState,
+            _messageRouter,
             _ => _overlay.ClearPrivateChatPending(),
             npcName => _overlay.SetPrivateChatThinking(npcName),
-            MarkPrivateChatReplyDisplayed);
+            (npcName, _) => _overlay.ClearPrivateChatPending());
         _debugMenu = new BridgeDebugMenu(_overlay);
         _httpHost = new BridgeHttpHost(_commands, _events, _bridgeLogger);
         _clickRouter = new NpcDialogueClickRouter();
@@ -140,7 +148,7 @@ public sealed class ModEntry : Mod
         _commands.Drain("day_transition");
         _overlay.SetBlockedReason("day_transition");
         _overlay.ClearPrivateChatPending();
-        ClearPrivateChatReplyTracking();
+        _phoneOverlay.ClosePhone();
         ClearPendingDialogueFlow();
         ClearCustomDialogueGuards();
     }
@@ -150,7 +158,7 @@ public sealed class ModEntry : Mod
         _commands.Clear();
         _overlay.SetBlockedReason("returned_to_title");
         _overlay.ClearPrivateChatPending();
-        ClearPrivateChatReplyTracking();
+        _phoneOverlay.ClosePhone();
         ClearPendingDialogueFlow();
         ClearCustomDialogueGuards();
         WriteDiscoveryFile();
@@ -159,6 +167,8 @@ public sealed class ModEntry : Mod
     private void OnRenderedHud(object? sender, RenderedHudEventArgs e)
     {
         _overlay.Draw(e.SpriteBatch);
+        _bubbleOverlay.Draw(e.SpriteBatch);
+        _phoneOverlay.Draw(e.SpriteBatch);
     }
 
     private void OnMenuChanged(object? sender, MenuChangedEventArgs e)
@@ -168,10 +178,6 @@ public sealed class ModEntry : Mod
 
         var oldDialogueNpcName = GetDialogueNpcName(e.OldMenu);
         var newDialogueNpcName = GetDialogueNpcName(e.NewMenu);
-        if (e.OldMenu is not null && !ReferenceEquals(e.OldMenu, e.NewMenu))
-            _commands.RecordPrivateChatInputClosedWithoutSubmit();
-
-        TryRecordPrivateChatReplyClosed(oldDialogueNpcName, newDialogueNpcName);
 
         if (_menuGuard.ConsumeMenuChange(oldDialogueNpcName, newDialogueNpcName) is not NpcDialogueMenuGuardResult.Unhandled)
             return;
@@ -192,6 +198,8 @@ public sealed class ModEntry : Mod
     private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
     {
         _debugMenu.HandleButton(e.Button);
+        if (_phoneOverlay.HandleButtonPressed(e.Button, Helper.Input))
+            return;
 
         if (!Context.IsWorldReady || Game1.currentLocation is null)
             return;
@@ -269,42 +277,6 @@ public sealed class ModEntry : Mod
             npcName,
             $"{npcName} vanilla dialogue follow-up was unavailable ({detail}).");
         _bridgeLogger.Write("vanilla_dialogue_unavailable_fact", npcName, FormalEntry, FormalEntry, null, "recorded", detail);
-    }
-
-    private void MarkPrivateChatReplyDisplayed(string npcName, string conversationId)
-    {
-        _overlay.ClearPrivateChatPending();
-        _privateChatReplyNpcName = npcName;
-        _privateChatReplyConversationId = conversationId;
-    }
-
-    private void TryRecordPrivateChatReplyClosed(string? oldDialogueNpcName, string? newDialogueNpcName)
-    {
-        if (string.IsNullOrWhiteSpace(_privateChatReplyNpcName) ||
-            string.IsNullOrWhiteSpace(_privateChatReplyConversationId) ||
-            string.IsNullOrWhiteSpace(oldDialogueNpcName) ||
-            !string.Equals(oldDialogueNpcName, _privateChatReplyNpcName, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(newDialogueNpcName, _privateChatReplyNpcName, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        var npcName = _privateChatReplyNpcName;
-        var conversationId = _privateChatReplyConversationId;
-        ClearPrivateChatReplyTracking();
-        _events.Record(
-            "private_chat_reply_closed",
-            npcName,
-            $"{npcName} private chat reply closed.",
-            conversationId,
-            new System.Text.Json.Nodes.JsonObject { ["conversationId"] = conversationId });
-        _bridgeLogger.Write("private_chat_reply_closed_fact", npcName, FormalEntry, FormalEntry, null, "recorded", conversationId);
-    }
-
-    private void ClearPrivateChatReplyTracking()
-    {
-        _privateChatReplyNpcName = null;
-        _privateChatReplyConversationId = null;
     }
 
     private bool TryStartOriginalDialogueIfNeeded()

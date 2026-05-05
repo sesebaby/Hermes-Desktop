@@ -3,7 +3,6 @@ namespace StardewHermesBridge.Bridge;
 using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using Microsoft.Xna.Framework;
-using StardewHermesBridge.Dialogue;
 using StardewHermesBridge.Logging;
 using StardewHermesBridge.Ui;
 using StardewModdingAPI;
@@ -20,22 +19,31 @@ public sealed class BridgeCommandQueue
     private readonly ConcurrentDictionary<string, string> _idempotency = new(StringComparer.OrdinalIgnoreCase);
     private readonly SmapiBridgeLogger _logger;
     private readonly BridgeEventBuffer _events;
+    private readonly HermesPhoneState _phoneState;
+    private readonly StardewMessageDisplayRouter _messageRouter;
     private readonly Action<string>? _privateChatOpened;
     private readonly Action<string>? _privateChatSubmitted;
     private readonly Action<string, string>? _privateChatReplyDisplayed;
-    private readonly object _privateChatInputGate = new();
-    private BridgePrivateChatInput? _privateChatInput;
     private BridgeMoveCommand? _activeMove;
 
     public BridgeCommandQueue(
         SmapiBridgeLogger logger,
         BridgeEventBuffer? events = null,
+        HermesPhoneState? phoneState = null,
+        StardewMessageDisplayRouter? messageRouter = null,
         Action<string>? privateChatOpened = null,
         Action<string>? privateChatSubmitted = null,
         Action<string, string>? privateChatReplyDisplayed = null)
     {
         _logger = logger;
         _events = events ?? new BridgeEventBuffer();
+        _phoneState = phoneState ?? new HermesPhoneState();
+        _messageRouter = messageRouter ?? new StardewMessageDisplayRouter(
+            _phoneState,
+            new NpcOverheadBubbleOverlay(_events, logger),
+            new HermesPhoneOverlay(_phoneState, _events, logger, privateChatSubmitted),
+            _events,
+            logger);
         _privateChatOpened = privateChatOpened;
         _privateChatSubmitted = privateChatSubmitted;
         _privateChatReplyDisplayed = privateChatReplyDisplayed;
@@ -197,7 +205,7 @@ public sealed class BridgeCommandQueue
         }
 
         var channel = string.IsNullOrWhiteSpace(envelope.Payload.Channel) ? "player" : envelope.Payload.Channel;
-        NpcRawDialogueRenderer.Display(npc, envelope.Payload.Text);
+        var display = _messageRouter.Display(npc, envelope.Payload.Text, channel, envelope.Payload.ConversationId);
         if (string.Equals(channel, "private_chat", StringComparison.OrdinalIgnoreCase))
         {
             var conversationId = string.IsNullOrWhiteSpace(envelope.Payload.ConversationId)
@@ -208,7 +216,12 @@ public sealed class BridgeCommandQueue
                 npc.Name,
                 $"{npc.Name} private chat reply displayed.",
                 conversationId,
-                new JsonObject { ["conversationId"] = conversationId });
+                new JsonObject
+                {
+                    ["conversationId"] = conversationId,
+                    ["route"] = display.Route,
+                    ["reply_closed_source"] = display.ReplyClosedSource
+                });
             _privateChatReplyDisplayed?.Invoke(npc.Name, conversationId);
         }
         _logger.Write("action_speak_completed", npcId, "speak", envelope.TraceId, null, "completed", null);
@@ -245,12 +258,6 @@ public sealed class BridgeCommandQueue
             return Error<OpenPrivateChatData>(envelope.TraceId, envelope.RequestId, "world_not_ready", "The Stardew world is not ready.", retryable: true);
         }
 
-        if (Game1.activeClickableMenu is not null)
-        {
-            _logger.Write("action_open_private_chat_failed", npcId, "open_private_chat", envelope.TraceId, null, "failed", "menu_blocked");
-            return Error<OpenPrivateChatData>(envelope.TraceId, envelope.RequestId, "menu_blocked", "A Stardew menu is already open.", retryable: true);
-        }
-
         var npc = BridgeNpcResolver.Resolve(npcId);
         if (npc is null)
         {
@@ -261,93 +268,31 @@ public sealed class BridgeCommandQueue
         var conversationId = string.IsNullOrWhiteSpace(envelope.Payload.ConversationId)
             ? envelope.RequestId
             : envelope.Payload.ConversationId;
-        MarkPrivateChatInputOpened(npc.Name, conversationId, envelope.TraceId);
-        var inputMenu = new PrivateChatInputMenu(
-            npc,
-            envelope.Payload.Prompt,
-            submittedText =>
-            {
-                var submitted = SanitizePrivateChatText(submittedText);
-                ClearPrivateChatInput(conversationId);
-                if (!string.IsNullOrWhiteSpace(submitted))
-                {
-                    _events.Record(
-                        "player_private_message_submitted",
-                        npc.Name,
-                        "Player submitted a private chat message.",
-                        conversationId,
-                        new JsonObject
-                        {
-                            ["conversationId"] = conversationId,
-                            ["text"] = submitted,
-                            ["submittedAtUtc"] = DateTime.UtcNow
-                        });
-                    _privateChatSubmitted?.Invoke(npc.Name);
-                    _logger.Write("private_chat_message_submitted", npc.Name, "private_chat", envelope.TraceId, null, "recorded", null);
-                }
-                else
-                {
-                    _events.Record(
-                        "player_private_message_cancelled",
-                        npc.Name,
-                        "Player cancelled private chat.",
-                        conversationId,
-                        new JsonObject { ["conversationId"] = conversationId });
-                    _logger.Write("private_chat_message_cancelled", npc.Name, "private_chat", envelope.TraceId, null, "recorded", null);
-                }
-            },
-            () =>
-            {
-                RecordPrivateChatInputClosedWithoutSubmit();
-            });
+        _phoneState.OpenThread(npc.Name, conversationId);
 
         _events.Record(
             "private_chat_opened",
             npc.Name,
-            $"{npc.Name} private chat input opened.",
+            $"{npc.Name} private chat phone thread opened.",
             conversationId,
             new JsonObject
             {
                 ["conversationId"] = conversationId,
-                ["prompt"] = envelope.Payload.Prompt
+                ["prompt"] = envelope.Payload.Prompt,
+                ["threadId"] = _phoneState.VisibleThreadId,
+                ["openState"] = "thread_opened"
             });
-        Game1.activeClickableMenu = inputMenu;
         _privateChatOpened?.Invoke(npc.Name);
-        _logger.Write("action_open_private_chat_completed", npc.Name, "open_private_chat", envelope.TraceId, null, "completed", null);
+        _logger.Write("action_open_private_chat_completed", npc.Name, "open_private_chat", envelope.TraceId, null, "completed", "thread_opened");
         return new BridgeResponse<OpenPrivateChatData>(
             true,
             envelope.TraceId,
             envelope.RequestId,
             null,
             "completed",
-            new OpenPrivateChatData(npc.Name, true),
+            new OpenPrivateChatData(npc.Name, true, _phoneState.VisibleThreadId, "thread_opened"),
             null,
             new { });
-    }
-
-    public void RecordPrivateChatInputClosedWithoutSubmit()
-    {
-        BridgePrivateChatInput? input;
-        lock (_privateChatInputGate)
-        {
-            input = _privateChatInput;
-            _privateChatInput = null;
-        }
-
-        if (input is null)
-            return;
-
-        _events.Record(
-            "player_private_message_cancelled",
-            input.NpcName,
-            "Player closed private chat without submitting.",
-            input.ConversationId,
-            new JsonObject
-            {
-                ["conversationId"] = input.ConversationId,
-                ["reason"] = "closed_without_submit"
-            });
-        _logger.Write("private_chat_input_closed_without_submit", input.NpcName, "private_chat", input.TraceId, null, "recorded", null);
     }
 
     public TaskStatusData? PumpOneTick()
@@ -666,7 +611,6 @@ public sealed class BridgeCommandQueue
         _commands.Clear();
         _idempotency.Clear();
         _activeMove = null;
-        ClearPrivateChatInput(null);
         while (_pending.TryDequeue(out _))
         {
         }
@@ -693,30 +637,6 @@ public sealed class BridgeCommandQueue
 
     private static BridgeResponse<TData> Error<TData>(string traceId, string requestId, string code, string message, bool retryable)
         => new(false, traceId, requestId, null, "failed", default, new BridgeError(code, message, retryable), new { });
-
-    private static string SanitizePrivateChatText(string value)
-    {
-        var normalized = value.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal).Trim();
-        return normalized.Length <= 240 ? normalized : normalized[..240];
-    }
-
-    private void MarkPrivateChatInputOpened(string npcName, string conversationId, string traceId)
-    {
-        lock (_privateChatInputGate)
-            _privateChatInput = new BridgePrivateChatInput(npcName, conversationId, traceId);
-    }
-
-    private void ClearPrivateChatInput(string? conversationId)
-    {
-        lock (_privateChatInputGate)
-        {
-            if (conversationId is null ||
-                string.Equals(_privateChatInput?.ConversationId, conversationId, StringComparison.OrdinalIgnoreCase))
-            {
-                _privateChatInput = null;
-            }
-        }
-    }
 
     private static TaskStatusData ToUiStatus<TData>(
         BridgeEnvelope<object> envelope,
@@ -800,8 +720,6 @@ public sealed class BridgeCommandQueue
     private static TaskStatusData FailedUiStatus(BridgeEnvelope<object> envelope, string action, Exception ex)
         => new("", envelope.TraceId, envelope.NpcId ?? "", action, "failed", DateTime.UtcNow, 0, 0, ex.Message, ex.GetType().Name);
 }
-
-internal sealed record BridgePrivateChatInput(string NpcName, string ConversationId, string TraceId);
 
 internal sealed record ResolvedMoveTarget(
     bool Ok,

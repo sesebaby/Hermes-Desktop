@@ -292,6 +292,113 @@ public class TranscriptStoreTests
     }
 
     [TestMethod]
+    public async Task SaveMessageAsync_RoundTripsReasoningFieldsThroughStateDbAndCacheReload()
+    {
+        var store = CreateStore();
+        var msg = new Message
+        {
+            Role = "assistant",
+            Content = "",
+            ToolCalls = new List<ToolCall>
+            {
+                new() { Id = "call-inventory", Name = "inventory", Arguments = "{\"npc\":\"Haley\"}" }
+            }
+        };
+        SetStringProperty(msg, "ReasoningContent", "I need the inventory tool before answering.");
+        SetStringProperty(msg, "Reasoning", "{\"summary\":\"tool needed\"}");
+        SetStringProperty(msg, "ReasoningDetails", "[{\"type\":\"summary_text\",\"text\":\"tool needed\"}]");
+        SetStringProperty(msg, "CodexReasoningItems", "[{\"id\":\"rs_1\",\"type\":\"reasoning\"}]");
+
+        await store.SaveMessageAsync("reasoning-session", msg, CancellationToken.None);
+        store.ClearCache();
+        var loaded = await store.LoadSessionAsync("reasoning-session", CancellationToken.None);
+
+        Assert.AreEqual(1, loaded.Count);
+        Assert.AreEqual("I need the inventory tool before answering.", GetStringProperty(loaded[0], "ReasoningContent"));
+        Assert.AreEqual("{\"summary\":\"tool needed\"}", GetStringProperty(loaded[0], "Reasoning"));
+        Assert.AreEqual("[{\"type\":\"summary_text\",\"text\":\"tool needed\"}]", GetStringProperty(loaded[0], "ReasoningDetails"));
+        Assert.AreEqual("[{\"id\":\"rs_1\",\"type\":\"reasoning\"}]", GetStringProperty(loaded[0], "CodexReasoningItems"));
+
+        using var db = OpenDefaultStateDb();
+        Assert.AreEqual(
+            "I need the inventory tool before answering.",
+            ExecuteScalarString(db, "SELECT reasoning_content FROM messages WHERE session_id = 'reasoning-session'"));
+    }
+
+    [TestMethod]
+    public async Task Constructor_UpgradesExistingStateDbWithReasoningColumns()
+    {
+        var dbPath = Path.Combine(_tempDir, "state.db");
+        using (var db = new SqliteConnection($"Data Source={dbPath}"))
+        {
+            db.Open();
+            using var cmd = db.CreateCommand();
+            cmd.CommandText = @"
+                CREATE TABLE schema_version (version INTEGER NOT NULL);
+                INSERT INTO schema_version (version) VALUES (8);
+                CREATE TABLE sessions (
+                    id TEXT PRIMARY KEY,
+                    source TEXT NOT NULL,
+                    user_id TEXT,
+                    model TEXT,
+                    model_config TEXT,
+                    system_prompt TEXT,
+                    parent_session_id TEXT,
+                    started_at REAL NOT NULL,
+                    ended_at REAL,
+                    end_reason TEXT,
+                    message_count INTEGER DEFAULT 0,
+                    tool_call_count INTEGER DEFAULT 0,
+                    api_call_count INTEGER DEFAULT 0
+                );
+                CREATE TABLE messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL REFERENCES sessions(id),
+                    role TEXT NOT NULL,
+                    content TEXT,
+                    tool_call_id TEXT,
+                    tool_calls TEXT,
+                    tool_name TEXT,
+                    timestamp REAL NOT NULL,
+                    token_count INTEGER,
+                    finish_reason TEXT
+                );
+                CREATE TABLE state_meta (key TEXT PRIMARY KEY, value TEXT);
+                CREATE TABLE activities (
+                    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    id TEXT NOT NULL,
+                    timestamp REAL NOT NULL,
+                    sequence INTEGER NOT NULL,
+                    duration_ms INTEGER DEFAULT 0,
+                    tool_name TEXT NOT NULL,
+                    tool_call_id TEXT,
+                    input_summary TEXT,
+                    output_summary TEXT,
+                    status TEXT NOT NULL,
+                    diff_preview TEXT,
+                    screenshot_path TEXT,
+                    PRIMARY KEY (session_id, id)
+                );";
+            cmd.ExecuteNonQuery();
+        }
+
+        var store = CreateStore();
+        var msg = new Message { Role = "assistant", Content = "" };
+        SetStringProperty(msg, "ReasoningContent", "old db can now store reasoning.");
+
+        await store.SaveMessageAsync("upgraded-reasoning", msg, CancellationToken.None);
+        store.ClearCache();
+        var loaded = await store.LoadSessionAsync("upgraded-reasoning", CancellationToken.None);
+
+        Assert.AreEqual("old db can now store reasoning.", GetStringProperty(loaded[0], "ReasoningContent"));
+        using var upgradedDb = OpenDefaultStateDb();
+        CollectionAssert.IsSubsetOf(
+            new[] { "reasoning", "reasoning_content", "reasoning_details", "codex_reasoning_items", "codex_message_items" },
+            ReadColumnNames(upgradedDb, "messages"));
+        Assert.AreEqual(9L, ExecuteScalarLong(upgradedDb, "SELECT version FROM schema_version LIMIT 1"));
+    }
+
+    [TestMethod]
     public async Task SaveMessageAsync_AppendsMultipleMessages_InSameSession()
     {
         var store = CreateStore();
@@ -692,6 +799,20 @@ public class TranscriptStoreTests
         using var cmd = db.CreateCommand();
         cmd.CommandText = sql;
         return cmd.ExecuteScalar() as string;
+    }
+
+    private static string? GetStringProperty(object target, string propertyName)
+    {
+        var property = target.GetType().GetProperty(propertyName);
+        Assert.IsNotNull(property, $"{target.GetType().Name} must expose {propertyName}.");
+        return property!.GetValue(target) as string;
+    }
+
+    private static void SetStringProperty(object target, string propertyName, string value)
+    {
+        var property = target.GetType().GetProperty(propertyName);
+        Assert.IsNotNull(property, $"{target.GetType().Name} must expose {propertyName}.");
+        property!.SetValue(target, value);
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()

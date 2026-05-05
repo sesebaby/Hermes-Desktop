@@ -288,7 +288,7 @@ public sealed class Agent : IAgent
                     activeClient = ActivateFallback(ex);
                     response = await activeClient.CompleteAsync(messagesToSend, ct);
                 }
-                await AgentSessionWriter.AppendAssistantMessageAsync(session, response, _transcripts, ct);
+                await AgentSessionWriter.AppendAssistantMessageAsync(session, response, response: null, _transcripts, ct);
                 if (_contextManager is not null)
                     await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
                 await SyncCompletedMemoryTurnAsync(session.Id, message, response, interrupted: false, ct);
@@ -329,7 +329,7 @@ public sealed class Agent : IAgent
             {
                 // LLM is done — return final text
                 var finalContent = response.Content ?? "";
-                await AgentSessionWriter.AppendAssistantMessageAsync(session, finalContent, _transcripts, ct);
+                await AgentSessionWriter.AppendAssistantMessageAsync(session, finalContent, response, _transcripts, ct);
                 if (_contextManager is not null)
                     await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
                 await SyncCompletedMemoryTurnAsync(session.Id, message, finalContent, interrupted: false, ct);
@@ -345,7 +345,7 @@ public sealed class Agent : IAgent
 
             // Record the assistant message with its tool call requests
             await AgentSessionWriter.AppendAssistantToolRequestMessageAsync(
-                session, response.Content ?? "", normalizedToolCalls, _transcripts, ct);
+                session, response.Content ?? "", normalizedToolCalls, response, _transcripts, ct);
 
             // Execute tool calls — parallel when safe, sequential otherwise
             var toolCallsList = normalizedToolCalls;
@@ -565,7 +565,7 @@ public sealed class Agent : IAgent
 
             _logger.LogWarning("Hit max tool iterations ({Max}) for session {SessionId}", MaxToolIterations, session.Id);
             var fallback = "I've reached the maximum number of tool call iterations. Here's what I've accomplished so far based on the conversation above.";
-            await AgentSessionWriter.AppendAssistantMessageAsync(session, fallback, _transcripts, ct);
+            await AgentSessionWriter.AppendAssistantMessageAsync(session, fallback, response: null, _transcripts, ct);
             if (_contextManager is not null)
                 await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
             await SyncCompletedMemoryTurnAsync(session.Id, message, fallback, interrupted: false, ct);
@@ -766,10 +766,8 @@ public sealed class Agent : IAgent
             }
 
             // Save accumulated response — always save, even if empty, to match ChatAsync behavior
-            var assistantMsg = new Message { Role = "assistant", Content = streamedResponse.ToString() };
-            session.AddMessage(assistantMsg);
-            if (_transcripts is not null)
-                await _transcripts.SaveMessageAsync(session.Id, assistantMsg, ct);
+            await AgentSessionWriter.AppendAssistantMessageAsync(
+                session, streamedResponse.ToString(), response: null, _transcripts, ct);
             if (_contextManager is not null)
                 await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
             await SyncCompletedMemoryTurnAsync(session.Id, message, streamedResponse.ToString(), interrupted: false, ct);
@@ -802,10 +800,8 @@ public sealed class Agent : IAgent
                     yield return new StreamEvent.TokenDelta(finalContent);
                 }
 
-                var finalMsg = new Message { Role = "assistant", Content = finalContent };
-                session.AddMessage(finalMsg);
-                if (_transcripts is not null)
-                    await _transcripts.SaveMessageAsync(session.Id, finalMsg, ct);
+                await AgentSessionWriter.AppendAssistantMessageAsync(
+                    session, finalContent, response, _transcripts, ct);
                 if (_contextManager is not null)
                     await _contextManager.UpdateAfterResponseAsync(session.Id, ct: ct);
                 await SyncCompletedMemoryTurnAsync(session.Id, message, finalContent, interrupted: false, ct);
@@ -819,15 +815,8 @@ public sealed class Agent : IAgent
                 string.Equals(toolCall.Name, "skill_manage", StringComparison.OrdinalIgnoreCase));
 
             // Record assistant message with tool call requests
-            var assistantToolMsg = new Message
-            {
-                Role = "assistant",
-                Content = response.Content ?? "",
-                ToolCalls = normalizedStreamToolCalls
-            };
-            session.AddMessage(assistantToolMsg);
-            if (_transcripts is not null)
-                await _transcripts.SaveMessageAsync(session.Id, assistantToolMsg, ct);
+            await AgentSessionWriter.AppendAssistantToolRequestMessageAsync(
+                session, response.Content ?? "", normalizedStreamToolCalls, response, _transcripts, ct);
 
             // Execute each tool call
             foreach (var toolCall in normalizedStreamToolCalls)
