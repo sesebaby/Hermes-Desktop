@@ -122,6 +122,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             message.Contains("stardew-core test guidance", StringComparison.Ordinal) &&
             message.Contains("stardew-social test guidance", StringComparison.Ordinal) &&
             message.Contains("stardew-navigation test guidance", StringComparison.Ordinal) &&
+            message.Contains("stardew-task-continuity test guidance", StringComparison.Ordinal) &&
             message.Contains("stardew-world test guidance", StringComparison.Ordinal) &&
             message.Contains("references/stardew-places.md", StringComparison.Ordinal) &&
             !message.Contains("full stardew places encyclopedia fixture", StringComparison.Ordinal)));
@@ -198,6 +199,116 @@ public sealed class StardewAutonomyTickDebugServiceTests
         Assert.IsFalse(
             systemPrompt.Contains("stardew-world test guidance", StringComparison.Ordinal),
             "Repo-backed prompt supplement coverage must use the real skills/gaming root, not fixture-only text.");
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithRepositoryGamingSkillRootInjectsVisibleAutonomyMessageGuidance()
+    {
+        var repositoryGamingRoot = FindRepositoryPath("skills", "gaming");
+        var chatClient = new ToolSnapshotChatClient("I will keep the player in the loop.");
+        var service = new StardewAutonomyTickDebugService(
+            new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+                new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+                DateTimeOffset.UtcNow,
+                1234,
+                "save-42")),
+            _ => new FakeGameAdapter(
+                new FakeCommandService(),
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Haley is idling after a movement loop.",
+                    [
+                        "location=HaleyHouse",
+                        "tile=8,7",
+                        "isAvailableForControl=true"
+                    ])),
+                new FakeEventSource([])),
+            chatClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            new NpcRuntimeSupervisor(),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            CreatePromptSupplementBuilder(new FixedStardewGamingSkillRootProvider(repositoryGamingRoot)),
+            discoveredToolProvider: null,
+            worldCoordination: CreateWorldCoordination(),
+            includeMemory: true,
+            includeUser: true,
+            maxToolIterations: 2,
+            runtimeRoot: _tempDir);
+
+        var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.FailureReason);
+        var systemPrompt = chatClient.SystemMessages.First(message =>
+            message.Contains("## Stardew Required Skills", StringComparison.Ordinal));
+        StringAssert.Contains(systemPrompt, "### stardew-social");
+        StringAssert.Contains(systemPrompt, "如果连续多轮只移动、观察或查任务状态");
+        StringAssert.Contains(systemPrompt, "`stardew_speak`");
+        StringAssert.Contains(systemPrompt, "手机");
+        StringAssert.Contains(systemPrompt, "头顶气泡");
+        StringAssert.Contains(systemPrompt, "TheStardewSquad");
+        StringAssert.Contains(systemPrompt, "MoveStarted");
+        StringAssert.Contains(systemPrompt, "MoveArrived");
+        StringAssert.Contains(systemPrompt, "Idle");
+        StringAssert.Contains(systemPrompt, "TaskStatus");
+        StringAssert.Contains(systemPrompt, "移动完成后一轮内");
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithRepositoryGamingSkillRootInjectsChineseTaskContinuityGuidance()
+    {
+        var repositoryGamingRoot = FindRepositoryPath("skills", "gaming");
+        var chatClient = new ToolSnapshotChatClient("我会把答应过的事接着做。");
+        var service = new StardewAutonomyTickDebugService(
+            new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+                new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+                DateTimeOffset.UtcNow,
+                1234,
+                "save-42")),
+            _ => new FakeGameAdapter(
+                new FakeCommandService(),
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Haley is idle and can decide what to continue.",
+                    [
+                        "location=Town",
+                        "tile=42,17",
+                        "isAvailableForControl=true"
+                    ])),
+                new FakeEventSource([])),
+            chatClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            new NpcRuntimeSupervisor(),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            CreatePromptSupplementBuilder(new FixedStardewGamingSkillRootProvider(repositoryGamingRoot)),
+            discoveredToolProvider: null,
+            worldCoordination: CreateWorldCoordination(),
+            includeMemory: true,
+            includeUser: true,
+            maxToolIterations: 2,
+            runtimeRoot: _tempDir);
+
+        var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.FailureReason);
+        var systemPrompt = chatClient.SystemMessages.First(message =>
+            message.Contains("## Stardew Required Skills", StringComparison.Ordinal));
+        StringAssert.Contains(systemPrompt, "### stardew-task-continuity");
+        StringAssert.Contains(systemPrompt, "玩家给你以后要兑现的约定");
+        StringAssert.Contains(systemPrompt, "先回应玩家，再恢复原来的任务");
+        StringAssert.Contains(systemPrompt, "stardew_task_status");
+        StringAssert.Contains(systemPrompt, "memory");
+        StringAssert.Contains(systemPrompt, "session_search");
+        Assert.IsFalse(
+            systemPrompt.Contains("mc ", StringComparison.Ordinal),
+            "Stardew continuity guidance must borrow HermesCraft's behavior pattern without leaking Minecraft command text.");
     }
 
     [TestMethod]
@@ -672,7 +783,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
         Assert.IsTrue(
             chatClient.UserMessages.Any(message =>
                 message.Contains("[event] evt-1", StringComparison.Ordinal) &&
-                message.Contains("Events are context only", StringComparison.Ordinal)));
+                message.Contains("下面的事件只是上下文", StringComparison.Ordinal)));
         Assert.IsNull(commands.LastAction, "Non-private-chat events must not directly drive host-side movement.");
     }
 
@@ -686,7 +797,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
         File.WriteAllText(Path.Combine(root, "boundaries.md"), $"{displayName} boundaries");
         File.WriteAllText(
             Path.Combine(root, "skills.json"),
-            """{"required":["stardew-core","stardew-social","stardew-navigation","stardew-world"],"optional":[]}""");
+            """{"required":["stardew-core","stardew-social","stardew-navigation","stardew-task-continuity","stardew-world"],"optional":[]}""");
 
         var manifest = new NpcPackManifest
         {
@@ -740,6 +851,9 @@ public sealed class StardewAutonomyTickDebugServiceTests
         File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-core.md"), "stardew-core test guidance");
         File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-social.md"), "stardew-social test guidance");
         File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-navigation.md"), "stardew-navigation test guidance");
+        var taskContinuityRoot = Path.Combine(gamingSkillRoot, "stardew-task-continuity");
+        Directory.CreateDirectory(taskContinuityRoot);
+        File.WriteAllText(Path.Combine(taskContinuityRoot, "SKILL.md"), "stardew-task-continuity test guidance");
         var stardewWorldRoot = Path.Combine(gamingSkillRoot, "stardew-world");
         Directory.CreateDirectory(Path.Combine(stardewWorldRoot, "references"));
         File.WriteAllText(

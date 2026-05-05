@@ -1134,7 +1134,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         File.WriteAllText(Path.Combine(root, "boundaries.md"), $"{displayName} boundaries");
         File.WriteAllText(
             Path.Combine(root, "skills.json"),
-            """{"required":["stardew-core","stardew-social","stardew-navigation"],"optional":[]}""");
+            """{"required":["stardew-core","stardew-social","stardew-navigation","stardew-task-continuity"],"optional":[]}""");
 
         var manifest = new NpcPackManifest
         {
@@ -1166,6 +1166,9 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-core.md"), "stardew-core test guidance");
         File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-social.md"), "stardew-social test guidance");
         File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-navigation.md"), "stardew-navigation test guidance");
+        var taskContinuityRoot = Path.Combine(gamingSkillRoot, "stardew-task-continuity");
+        Directory.CreateDirectory(taskContinuityRoot);
+        File.WriteAllText(Path.Combine(taskContinuityRoot, "SKILL.md"), "stardew-task-continuity test guidance");
     }
 
     private static GameEventCursor GetTrackerCursor(StardewNpcAutonomyBackgroundService service, string npcId)

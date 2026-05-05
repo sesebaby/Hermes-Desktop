@@ -1,4 +1,4 @@
 {
-  "required": ["stardew-core", "stardew-social", "stardew-navigation", "stardew-world"],
+  "required": ["stardew-core", "stardew-social", "stardew-navigation", "stardew-task-continuity", "stardew-world"],
   "optional": []
 }
