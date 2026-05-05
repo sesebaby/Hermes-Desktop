@@ -78,6 +78,68 @@ public sealed class StardewQueryService : IGameQueryService
             data.Facts.ToArray());
     }
 
+    public async Task<StardewStatusFactResponseData> GetPlayerStatusAsync(NpcBodyBinding bodyBinding, CancellationToken ct)
+        => await SendFactQueryAsync<StardewEmptyStatusQuery, StardewPlayerStatusData>(
+            StardewBridgeRoutes.QueryPlayerStatus,
+            bodyBinding,
+            new StardewEmptyStatusQuery(),
+            data => new StardewStatusFactResponseData(data.Summary, data.Facts, data.Status, data.UnknownFields),
+            ct);
+
+    public async Task<StardewStatusFactResponseData> GetProgressStatusAsync(NpcBodyBinding bodyBinding, CancellationToken ct)
+        => await SendFactQueryAsync<StardewEmptyStatusQuery, StardewProgressStatusData>(
+            StardewBridgeRoutes.QueryProgressStatus,
+            bodyBinding,
+            new StardewEmptyStatusQuery(),
+            data => new StardewStatusFactResponseData(data.Summary, data.Facts, data.Status, data.UnknownFields),
+            ct);
+
+    public async Task<StardewStatusFactResponseData> GetSocialStatusAsync(NpcBodyBinding bodyBinding, string? targetNpcId, CancellationToken ct)
+        => await SendFactQueryAsync<StardewSocialStatusQuery, StardewSocialStatusData>(
+            StardewBridgeRoutes.QuerySocialStatus,
+            bodyBinding,
+            new StardewSocialStatusQuery(targetNpcId),
+            data => new StardewStatusFactResponseData(data.Summary, data.Facts, data.Status, data.UnknownFields),
+            ct);
+
+    public async Task<StardewStatusFactResponseData> GetQuestStatusAsync(NpcBodyBinding bodyBinding, CancellationToken ct)
+        => await SendFactQueryAsync<StardewEmptyStatusQuery, StardewQuestStatusData>(
+            StardewBridgeRoutes.QueryQuestStatus,
+            bodyBinding,
+            new StardewEmptyStatusQuery(),
+            data => new StardewStatusFactResponseData(data.Summary, data.Facts, data.Status, data.UnknownFields),
+            ct);
+
+    public async Task<StardewStatusFactResponseData> GetFarmStatusAsync(NpcBodyBinding bodyBinding, CancellationToken ct)
+        => await SendFactQueryAsync<StardewEmptyStatusQuery, StardewFarmStatusData>(
+            StardewBridgeRoutes.QueryFarmStatus,
+            bodyBinding,
+            new StardewEmptyStatusQuery(),
+            data => new StardewStatusFactResponseData(data.Summary, data.Facts, data.Status, data.UnknownFields),
+            ct);
+
+    private async Task<StardewStatusFactResponseData> SendFactQueryAsync<TPayload, TData>(
+        string route,
+        NpcBodyBinding bodyBinding,
+        TPayload payload,
+        Func<TData, StardewStatusFactResponseData> map,
+        CancellationToken ct)
+        where TData : class
+    {
+        ArgumentNullException.ThrowIfNull(bodyBinding);
+        var targetEntityId = ResolveTargetEntityId(bodyBinding);
+        var envelope = new StardewBridgeEnvelope<TPayload>(
+            $"req_{Guid.NewGuid():N}",
+            $"trace_query_{Guid.NewGuid():N}",
+            targetEntityId,
+            _saveId,
+            null,
+            payload);
+
+        var response = await _client.SendAsync<TPayload, TData>(route, envelope, ct);
+        return map(RequireData(response, route));
+    }
+
     private static TData RequireData<TData>(StardewBridgeResponse<TData> response, string route)
         where TData : class
     {
@@ -105,6 +167,15 @@ public sealed class StardewQueryService : IGameQueryService
             $"isInDialogue={Bool(status.IsInDialogue)}",
             $"isAvailableForControl={Bool(status.IsAvailableForControl)}"
         };
+
+        if (status.Player is { } player)
+        {
+            facts.Add($"playerLocation={player.LocationName}");
+            facts.Add($"playerTile={player.Tile.X},{player.Tile.Y}");
+            facts.Add($"playerReachability={player.Reachability}");
+            facts.Add($"playerAvailability={player.Availability}");
+            facts.Add($"playerHeldItem={NormalizeFactValue(player.HeldItem)}");
+        }
 
         if (status.GameTime is { } gameTime)
         {
@@ -198,4 +269,7 @@ public sealed class StardewQueryService : IGameQueryService
 
     private static string FormatGameClock(int gameTime)
         => $"{gameTime / 100:00}:{gameTime % 100:00}";
+
+    private static string NormalizeFactValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim();
 }

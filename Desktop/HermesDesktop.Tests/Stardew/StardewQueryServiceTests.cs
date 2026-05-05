@@ -30,6 +30,15 @@ public class StardewQueryServiceTests
               "season": "spring",
               "dayOfMonth": 5,
               "weather": "sunny",
+              "player": {
+                "locationName": "Town",
+                "tile": { "x": 45, "y": 17 },
+                "sameLocation": true,
+                "distanceTiles": 3,
+                "reachability": "near_same_map",
+                "availability": "free",
+                "heldItem": "Sunflower"
+              },
               "isMoving": false,
               "isInDialogue": false,
               "isAvailableForControl": true,
@@ -70,9 +79,152 @@ public class StardewQueryServiceTests
         CollectionAssert.Contains(observation.Facts.ToList(), "season=spring");
         CollectionAssert.Contains(observation.Facts.ToList(), "dayOfMonth=5");
         CollectionAssert.Contains(observation.Facts.ToList(), "weather=sunny");
+        CollectionAssert.Contains(observation.Facts.ToList(), "playerLocation=Town");
+        CollectionAssert.Contains(observation.Facts.ToList(), "playerTile=45,17");
+        CollectionAssert.Contains(observation.Facts.ToList(), "playerReachability=near_same_map");
+        CollectionAssert.Contains(observation.Facts.ToList(), "playerAvailability=free");
+        CollectionAssert.Contains(observation.Facts.ToList(), "playerHeldItem=Sunflower");
         CollectionAssert.Contains(observation.Facts.ToList(), "isAvailableForControl=true");
         CollectionAssert.Contains(observation.Facts.ToList(), "currentCommandId=cmd-1");
         Assert.IsTrue(observation.Facts.Any(fact => fact.Contains("destinationId=town.fountain", StringComparison.Ordinal)), "Observed destination facts should include destinationId as the stable key.");
+    }
+
+    [TestMethod]
+    public async Task GetPlayerStatusAsync_PostsPlayerStatusQueryAndReturnsNaturalSummary()
+    {
+        var client = new FakeSmapiClient();
+        client.PlayerStatusResponse = new StardewBridgeResponse<StardewPlayerStatusData>(
+            true,
+            "trace-player",
+            "req-player",
+            null,
+            null,
+            new StardewPlayerStatusData(
+                "玩家现在在 Town 的 45,17，手里拿着 Sunflower。",
+                ["playerLocation=Town", "playerHeldItem=Sunflower"],
+                "completed",
+                []),
+            null,
+            null);
+        var service = new StardewQueryService(client, "save-1");
+
+        var status = await service.GetPlayerStatusAsync(new NpcBodyBinding("haley", "Haley", "Haley", "Haley", "stardew"), CancellationToken.None);
+
+        Assert.AreEqual(StardewBridgeRoutes.QueryPlayerStatus, client.LastRoute);
+        StringAssert.Contains(status.Summary, "Sunflower");
+        CollectionAssert.Contains(status.Facts.ToList(), "playerLocation=Town");
+    }
+
+    [TestMethod]
+    public async Task GetProgressStatusAsync_PostsProgressQueryAndPreservesDegradedStatus()
+    {
+        var client = new FakeSmapiClient
+        {
+            ProgressStatusResponse = new StardewBridgeResponse<StardewProgressStatusData>(
+                true,
+                "trace-progress",
+                "req-progress",
+                null,
+                "degraded",
+                new StardewProgressStatusData(
+                    "现在是第 1 年 spring 5 日。",
+                    ["year=1", "deepestMineLevel=15"],
+                    "degraded",
+                    ["communityCenterOrJojaSummary"]),
+                null,
+                null)
+        };
+        var service = new StardewQueryService(client, "save-1");
+
+        var status = await service.GetProgressStatusAsync(new NpcBodyBinding("haley", "Haley", "Haley", "Haley", "stardew"), CancellationToken.None);
+
+        Assert.AreEqual(StardewBridgeRoutes.QueryProgressStatus, client.LastRoute);
+        Assert.AreEqual("degraded", status.Status);
+        CollectionAssert.Contains(status.UnknownFields!.ToList(), "communityCenterOrJojaSummary");
+    }
+
+    [TestMethod]
+    public async Task GetSocialStatusAsync_PostsTargetNpcQuery()
+    {
+        var client = new FakeSmapiClient
+        {
+            SocialStatusResponse = new StardewBridgeResponse<StardewSocialStatusData>(
+                true,
+                "trace-social",
+                "req-social",
+                null,
+                "degraded",
+                new StardewSocialStatusData(
+                    "玩家和 Haley 目前约 4 心。",
+                    ["targetNpc=Haley", "friendshipHearts=4"],
+                    "degraded",
+                    ["giftTasteSummary"]),
+                null,
+                null)
+        };
+        var service = new StardewQueryService(client, "save-1");
+
+        var status = await service.GetSocialStatusAsync(new NpcBodyBinding("haley", "Haley", "Haley", "Haley", "stardew"), "Haley", CancellationToken.None);
+
+        Assert.AreEqual(StardewBridgeRoutes.QuerySocialStatus, client.LastRoute);
+        var envelope = (StardewBridgeEnvelope<StardewSocialStatusQuery>)client.LastEnvelope!;
+        Assert.AreEqual("Haley", envelope.Payload.TargetNpcId);
+        CollectionAssert.Contains(status.Facts.ToList(), "friendshipHearts=4");
+    }
+
+    [TestMethod]
+    public async Task GetQuestStatusAsync_PostsQuestQuery()
+    {
+        var client = new FakeSmapiClient
+        {
+            QuestStatusResponse = new StardewBridgeResponse<StardewQuestStatusData>(
+                true,
+                "trace-quest",
+                "req-quest",
+                null,
+                "completed",
+                new StardewQuestStatusData(
+                    "玩家当前有 1 个任务。",
+                    ["questCount=1", "quest[0]=title=Introductions"],
+                    "completed",
+                    []),
+                null,
+                null)
+        };
+        var service = new StardewQueryService(client, "save-1");
+
+        var status = await service.GetQuestStatusAsync(new NpcBodyBinding("haley", "Haley", "Haley", "Haley", "stardew"), CancellationToken.None);
+
+        Assert.AreEqual(StardewBridgeRoutes.QueryQuestStatus, client.LastRoute);
+        CollectionAssert.Contains(status.Facts.ToList(), "questCount=1");
+    }
+
+    [TestMethod]
+    public async Task GetFarmStatusAsync_PostsFarmQueryAndPreservesUnknownFields()
+    {
+        var client = new FakeSmapiClient
+        {
+            FarmStatusResponse = new StardewBridgeResponse<StardewFarmStatusData>(
+                true,
+                "trace-farm",
+                "req-farm",
+                null,
+                "degraded",
+                new StardewFarmStatusData(
+                    "农场叫 Sunny Farm。",
+                    ["farmName=Sunny Farm", "weather=sunny"],
+                    "degraded",
+                    ["readyCropCount", "animalCount"]),
+                null,
+                null)
+        };
+        var service = new StardewQueryService(client, "save-1");
+
+        var status = await service.GetFarmStatusAsync(new NpcBodyBinding("haley", "Haley", "Haley", "Haley", "stardew"), CancellationToken.None);
+
+        Assert.AreEqual(StardewBridgeRoutes.QueryFarmStatus, client.LastRoute);
+        Assert.AreEqual("degraded", status.Status);
+        CollectionAssert.Contains(status.UnknownFields!.ToList(), "animalCount");
     }
 
     [TestMethod]
@@ -275,6 +427,11 @@ public class StardewQueryServiceTests
         public object? LastEnvelope { get; private set; }
         public StardewBridgeResponse<StardewNpcStatusData>? StatusResponse { get; set; }
         public StardewBridgeResponse<StardewWorldSnapshotData>? WorldSnapshotResponse { get; set; }
+        public StardewBridgeResponse<StardewPlayerStatusData>? PlayerStatusResponse { get; set; }
+        public StardewBridgeResponse<StardewProgressStatusData>? ProgressStatusResponse { get; set; }
+        public StardewBridgeResponse<StardewSocialStatusData>? SocialStatusResponse { get; set; }
+        public StardewBridgeResponse<StardewQuestStatusData>? QuestStatusResponse { get; set; }
+        public StardewBridgeResponse<StardewFarmStatusData>? FarmStatusResponse { get; set; }
 
         public Task<StardewBridgeResponse<TData>> SendAsync<TPayload, TData>(
             string route,
@@ -288,6 +445,11 @@ public class StardewQueryServiceTests
             {
                 StardewBridgeRoutes.QueryStatus => StatusResponse ?? throw new InvalidOperationException("No status response configured."),
                 StardewBridgeRoutes.QueryWorldSnapshot => WorldSnapshotResponse ?? throw new InvalidOperationException("No world snapshot response configured."),
+                StardewBridgeRoutes.QueryPlayerStatus => PlayerStatusResponse ?? throw new InvalidOperationException("No player status response configured."),
+                StardewBridgeRoutes.QueryProgressStatus => ProgressStatusResponse ?? throw new InvalidOperationException("No progress status response configured."),
+                StardewBridgeRoutes.QuerySocialStatus => SocialStatusResponse ?? throw new InvalidOperationException("No social status response configured."),
+                StardewBridgeRoutes.QueryQuestStatus => QuestStatusResponse ?? throw new InvalidOperationException("No quest status response configured."),
+                StardewBridgeRoutes.QueryFarmStatus => FarmStatusResponse ?? throw new InvalidOperationException("No farm status response configured."),
                 _ => throw new InvalidOperationException($"Unexpected route {route}.")
             };
 

@@ -129,6 +129,11 @@ public sealed record StardewStatusQuery(
 public sealed record StardewWorldSnapshotQuery(
     [property: JsonPropertyName("npcId")] string? NpcId);
 
+public sealed record StardewEmptyStatusQuery();
+
+public sealed record StardewSocialStatusQuery(
+    [property: JsonPropertyName("targetNpcId")] string? TargetNpcId);
+
 public sealed record StardewNpcStatusData(
     [property: JsonPropertyName("npcId")] string NpcId,
     [property: JsonPropertyName("smapiName")] string SmapiName,
@@ -148,7 +153,53 @@ public sealed record StardewNpcStatusData(
     [property: JsonPropertyName("gameTime")] int? GameTime = null,
     [property: JsonPropertyName("season")] string? Season = null,
     [property: JsonPropertyName("dayOfMonth")] int? DayOfMonth = null,
-    [property: JsonPropertyName("weather")] string? Weather = null);
+    [property: JsonPropertyName("weather")] string? Weather = null,
+    [property: JsonPropertyName("player")] StardewPlayerSceneData? Player = null);
+
+public sealed record StardewPlayerSceneData(
+    [property: JsonPropertyName("locationName")] string LocationName,
+    [property: JsonPropertyName("tile")] StardewTile Tile,
+    [property: JsonPropertyName("sameLocation")] bool SameLocation,
+    [property: JsonPropertyName("distanceTiles")] int? DistanceTiles,
+    [property: JsonPropertyName("reachability")] string Reachability,
+    [property: JsonPropertyName("availability")] string Availability,
+    [property: JsonPropertyName("heldItem")] string? HeldItem);
+
+public sealed record StardewStatusFactResponseData(
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("facts")] IReadOnlyList<string> Facts,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("unknownFields")] IReadOnlyList<string>? UnknownFields = null);
+
+public sealed record StardewPlayerStatusData(
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("facts")] IReadOnlyList<string> Facts,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("unknownFields")] IReadOnlyList<string> UnknownFields);
+
+public sealed record StardewProgressStatusData(
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("facts")] IReadOnlyList<string> Facts,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("unknownFields")] IReadOnlyList<string> UnknownFields);
+
+public sealed record StardewSocialStatusData(
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("facts")] IReadOnlyList<string> Facts,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("unknownFields")] IReadOnlyList<string> UnknownFields);
+
+public sealed record StardewQuestStatusData(
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("facts")] IReadOnlyList<string> Facts,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("unknownFields")] IReadOnlyList<string> UnknownFields);
+
+public sealed record StardewFarmStatusData(
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("facts")] IReadOnlyList<string> Facts,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("unknownFields")] IReadOnlyList<string> UnknownFields);
 
 public sealed record StardewWorldEntityData(
     [property: JsonPropertyName("npcId")] string NpcId,

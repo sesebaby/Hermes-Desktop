@@ -4,10 +4,12 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Xna.Framework;
 using StardewHermesBridge.Logging;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
+using StardewValley.Quests;
 
 public sealed class BridgeHttpHost
 {
@@ -138,6 +140,21 @@ public sealed class BridgeHttpHost
                 case "/query/world_snapshot":
                     await HandleQueryWorldSnapshotAsync(context, ct);
                     return;
+                case "/query/player_status":
+                    await HandleQueryPlayerStatusAsync(context, ct);
+                    return;
+                case "/query/progress_status":
+                    await HandleQueryProgressStatusAsync(context, ct);
+                    return;
+                case "/query/social_status":
+                    await HandleQuerySocialStatusAsync(context, ct);
+                    return;
+                case "/query/quest_status":
+                    await HandleQueryQuestStatusAsync(context, ct);
+                    return;
+                case "/query/farm_status":
+                    await HandleQueryFarmStatusAsync(context, ct);
+                    return;
                 case "/events/poll":
                     await HandleEventsPollAsync(context, ct);
                     return;
@@ -198,7 +215,60 @@ public sealed class BridgeHttpHost
     private async Task HandleQueryStatusAsync(HttpListenerContext context, CancellationToken ct)
     {
         var envelope = await ReadJsonAsync<BridgeEnvelope<StatusQuery>>(context.Request, ct);
+        var started = System.Diagnostics.Stopwatch.StartNew();
         var response = BuildStatusResponse(envelope);
+        started.Stop();
+        LogQueryCompleted("query_status_completed", envelope.NpcId ?? envelope.Payload?.NpcId, envelope.TraceId, response.Data, started.ElapsedMilliseconds);
+        await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
+    }
+
+    private async Task HandleQueryPlayerStatusAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        var envelope = await ReadJsonAsync<BridgeEnvelope<EmptyStatusQuery>>(context.Request, ct);
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var response = BuildPlayerStatusResponse(envelope);
+        started.Stop();
+        LogFactQueryCompleted("player_status_query_completed", envelope.NpcId, envelope.TraceId, response.Data, started.ElapsedMilliseconds);
+        await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
+    }
+
+    private async Task HandleQueryProgressStatusAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        var envelope = await ReadJsonAsync<BridgeEnvelope<EmptyStatusQuery>>(context.Request, ct);
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var response = BuildProgressStatusResponse(envelope);
+        started.Stop();
+        LogFactQueryCompleted("progress_status_query_completed", envelope.NpcId, envelope.TraceId, response.Data, started.ElapsedMilliseconds);
+        await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
+    }
+
+    private async Task HandleQuerySocialStatusAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        var envelope = await ReadJsonAsync<BridgeEnvelope<SocialStatusQuery>>(context.Request, ct);
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var response = BuildSocialStatusResponse(envelope);
+        started.Stop();
+        LogFactQueryCompleted("social_status_query_completed", envelope.NpcId ?? envelope.Payload?.TargetNpcId, envelope.TraceId, response.Data, started.ElapsedMilliseconds);
+        await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
+    }
+
+    private async Task HandleQueryQuestStatusAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        var envelope = await ReadJsonAsync<BridgeEnvelope<EmptyStatusQuery>>(context.Request, ct);
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var response = BuildQuestStatusResponse(envelope);
+        started.Stop();
+        LogFactQueryCompleted("quest_status_query_completed", envelope.NpcId, envelope.TraceId, response.Data, started.ElapsedMilliseconds);
+        await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
+    }
+
+    private async Task HandleQueryFarmStatusAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        var envelope = await ReadJsonAsync<BridgeEnvelope<EmptyStatusQuery>>(context.Request, ct);
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var response = BuildFarmStatusResponse(envelope);
+        started.Stop();
+        LogFactQueryCompleted("farm_status_query_completed", envelope.NpcId, envelope.TraceId, response.Data, started.ElapsedMilliseconds);
         await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
     }
 
@@ -293,6 +363,7 @@ public sealed class BridgeHttpHost
         var currentTile = GetCurrentTile(npc);
         var destinations = BuildDestinations(npc, blockedReason, currentTile);
         var nearbyTiles = BuildNearbyTiles(npc, blockedReason, currentTile);
+        var playerScene = BuildPlayerScene(npc);
         var data = new NpcStatusData(
             npc.Name.ToLowerInvariant(),
             npc.Name,
@@ -312,7 +383,8 @@ public sealed class BridgeHttpHost
             Game1.timeOfDay,
             Game1.currentSeason,
             Game1.dayOfMonth,
-            GetWeatherFact(npc.currentLocation));
+            GetWeatherFact(npc.currentLocation),
+            playerScene);
 
         return new BridgeResponse<NpcStatusData>(
             true,
@@ -325,8 +397,201 @@ public sealed class BridgeHttpHost
             new { });
     }
 
+    private BridgeResponse<PlayerStatusData> BuildPlayerStatusResponse(BridgeEnvelope<EmptyStatusQuery> envelope)
+    {
+        if (!Context.IsWorldReady || Game1.player is null)
+            return Error<EmptyStatusQuery, PlayerStatusData>(envelope, "world_not_ready", "The Stardew world is not ready.", retryable: true);
+
+        var player = Game1.player;
+        var unknownFields = new List<string>();
+        var facts = new List<string>
+        {
+            $"playerName={Safe(player.Name)}",
+            $"playerDisplayName={Safe(player.displayName)}",
+            $"playerLocation={GetLocationName(player.currentLocation)}",
+            $"playerTile={player.TilePoint.X},{player.TilePoint.Y}",
+            $"playerHeldItem={FormatItemName(player.ActiveItem)}",
+            $"playerCurrentTool={FormatItemName(player.CurrentTool)}",
+            $"playerMoney={player.Money}",
+            $"playerHat={FormatEquipmentName(player.hat.Value)}",
+            $"playerShirt={FormatEquipmentName(player.shirtItem.Value)}",
+            $"playerPants={FormatEquipmentName(player.pantsItem.Value)}",
+            $"playerBoots={FormatEquipmentName(player.boots.Value)}",
+            $"inventorySummary={BuildInventorySummary(player)}"
+        };
+        var detailFacts = new List<string>
+        {
+            $"playerStamina={(int)player.Stamina}",
+            $"playerMaxStamina={player.MaxStamina}",
+            $"playerHealth={player.health}",
+            $"playerMaxHealth={player.maxHealth}",
+            $"playerSpouse={EmptyToNone(player.spouse)}",
+            $"playerFarmName={Safe(player.farmName.Value)}"
+        };
+        facts.AddRange(detailFacts);
+
+        var summary = $"玩家现在在 {GetLocationName(player.currentLocation)} 的 {player.TilePoint.X},{player.TilePoint.Y}，手里拿着 {FormatItemName(player.ActiveItem)}，有 {player.Money}g，婚姻状态是 {EmptyToNone(player.spouse)}。";
+        var data = new PlayerStatusData(summary, facts.Take(12).ToArray(), BuildStatus(unknownFields), unknownFields);
+        return Completed(envelope, data);
+    }
+
+    private BridgeResponse<ProgressStatusData> BuildProgressStatusResponse(BridgeEnvelope<EmptyStatusQuery> envelope)
+    {
+        if (!Context.IsWorldReady || Game1.player is null)
+            return Error<EmptyStatusQuery, ProgressStatusData>(envelope, "world_not_ready", "The Stardew world is not ready.", retryable: true);
+
+        var player = Game1.player;
+        var unknownFields = new List<string>();
+        var facts = new List<string>
+        {
+            $"year={Game1.year}",
+            $"season={Game1.currentSeason}",
+            $"dayOfMonth={Game1.dayOfMonth}",
+            $"gameTime={Game1.timeOfDay}",
+            $"gameClock={FormatGameClock(Game1.timeOfDay)}",
+            $"farmName={Safe(player.farmName.Value)}",
+            $"money={player.Money}",
+            $"totalMoneyEarned={player.totalMoneyEarned}",
+            $"farmingLevel={player.FarmingLevel}",
+            $"miningLevel={player.MiningLevel}",
+            $"foragingLevel={player.ForagingLevel}",
+            $"fishingLevel={player.FishingLevel}",
+            $"combatLevel={player.CombatLevel}",
+            $"deepestMineLevel={player.deepestMineLevel}",
+            $"houseUpgradeLevel={player.HouseUpgradeLevel}"
+        };
+        unknownFields.Add("communityCenterOrJojaSummary");
+
+        var summary = $"现在是第 {Game1.year} 年 {Game1.currentSeason} {Game1.dayOfMonth} 日 {FormatGameClock(Game1.timeOfDay)}。玩家农场叫 {Safe(player.farmName.Value)}，最深矿井层数 {player.deepestMineLevel}。";
+        var data = new ProgressStatusData(summary, facts.Take(12).ToArray(), BuildStatus(unknownFields), unknownFields);
+        return Completed(envelope, data);
+    }
+
+    private BridgeResponse<SocialStatusData> BuildSocialStatusResponse(BridgeEnvelope<SocialStatusQuery> envelope)
+    {
+        if (!Context.IsWorldReady || Game1.player is null)
+            return Error<SocialStatusQuery, SocialStatusData>(envelope, "world_not_ready", "The Stardew world is not ready.", retryable: true);
+
+        var targetNpc = envelope.Payload?.TargetNpcId ?? envelope.NpcId;
+        var unknownFields = new List<string>();
+        if (string.IsNullOrWhiteSpace(targetNpc))
+            return Error<SocialStatusQuery, SocialStatusData>(envelope, "invalid_target", "targetNpcId or npcId is required.", retryable: false);
+
+        var npc = BridgeNpcResolver.Resolve(targetNpc);
+        if (npc is null)
+            return Error<SocialStatusQuery, SocialStatusData>(envelope, "invalid_target", "NPC was not found.", retryable: false);
+
+        var player = Game1.player;
+        player.friendshipData.TryGetValue(npc.Name, out var friendship);
+        var friendshipPoints = friendship?.Points ?? 0;
+        var hearts = friendshipPoints / NPC.friendshipPointsPerHeartLevel;
+        var facts = new List<string>
+        {
+            $"targetNpc={npc.Name}",
+            $"targetDisplayName={npc.displayName}",
+            $"friendshipPoints={friendshipPoints}",
+            $"friendshipHearts={hearts}",
+            $"talkedToday={Bool(friendship?.TalkedToToday ?? false)}",
+            $"giftsToday={friendship?.GiftsToday ?? 0}",
+            $"giftsThisWeek={friendship?.GiftsThisWeek ?? 0}",
+            $"spouse={EmptyToNone(player.spouse)}",
+            $"isSpouse={Bool(string.Equals(player.spouse, npc.Name, StringComparison.OrdinalIgnoreCase))}",
+            $"daysMarried={friendship?.DaysMarried ?? 0}"
+        };
+        unknownFields.Add("recentGiftItems");
+        unknownFields.Add("giftTasteSummary");
+
+        var summary = $"玩家和 {npc.displayName} 目前约 {hearts} 心，今天{(friendship?.TalkedToToday == true ? "已经" : "还没")}说过话，本周送礼 {friendship?.GiftsThisWeek ?? 0} 次。玩家配偶是 {EmptyToNone(player.spouse)}。";
+        var data = new SocialStatusData(summary, facts.Take(12).ToArray(), BuildStatus(unknownFields), unknownFields);
+        return Completed(envelope, data);
+    }
+
+    private BridgeResponse<QuestStatusData> BuildQuestStatusResponse(BridgeEnvelope<EmptyStatusQuery> envelope)
+    {
+        if (!Context.IsWorldReady || Game1.player is null)
+            return Error<EmptyStatusQuery, QuestStatusData>(envelope, "world_not_ready", "The Stardew world is not ready.", retryable: true);
+
+        var quests = Game1.player.questLog?.ToArray() ?? Array.Empty<Quest>();
+        var facts = new List<string> { $"questCount={quests.Length}" };
+        foreach (var (quest, index) in quests.Take(5).Select((quest, index) => (quest, index)))
+        {
+            facts.Add($"quest[{index}]=title={Safe(quest.questTitle)},description={TruncateFact(Safe(quest.questDescription), 80)}");
+        }
+
+        var summary = quests.Length == 0
+            ? "玩家当前没有可见任务。"
+            : $"玩家当前有 {quests.Length} 个任务，首个任务是 {Safe(quests[0].questTitle)}。";
+        var data = new QuestStatusData(summary, facts.Take(12).ToArray(), "completed", Array.Empty<string>());
+        return Completed(envelope, data);
+    }
+
+    private BridgeResponse<FarmStatusData> BuildFarmStatusResponse(BridgeEnvelope<EmptyStatusQuery> envelope)
+    {
+        if (!Context.IsWorldReady || Game1.player is null)
+            return Error<EmptyStatusQuery, FarmStatusData>(envelope, "world_not_ready", "The Stardew world is not ready.", retryable: true);
+
+        var player = Game1.player;
+        var farm = Game1.getFarm();
+        var unknownFields = new List<string>
+        {
+            "readyCropCount",
+            "needsWateringCount",
+            "animalCount"
+        };
+        var facts = new List<string>
+        {
+            $"farmName={Safe(player.farmName.Value)}",
+            $"farmLocation={GetLocationName(farm)}",
+            $"season={Game1.currentSeason}",
+            $"dayOfMonth={Game1.dayOfMonth}",
+            $"weather={GetWeatherFact(farm)}",
+            $"money={player.Money}"
+        };
+
+        var summary = $"农场叫 {Safe(player.farmName.Value)}，今天 {Game1.currentSeason} {Game1.dayOfMonth} 日，天气是 {GetWeatherFact(farm)}。首版还没有全图作物和动物扫描。";
+        var data = new FarmStatusData(summary, facts.Take(12).ToArray(), BuildStatus(unknownFields), unknownFields);
+        return Completed(envelope, data);
+    }
+
     private static BridgeResponse<TData> Error<TPayload, TData>(BridgeEnvelope<TPayload> envelope, string code, string message, bool retryable)
         => new(false, envelope.TraceId, envelope.RequestId, null, "failed", default, new BridgeError(code, message, retryable), new { });
+
+    private static BridgeResponse<TData> Completed<TPayload, TData>(BridgeEnvelope<TPayload> envelope, TData data)
+        => new(true, envelope.TraceId, envelope.RequestId, null, "completed", data, null, new { });
+
+    private static PlayerSceneData BuildPlayerScene(NPC npc)
+    {
+        var player = Game1.player;
+        var playerLocation = player.currentLocation;
+        var sameLocation = playerLocation is not null && ReferenceEquals(playerLocation, npc.currentLocation);
+        var distance = sameLocation
+            ? Math.Abs(player.TilePoint.X - npc.TilePoint.X) + Math.Abs(player.TilePoint.Y - npc.TilePoint.Y)
+            : (int?)null;
+        var reachability = !sameLocation
+            ? "other_map"
+            : distance <= 8
+                ? "near_same_map"
+                : "same_map_far";
+        return new PlayerSceneData(
+            GetLocationName(playerLocation),
+            new TileDto(player.TilePoint.X, player.TilePoint.Y),
+            sameLocation,
+            distance,
+            reachability,
+            BuildPlayerAvailability(),
+            FormatItemName(player.ActiveItem));
+    }
+
+    private static string BuildPlayerAvailability()
+    {
+        if (Game1.eventUp)
+            return "event_active";
+        if (Game1.activeClickableMenu is DialogueBox)
+            return "dialogue_open";
+        if (Game1.activeClickableMenu is not null)
+            return "menu_open";
+        return "free";
+    }
 
     private static string? BuildBlockedReason(NPC npc)
     {
@@ -341,6 +606,41 @@ public sealed class BridgeHttpHost
 
     private static TileDto GetCurrentTile(NPC npc)
         => new(npc.TilePoint.X, npc.TilePoint.Y);
+
+    private static string GetLocationName(GameLocation? location)
+        => location?.NameOrUniqueName ?? location?.Name ?? "unknown";
+
+    private static string FormatItemName(Item? item)
+        => string.IsNullOrWhiteSpace(item?.DisplayName)
+            ? string.IsNullOrWhiteSpace(item?.Name) ? "empty" : item.Name
+            : item.DisplayName;
+
+    private static string FormatEquipmentName(Item? item)
+        => item is null ? "none" : FormatItemName(item);
+
+    private static string BuildInventorySummary(Farmer player)
+    {
+        var items = player.Items?
+            .Where(item => item is not null)
+            .Take(5)
+            .Select(FormatItemName)
+            .ToArray() ?? Array.Empty<string>();
+        return items.Length == 0 ? "empty" : string.Join("|", items);
+    }
+
+    private static string BuildStatus(IReadOnlyList<string> unknownFields)
+        => unknownFields.Count > 0 ? "degraded" : "completed";
+
+    private static string Safe(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim();
+
+    private static string EmptyToNone(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "none" : value.Trim();
+
+    private static string Bool(bool value) => value ? "true" : "false";
+
+    private static string TruncateFact(string value, int maxLength)
+        => value.Length <= maxLength ? value : value[..maxLength];
 
     private static IReadOnlyList<MoveCandidateData> BuildNearbyTiles(NPC npc, string? blockedReason, TileDto currentTile)
     {
@@ -461,4 +761,40 @@ public sealed class BridgeHttpHost
 
     private static string GetWeatherFact(GameLocation? location)
         => location is not null && Game1.IsRainingHere(location) ? "rain" : "sunny";
+
+    private void LogQueryCompleted(string endpoint, string? npcId, string traceId, NpcStatusData? data, long durationMs)
+    {
+        var detail = data is null
+            ? $"status=failed;durationMs={durationMs}"
+            : $"status=completed;durationMs={durationMs};gameTime={data.GameTime};npcLocation={data.LocationName};playerReachability={data.Player?.Reachability ?? "unknown"};playerAvailability={data.Player?.Availability ?? "unknown"};heldItem={data.Player?.HeldItem ?? "unknown"}";
+        _logger.Write(endpoint, npcId, "query_status", traceId, null, data is null ? "failed" : "completed", detail);
+    }
+
+    private void LogFactQueryCompleted<TData>(string endpoint, string? npcId, string traceId, TData? data, long durationMs)
+        where TData : class
+    {
+        var (status, detail) = data switch
+        {
+            PlayerStatusData value => (value.Status, $"status={value.Status};durationMs={durationMs};payloadChars={EstimatePayloadChars(value)};playerLocation={FindFact(value.Facts, "playerLocation")};playerTile={FindFact(value.Facts, "playerTile")};heldItem={FindFact(value.Facts, "playerHeldItem")};money={FindFact(value.Facts, "playerMoney")};equipmentCount={CountFacts(value.Facts, "playerHat", "playerShirt", "playerPants", "playerBoots")};unknownFields={string.Join("|", value.UnknownFields)}"),
+            ProgressStatusData value => (value.Status, $"status={value.Status};durationMs={durationMs};payloadChars={EstimatePayloadChars(value)};year={FindFact(value.Facts, "year")};season={FindFact(value.Facts, "season")};day={FindFact(value.Facts, "dayOfMonth")};mineLevel={FindFact(value.Facts, "deepestMineLevel")};unknownFields={string.Join("|", value.UnknownFields)}"),
+            SocialStatusData value => (value.Status, $"status={value.Status};durationMs={durationMs};payloadChars={EstimatePayloadChars(value)};targetNpc={FindFact(value.Facts, "targetNpc")};hearts={FindFact(value.Facts, "friendshipHearts")};talkedToday={FindFact(value.Facts, "talkedToday")};giftsThisWeek={FindFact(value.Facts, "giftsThisWeek")};spouse={FindFact(value.Facts, "spouse")};unknownFields={string.Join("|", value.UnknownFields)}"),
+            QuestStatusData value => (value.Status, $"status={value.Status};durationMs={durationMs};payloadChars={EstimatePayloadChars(value)};questCount={FindFact(value.Facts, "questCount")};returnedCount={value.Facts.Count(fact => fact.StartsWith("quest[", StringComparison.OrdinalIgnoreCase))};unknownFields={string.Join("|", value.UnknownFields)}"),
+            FarmStatusData value => (value.Status, $"status={value.Status};durationMs={durationMs};payloadChars={EstimatePayloadChars(value)};farmName={FindFact(value.Facts, "farmName")};farmType=unknown;scanTiles=0;readyCropCount={FindFact(value.Facts, "readyCropCount")};needsWateringCount={FindFact(value.Facts, "needsWateringCount")};animalCount={FindFact(value.Facts, "animalCount")};unknownFields={string.Join("|", value.UnknownFields)}"),
+            _ => ("failed", $"status=failed;durationMs={durationMs}")
+        };
+        _logger.Write(endpoint, npcId, "query_status", traceId, null, status, detail);
+    }
+
+    private static int EstimatePayloadChars<TData>(TData data)
+        => JsonSerializer.Serialize(data, JsonOptions).Length;
+
+    private static string FindFact(IReadOnlyList<string> facts, string key)
+    {
+        var prefix = key + "=";
+        var value = facts.FirstOrDefault(fact => fact.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        return value is null ? "unknown" : value[prefix.Length..];
+    }
+
+    private static int CountFacts(IReadOnlyList<string> facts, params string[] keys)
+        => keys.Count(key => facts.Any(fact => fact.StartsWith(key + "=", StringComparison.OrdinalIgnoreCase)));
 }

@@ -90,6 +90,8 @@ public sealed record StatusQuery(string? NpcId);
 
 public sealed record WorldSnapshotQuery(string? NpcId);
 
+public sealed record EmptyStatusQuery();
+
 public sealed record NpcStatusData(
     string NpcId,
     string SmapiName,
@@ -109,7 +111,55 @@ public sealed record NpcStatusData(
     int? GameTime = null,
     string? Season = null,
     int? DayOfMonth = null,
-    string? Weather = null);
+    string? Weather = null,
+    PlayerSceneData? Player = null);
+
+public sealed record PlayerSceneData(
+    string LocationName,
+    TileDto Tile,
+    bool SameLocation,
+    int? DistanceTiles,
+    string Reachability,
+    string Availability,
+    string? HeldItem);
+
+public sealed record StatusFactResponseData(
+    string Summary,
+    IReadOnlyList<string> Facts,
+    string Status = "completed",
+    IReadOnlyList<string>? UnknownFields = null);
+
+public sealed record PlayerStatusData(
+    string Summary,
+    IReadOnlyList<string> Facts,
+    string Status,
+    IReadOnlyList<string> UnknownFields);
+
+public sealed record ProgressStatusData(
+    string Summary,
+    IReadOnlyList<string> Facts,
+    string Status,
+    IReadOnlyList<string> UnknownFields);
+
+public sealed record SocialStatusQuery(string? TargetNpcId);
+
+public sealed record SocialStatusData(
+    string Summary,
+    IReadOnlyList<string> Facts,
+    string Status,
+    IReadOnlyList<string> UnknownFields);
+
+public sealed record QuestStatusData(
+    string Summary,
+    IReadOnlyList<string> Facts,
+    string Status,
+    IReadOnlyList<string> UnknownFields);
+
+public sealed record FarmStatusData(
+    string Summary,
+    IReadOnlyList<string> Facts,
+    string Status,
+    IReadOnlyList<string> UnknownFields);
 
 public sealed record WorldEntityData(
     string NpcId,

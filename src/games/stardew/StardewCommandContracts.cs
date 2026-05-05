@@ -5,6 +5,11 @@ public static class StardewBridgeRoutes
     public const string Health = "/health";
     public const string QueryStatus = "/query/status";
     public const string QueryWorldSnapshot = "/query/world_snapshot";
+    public const string QueryPlayerStatus = "/query/player_status";
+    public const string QueryProgressStatus = "/query/progress_status";
+    public const string QuerySocialStatus = "/query/social_status";
+    public const string QueryQuestStatus = "/query/quest_status";
+    public const string QueryFarmStatus = "/query/farm_status";
     public const string EventsPoll = "/events/poll";
     public const string TaskMove = "/task/move";
     public const string TaskStatus = "/task/status";

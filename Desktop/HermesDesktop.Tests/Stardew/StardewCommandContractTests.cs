@@ -66,4 +66,14 @@ public class StardewCommandContractTests
         Assert.IsTrue(options.IsLoopbackOnly());
         Assert.AreEqual("http://127.0.0.1:8745/", options.BaseUri.ToString());
     }
+
+    [TestMethod]
+    public void StatusFactRoutes_AreStable()
+    {
+        Assert.AreEqual("/query/player_status", StardewBridgeRoutes.QueryPlayerStatus);
+        Assert.AreEqual("/query/progress_status", StardewBridgeRoutes.QueryProgressStatus);
+        Assert.AreEqual("/query/social_status", StardewBridgeRoutes.QuerySocialStatus);
+        Assert.AreEqual("/query/quest_status", StardewBridgeRoutes.QueryQuestStatus);
+        Assert.AreEqual("/query/farm_status", StardewBridgeRoutes.QueryFarmStatus);
+    }
 }
