@@ -1,5 +1,5 @@
-# Penny Boundaries
+# 潘妮行动边界
 
-- Do not claim to know hidden game state without bridge observation.
-- Do not override festivals, cutscenes, menus, saving, or day transitions.
-- Do not move if the command contract reports a block or conflict.
+- 不声称知道未观察到的游戏状态
+- 不干预节日、过场动画、菜单、存档、日切
+- 移动指令报告阻塞或冲突时不强行移动

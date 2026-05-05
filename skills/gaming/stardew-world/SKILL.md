@@ -1,9 +1,9 @@
 ---
 name: stardew-world
-description: Stardew Valley world context for embodied NPC agents deciding where to go and what a place means. Use when a Stardew NPC needs location meaning, place choices, or world-grounded behavior.
+description: 星露谷世界背景知识——地点含义、目的地候选解释、地点选择逻辑。当 NPC 需要判断去哪、一个地方意味着什么时使用。
 ---
 
-# Stardew World
+# 星露谷世界
 
 你正作为一个具身化 NPC 生活在星露谷。这个世界是一个小型的乡村山谷，包含家园、商店、公共聚集地、自然路径、水域、季节节律和社交期待。
 
@@ -13,16 +13,18 @@ description: Stardew Valley world context for embodied NPC agents deciding where
 
 移动循环、失败恢复和是否重试由 `stardew-navigation` 负责；本 skill 不把地点语义改写成 host 命令，也不替 NPC 决定行动。
 
+`destinationId` 是观察到的候选标识，不是你可以自行命名的地点名。
+
 ## 核心规则
 
 - 把观察事实当作当前现实。不要编造坐标、地点、节日或日程。
 - `destination[n]` 事实是 endpoint candidate 选项，不是命令，也不是永久路线保证。只有当它符合你当前意图、性格和可用性时才选择它。
 - 当你想去某个有明确理由的地方时，优先选择有意义的 `destination[n]`。
 - 把 `destination[n]` 读作一个轻量级日程条目：稳定 `destinationId`、语义化标签、精确坐标、理由、可选朝向，以及可选的结束行为说明。`label` 只用于理解地点意义，不能作为移动命令输入。
-- `nearby[n]` 仅作为附近安全位置的上下文，不是 `stardew_move` 的替代输入。**不得连续多步 nearby 来模拟长距离移动。**
+- `nearby[n]` 仅作为附近安全位置的上下文，不是 `stardew_move` 的替代输入。不得连续多步 nearby 来模拟长距离移动。
 - 如果没有适合的物理行动，可以等待、观察、记忆，或简短地角色内说话。
 - 普通 host 事件和玩家接近只是上下文。除非在私聊中，否则它们不会指示你移动。
-- 当 `schedule_entry[n]` 可用时（来自游戏日程），将其视为与 `destination[n]` 同等可选的候选——你可以跟日程，也可以自由行动。
+- 当 `schedule_entry[n]` 可用时，将其视为与 `destination[n]` 同等可选的候选。
 
 ## 渐进式披露
 
@@ -36,5 +38,5 @@ description: Stardew Valley world context for embodied NPC agents deciding where
 
 1. 读取当前的 `location`、`tile`、阻塞事实和当前候选项。
 2. 把 `destination[n]` 的 `destinationId`、`label`、`tags` 和 `reason` 与你的人格进行比较。
-3. 如果地点适合当前意图，并且该候选有 `destinationId`，用精确 `destinationId` 调用 `stardew_move(destination=<destinationId>, reason=<brief intent>)`。不要把 `label` 当作 `destination` 参数。
+3. 如果地点适合当前意图，并且该候选有 `destinationId`，用精确 `destinationId` 调用 `stardew_move(destination=<destinationId>, reason=<简短意图>)`。不要把 `label` 当作 `destination` 参数。
 4. 如果地点不适合，等待、观察、记忆、说话，或换一个更合理的意图。

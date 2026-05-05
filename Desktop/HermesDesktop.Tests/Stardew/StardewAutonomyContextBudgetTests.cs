@@ -633,14 +633,14 @@ public class StardewAutonomyContextBudgetTests
         var root = FindRepositoryRoot();
         var combined = string.Join(
             "\n",
-            File.ReadAllText(Path.Combine(root, "skills", "gaming", "stardew-core.md")),
-            File.ReadAllText(Path.Combine(root, "skills", "gaming", "stardew-social.md")),
-            File.ReadAllText(Path.Combine(root, "skills", "gaming", "stardew-navigation.md")));
+            File.ReadAllText(Path.Combine(root, "skills", "gaming", "stardew-core", "SKILL.md")),
+            File.ReadAllText(Path.Combine(root, "skills", "gaming", "stardew-social", "SKILL.md")),
+            File.ReadAllText(Path.Combine(root, "skills", "gaming", "stardew-navigation", "SKILL.md")));
 
-        StringAssert.Contains(combined, "one turn purpose");
+        StringAssert.Contains(combined, "本轮目标");
         StringAssert.Contains(combined, "session_search");
         StringAssert.Contains(combined, "memory");
-        StringAssert.Contains(combined, "avoid repeated broad status scans");
+        StringAssert.Contains(combined, "避免重复广泛状态扫描");
         StringAssert.Contains(combined, "stardew_task_status");
         Assert.IsFalse(combined.Contains("create NPC recap", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(combined.Contains("create persona summary", StringComparison.OrdinalIgnoreCase));

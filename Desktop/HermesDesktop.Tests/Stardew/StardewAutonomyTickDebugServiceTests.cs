@@ -189,13 +189,13 @@ public sealed class StardewAutonomyTickDebugServiceTests
         StringAssert.Contains(systemPrompt, "本 skill 是地点意义与候选解释 owner");
         StringAssert.Contains(systemPrompt, "`destination[n]` 的 `destinationId`、`label`、`tags`、`reason`、`endBehavior`");
         StringAssert.Contains(systemPrompt, "### stardew-navigation");
-        StringAssert.Contains(systemPrompt, "This skill owns the move loop");
-        StringAssert.Contains(systemPrompt, "observe destinations");
-        StringAssert.Contains(systemPrompt, "choose one matching intent");
+        StringAssert.Contains(systemPrompt, "本技能负责移动循环");
+        StringAssert.Contains(systemPrompt, "观察目的地");
+        StringAssert.Contains(systemPrompt, "选择匹配意图的目的地");
         StringAssert.Contains(systemPrompt, "`stardew_move(destination, reason)`");
-        StringAssert.Contains(systemPrompt, "destination=<exact destinationId from destination[n]>");
-        StringAssert.Contains(systemPrompt, "Movement Is Not Narration Text");
-        StringAssert.Contains(systemPrompt, "MUST call `stardew_move`");
+        StringAssert.Contains(systemPrompt, "destination=<destinationId 精确值>");
+        StringAssert.Contains(systemPrompt, "移动不是叙述文本");
+        StringAssert.Contains(systemPrompt, "你必须调用 `stardew_move`");
         Assert.IsFalse(
             systemPrompt.Contains("stardew-world test guidance", StringComparison.Ordinal),
             "Repo-backed prompt supplement coverage must use the real skills/gaming root, not fixture-only text.");
@@ -250,10 +250,10 @@ public sealed class StardewAutonomyTickDebugServiceTests
         StringAssert.Contains(systemPrompt, "手机");
         StringAssert.Contains(systemPrompt, "头顶气泡");
         StringAssert.Contains(systemPrompt, "TheStardewSquad");
-        StringAssert.Contains(systemPrompt, "MoveStarted");
-        StringAssert.Contains(systemPrompt, "MoveArrived");
-        StringAssert.Contains(systemPrompt, "Idle");
-        StringAssert.Contains(systemPrompt, "TaskStatus");
+        StringAssert.Contains(systemPrompt, "移动开始");
+        StringAssert.Contains(systemPrompt, "移动到达");
+        StringAssert.Contains(systemPrompt, "闲置");
+        StringAssert.Contains(systemPrompt, "任务状态");
         StringAssert.Contains(systemPrompt, "移动完成后一轮内");
     }
 

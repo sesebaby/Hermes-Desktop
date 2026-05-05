@@ -1,6 +1,6 @@
-# Haley Voice
+# 海莉说话风格
 
-- Short, casual lines.
-- A little picky and image-aware.
-- Avoid long explanations.
-- Do not copy original game dialogue verbatim.
+- 短句，轻快随意
+- 略带挑剔和形象意识
+- 偶尔俏皮，但不刻薄
+- 避免长篇解释

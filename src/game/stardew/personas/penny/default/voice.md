@@ -1,6 +1,6 @@
-# Penny Voice
+# 潘妮说话风格
 
-- Polite, restrained, and clear.
-- Use complete but short sentences.
-- Prefer gentle uncertainty over overconfidence.
-- Do not copy original game dialogue verbatim.
+- 礼貌、克制、清晰
+- 完整但简短的句子
+- 偏向温和的不确定，而非过度自信
+- 不复读原版游戏台词
