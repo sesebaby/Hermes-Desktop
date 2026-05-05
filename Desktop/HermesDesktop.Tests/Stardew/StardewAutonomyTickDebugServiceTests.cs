@@ -157,7 +157,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             [
                 "location=HaleyHouse",
                 "tile=8,7",
-                "destination[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out"
+                "destination[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out,destinationId=haley_house.bedroom_mirror"
             ]));
         var service = new StardewAutonomyTickDebugService(
             new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
@@ -638,7 +638,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
                     {
                         Id = "call-move",
                         Name = "stardew_move",
-                        Arguments = """{"destination":"Town fountain","reason":"stand somewhere bright and visible in town"}"""
+                        Arguments = """{"destination":"town.fountain","reason":"stand somewhere bright and visible in town"}"""
                     }
                 ]
             },
@@ -652,7 +652,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
                 "location=Town",
                 "tile=42,17",
                 "isAvailableForControl=true",
-                "destination[0]=label=Town fountain,locationName=Town,x=42,y=17,tags=public|photogenic,reason=stand somewhere bright and visible in town,facingDirection=2",
+                "destination[0]=label=Town fountain,locationName=Town,x=42,y=17,tags=public|photogenic,reason=stand somewhere bright and visible in town,destinationId=town.fountain,facingDirection=2",
                 "nearby[0]=locationName=Town,x=43,y=17,reason=same_location_safe_reposition"
             ]));
         var service = new StardewAutonomyTickDebugService(
@@ -681,13 +681,13 @@ public sealed class StardewAutonomyTickDebugServiceTests
         Assert.IsTrue(result.Success, result.FailureReason);
         Assert.AreEqual("Moved toward the Town fountain.", result.DecisionResponse);
         Assert.IsTrue(
-            chatClient.UserMessages.Any(message => message.Contains("destination[0]=label=Town fountain", StringComparison.Ordinal)),
-            "The model-facing autonomy prompt must expose the current destinations before the tool call happens.");
+            chatClient.UserMessages.Any(message => message.Contains("destinationId=town.fountain", StringComparison.Ordinal)),
+            "The model-facing autonomy prompt must expose executable destinationId before the tool call happens.");
         Assert.IsNotNull(commands.LastAction);
         Assert.AreEqual(GameActionType.Move, commands.LastAction.Type);
-        Assert.AreEqual("Town", commands.LastAction.Target.LocationName);
-        Assert.AreEqual(42, commands.LastAction.Target.Tile?.X);
-        Assert.AreEqual(17, commands.LastAction.Target.Tile?.Y);
+        Assert.AreEqual("town.fountain", commands.LastAction.Payload?["destinationId"]?.ToString());
+        Assert.IsNull(commands.LastAction.Target.LocationName);
+        Assert.IsNull(commands.LastAction.Target.Tile);
     }
 
     [TestMethod]
@@ -704,7 +704,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
                 "location=HaleyHouse",
                 "tile=8,7",
                 "isAvailableForControl=true",
-                "destination[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out"
+                "destination[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out,destinationId=haley_house.bedroom_mirror"
             ]));
         var service = new StardewAutonomyTickDebugService(
             new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
@@ -751,7 +751,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
                 "location=Town",
                 "tile=42,17",
                 "isAvailableForControl=true",
-                "destination[0]=label=Town fountain,locationName=Town,x=42,y=20,tags=public|photogenic,reason=stand somewhere pretty"
+                "destination[0]=label=Town fountain,locationName=Town,x=42,y=20,tags=public|photogenic,reason=stand somewhere pretty,destinationId=town.fountain"
             ]));
         var events = new FakeEventSource([
             new GameEventRecord("evt-1", "player_nearby", "haley", DateTime.UtcNow, "The player walked near Haley.")

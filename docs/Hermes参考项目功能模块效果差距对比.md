@@ -14,13 +14,13 @@
 - 已有 `NpcRuntimeSupervisor`、`NpcRuntimeInstance`、`NpcRuntimeContextFactory`、`NpcAutonomyLoop`，可以为 private chat 与 autonomy 创建 NPC 专属 Agent。
 - Stardew bridge 已有 HTTP command / status / discovery / event buffer / private chat / speak / move 通路。
 - `todo` 已扩展 `blocked` / `failed` / `reason`，并且 `Session.ToolSessionId` 已用于把 private chat 的工具任务归到 NPC 长期 runtime session。
-- 移动链路已开始从坐标微操转向 `destinationId`，Bridge 侧已有 `BridgeDestinationRegistry` 和稳定错误码。
+- 移动链路已完成 Agent 公开契约层的 `destinationId` 收敛：`stardew_move` 不再解析 observation label/坐标，Agent 只提交 `destinationId`，Bridge/CommandService 继续保留隐藏兼容层。
 - 桌面端已有 NPC runtime workspace 的只读投影，能展示 runtime snapshot、active task summary、blocked/failed summary、trace/error。
 
 但它还没有达到参考项目那种“长期自治 Agent 自己持续生活”的效果。当前主要缺口已经从“有没有基础模块”转为：
 
 1. **自主循环仍偏单 tick 驱动**：每次 tick 能观察、思考、调用工具，但长期任务推进、等待、恢复、跨天续跑还不够成熟。
-2. **移动执行仍处于半收敛状态**：Agent 面向 `destinationId`，Bridge 能解析 destination，但 `StardewMoveTool` 仍从 observation fact 解析 location/tile 并构造 `GameActionTarget`，尚未完全变成“只提交 destinationId，Bridge 全权执行”。
+2. **移动公开契约已收敛，执行能力仍待增强**：Agent 面已经变成“只提交 `destinationId`，Bridge/host 负责执行”，但真实跨地图移动仍未完成，Bridge 当前仍会明确阻断而不是伪完成。
 3. **任务连续性刚打通承载面**：`todo` 状态、`ToolSessionId`、continuity skill 已具备，但还需要证明 private chat 形成的任务能被 autonomy 稳定推进、失败反馈、归档和 UI 观测。
 4. **NPC 行为知识层仍薄**：已有 `stardew-core`、`stardew-social`、`stardew-navigation`、`stardew-task-continuity`、`stardew-world`，但内容还不足以覆盖日程、地点意义、社交偏好、失败恢复和长期生活习惯。
 5. **多 NPC 村庄体验仍未闭环**：private chat 与单 NPC autonomy 基础较强，群聊、偷听、NPC 之间自然互动、资源互斥和并发成本控制仍是后续重点。
@@ -38,7 +38,7 @@
 | Soul / persona | 最高 | persona pack、Haley/Penny 目录、`StardewNpcAutonomyPromptSupplementBuilder` 真实资产注入已存在 | `SOUL.md` 长期塑造 Agent 行为 | 仍要持续验证 private chat 与 autonomy 都加载同一 NPC persona 和 required skills | 不临场生成人格，不写第二人格摘要 |
 | Prompt / Context 组装 | 最高 | 复用 `ContextManager` / `PromptBuilder`；supplement 注入 facts/voice/boundaries/skills | prompt/soul/skill/context 共同驱动行为 | 当前 instruction 已中文化，但 still 需要防 prompt-only：没有工具调用时已有 diagnostic，行为闭环还要验证 | 下一步改 prompt 要配测试和 runtime evidence |
 | Stardew skill 知识层 | 高 | 已有 `stardew-core`、`stardew-social`、`stardew-navigation`、`stardew-task-continuity`、`stardew-world` | 参考项目 skill 详细描述生存、导航、战斗、任务轮询 | Stardew skill 内容还薄，日程、地点、NPC 偏好、失败恢复不够完整 | 扩 skill 内容优先于写宿主规则 |
-| Stardew move 工具 | 最高 | Agent 参数偏 `destination` / `destinationId`；Bridge 支持 `destinationId` registry；status 有 phase/error/block reason | 高层提交目标，底层 pathfinder/后台 task 执行到终态 | `StardewMoveTool` 仍解析 observation fact 的 location/tile；Bridge registry 规模小；跨图和自然移动仍需完善 | 继续推进 2026-05-04 移动架构，不回到坐标微操 |
+| Stardew move 工具 | 最高 | 已完成公开契约收敛：`stardew_move` 只透传 `destinationId`，不再本地 observe/解析 label/坐标；Bridge 支持 `destinationId` registry；status 有 phase/error/block reason | 高层提交目标，底层 pathfinder/后台 task 执行到终态 | Bridge registry 规模小；跨图和自然移动仍需完善；执行态 status 仍保留坐标诊断信息 | 下一步做真实跨地图执行前，先确保任务连续性闭环能消费移动结果 |
 | Bridge executor | 最高 | 有 command queue、idempotency、status、cancel、path probe、failure mapper、blockedReason | 后台 task 有 running/stuck/cancel/status | 当前状态机和 executor 拆分仍不完整，部分语义仍在 Bridge 层混杂 | 下一步收敛 registry/projection/executor 三层 |
 | Query / observation | 高 | `StardewQueryService` 输出 NPC status、player、destination facts、world snapshot | 参考项目有 status/nearby/look/overhear | observation 已能服务移动和 autonomy，但地点意义和 world skill 投影还不够丰富 | 增加事实质量，而不是让 Agent 编目标 |
 | Event / private chat flow | 高 | Bridge event buffer、vanilla dialogue completed/unavailable、private chat opened/submitted/reply displayed 已有 | 参考项目聊天路由和 overhear 较成熟 | 群聊、偷听、公平感知和消息路由还未达到村庄级 | 后续做 SocialRouter 时保持“投递，不导演” |
@@ -69,13 +69,16 @@
 
 当前 Stardew 工具已经不只是调试按钮。`stardew_move`、`stardew_speak`、`stardew_task_status`、private chat 相关路径已经进入 runtime 工具面。
 
-但移动仍处在半完成状态：
+移动公开契约收敛已经完成，但执行能力仍处在半完成状态：
 
+- 已完成：`StardewMoveTool` 不再重新 observe，不再从 `destination[n]` fact 解析 `locationName/x/y/facingDirection`，也不再构造真实执行 tile。
+- 已完成：`StardewCommandService` 的 destination-first 路径只传 `destinationId`，legacy `target` 只作为隐藏兼容层保留。
+- 已完成：Query 投影只暴露带 `destinationId` 的 executable destination facts；prompt/skill/schema 不再要求 label fallback。
 - 正向变化：Bridge 已支持 `destinationId`，并能对未知 destination 返回 `invalid_destination_id`。
 - 正向变化：status DTO 已包含 `destinationId`、`phase`、`currentLocationName`、`resolvedStandTile`、`routeRevision`。
-- 剩余问题：`StardewMoveTool` 仍要重新 observe，并从 `destination[n]` fact 中读 `locationName/x/y/facingDirection`，再构造 `GameActionTarget`。
+- 剩余问题：真实跨地图移动仍未完成；当前 Bridge 会明确返回 `cross_location_unsupported`，不能伪装成已抵达。
 
-所以移动下一步不是“让 LLM 再聪明一点”，而是继续把执行真相下沉到 Bridge：
+所以移动后续不是“让 LLM 再聪明一点”，而是在已收敛契约基础上继续把执行真相下沉到 Bridge：
 
 `Agent 只交 destinationId -> StardewCommandService 只传 destinationId -> Bridge registry resolve -> executor 完整执行 -> status 回报`
 
@@ -146,17 +149,23 @@ UI 只能展示 runtime/task 只读投影，不能解析玩家话术或写回 ta
 - `NpcAutonomyLoop` / `StardewNpcAutonomyBackgroundService` 测试
 - runtime activity JSONL 和 NPC runtime workspace task summary
 
-### P1：完成 move 契约收敛
+### P1：move 契约收敛已完成；后续做 Bridge 真实跨地图执行
 
-目标：让移动真正成为 destination-level command，而不是 observation fact 坐标回填。
+已完成目标：让移动公开面成为 destination-level command，而不是 observation fact 坐标回填。
 
-应优先完成：
+已完成：
 
 1. `StardewMoveTool` 参数和内部实现只向 command layer 提交 `destinationId` 与 reason。
 2. `GameActionTarget` 不再要求 Agent 侧提供真实执行 tile；必要时使用 placeholder/debug target，但执行真相来自 Bridge registry。
-3. Bridge executor 按 `destinationId` resolve arrival policy、fallback policy、route plan、phase、terminal status。
-4. Query 投影继续暴露 label/reason/tags，但不得成为执行真相。
-5. `nearbyTiles` 只保留短距离辅助，不再承担长距离移动。
+3. Query 投影继续暴露 label/reason/tags，但不得成为执行真相。
+4. `nearby[n]` 只保留短距离上下文，不再作为 `stardew_move` 的替代输入。
+
+后续剩余：
+
+1. Bridge executor 按 `destinationId` resolve arrival policy、fallback policy、route plan、phase、terminal status。
+2. 扩大 `BridgeDestinationRegistry` 和 endpoint projection，支持房间、室外、入口点、可停留点。
+3. 实现真实跨地图移动；跨图失败必须返回明确 terminal status，不能使用 `warpCharacter` 或 `PathFindController` 伪完成。
+4. 真实游戏中验证 Haley/Penny 到 bedroom mirror、living room、town fountain 等目的地的状态链路。
 
 验收依据：
 
@@ -164,7 +173,8 @@ UI 只能展示 runtime/task 只读投影，不能解析玩家话术或写回 ta
 - `StardewNpcToolFactoryTests`
 - `StardewQueryServiceTests`
 - `BridgeMoveCommandQueueRegressionTests`
-- 真实游戏中 Haley/Penny 到 bedroom mirror、living room、town fountain 等目的地的手测日志
+- Architect verification：2026-05-05 已通过 `destinationId` 公开契约收敛验收。
+- 后续跨地图执行还需要真实游戏中 Haley/Penny 到 bedroom mirror、living room、town fountain 等目的地的手测日志。
 
 ### P2：扩大 Stardew skill 的生活知识层
 

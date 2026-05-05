@@ -39,7 +39,7 @@ public static class StardewNpcToolFactory
             new StardewQuestStatusTool(adapter.Queries, descriptor),
             new StardewFarmStatusTool(adapter.Queries, descriptor),
             new StardewRecentActivityTool(recentActivityProvider, descriptor, logger),
-            new StardewMoveTool(adapter.Commands, adapter.Queries, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
+            new StardewMoveTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
             new StardewSpeakTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewOpenPrivateChatTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewTaskStatusTool(adapter.Commands)
@@ -299,7 +299,6 @@ public sealed class StardewRecentActivityTool : ITool, IToolSchemaProvider
 public sealed class StardewMoveTool : ITool, IToolSchemaProvider
 {
     private readonly IGameCommandService _commands;
-    private readonly IGameQueryService _queries;
     private readonly NpcRuntimeDescriptor _descriptor;
     private readonly Func<string> _traceIdFactory;
     private readonly Func<string> _idempotencyKeyFactory;
@@ -308,7 +307,6 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
 
     internal StardewMoveTool(
         IGameCommandService commands,
-        IGameQueryService queries,
         NpcRuntimeDescriptor descriptor,
         Func<string> traceIdFactory,
         Func<string> idempotencyKeyFactory,
@@ -316,7 +314,6 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
         StardewRuntimeActionController runtimeActions)
     {
         _commands = commands;
-        _queries = queries;
         _descriptor = descriptor;
         _traceIdFactory = traceIdFactory;
         _idempotencyKeyFactory = idempotencyKeyFactory;
@@ -326,7 +323,7 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_move";
 
-    public string Description => "Ask this NPC to move to a semantic destination from the latest observation. Copy the destination id from a destination[n].destinationId fact (preferred), or the destination label from a destination[n].label fact. Never invent destinations. Optional thought is a short private-feeling movement thought shown as a non-blocking overhead bubble when the move starts. If a move ends with path_blocked, path_unreachable, or interrupted, observe again or choose a different target instead of retrying the same destination. Only use nearby[n] as a last resort for 1-2 tile repositioning when no destination matches your intent.";
+    public string Description => "Ask this NPC to move to a semantic destination from the latest observation. Copy the exact destination id from a destination[n].destinationId fact. Never invent destinations. Optional thought is a short private-feeling movement thought shown as a non-blocking overhead bubble when the move starts. If a move ends with path_blocked, path_unreachable, invalid_destination_id, or interrupted, observe again or choose a different destinationId instead of retrying the same destination.";
 
     public Type ParametersType => typeof(StardewMoveToolParameters);
 
@@ -336,30 +333,13 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
     {
         var p = (StardewMoveToolParameters)parameters;
         if (string.IsNullOrWhiteSpace(p.Destination))
-            return ToolResult.Fail("destination is required — copy the label from a destination[n] fact in the latest observation.");
+            return ToolResult.Fail("destination is required — copy the exact destinationId from a destination[n].destinationId fact in the latest observation.");
 
         var traceId = _traceIdFactory();
-        var resolved = await ResolveDestinationAsync(p.Destination, ct);
-        if (resolved is null)
-        {
-            return ToolResult.Ok(StardewNpcToolJson.Serialize(new StardewNpcActionToolResult(
-                Accepted: false,
-                CommandId: string.Empty,
-                Status: StardewCommandStatuses.Blocked,
-                FailureReason: StardewBridgeErrorCodes.InvalidTarget,
-                TraceId: traceId,
-                FinalStatus: null,
-                StatusPolls: [])));
-        }
-
-        var (locationName, x, y, facingDirection, destinationId) = resolved.Value;
-
         var payload = new JsonObject
         {
-            ["destinationId"] = destinationId
+            ["destinationId"] = p.Destination
         };
-        if (facingDirection.HasValue)
-            payload["facingDirection"] = facingDirection.Value;
         if (!string.IsNullOrWhiteSpace(p.Thought))
             payload["thought"] = p.Thought;
 
@@ -369,7 +349,7 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
             GameActionType.Move,
             traceId,
             _idempotencyKeyFactory(),
-            new GameActionTarget("destination", locationName, new GameTile(x, y)),
+            new GameActionTarget("destination"),
             p.Reason,
             payload,
             BodyBinding: _descriptor.EffectiveBodyBinding);
@@ -423,116 +403,6 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
         }
 
         return statuses;
-    }
-
-    private async Task<(string LocationName, int X, int Y, int? FacingDirection, string DestinationId)?> ResolveDestinationAsync(
-        string destination,
-        CancellationToken ct)
-    {
-        var observation = await _queries.ObserveAsync(_descriptor.EffectiveBodyBinding, ct);
-
-        foreach (var fact in observation.Facts)
-        {
-            if (!fact.StartsWith("destination[", StringComparison.Ordinal))
-                continue;
-
-            if (!TryReadDestinationFact(fact, out var destinationId, out var label, out var loc, out var fx, out var fy, out var fd))
-                continue;
-
-            if (string.Equals(destinationId, destination, StringComparison.Ordinal) ||
-                string.Equals(label, destination, StringComparison.Ordinal))
-            {
-                return (loc, fx, fy, fd, string.IsNullOrWhiteSpace(destinationId)
-                    ? BuildDestinationId(loc, label)
-                    : destinationId);
-            }
-        }
-
-        return null;
-    }
-
-    private static string BuildDestinationId(string locationName, string destinationLabel)
-    {
-        var normalizedLocation = NormalizeDestinationSegment(locationName);
-        var labelRemainder = destinationLabel.Trim();
-        if (!string.IsNullOrWhiteSpace(locationName) &&
-            labelRemainder.StartsWith(locationName, StringComparison.OrdinalIgnoreCase))
-        {
-            labelRemainder = labelRemainder[locationName.Length..].TrimStart(' ', '-', '_', '.');
-        }
-
-        var normalizedLabel = NormalizeDestinationSegment(labelRemainder);
-        return string.IsNullOrWhiteSpace(normalizedLabel)
-            ? normalizedLocation
-            : $"{normalizedLocation}.{normalizedLabel}";
-    }
-
-    private static string NormalizeDestinationSegment(string value)
-    {
-        var builder = new System.Text.StringBuilder(value.Length);
-        var pendingSeparator = false;
-        foreach (var ch in value)
-        {
-            if (char.IsLetterOrDigit(ch))
-            {
-                if (pendingSeparator && builder.Length > 0)
-                    builder.Append('.');
-
-                builder.Append(char.ToLowerInvariant(ch));
-                pendingSeparator = false;
-            }
-            else
-            {
-                pendingSeparator = builder.Length > 0;
-            }
-        }
-
-        return builder.ToString();
-    }
-
-    private static bool TryReadDestinationFact(
-        string fact,
-        out string destinationId,
-        out string label,
-        out string locationName,
-        out int x,
-        out int y,
-        out int? facingDirection)
-    {
-        destinationId = string.Empty;
-        label = string.Empty;
-        locationName = string.Empty;
-        x = 0;
-        y = 0;
-        facingDirection = null;
-
-        var payloadStart = fact.IndexOf("]=", StringComparison.Ordinal);
-        if (payloadStart < 0 || payloadStart + 2 >= fact.Length)
-            return false;
-
-        foreach (var part in fact[(payloadStart + 2)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var separator = part.IndexOf('=');
-            if (separator <= 0 || separator == part.Length - 1)
-                continue;
-
-            var key = part[..separator];
-            var value = part[(separator + 1)..];
-            if (string.Equals(key, "destinationId", StringComparison.Ordinal))
-                destinationId = value;
-            else if (string.Equals(key, "label", StringComparison.Ordinal))
-                label = value;
-            else if (string.Equals(key, "locationName", StringComparison.Ordinal))
-                locationName = value;
-            else if (string.Equals(key, "x", StringComparison.Ordinal) && int.TryParse(value, out var parsedX))
-                x = parsedX;
-            else if (string.Equals(key, "y", StringComparison.Ordinal) && int.TryParse(value, out var parsedY))
-                y = parsedY;
-            else if (string.Equals(key, "facingDirection", StringComparison.Ordinal) && int.TryParse(value, out var parsedFd))
-                facingDirection = parsedFd;
-        }
-
-        return !string.IsNullOrWhiteSpace(label) && !string.IsNullOrWhiteSpace(locationName);
     }
 }
 
@@ -1043,7 +913,7 @@ internal static class StardewNpcToolSchemas
         => Schema(
             new Dictionary<string, object>
             {
-                ["destination"] = new { type = "string", description = "Destination identifier from the latest observation. Prefer destination[n].destinationId (stable key), fall back to destination[n].label. Never invent destinations." },
+                ["destination"] = new { type = "string", description = "Exact destination identifier from the latest observation's destination[n].destinationId stable key. Never invent destinations." },
                 ["reason"] = new { type = "string", description = "Short reason copied from the destination[n] fact's reason field, or a brief NPC intent aligned with the destination." },
                 ["thought"] = new { type = "string", description = "Optional short inner thought shown as a non-blocking overhead bubble when movement starts. Keep it immersive and under one sentence." }
             },

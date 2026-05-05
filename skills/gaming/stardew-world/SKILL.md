@@ -18,8 +18,8 @@ description: Stardew Valley world context for embodied NPC agents deciding where
 - 把观察事实当作当前现实。不要编造坐标、地点、节日或日程。
 - `destination[n]` 事实是 endpoint candidate 选项，不是命令，也不是永久路线保证。只有当它符合你当前意图、性格和可用性时才选择它。
 - 当你想去某个有明确理由的地方时，优先选择有意义的 `destination[n]`。
-- 把 `destination[n]` 读作一个轻量级日程条目：稳定 `destinationId`、语义化标签、精确坐标、理由、可选朝向，以及可选的结束行为说明。
-- `nearby[n]` 仅在没有 `destination[n]` 匹配意图时用于 1-2 格短距离重定位。**不得连续多步 nearby 来模拟长距离移动。**
+- 把 `destination[n]` 读作一个轻量级日程条目：稳定 `destinationId`、语义化标签、精确坐标、理由、可选朝向，以及可选的结束行为说明。`label` 只用于理解地点意义，不能作为移动命令输入。
+- `nearby[n]` 仅作为附近安全位置的上下文，不是 `stardew_move` 的替代输入。**不得连续多步 nearby 来模拟长距离移动。**
 - 如果没有适合的物理行动，可以等待、观察、记忆，或简短地角色内说话。
 - 普通 host 事件和玩家接近只是上下文。除非在私聊中，否则它们不会指示你移动。
 - 当 `schedule_entry[n]` 可用时（来自游戏日程），将其视为与 `destination[n]` 同等可选的候选——你可以跟日程，也可以自由行动。
@@ -36,5 +36,5 @@ description: Stardew Valley world context for embodied NPC agents deciding where
 
 1. 读取当前的 `location`、`tile`、阻塞事实和当前候选项。
 2. 把 `destination[n]` 的 `destinationId`、`label`、`tags` 和 `reason` 与你的人格进行比较。
-3. 如果地点适合当前意图，用该 `destination[n]` 的精确 `destinationId` 调用 `stardew_move(destination=<destinationId>, reason=<brief intent>)`；只有没有 `destinationId` 时才退回用精确 `label`。
+3. 如果地点适合当前意图，并且该候选有 `destinationId`，用精确 `destinationId` 调用 `stardew_move(destination=<destinationId>, reason=<brief intent>)`。不要把 `label` 当作 `destination` 参数。
 4. 如果地点不适合，等待、观察、记忆、说话，或换一个更合理的意图。

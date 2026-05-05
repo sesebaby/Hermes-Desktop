@@ -10,7 +10,7 @@ namespace HermesDesktop.Tests.Stardew;
 public class StardewCommandServiceTests
 {
     [TestMethod]
-    public async Task SubmitAsync_Move_PostsTypedMoveEnvelopeToTaskMoveRoute()
+    public async Task SubmitAsync_Move_WithLegacyTargetOnlyPayload_PostsCompatibilityEnvelopeToTaskMoveRoute()
     {
         var client = new FakeSmapiClient();
         client.MoveResponse = new StardewBridgeResponse<StardewMoveAcceptedData>(
@@ -43,13 +43,14 @@ public class StardewCommandServiceTests
         Assert.AreEqual("haley", envelope.NpcId);
         Assert.AreEqual("save-1", envelope.SaveId);
         Assert.AreEqual("idem-1", envelope.IdempotencyKey);
+        Assert.IsNotNull(envelope.Payload.Target, "Legacy target-only move is retained as hidden compatibility only.");
         Assert.AreEqual("Town", envelope.Payload.Target.LocationName);
         Assert.AreEqual(42, envelope.Payload.Target.Tile.X);
         Assert.AreEqual(2, envelope.Payload.FacingDirection);
     }
 
     [TestMethod]
-    public async Task SubmitAsync_Move_IncludesThoughtInMoveEnvelope()
+    public async Task SubmitAsync_Move_WithDestinationIdOnlyPayload_IncludesThoughtInMoveEnvelope()
     {
         var client = new FakeSmapiClient();
         client.MoveResponse = new StardewBridgeResponse<StardewMoveAcceptedData>(
@@ -68,14 +69,20 @@ public class StardewCommandServiceTests
             GameActionType.Move,
             "trace-thought",
             "idem-thought",
-            new GameActionTarget("tile", "Town", new GameTile(42, 17)),
+            new GameActionTarget("destination"),
             "inspect fountain",
-            Payload: new JsonObject { ["thought"] = "喷泉边的光线正好。" });
+            Payload: new JsonObject
+            {
+                ["destinationId"] = "town.fountain",
+                ["thought"] = "喷泉边的光线正好。"
+            });
 
         var result = await service.SubmitAsync(action, CancellationToken.None);
 
         Assert.IsTrue(result.Accepted);
         var envelope = (StardewBridgeEnvelope<StardewMoveRequest>)client.LastEnvelope!;
+        Assert.IsNull(envelope.Payload.Target);
+        Assert.AreEqual("town.fountain", envelope.Payload.DestinationId);
         Assert.AreEqual("喷泉边的光线正好。", envelope.Payload.Thought);
     }
 
@@ -115,6 +122,7 @@ public class StardewCommandServiceTests
         var envelope = (StardewBridgeEnvelope<StardewMoveRequest>)client.LastEnvelope!;
         using var payloadJson = JsonDocument.Parse(JsonSerializer.Serialize(envelope.Payload));
         Assert.AreEqual("town.fountain", payloadJson.RootElement.GetProperty("destinationId").GetString());
+        Assert.AreEqual(JsonValueKind.Null, payloadJson.RootElement.GetProperty("target").ValueKind);
     }
 
     [TestMethod]

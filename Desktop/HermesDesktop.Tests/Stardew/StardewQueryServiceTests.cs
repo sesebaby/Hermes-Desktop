@@ -298,10 +298,10 @@ public class StardewQueryServiceTests
                 null,
                 Destinations:
                 [
-                    new StardewDestinationData("Bedroom mirror", "HaleyHouse", new StardewTile(6, 4), ["home", "photogenic"], "check her look before going out"),
-                    new StardewDestinationData("Living room", "HaleyHouse", new StardewTile(10, 12), ["home", "social"], "see what is happening downstairs"),
-                    new StardewDestinationData("Front door", "HaleyHouse", new StardewTile(15, 8), ["transition", "outdoor"], "consider going outside"),
-                    new StardewDestinationData("Kitchen", "HaleyHouse", new StardewTile(4, 11), ["home"], "extra candidate should be clipped")
+                    new StardewDestinationData("Bedroom mirror", "HaleyHouse", new StardewTile(6, 4), ["home", "photogenic"], "check her look before going out", DestinationId: "haley_house.bedroom_mirror"),
+                    new StardewDestinationData("Living room", "HaleyHouse", new StardewTile(10, 12), ["home", "social"], "see what is happening downstairs", DestinationId: "haley_house.living_room"),
+                    new StardewDestinationData("Front door", "HaleyHouse", new StardewTile(15, 8), ["transition", "outdoor"], "consider going outside", DestinationId: "haley_house.front_door"),
+                    new StardewDestinationData("Kitchen", "HaleyHouse", new StardewTile(4, 11), ["home"], "extra candidate should be clipped", DestinationId: "haley_house.kitchen")
                 ]),
             null,
             null);
@@ -315,10 +315,13 @@ public class StardewQueryServiceTests
         Assert.AreEqual(4, destinationFacts.Length, "All valid destinations should be exposed (up to 5).");
         CollectionAssert.Contains(
             destinationFacts,
-            "destination[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out");
+            "destination[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out,destinationId=haley_house.bedroom_mirror");
         CollectionAssert.Contains(
             destinationFacts,
-            "destination[2]=label=Front door,locationName=HaleyHouse,x=15,y=8,tags=transition|outdoor,reason=consider going outside");
+            "destination[2]=label=Front door,locationName=HaleyHouse,x=15,y=8,tags=transition|outdoor,reason=consider going outside,destinationId=haley_house.front_door");
+        Assert.IsTrue(
+            destinationFacts.All(fact => fact.Contains("destinationId=", StringComparison.Ordinal)),
+            "Executable destination facts must always include destinationId.");
     }
 
     [TestMethod]

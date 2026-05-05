@@ -22,8 +22,8 @@ Physical movement is not dialogue or inner monologue. When the NPC needs to chan
 2. Choose: pick the ONE `destination[n]` whose `destinationId`, label, and reason best match the NPC's current intent.
 3. Call: `stardew_move(destination=<exact destinationId from destination[n]>, reason=<brief intent>)`.
    - Copy `destinationId` **exactly** — case-sensitive, character-for-character.
-   - If a destination fact has no `destinationId`, fall back to copying the exact label.
-   - Never invent a destination id or label. If no destination matches, see the fallback rule below.
+   - Do not pass the destination label as `destination`; labels are only human-readable metadata.
+   - Never invent a destination id. If no executable destination has a `destinationId`, do not call `stardew_move`.
 4. Poll: check `stardew_task_status` until a terminal status is reached: `completed`, `failed`, `blocked`, `cancelled`, or `interrupted`.
 5. Handle outcome:
    - `completed`: NPC arrived. Continue the next action.
@@ -31,12 +31,9 @@ Physical movement is not dialogue or inner monologue. When the NPC needs to chan
    - `interrupted`: read `interruption_reason` (e.g. `player_approached`, `event_active`, `dialogue_started`). Decide whether to re-observe, change target, or respond to the interruption.
    - Timeout (no terminal status after 3 polls): observe again.
 
-## Nearby Fallback (Secondary)
+## Nearby Facts
 
-`nearby[n]` facts are short-range (1-2 tile) safe tiles for repositioning. Use ONLY when:
-
-- No `destination[n]` fact matches the NPC's intent AND
-- A small position adjustment is genuinely needed (e.g. to get a better camera angle, or to step aside)
+`nearby[n]` facts are short-range (1-2 tile) context for understanding nearby safe positions. They are not a substitute executable input for `stardew_move`.
 
 **Never chain multiple `nearby[n]` calls to simulate long-distance movement.** That defeats the purpose of destination-level movement.
 
@@ -46,7 +43,7 @@ Cross-location destinations are a planned bridge capability, not something the N
 
 ## Before Moving
 
-- Confirm the destination id or label is from the LATEST observation — facts can change between ticks.
+- Confirm the destination id is from the LATEST observation — facts can change between ticks.
 - Prefer `destination[n]` over `nearby[n]` for any intentional movement.
 - `destination[n]` and `schedule_entry[n]` (when available) are equally valid — the NPC may follow its schedule or choose freely.
 - Track `commandId`, status, failure reason, and `traceId`.

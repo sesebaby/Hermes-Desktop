@@ -167,7 +167,7 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
-    public void MoveToolDescription_AllowsObservedDestination()
+    public void MoveToolDescription_RequiresDestinationId()
     {
         var tools = StardewNpcToolFactory.CreateDefault(
             new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
@@ -178,15 +178,15 @@ public class StardewNpcToolFactoryTests
 
         StringAssert.Contains(description, "destination");
         StringAssert.Contains(description, "destination[n].destinationId");
-        StringAssert.Contains(description, "destination[n].label");
         StringAssert.Contains(description, "latest observation");
         StringAssert.Contains(description, "Never invent destinations");
         StringAssert.Contains(description, "path_blocked");
         StringAssert.Contains(description, "path_unreachable");
-        StringAssert.Contains(description, "nearby[n]");
+        Assert.IsFalse(description.Contains("destination[n]." + "label", StringComparison.Ordinal));
+        Assert.IsFalse(description.Contains("nearby[n]", StringComparison.Ordinal));
 
         StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "destination"), "destination[n].destinationId");
-        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "destination"), "destination[n].label");
+        Assert.IsFalse(GetSchemaPropertyDescription(moveSchema, "destination").Contains("destination[n]." + "label", StringComparison.Ordinal));
         StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "reason"), "Short reason");
         StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "thought"), "overhead bubble");
     }
@@ -223,7 +223,7 @@ public class StardewNpcToolFactoryTests
 
             var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
             {
-                Destination = "Front door"
+                Destination = "haley_house.front_door"
             }, CancellationToken.None);
 
             Assert.IsTrue(result.Success);
@@ -255,7 +255,7 @@ public class StardewNpcToolFactoryTests
 
         var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
         {
-            Destination = "Town fountain",
+            Destination = "town.fountain",
             Reason = "inspect the town board"
         }, CancellationToken.None);
 
@@ -268,10 +268,10 @@ public class StardewNpcToolFactoryTests
         Assert.AreEqual(GameActionType.Move, commands.LastAction.Type);
         Assert.AreEqual("trace-move", commands.LastAction.TraceId);
         Assert.AreEqual("idem-move", commands.LastAction.IdempotencyKey);
-        Assert.AreEqual("Town", commands.LastAction.Target.LocationName);
-        Assert.AreEqual(42, commands.LastAction.Target.Tile?.X);
+        Assert.AreEqual("destination", commands.LastAction.Target.Kind);
+        Assert.IsNull(commands.LastAction.Target.LocationName);
+        Assert.IsNull(commands.LastAction.Target.Tile);
         Assert.AreEqual("town.fountain", commands.LastAction.Payload?["destinationId"]?.ToString());
-        Assert.AreEqual("2", commands.LastAction.Payload?["facingDirection"]?.ToString());
         Assert.AreEqual("cmd-1", JsonDocument.Parse(result.Content).RootElement.GetProperty("commandId").GetString());
     }
 
@@ -288,7 +288,7 @@ public class StardewNpcToolFactoryTests
 
         var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
         {
-            Destination = "Town fountain",
+            Destination = "town.fountain",
             Reason = "inspect the fountain",
             Thought = "喷泉边的光线正好。"
         }, CancellationToken.None);
@@ -299,14 +299,15 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
-    public async Task MoveTool_WhenDestinationIdIsProvided_ResolvesObservedDestination()
+    public async Task MoveTool_WhenDestinationIdIsProvided_SubmitsWithoutObservationOrCoordinateTarget()
     {
         var commands = new CapturingCommandService();
+        var queries = new FakeQueryService(
+        [
+            "destination[0]=label=Town fountain,locationName=Town,x=42,y=17,tags=public|photogenic,reason=stand somewhere bright and visible in town,destinationId=town.fountain,facingDirection=2"
+        ]);
         var tools = StardewNpcToolFactory.CreateDefault(
-            new FakeGameAdapter(commands, new FakeQueryService(
-            [
-                "destination[0]=label=Town fountain,locationName=Town,x=42,y=17,tags=public|photogenic,reason=stand somewhere bright and visible in town,destinationId=town.fountain,facingDirection=2"
-            ]), new FakeEventSource()),
+            new FakeGameAdapter(commands, queries, new FakeEventSource()),
             CreateDescriptor("haley"),
             traceIdFactory: () => "trace-move",
             idempotencyKeyFactory: () => "idem-move");
@@ -320,16 +321,22 @@ public class StardewNpcToolFactoryTests
 
         Assert.IsTrue(result.Success);
         Assert.IsNotNull(commands.LastAction);
-        Assert.AreEqual("Town", commands.LastAction.Target.LocationName);
-        Assert.AreEqual(42, commands.LastAction.Target.Tile?.X);
-        Assert.AreEqual(17, commands.LastAction.Target.Tile?.Y);
+        Assert.AreEqual(0, queries.ObserveCalls, "Move tool must not re-observe or parse destination facts.");
+        Assert.AreEqual("destination", commands.LastAction.Target.Kind);
+        Assert.IsNull(commands.LastAction.Target.LocationName);
+        Assert.IsNull(commands.LastAction.Target.Tile);
         Assert.AreEqual("town.fountain", commands.LastAction.Payload?["destinationId"]?.ToString());
     }
 
     [TestMethod]
-    public async Task MoveTool_WhenTargetIsNotCurrentObservedCandidate_ReturnsBlockedWithoutSubmittingCommand()
+    public async Task MoveTool_WhenLabelIsProvided_SubmitsItAsDestinationIdAndLetsBridgeReject()
     {
-        var commands = new CapturingCommandService();
+        var commands = new CapturingCommandService(submitResult: new GameCommandResult(
+            false,
+            "",
+            StardewCommandStatuses.Failed,
+            "invalid_destination_id",
+            "trace-move"));
         var tools = StardewNpcToolFactory.CreateDefault(
             new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
             CreateDescriptor("haley"),
@@ -339,16 +346,19 @@ public class StardewNpcToolFactoryTests
 
         var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
         {
-            Destination = "Kitchen",
-            Reason = "invented destination"
+            Destination = "Town fountain",
+            Reason = "label should not be locally resolved"
         }, CancellationToken.None);
 
         Assert.IsTrue(result.Success);
-        Assert.IsNull(commands.LastAction);
+        Assert.IsNotNull(commands.LastAction);
+        Assert.AreEqual("Town fountain", commands.LastAction.Payload?["destinationId"]?.ToString());
+        Assert.IsNull(commands.LastAction.Target.LocationName);
+        Assert.IsNull(commands.LastAction.Target.Tile);
         using var doc = JsonDocument.Parse(result.Content);
         Assert.AreEqual(false, doc.RootElement.GetProperty("accepted").GetBoolean());
-        Assert.AreEqual(StardewCommandStatuses.Blocked, doc.RootElement.GetProperty("status").GetString());
-        Assert.AreEqual(StardewBridgeErrorCodes.InvalidTarget, doc.RootElement.GetProperty("failureReason").GetString());
+        Assert.AreEqual(StardewCommandStatuses.Failed, doc.RootElement.GetProperty("status").GetString());
+        Assert.AreEqual("invalid_destination_id", doc.RootElement.GetProperty("failureReason").GetString());
     }
 
     [TestMethod]
@@ -436,7 +446,7 @@ public class StardewNpcToolFactoryTests
 
         var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
         {
-            Destination = "Town fountain"
+            Destination = "town.fountain"
         }, CancellationToken.None);
 
         Assert.IsTrue(result.Success);
@@ -471,7 +481,7 @@ public class StardewNpcToolFactoryTests
 
             var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
             {
-                Destination = "Town fountain"
+                Destination = "town.fountain"
             }, CancellationToken.None);
 
             Assert.IsTrue(result.Success);
@@ -515,7 +525,7 @@ public class StardewNpcToolFactoryTests
 
             var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
             {
-                Destination = "Town fountain"
+                Destination = "town.fountain"
             }, CancellationToken.None);
 
             Assert.IsTrue(result.Success);
@@ -619,7 +629,7 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
-    public async Task MoveTool_WhenClaimConflicts_ReturnsBlockedWithoutSubmittingCommand()
+    public async Task MoveTool_WithDestinationOnlyClaimDoesNotConflictWithLegacyTileClaim()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-tool-conflict-tests", Guid.NewGuid().ToString("N"));
         try
@@ -641,18 +651,20 @@ public class StardewNpcToolFactoryTests
 
             var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
             {
-                Destination = "Town fountain"
+                Destination = "town.fountain"
             }, CancellationToken.None);
 
             Assert.IsTrue(result.Success);
-            Assert.IsNull(commands.LastAction);
+            Assert.IsNotNull(commands.LastAction);
             var snapshot = driver.Snapshot();
-            Assert.IsNull(snapshot.PendingWorkItem);
-            Assert.IsNull(snapshot.ActionSlot);
-            Assert.IsTrue(snapshot.NextWakeAtUtc.HasValue);
+            Assert.IsNotNull(snapshot.PendingWorkItem);
+            Assert.IsNotNull(snapshot.ActionSlot);
+            Assert.IsFalse(snapshot.NextWakeAtUtc.HasValue);
             using var doc = JsonDocument.Parse(result.Content);
-            Assert.AreEqual(StardewCommandStatuses.Blocked, doc.RootElement.GetProperty("status").GetString());
-            Assert.AreEqual(StardewBridgeErrorCodes.CommandConflict, doc.RootElement.GetProperty("failureReason").GetString());
+            Assert.AreEqual(StardewCommandStatuses.Queued, doc.RootElement.GetProperty("status").GetString());
+            Assert.IsTrue(
+                coordination.TryClaimMove("work-2", "penny", "trace-2", new ClaimedTile("Town", 42, 17), null, "idem-2").Accepted is false,
+                "The legacy tile claim remains reserved; destination-only move claims do not pretend to own resolved Bridge coordinates.");
         }
         finally
         {
@@ -705,9 +717,12 @@ public class StardewNpcToolFactoryTests
     {
         private readonly Queue<GameCommandStatus> _statusSequence;
 
-        public CapturingCommandService(IReadOnlyList<GameCommandStatus>? statusSequence = null)
+        private readonly GameCommandResult? _submitResult;
+
+        public CapturingCommandService(IReadOnlyList<GameCommandStatus>? statusSequence = null, GameCommandResult? submitResult = null)
         {
             _statusSequence = new Queue<GameCommandStatus>(statusSequence ?? []);
+            _submitResult = submitResult;
         }
 
         public GameAction? LastAction { get; private set; }
@@ -717,7 +732,7 @@ public class StardewNpcToolFactoryTests
         public Task<GameCommandResult> SubmitAsync(GameAction action, CancellationToken ct)
         {
             LastAction = action;
-            return Task.FromResult(new GameCommandResult(true, "cmd-1", StardewCommandStatuses.Queued, null, action.TraceId));
+            return Task.FromResult(_submitResult ?? new GameCommandResult(true, "cmd-1", StardewCommandStatuses.Queued, null, action.TraceId));
         }
 
         public Task<GameCommandStatus> GetStatusAsync(string commandId, CancellationToken ct)
@@ -740,14 +755,19 @@ public class StardewNpcToolFactoryTests
         {
             _facts = facts ??
             [
-                "destination[0]=label=Town fountain,locationName=Town,x=42,y=17,tags=public|photogenic,reason=stand somewhere bright and visible in town,facingDirection=2",
-                "destination[1]=label=Front door,locationName=HaleyHouse,x=15,y=8,tags=transition|outdoor,reason=consider going outside,facingDirection=2",
+                "destination[0]=label=Town fountain,locationName=Town,x=42,y=17,tags=public|photogenic,reason=stand somewhere bright and visible in town,destinationId=town.fountain,facingDirection=2",
+                "destination[1]=label=Front door,locationName=HaleyHouse,x=15,y=8,tags=transition|outdoor,reason=consider going outside,destinationId=haley_house.front_door,facingDirection=2",
                 "nearby[0]=locationName=Town,x=41,y=17,reason=same_location_safe_reposition"
             ];
         }
 
         public Task<GameObservation> ObserveAsync(string npcId, CancellationToken ct)
-            => Task.FromResult(new GameObservation(npcId, "stardew-valley", DateTime.UtcNow, "status", _facts));
+        {
+            ObserveCalls++;
+            return Task.FromResult(new GameObservation(npcId, "stardew-valley", DateTime.UtcNow, "status", _facts));
+        }
+
+        public int ObserveCalls { get; private set; }
 
         public Task<WorldSnapshot> GetWorldSnapshotAsync(string npcId, CancellationToken ct)
             => Task.FromResult(new WorldSnapshot("stardew-valley", "save-1", DateTime.UtcNow, [], []));

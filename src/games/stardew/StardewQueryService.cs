@@ -205,8 +205,12 @@ public sealed class StardewQueryService : IGameQueryService
                  .Take(5)
                  .Select((candidate, index) => (candidate, index)))
         {
-            if (string.IsNullOrWhiteSpace(candidate.LocationName) || string.IsNullOrWhiteSpace(candidate.Label))
+            if (string.IsNullOrWhiteSpace(candidate.LocationName) ||
+                string.IsNullOrWhiteSpace(candidate.Label) ||
+                string.IsNullOrWhiteSpace(candidate.DestinationId))
+            {
                 continue;
+            }
 
             var reason = string.IsNullOrWhiteSpace(candidate.Reason)
                 ? "a place of interest in the current location"
@@ -221,10 +225,9 @@ public sealed class StardewQueryService : IGameQueryService
                 $"x={candidate.Tile.X}",
                 $"y={candidate.Tile.Y}",
                 $"tags={tags}",
-                $"reason={reason}"
+                $"reason={reason}",
+                $"destinationId={candidate.DestinationId}"
             };
-            if (!string.IsNullOrWhiteSpace(candidate.DestinationId))
-                parts.Add($"destinationId={candidate.DestinationId}");
             if (candidate.FacingDirection.HasValue)
                 parts.Add($"facingDirection={candidate.FacingDirection.Value}");
             if (!string.IsNullOrWhiteSpace(candidate.EndBehavior))
