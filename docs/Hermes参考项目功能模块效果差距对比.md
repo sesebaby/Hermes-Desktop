@@ -21,7 +21,7 @@
 
 1. **自主循环仍偏单 tick 驱动**：每次 tick 能观察、思考、调用工具，但长期任务推进、等待、恢复、跨天续跑还不够成熟。
 2. **移动公开契约已收敛，执行能力仍待增强**：Agent 面已经变成“只提交 `destinationId`，Bridge/host 负责执行”，但真实跨地图移动仍未完成，Bridge 当前仍会明确阻断而不是伪完成。
-3. **任务连续性刚打通承载面**：`todo` 状态、`ToolSessionId`、continuity skill 已具备，但还需要证明 private chat 形成的任务能被 autonomy 稳定推进、失败反馈、归档和 UI 观测。
+3. **任务连续性闭环已完成首轮验收**：private chat 形成的任务已归入 NPC 长期 runtime session，autonomy 能接续 active todo，blocked/failed reason 与 runtime evidence 已有回归保护。
 4. **NPC 行为知识层仍薄**：已有 `stardew-core`、`stardew-social`、`stardew-navigation`、`stardew-task-continuity`、`stardew-world`，但内容还不足以覆盖日程、地点意义、社交偏好、失败恢复和长期生活习惯。
 5. **多 NPC 村庄体验仍未闭环**：private chat 与单 NPC autonomy 基础较强，群聊、偷听、NPC 之间自然互动、资源互斥和并发成本控制仍是后续重点。
 
@@ -30,20 +30,20 @@
 | 模块 | 对目标是否关键 | 当前项目实际效果 | 参考项目效果 | 主要剩余差距 | 下一步含义 |
 | --- | --- | --- | --- | --- | --- |
 | NPC runtime / 生命周期 | 最高 | 已有 `NpcRuntimeSupervisor`、`NpcRuntimeInstance`、driver、snapshot、lease、action slot、pending work、runtime state store | 每个 Agent 独立 home，长期运行到迭代上限 | 当前更像 Desktop 托管的 runtime 实例，还缺成熟恢复、跨天续跑、长期后台节奏 | 继续强化 supervisor/driver，而不是另起“一 NPC 一进程” |
-| Agent 自主循环 | 最高 | `NpcAutonomyLoop` 能 observe、poll events、构造中文决策消息、调用 Agent、写 trace/memory/diagnostic | 长会话内持续 observe-think-act，并主动轮询后台 task | 单 tick 后续推进、等待策略、失败后停止重试和恢复旧任务还需更多验证 | 优先让 autonomy 消费 active todo 并推进，而不是只对当前观察反应 |
-| private chat | 最高 | 已有状态机、输入菜单、reply display、session lease；runner 使用 NPC 专属 Agent | 对话可打断 Agent，回应后恢复任务 | 私聊已经允许先用工具再回复，但需要证明承诺落到长期任务并被 autonomy 接续 | private chat 不再只是对白器，下一步要测任务化和恢复 |
-| 任务系统 / todo | 最高 | `todo` 已支持 `blocked`、`failed`、`reason`；`SessionTaskProjectionService` 能按 `TaskSessionId` 投影 | Agent 自己维护长期任务、轮询 task 状态 | 还需验证失败反馈闭环：todo 状态、runtime trace、玩家可见反馈三者一致 | 不新增 NPC task store，继续扩展 `todo` 单一真相 |
-| Session continuity | 最高 | `Session.ToolSessionId` 已存在；private chat transcript session 与 tool task session 已分离 | 每个 Agent 长会话天然承载任务和记忆 | 需要更广测试 `session_search`、active task injection、archive 在分离 session 下不漂移 | 这是当前最关键的正确方向，继续加回归保护 |
+| Agent 自主循环 | 最高 | `NpcAutonomyLoop` 能 observe、poll events、构造中文决策消息、调用 Agent、写 trace/memory/diagnostic；已验证能接续 private chat 创建的 active todo | 长会话内持续 observe-think-act，并主动轮询后台 task | P0 任务接续已闭环；跨天续跑、等待策略、失败后恢复旧任务还需长跑验证 | 下一步把同一闭环接到真实移动执行结果，而不是只对当前观察反应 |
+| private chat | 最高 | 已有状态机、输入菜单、reply display；passive phone open 不再占用 private-chat lease，lease 只覆盖玩家提交消息后的回复窗口；runner 使用 NPC 专属 Agent | 对话可打断 Agent，回应后恢复任务 | 私聊任务化已完成首轮验收；剩余是更复杂承诺拆分、失败反馈话术和真实游戏长跑观察 | private chat 已从对白器进入任务入口，后续重点转到执行可靠性 |
+| 任务系统 / todo | 最高 | `todo` 已支持 `blocked`、`failed`、`reason`；`SessionTaskProjectionService` 能按 `TaskSessionId` 投影；private chat tool task 已归长期 session | Agent 自己维护长期任务、轮询 task 状态 | P0 的 todo/session 归属已验证；还需把跨地图执行 terminal status 稳定映射到 todo reason 与玩家反馈 | 不新增 NPC task store，继续扩展 `todo` 单一真相 |
+| Session continuity | 最高 | `Session.ToolSessionId` 已存在；private chat transcript session 与 tool task session 已分离，并已有回归测试保护 | 每个 Agent 长会话天然承载任务和记忆 | `session_search`、archive、跨天恢复仍需扩大验证，但 private chat -> long session task 的关键风险已关闭 | 继续用长期 session 承载 NPC 任务，不回退到临时 session 或第二任务面 |
 | 记忆系统 | 最高 | 每 NPC namespace 创建独立 `MemoryManager`；autonomy tick 会写 memory 摘要 | Agent 主动把稳定事实沉淀进长期记忆 | 当前 memory 写入还偏自动摘要，Agent 主动区分 memory/todo/session_search 的习惯刚开始建立 | 用 prompt/skill 约束 Agent 写稳定事实，不让宿主代写人格摘要 |
 | Soul / persona | 最高 | persona pack、Haley/Penny 目录、`StardewNpcAutonomyPromptSupplementBuilder` 真实资产注入已存在 | `SOUL.md` 长期塑造 Agent 行为 | 仍要持续验证 private chat 与 autonomy 都加载同一 NPC persona 和 required skills | 不临场生成人格，不写第二人格摘要 |
 | Prompt / Context 组装 | 最高 | 复用 `ContextManager` / `PromptBuilder`；supplement 注入 facts/voice/boundaries/skills | prompt/soul/skill/context 共同驱动行为 | 当前 instruction 已中文化，但 still 需要防 prompt-only：没有工具调用时已有 diagnostic，行为闭环还要验证 | 下一步改 prompt 要配测试和 runtime evidence |
 | Stardew skill 知识层 | 高 | 已有 `stardew-core`、`stardew-social`、`stardew-navigation`、`stardew-task-continuity`、`stardew-world` | 参考项目 skill 详细描述生存、导航、战斗、任务轮询 | Stardew skill 内容还薄，日程、地点、NPC 偏好、失败恢复不够完整 | 扩 skill 内容优先于写宿主规则 |
-| Stardew move 工具 | 最高 | 已完成公开契约收敛：`stardew_move` 只透传 `destinationId`，不再本地 observe/解析 label/坐标；Bridge 支持 `destinationId` registry；status 有 phase/error/block reason | 高层提交目标，底层 pathfinder/后台 task 执行到终态 | Bridge registry 规模小；跨图和自然移动仍需完善；执行态 status 仍保留坐标诊断信息 | 下一步做真实跨地图执行前，先确保任务连续性闭环能消费移动结果 |
+| Stardew move 工具 | 最高 | 已完成公开契约收敛：`stardew_move` 只透传 `destinationId`，不再本地 observe/解析 label/坐标；Bridge 支持 `destinationId` registry；status 有 phase/error/block reason | 高层提交目标，底层 pathfinder/后台 task 执行到终态 | Bridge registry 规模小；真实跨地图和自然移动仍未闭环；执行态 status 仍保留坐标诊断信息 | 当前下一块应做 Bridge 真实跨地图执行，并把结果接回 todo/autonomy |
 | Bridge executor | 最高 | 有 command queue、idempotency、status、cancel、path probe、failure mapper、blockedReason | 后台 task 有 running/stuck/cancel/status | 当前状态机和 executor 拆分仍不完整，部分语义仍在 Bridge 层混杂 | 下一步收敛 registry/projection/executor 三层 |
 | Query / observation | 高 | `StardewQueryService` 输出 NPC status、player、destination facts、world snapshot | 参考项目有 status/nearby/look/overhear | observation 已能服务移动和 autonomy，但地点意义和 world skill 投影还不够丰富 | 增加事实质量，而不是让 Agent 编目标 |
 | Event / private chat flow | 高 | Bridge event buffer、vanilla dialogue completed/unavailable、private chat opened/submitted/reply displayed 已有 | 参考项目聊天路由和 overhear 较成熟 | 群聊、偷听、公平感知和消息路由还未达到村庄级 | 后续做 SocialRouter 时保持“投递，不导演” |
 | UI / Runtime workspace | 中高 | Dashboard/Agent 侧已有 NPC runtime workspace snapshot、任务摘要、failure summary、runtime directory | 参考项目主要靠 CLI/logs | 当前 UI 仍偏调试摘要，缺 task archive、trace drilldown、per-NPC timeline | UI 只读消费 runtime/task 投影，不生成第二状态 |
-| Provider routing / 并发预算 | 中高 | Hermes 有 provider/model/credential 基础；NPC binding 可设置 `MaxToolIterations` | 参考项目通过独立进程、错峰和高 iteration 支撑长运行 | 多 NPC 并发 LLM 成本、限流、排队、恢复策略仍不足 | 需要 runtime budget 和 backoff，不应靠 prompt 解决 |
+| Provider routing / 并发预算 | 中高 | Hermes 有 provider/model/credential 基础；NPC binding 可设置 `MaxToolIterations`；同一 Agent turn 内重复 Stardew status 工具有硬预算结果 | 参考项目通过独立进程、错峰和高 iteration 支撑长运行 | 多 NPC 并发 LLM 成本、限流、排队、恢复策略仍不足 | 继续做 runtime budget 和 backoff，不靠 prompt 或单纯提高 iteration 掩盖重复调用 |
 | 安全 / 审计 | 中高 | bridge token、discovery、activity、trace、runtime logs、permission 基础存在 | 参考项目有本机 HTTP 与 task 状态 | “谁因为什么做了什么”已有线索，但 traceId/commandId/task/player feedback 的证据链还需打通 | 失败和真实写操作必须留下结构化证据 |
 | Cron / 日程自动化 | 高 | Hermes 有 schedule/todo 基础；NPC autonomy 可后台 tick | 参考项目靠长会话和后台任务持续推进 | Stardew 日程、跨天、等待到某时刻再行动还没成熟 | 先用 todo + autonomy，不急着写 Stardew 专用 scheduler |
 | 多 NPC 社交 | 高 | NPC catalog、runtime identity、private chat lease、world snapshot 基础存在 | landfolk/civilization 有多 Agent 社交范式 | 群聊、私聊、偷听、关系变化、NPC-NPC 互动未闭环 | 下一阶段要从消息路由和事实边界开始 |
@@ -123,23 +123,25 @@ UI 只能展示 runtime/task 只读投影，不能解析玩家话术或写回 ta
 
 最核心差距不是缺一个按钮，也不是缺一个 UI 面板，而是：
 
-**NPC 还需要被验证为能长期维护自己的承诺：从玩家对话中形成任务，跨 session 保留，后续 autonomy 主动推进，遇到阻塞不假装成功，失败时给玩家反馈，并把证据留在 todo、trace、activity 和 UI 中。**
+**任务连续性已经完成首轮闭环，下一步要证明 NPC 的承诺能落到真实 Stardew 世界执行：特别是跨地图移动、终态回报、失败反馈和 UI 可观察证据链。**
 
-换句话说，下一步工作应围绕“任务连续性 + 移动可靠性 + 可观察失败”收敛，而不是扩很多新功能。
+换句话说，下一步工作应围绕“移动可靠性 + 可观察失败 + 长跑恢复”收敛，而不是扩很多新功能。
 
 ## 下一步优先级
 
-### P0：锁住任务连续性闭环
+### P0：任务连续性闭环（已完成，2026-05-05）
 
 目标：证明 private chat 和 autonomy 共用 NPC 长期任务面。
 
-应优先完成：
+已完成：
 
-1. private chat 中玩家提出明确承诺时，Agent 能调用 `todo`，任务归属 `descriptor.SessionId`，不是 private chat 临时 session。
+1. private chat 中玩家提出明确承诺时，Agent 可调用 `todo`，任务归属 `descriptor.SessionId`，不是 private chat 临时 session。
 2. private chat transcript 仍保留 `${descriptor.SessionId}:private_chat:{conversationId}` 粒度。
-3. autonomy tick 能看到 private chat 创建的 active todo。
-4. autonomy 推进任务时使用 Stardew 工具，而不是只输出叙事文本。
-5. 工具返回 terminal `blocked` / `failed` 时，Agent 更新 todo reason，并尽可能 `stardew_speak` 或 private chat 告知玩家。
+3. autonomy tick 能看到并接续 private chat 创建的 active todo。
+4. autonomy 推进任务时走 Stardew 工具与 tool result，而不是只输出叙事文本。
+5. 工具返回 terminal `blocked` / `failed` 时，todo reason、runtime trace/error 和玩家反馈路径有回归保护。
+6. 手机私聊窗口 passive open 不再阻塞 autonomy；private-chat lease 只覆盖玩家提交消息后的回复窗口。
+7. 同一 Agent turn 内重复调用 Stardew status 工具会返回 `status_tool_budget_exceeded`，不再继续真实查询 bridge。
 
 验收依据：
 
@@ -147,9 +149,19 @@ UI 只能展示 runtime/task 只读投影，不能解析玩家话术或写回 ta
 - `SessionTaskProjectionService` 相关测试
 - `StardewNpcPrivateChatAgentRunner` / private chat continuity 测试
 - `NpcAutonomyLoop` / `StardewNpcAutonomyBackgroundService` 测试
-- runtime activity JSONL 和 NPC runtime workspace task summary
+- `PrivateChatOrchestratorTests`
+- `AgentTests.ChatAsync_WhenStardewStatusToolRepeatsAcrossIterations_ReturnsBudgetResultWithoutExecutingAgain`
+- `RawDialogueDisplayRegressionTests.PassivePhoneCloseRecordsCancellationForVisiblePrivateThread`
+- `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug`
+- `dotnet test .\Mods\StardewHermesBridge.Tests\Mods.StardewHermesBridge.Tests.csproj -c Debug`
+- `dotnet build .\Mods\StardewHermesBridge\StardewHermesBridge.csproj -c Debug`
 
-### P1：move 契约收敛已完成；后续做 Bridge 真实跨地图执行
+剩余风险：
+
+- 仍需要真实游戏中长时间打开手机窗口、NPC 后台继续行动的手测日志。
+- 跨天续跑、复杂承诺拆分和任务归档还需要更长周期验证。
+
+### P1：Bridge 真实跨地图执行 / 移动可靠性闭环（当前下一步）
 
 已完成目标：让移动公开面成为 destination-level command，而不是 observation fact 坐标回填。
 
@@ -212,7 +224,7 @@ UI 只读展示，所有状态来自 runtime supervisor、task projection、tran
 
 ### P4：再推进多 NPC 社交和村庄模式
 
-在 P0-P3 没稳定前，不建议先做复杂群聊和经济系统。
+在 P1-P3 没稳定前，不建议先做复杂群聊和经济系统；P0 任务连续性闭环已作为后续工作的基础。
 
 后续可做：
 
@@ -240,11 +252,11 @@ UI 只读展示，所有状态来自 runtime supervisor、task projection、tran
 
 当前 Hermes Desktop 已经具备 Stardew NPC 长期 runtime 的关键基础设施，尤其是 NPC namespace、persona pack、autonomy loop、private chat、`ToolSessionId`、扩展后的 `todo`、Bridge command/status、destination registry 和 runtime workspace。
 
-下一步最有价值的工作不是继续铺新模块，而是把这些已出现的模块闭环：
+下一步最有价值的工作不是继续铺新模块，而是在已完成 P0 的基础上，把真实世界执行和可观察证据继续闭环：
 
-1. **任务连续性闭环**：私聊承诺进入长期 `todo`，autonomy 能继续推进。
-2. **移动可靠性闭环**：Agent 只选 destination，Bridge 负责执行到终态或明确失败。
+1. **任务连续性闭环（已完成首轮验收）**：私聊承诺进入长期 `todo`，autonomy 能继续推进。
+2. **移动可靠性闭环（当前下一步）**：Agent 只选 destination，Bridge 负责执行到终态或明确失败。
 3. **失败反馈闭环**：blocked/failed 有 reason、有 trace、有玩家反馈或反馈阻塞原因。
 4. **可观察性闭环**：桌面 runtime workspace 能看到 task、trace、action、pending、error 的同一条证据链。
 
-只有这四个闭环稳定后，再扩大到多 NPC 群聊、跨天日程和完整村庄生活，才不会把早期架构债务放大。
+只有 P1-P3 也稳定后，再扩大到多 NPC 群聊、跨天日程和完整村庄生活，才不会把早期架构债务放大。

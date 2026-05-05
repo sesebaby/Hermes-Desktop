@@ -130,36 +130,46 @@ public sealed class PrivateChatOrchestrator : IDisposable
             return;
         }
 
+        if (!await TryAcquireSessionLeaseAsync(_activeNpcId!, _conversationId, ct))
+            return;
+
         _state = PrivateChatState.WaitingAgentReply;
-        PrivateChatAgentReply reply;
         try
         {
-            reply = await _agentRunner.ReplyAsync(
-                new PrivateChatAgentRequest(_activeNpcId!, _options.Policy.SaveId, _conversationId, playerText),
-                ct);
-        }
-        catch
-        {
-            EndSession();
-            return;
-        }
+            PrivateChatAgentReply reply;
+            try
+            {
+                reply = await _agentRunner.ReplyAsync(
+                    new PrivateChatAgentRequest(_activeNpcId!, _options.Policy.SaveId, _conversationId, playerText),
+                    ct);
+            }
+            catch
+            {
+                EndSession();
+                return;
+            }
 
-        if (string.IsNullOrWhiteSpace(reply.Text))
-        {
-            EndSession();
-            return;
-        }
+            if (string.IsNullOrWhiteSpace(reply.Text))
+            {
+                EndSession();
+                return;
+            }
 
-        _state = PrivateChatState.ShowingReply;
-        var speakResult = await SubmitSpeakAsync(_activeNpcId!, reply.Text, _conversationId, ct);
-        _turns++;
-        if (!speakResult.Accepted || ShouldEndAfterReply())
-        {
-            EndSession();
-            return;
-        }
+            _state = PrivateChatState.ShowingReply;
+            var speakResult = await SubmitSpeakAsync(_activeNpcId!, reply.Text, _conversationId, ct);
+            _turns++;
+            if (!speakResult.Accepted || ShouldEndAfterReply())
+            {
+                EndSession();
+                return;
+            }
 
-        _state = PrivateChatState.WaitingReplyDismissal;
+            _state = PrivateChatState.WaitingReplyDismissal;
+        }
+        finally
+        {
+            ReleaseSessionLease();
+        }
     }
 
     private async Task TryReopenAfterPrivateChatReplyClosedAsync(GameEventRecord record, CancellationToken ct)
@@ -213,12 +223,6 @@ public sealed class PrivateChatOrchestrator : IDisposable
         _pendingOpen = pending;
         _state = PrivateChatState.PendingOpen;
         _conversationId = pending.ConversationId;
-
-        if (_sessionLease is null &&
-            !await TryAcquireSessionLeaseAsync(pending.NpcId, pending.ConversationId, ct))
-        {
-            return;
-        }
 
         var result = await SubmitOpenPrivateChatAsync(
             pending.NpcId,
@@ -346,12 +350,17 @@ public sealed class PrivateChatOrchestrator : IDisposable
 
     private void EndSession()
     {
-        _sessionLease?.Dispose();
-        _sessionLease = null;
+        ReleaseSessionLease();
         _state = PrivateChatState.Idle;
         _conversationId = null;
         _activeNpcId = null;
         _pendingOpen = null;
+    }
+
+    private void ReleaseSessionLease()
+    {
+        _sessionLease?.Dispose();
+        _sessionLease = null;
     }
 }
 

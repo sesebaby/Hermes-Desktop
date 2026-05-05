@@ -8,7 +8,7 @@ namespace HermesDesktop.Tests.GameCore;
 public class PrivateChatOrchestratorTests
 {
     [TestMethod]
-    public async Task ProcessNextAsync_OpenAccepted_AcquiresSessionLeaseAndCancelReleasesIt()
+    public async Task ProcessNextAsync_OpenAccepted_DoesNotAcquireSessionLeaseAndCancelEndsSession()
     {
         var events = new FakeEventSource(
             new GameEventRecord(
@@ -41,11 +41,9 @@ public class PrivateChatOrchestratorTests
 
         await orchestrator.ProcessNextAsync(CancellationToken.None);
 
-        Assert.AreEqual(1, leases.AcquireCalls.Count);
-        Assert.AreEqual("Rowan", leases.AcquireCalls[0].NpcId);
-        Assert.AreEqual("garden-save", leases.AcquireCalls[0].SaveId);
-        Assert.AreEqual("pc_thread-1", leases.AcquireCalls[0].ConversationId);
-        Assert.AreEqual(1, leases.ActiveLeaseCount);
+        Assert.AreEqual(0, leases.AcquireCalls.Count);
+        Assert.AreEqual(0, leases.ActiveLeaseCount);
+        Assert.AreEqual(PrivateChatState.AwaitingPlayerInput, orchestrator.State);
 
         events.Add(new GameEventRecord(
             "evt-cancel",
@@ -58,14 +56,13 @@ public class PrivateChatOrchestratorTests
 
         await orchestrator.ProcessNextAsync(CancellationToken.None);
 
-        Assert.AreEqual(1, leases.ReleaseCalls.Count);
-        Assert.AreEqual("pc_thread-1", leases.ReleaseCalls[0].ConversationId);
+        Assert.AreEqual(0, leases.ReleaseCalls.Count);
         Assert.AreEqual(0, leases.ActiveLeaseCount);
         Assert.AreEqual(PrivateChatState.Idle, orchestrator.State);
     }
 
     [TestMethod]
-    public async Task ProcessNextAsync_ReopenAfterReply_DoesNotAcquireSessionLeaseTwice()
+    public async Task ProcessNextAsync_ReopenAfterReply_ReleasesReplyLeaseBeforeAwaitingNextInput()
     {
         var events = new FakeEventSource(
             new GameEventRecord(
@@ -112,6 +109,12 @@ public class PrivateChatOrchestratorTests
         await orchestrator.ProcessNextAsync(CancellationToken.None);
 
         Assert.AreEqual(1, leases.AcquireCalls.Count);
+        Assert.AreEqual("Rowan", leases.AcquireCalls[0].NpcId);
+        Assert.AreEqual("garden-save", leases.AcquireCalls[0].SaveId);
+        Assert.AreEqual("pc_thread-1", leases.AcquireCalls[0].ConversationId);
+        Assert.AreEqual(1, leases.ReleaseCalls.Count);
+        Assert.AreEqual("pc_thread-1", leases.ReleaseCalls[0].ConversationId);
+        Assert.AreEqual(0, leases.ActiveLeaseCount);
         Assert.AreEqual(PrivateChatState.WaitingReplyDismissal, orchestrator.State);
 
         events.Add(new GameEventRecord(
@@ -126,14 +129,14 @@ public class PrivateChatOrchestratorTests
         await orchestrator.ProcessNextAsync(CancellationToken.None);
 
         Assert.AreEqual(1, leases.AcquireCalls.Count);
-        Assert.AreEqual(0, leases.ReleaseCalls.Count);
-        Assert.AreEqual(1, leases.ActiveLeaseCount);
+        Assert.AreEqual(1, leases.ReleaseCalls.Count);
+        Assert.AreEqual(0, leases.ActiveLeaseCount);
         Assert.AreEqual(PrivateChatState.AwaitingPlayerInput, orchestrator.State);
         Assert.AreEqual("pc_thread-1_turn2", orchestrator.ConversationId);
     }
 
     [TestMethod]
-    public async Task ProcessNextAsync_WhenLeaseAcquireFails_OpenIsRetriedInsteadOfBeingPermanentlySuppressed()
+    public async Task ProcessNextAsync_WhenReplyLeaseAcquireFails_KeepsChatAwaitingInputWithoutAgentReply()
     {
         var events = new FakeEventSource(
             new GameEventRecord(
@@ -142,13 +145,26 @@ public class PrivateChatOrchestratorTests
                 "Rowan",
                 DateTime.UtcNow,
                 "Rowan finished greeting the player.",
-                "thread-1"));
+                "thread-1"),
+            new GameEventRecord(
+                "evt-submit",
+                "player_whisper_sent",
+                "Rowan",
+                DateTime.UtcNow.AddSeconds(1),
+                "Player sent a whisper.",
+                "pc_thread-1",
+                new JsonObject
+                {
+                    ["thread"] = "pc_thread-1",
+                    ["message"] = "can we talk?"
+                }));
         var commands = new FakeCommandService();
         var leases = new FakePrivateChatSessionLeaseCoordinator { FailNextAcquire = true };
+        var agent = new FakePrivateChatAgentRunner();
         var orchestrator = new PrivateChatOrchestrator(
             events,
             commands,
-            new FakePrivateChatAgentRunner(),
+            agent,
             new PrivateChatOrchestratorOptions(
                 new PrivateChatPolicy(
                     NpcId: "rowan",
@@ -166,15 +182,12 @@ public class PrivateChatOrchestratorTests
 
         await orchestrator.ProcessNextAsync(CancellationToken.None);
 
-        Assert.AreEqual(PrivateChatState.PendingOpen, orchestrator.State);
-        Assert.AreEqual(0, commands.Submitted.Count);
-        Assert.AreEqual(1, leases.AcquireCalls.Count);
-
-        await orchestrator.ProcessNextAsync(CancellationToken.None);
-
-        Assert.AreEqual(1, commands.Submitted.Count);
-        Assert.AreEqual(2, leases.AcquireCalls.Count);
         Assert.AreEqual(PrivateChatState.AwaitingPlayerInput, orchestrator.State);
+        Assert.AreEqual(1, commands.Submitted.Count);
+        Assert.AreEqual(GameActionType.OpenPrivateChat, commands.Submitted[0].Type);
+        Assert.AreEqual(1, leases.AcquireCalls.Count);
+        Assert.AreEqual(0, leases.ActiveLeaseCount);
+        Assert.AreEqual(0, agent.Requests.Count);
         Assert.AreEqual("pc_thread-1", orchestrator.ConversationId);
     }
 

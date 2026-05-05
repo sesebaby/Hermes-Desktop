@@ -431,6 +431,60 @@ public class AgentTests
             message.Contains("stardew_player_status|stardew_social_status", StringComparison.Ordinal)));
     }
 
+    [TestMethod]
+    public async Task ChatAsync_WhenStardewStatusToolRepeatsAcrossIterations_ReturnsBudgetResultWithoutExecutingAgain()
+    {
+        var agent = new Agent(_mockChatClient.Object, NullLogger<Agent>.Instance);
+        var statusTool = CreateMockTool("stardew_status");
+        var executeCalls = 0;
+        statusTool.Setup(t => t.ExecuteAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                executeCalls++;
+                return ToolResult.Ok("{\"summary\":\"current facts\"}");
+            });
+        agent.RegisterTool(statusTool.Object);
+        var callSequence = new Queue<ChatResponse>(new[]
+        {
+            new ChatResponse
+            {
+                Content = null,
+                ToolCalls = new List<ToolCall>
+                {
+                    new() { Id = "call-1", Name = "stardew_status", Arguments = "{}" }
+                },
+                FinishReason = "tool_calls"
+            },
+            new ChatResponse
+            {
+                Content = null,
+                ToolCalls = new List<ToolCall>
+                {
+                    new() { Id = "call-2", Name = "stardew_status", Arguments = "{}" }
+                },
+                FinishReason = "tool_calls"
+            },
+            new ChatResponse { Content = "done", FinishReason = "stop" }
+        });
+        _mockChatClient
+            .Setup(c => c.CompleteWithToolsAsync(
+                It.IsAny<IEnumerable<Message>>(),
+                It.IsAny<IEnumerable<ToolDefinition>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(() => Task.FromResult(callSequence.Dequeue()));
+
+        var session = new Session { Id = "sdv_save-1_haley_default" };
+        var result = await agent.ChatAsync("run status", session, CancellationToken.None);
+
+        Assert.AreEqual("done", result);
+        Assert.AreEqual(1, executeCalls);
+        var secondStatusResult = session.Messages.Last(message =>
+            string.Equals(message.Role, "tool", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(message.ToolName, "stardew_status", StringComparison.OrdinalIgnoreCase));
+        StringAssert.Contains(secondStatusResult.Content, "status_tool_budget_exceeded");
+        StringAssert.Contains(secondStatusResult.Content, "Use the previous Stardew status result");
+    }
+
     // ── Helpers ──
 
     private static Mock<ITool> CreateMockTool(string name)

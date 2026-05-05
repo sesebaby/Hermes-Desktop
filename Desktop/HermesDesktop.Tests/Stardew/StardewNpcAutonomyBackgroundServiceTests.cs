@@ -189,6 +189,46 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
+    public async Task RunOneIterationAsync_OpenPrivateChatWithoutPlayerMessageDoesNotPauseAutonomy()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("I will keep going after the phone opens.");
+        var adapter = new FakeGameAdapter(
+            new FakeCommandService(),
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is idle.",
+                ["location=Town"])),
+            new FakeEventSource(
+            [
+                new GameEventRecord(
+                    "evt-1",
+                    "vanilla_dialogue_completed",
+                    "Haley",
+                    DateTime.UtcNow,
+                    "Haley vanilla dialogue completed.",
+                    Sequence: 1)
+            ]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, chatClient.CompleteWithToolsCalls);
+        var snapshot = supervisor.Snapshot().Single();
+        Assert.AreEqual(NpcAutonomyLoopState.Running, snapshot.AutonomyLoopState);
+        Assert.IsNull(snapshot.PauseReason);
+        Assert.IsNotNull(snapshot.LastAutomaticTickAtUtc);
+    }
+
+    [TestMethod]
     public async Task RunOneIterationAsync_WhenNpcIsPaused_StillAdvancesTrackerCursorToSharedBatchWatermark()
     {
         var discovery = CreateDiscovery("save-42");

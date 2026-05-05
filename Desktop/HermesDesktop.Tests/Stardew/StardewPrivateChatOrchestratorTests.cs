@@ -592,7 +592,7 @@ public class StardewPrivateChatOrchestratorTests
     }
 
     [TestMethod]
-    public async Task Dispose_AfterOpenReleasesSessionLease()
+    public async Task Dispose_AfterOpenDoesNotReleaseSessionLeaseBecausePhoneThreadIsPassive()
     {
         var events = new FakeEventSource(
             new GameEventRecord(
@@ -613,9 +613,51 @@ public class StardewPrivateChatOrchestratorTests
         await orchestrator.ProcessNextAsync(CancellationToken.None);
         orchestrator.Dispose();
 
-        Assert.AreEqual(1, leases.AcquireCalls.Count);
-        Assert.AreEqual(1, leases.ReleaseCalls.Count);
+        Assert.AreEqual(0, leases.AcquireCalls.Count);
+        Assert.AreEqual(0, leases.ReleaseCalls.Count);
         Assert.AreEqual(0, leases.ActiveLeaseCount);
+    }
+
+    [TestMethod]
+    public async Task ProcessNextAsync_PlayerPrivateMessageSubmitted_AcquiresAndReleasesSessionLeaseForReplyOnly()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."),
+            new GameEventRecord(
+                "evt-2",
+                "player_private_message_submitted",
+                "Haley",
+                DateTime.UtcNow.AddSeconds(1),
+                "Player submitted a private chat message.",
+                "pc_evt-1",
+                new JsonObject
+                {
+                    ["conversationId"] = "pc_evt-1",
+                    ["text"] = "hi Haley"
+                }));
+        var commands = new FakeCommandService();
+        var leases = new FakePrivateChatSessionLeaseCoordinator();
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            new FakePrivateChatAgentRunner { ReplyText = "Oh. Hi." },
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.OnceAfterReply),
+            leases);
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, leases.AcquireCalls.Count);
+        Assert.AreEqual("Haley", leases.AcquireCalls[0].NpcId);
+        Assert.AreEqual("pc_evt-1", leases.AcquireCalls[0].ConversationId);
+        Assert.AreEqual(1, leases.ReleaseCalls.Count);
+        Assert.AreEqual("pc_evt-1", leases.ReleaseCalls[0].ConversationId);
+        Assert.AreEqual(0, leases.ActiveLeaseCount);
+        Assert.AreEqual(StardewPrivateChatState.WaitingReplyDismissal, orchestrator.State);
     }
 
     [TestMethod]

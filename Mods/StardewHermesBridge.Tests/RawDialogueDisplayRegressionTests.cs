@@ -179,6 +179,24 @@ public class RawDialogueDisplayRegressionTests
     }
 
     [TestMethod]
+    public void PassivePhoneCloseRecordsCancellationForVisiblePrivateThread()
+    {
+        var phoneOverlay = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "HermesPhoneOverlay.cs");
+        var closeMethodStart = phoneOverlay.IndexOf("public void ClosePhone(string reason)", StringComparison.Ordinal);
+        var closeMethodEnd = phoneOverlay.IndexOf("public void MarkReplyClosedFromPhone", closeMethodStart, StringComparison.Ordinal);
+        Assert.IsTrue(closeMethodStart >= 0 && closeMethodEnd > closeMethodStart, "Could not locate HermesPhoneOverlay.ClosePhone(string).");
+        var closeMethod = phoneOverlay[closeMethodStart..closeMethodEnd];
+
+        StringAssert.Contains(
+            closeMethod,
+            "CancelCurrentThread(\"phone_closed\")",
+            "Closing the passive phone overlay must emit player_private_message_cancelled for the visible conversation so Desktop/core releases the private-chat lease.");
+        Assert.IsFalse(
+            closeMethod.Contains("if (_state.FocusOwner == HermesPhoneFocusOwner.PhoneTextInput)", StringComparison.Ordinal),
+            "ClosePhone must not cancel only while the reply input is focused; closing a passive thread also means the player ended that private-chat turn.");
+    }
+
+    [TestMethod]
     public void BridgeUiActionsAreQueuedForGameLoopPump()
     {
         var httpHost = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeHttpHost.cs");

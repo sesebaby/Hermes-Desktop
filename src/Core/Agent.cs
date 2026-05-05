@@ -236,6 +236,24 @@ public sealed class Agent : IAgent
            "stardew_farm_status" or
            "stardew_recent_activity";
 
+    private sealed class StardewStatusToolTurnBudget
+    {
+        private readonly Dictionary<string, int> _calls = new(StringComparer.OrdinalIgnoreCase);
+
+        public bool TryConsume(string toolName, out int alreadyConsumed)
+        {
+            alreadyConsumed = 0;
+            if (!IsStardewStatusTool(toolName))
+                return true;
+
+            if (_calls.TryGetValue(toolName, out alreadyConsumed) && alreadyConsumed >= 1)
+                return false;
+
+            _calls[toolName] = alreadyConsumed + 1;
+            return true;
+        }
+    }
+
     /// <summary>Build ToolDefinition list from registered tools for the LLM.</summary>
     public List<ToolDefinition> GetToolDefinitions()
     {
@@ -374,6 +392,7 @@ public sealed class Agent : IAgent
 
             var toolDefs = GetToolDefinitions();
             var iterations = 0;
+            var stardewStatusToolCallsThisTurn = new StardewStatusToolTurnBudget();
 
             while (iterations < MaxToolIterations)
             {
@@ -587,7 +606,11 @@ public sealed class Agent : IAgent
 
                 _logger.LogInformation("Executing tool {ToolName} (call {CallId})", toolCall.Name, toolCall.Id);
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                var result = await ExecuteToolCallAsync(toolCall, session.ToolSessionId ?? session.Id, ct);
+                var result = await ExecuteToolCallWithTurnBudgetAsync(
+                    toolCall,
+                    session.ToolSessionId ?? session.Id,
+                    stardewStatusToolCallsThisTurn,
+                    ct);
                 sw.Stop();
 
                 // ── Activity tracking: AFTER execution ──
@@ -1368,6 +1391,27 @@ public sealed class Agent : IAgent
 
         var results = await Task.WhenAll(tasks);
         return results.ToList();
+    }
+
+    private async Task<ToolResult> ExecuteToolCallWithTurnBudgetAsync(
+        ToolCall toolCall,
+        string? currentSessionId,
+        StardewStatusToolTurnBudget turnBudget,
+        CancellationToken ct)
+    {
+        if (!turnBudget.TryConsume(toolCall.Name, out var alreadyConsumed))
+        {
+            _logger.LogWarning(
+                "status_tool_budget_exceeded; tool={ToolName}; previousCalls={PreviousCalls}; session={SessionId}",
+                toolCall.Name,
+                alreadyConsumed,
+                currentSessionId ?? "-");
+            return ToolResult.Fail(
+                $"status_tool_budget_exceeded: {toolCall.Name} was already called in this turn. " +
+                "Use the previous Stardew status result and continue with an action or final answer.");
+        }
+
+        return await ExecuteToolCallAsync(toolCall, currentSessionId, ct);
     }
 
     private async Task<ToolResult> ExecuteToolCallAsync(

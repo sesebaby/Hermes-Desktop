@@ -165,8 +165,7 @@ public sealed class HermesPhoneOverlay
 
     public void ClosePhone(string reason)
     {
-        if (_state.FocusOwner == HermesPhoneFocusOwner.PhoneTextInput)
-            CancelCurrentThread("phone_closed");
+        CancelCurrentThread("phone_closed");
         ReleaseKeyboard();
         _state.ClosePhone();
         _logger.Write("phone_overlay_closed", CurrentNpcName(), "phone", "phone", null, "recorded", reason);
