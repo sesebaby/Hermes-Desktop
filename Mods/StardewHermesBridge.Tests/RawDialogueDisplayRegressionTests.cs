@@ -241,6 +241,26 @@ public class RawDialogueDisplayRegressionTests
     }
 
     [TestMethod]
+    public void PhoneIndicatorIsAlwaysVisibleAsManualEntryPoint()
+    {
+        var phoneState = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "HermesPhoneState.cs");
+        var phoneOverlay = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "HermesPhoneOverlay.cs");
+
+        StringAssert.Contains(
+            phoneState,
+            "OpenPhoneHome",
+            "The player needs a persistent phone entry point even before any NPC has sent an unread message.");
+        Assert.IsFalse(
+            phoneOverlay.Contains("if (unread <= 0)\r\n            return;", StringComparison.Ordinal) ||
+            phoneOverlay.Contains("if (unread <= 0)\n            return;", StringComparison.Ordinal),
+            "The phone indicator must not disappear just because there are no unread messages.");
+        StringAssert.Contains(
+            phoneOverlay,
+            "_state.OpenPhoneHome()",
+            "Clicking the persistent indicator with no thread should still open the phone home view.");
+    }
+
+    [TestMethod]
     public void ProactiveNpcMessagesRouteToBubbleOrPhoneWithoutRawDialogue()
     {
         var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");

@@ -259,7 +259,11 @@ public sealed class MemoryReviewService
             {
                 Role = "assistant",
                 Content = response.Content ?? "",
-                ToolCalls = toolCalls.Select(CloneToolCall).ToList()
+                ToolCalls = toolCalls.Select(CloneToolCall).ToList(),
+                Reasoning = response.Reasoning,
+                ReasoningContent = response.ReasoningContent,
+                ReasoningDetails = response.ReasoningDetails,
+                CodexReasoningItems = response.CodexReasoningItems
             });
 
             foreach (var toolCall in toolCalls)
@@ -457,7 +461,11 @@ public sealed class MemoryReviewService
             Timestamp = message.Timestamp,
             ToolCallId = message.ToolCallId,
             ToolName = message.ToolName,
-            ToolCalls = message.ToolCalls?.Select(CloneToolCall).ToList()
+            ToolCalls = message.ToolCalls?.Select(CloneToolCall).ToList(),
+            Reasoning = message.Reasoning,
+            ReasoningContent = message.ReasoningContent,
+            ReasoningDetails = message.ReasoningDetails,
+            CodexReasoningItems = message.CodexReasoningItems
         };
 
     private static ToolCall CloneToolCall(ToolCall toolCall)

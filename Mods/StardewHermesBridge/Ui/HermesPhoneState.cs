@@ -54,6 +54,13 @@ public sealed class HermesPhoneState
         return true;
     }
 
+    public void OpenPhoneHome()
+    {
+        UiOwner = HermesPhoneUiOwner.PhoneOverlay;
+        FocusOwner = HermesPhoneFocusOwner.None;
+        OpenState = HermesPhoneOpenState.PhoneThreadPassiveOpen;
+    }
+
     private void OpenThread(HermesPhoneThread thread)
     {
         VisibleThreadId = thread.ThreadId;

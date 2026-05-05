@@ -115,6 +115,67 @@ public class MemoryReviewServiceTests
     }
 
     [TestMethod]
+    public async Task ReviewConversationAsync_ReplaysReasoningFieldsAfterReviewToolCall()
+    {
+        List<Message>? secondCallMessages = null;
+        var chatClient = new Mock<IChatClient>(MockBehavior.Strict);
+        var responses = new Queue<ChatResponse>([
+            new ChatResponse
+            {
+                Content = "",
+                ReasoningContent = "I should inspect memory before deciding.",
+                Reasoning = "{\"summary\":\"memory check\"}",
+                ReasoningDetails = "[{\"type\":\"summary_text\",\"text\":\"memory check\"}]",
+                CodexReasoningItems = "[{\"id\":\"rs_mem\",\"type\":\"reasoning\"}]",
+                ToolCalls = new List<ToolCall>
+                {
+                    new()
+                    {
+                        Id = "call_1",
+                        Name = "memory",
+                        Arguments = "{\"action\":\"add\",\"target\":\"user\",\"content\":\"User prefers concise replies.\"}"
+                    }
+                }
+            },
+            new ChatResponse { Content = "Nothing to save." }
+        ]);
+        chatClient
+            .Setup(c => c.CompleteWithToolsAsync(
+                It.IsAny<IEnumerable<Message>>(),
+                It.IsAny<IEnumerable<ToolDefinition>>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<Message>, IEnumerable<ToolDefinition>, CancellationToken>((messages, _, _) =>
+            {
+                if (messages.Any(message => message.Role == "tool"))
+                    secondCallMessages = messages.ToList();
+            })
+            .ReturnsAsync(() => responses.Dequeue());
+
+        var memoryManager = new MemoryManager(
+            _tempDir,
+            chatClient.Object,
+            NullLogger<MemoryManager>.Instance);
+        var service = new MemoryReviewService(
+            chatClient.Object,
+            memoryManager,
+            NullLogger<MemoryReviewService>.Instance,
+            nudgeInterval: 1);
+
+        await service.ReviewConversationAsync(
+            new[] { new Message { Role = "user", Content = "Please keep answers concise." } },
+            reviewMemory: true,
+            reviewSkills: false,
+            CancellationToken.None);
+
+        Assert.IsNotNull(secondCallMessages, "The review loop should make a second LLM call after executing the review tool.");
+        var assistantToolMessage = secondCallMessages!.Single(message => message.Role == "assistant" && message.ToolCalls is { Count: > 0 });
+        Assert.AreEqual("I should inspect memory before deciding.", assistantToolMessage.ReasoningContent);
+        Assert.AreEqual("{\"summary\":\"memory check\"}", assistantToolMessage.Reasoning);
+        Assert.AreEqual("[{\"type\":\"summary_text\",\"text\":\"memory check\"}]", assistantToolMessage.ReasoningDetails);
+        Assert.AreEqual("[{\"id\":\"rs_mem\",\"type\":\"reasoning\"}]", assistantToolMessage.CodexReasoningItems);
+    }
+
+    [TestMethod]
     public async Task ReviewConversationAsync_UsesPythonMemoryToolDescriptionAndSchema()
     {
         ToolDefinition? captured = null;

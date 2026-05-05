@@ -49,6 +49,34 @@ public sealed class StardewNpcPackSourceLocatorTests
     }
 
     [TestMethod]
+    public void DesktopProject_PublishesBundledStardewPersonasNextToExe()
+    {
+        var projectFile = FindRepositoryFile("Desktop", "HermesDesktop", "HermesDesktop.csproj");
+        var projectXml = File.ReadAllText(projectFile);
+
+        StringAssert.Contains(
+            projectXml,
+            "..\\..\\src\\game\\stardew\\personas\\**\\*",
+            "The published desktop app must carry Stardew persona packs next to the exe; otherwise installed Hermes cannot start NPC autonomy.");
+        StringAssert.Contains(
+            projectXml,
+            "personas\\%(RecursiveDir)%(Filename)%(Extension)",
+            "Bundled persona files must land under the app-local personas directory expected by StardewNpcPackSourceLocator.");
+        StringAssert.Contains(
+            projectXml,
+            "<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>",
+            "Folder deploy must publish personas, not only copy them for dotnet run.");
+        StringAssert.Contains(
+            projectXml,
+            "..\\..\\skills\\gaming\\**\\*",
+            "The published desktop app must carry Stardew gaming skills required by persona skills.json files.");
+        StringAssert.Contains(
+            projectXml,
+            "skills\\gaming\\%(RecursiveDir)%(Filename)%(Extension)",
+            "Bundled gaming skills must land under the app-local skills\\gaming directory expected by StardewNpcAutonomyPromptSupplementBuilder.");
+    }
+
+    [TestMethod]
     public void Locate_IgnoresInvalidWorkspaceAndFallsBackToRepositoryFromBaseDirectory()
     {
         var repoRoot = Path.Combine(_tempDir, "repo");
@@ -195,6 +223,22 @@ public sealed class StardewNpcPackSourceLocatorTests
     {
         var repoRoot = Path.Combine(_tempDir, "repo");
         return Path.Combine(repoRoot, "src", "game", "stardew", "personas");
+    }
+
+    private static string FindRepositoryFile(params string[] relativePath)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(new[] { directory.FullName }.Concat(relativePath).ToArray());
+            if (File.Exists(candidate))
+                return candidate;
+
+            directory = directory.Parent;
+        }
+
+        Assert.Fail($"Could not find repository file: {Path.Combine(relativePath)}");
+        return string.Empty;
     }
 
     private static void CreatePack(string root, string npcId, string displayName)

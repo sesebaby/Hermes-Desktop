@@ -60,8 +60,11 @@ public sealed class HermesPhoneOverlay
 
         if (_state.UiOwner != HermesPhoneUiOwner.PhoneOverlay)
         {
-            if (_indicatorRect.Contains(mouse) && _state.OpenLatestThread())
+            if (_indicatorRect.Contains(mouse))
             {
+                if (!_state.OpenLatestThread())
+                    _state.OpenPhoneHome();
+
                 input.Suppress(button);
                 _logger.Write("phone_thread_opened", CurrentNpcName(), "phone", "phone", null, "recorded", "indicator_clicked");
                 return true;
@@ -225,14 +228,15 @@ public sealed class HermesPhoneOverlay
             return;
 
         var unread = _state.Threads.Values.Sum(thread => thread.UnreadCount);
-        if (unread <= 0)
-            return;
+        var hasUnread = unread > 0;
+        if (hasUnread)
+            _vibrateTicks++;
 
-        _vibrateTicks++;
-        var offset = _vibrateTicks % 12 < 6 ? -2 : 2;
+        var offset = hasUnread && _vibrateTicks % 12 < 6 ? -2 : hasUnread ? 2 : 0;
         var rect = new Rectangle(_indicatorRect.X + offset, _indicatorRect.Y, _indicatorRect.Width, _indicatorRect.Height);
         IClickableMenu.drawTextureBox(spriteBatch, rect.X, rect.Y, rect.Width, rect.Height, Color.White);
-        spriteBatch.DrawString(Game1.smallFont, unread.ToString(), new Vector2(rect.X + 17, rect.Y + 22), Color.DeepPink);
+        var label = hasUnread ? unread.ToString() : "机";
+        spriteBatch.DrawString(Game1.smallFont, label, new Vector2(rect.X + 15, rect.Y + 22), hasUnread ? Color.DeepPink : Color.DarkSlateGray);
     }
 
     private void DrawPhoneShell(SpriteBatch spriteBatch)
@@ -245,7 +249,11 @@ public sealed class HermesPhoneOverlay
     {
         var thread = CurrentThread();
         if (thread is null)
+        {
+            spriteBatch.DrawString(Game1.smallFont, "Hermes 手机", new Vector2(_screenRect.X, _screenRect.Y), Color.Black);
+            spriteBatch.DrawString(Game1.smallFont, "暂无消息", new Vector2(_screenRect.X, _screenRect.Y + 44), Color.DimGray);
             return;
+        }
 
         spriteBatch.DrawString(Game1.smallFont, thread.NpcName, new Vector2(_screenRect.X, _screenRect.Y), Color.Black);
         var y = _screenRect.Y + 34;
