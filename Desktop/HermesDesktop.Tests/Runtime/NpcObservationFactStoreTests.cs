@@ -54,6 +54,42 @@ public class NpcObservationFactStoreTests
     }
 
     [TestMethod]
+    public void Snapshot_KeepsFactsSeparatedBySession()
+    {
+        var store = new NpcObservationFactStore();
+        var at = new DateTime(2026, 5, 5, 8, 0, 0, DateTimeKind.Utc);
+        var autonomy = CreateDescriptor("haley", "sdv_save-1_haley_default");
+        var privateChat = CreateDescriptor("haley", "sdv_save-1_haley_default:private_chat:chat-1");
+
+        store.RecordObservation(
+            autonomy,
+            new GameObservation(
+                "haley",
+                "stardew-valley",
+                at,
+                "Haley is near the fountain.",
+                ["source=autonomy"]));
+        store.RecordObservation(
+            privateChat,
+            new GameObservation(
+                "haley",
+                "stardew-valley",
+                at.AddSeconds(1),
+                "Haley is replying privately.",
+                ["source=private_chat"]));
+
+        var autonomyFacts = store.Snapshot(autonomy);
+        var privateChatFacts = store.Snapshot(privateChat);
+
+        Assert.AreEqual(1, autonomyFacts.Count);
+        Assert.AreEqual("sdv_save-1_haley_default", autonomyFacts[0].SessionId);
+        CollectionAssert.Contains(autonomyFacts[0].Facts.ToList(), "source=autonomy");
+        Assert.AreEqual(1, privateChatFacts.Count);
+        Assert.AreEqual("sdv_save-1_haley_default:private_chat:chat-1", privateChatFacts[0].SessionId);
+        CollectionAssert.Contains(privateChatFacts[0].Facts.ToList(), "source=private_chat");
+    }
+
+    [TestMethod]
     public void PublicApi_DoesNotAcceptAgentOrCommandCallbacks()
     {
         var constructors = typeof(NpcObservationFactStore).GetConstructors();
@@ -69,7 +105,7 @@ public class NpcObservationFactStoreTests
             forbiddenFragments.Any(fragment => typeName.Contains(fragment, StringComparison.OrdinalIgnoreCase))));
     }
 
-    private static NpcRuntimeDescriptor CreateDescriptor(string npcId)
+    private static NpcRuntimeDescriptor CreateDescriptor(string npcId, string? sessionId = null)
         => new(
             npcId,
             npcId,
@@ -78,5 +114,5 @@ public class NpcObservationFactStoreTests
             "default",
             "stardew",
             "pack-root",
-            $"sdv_save-1_{npcId}_default");
+            sessionId ?? $"sdv_save-1_{npcId}_default");
 }

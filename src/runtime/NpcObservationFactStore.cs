@@ -19,6 +19,7 @@ public sealed class NpcObservationFactStore
             descriptor.GameId,
             descriptor.SaveId,
             descriptor.ProfileId,
+            descriptor.SessionId,
             "observation",
             null,
             observation.TimestampUtc,
@@ -38,6 +39,7 @@ public sealed class NpcObservationFactStore
             descriptor.GameId,
             descriptor.SaveId,
             descriptor.ProfileId,
+            descriptor.SessionId,
             "event",
             record.EventId,
             record.TimestampUtc,
@@ -49,7 +51,7 @@ public sealed class NpcObservationFactStore
     {
         ArgumentNullException.ThrowIfNull(descriptor);
 
-        var key = BuildKey(descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+        var key = BuildKey(descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId, descriptor.SessionId);
         lock (_gate)
         {
             return _facts.TryGetValue(key, out var facts)
@@ -60,7 +62,7 @@ public sealed class NpcObservationFactStore
 
     private void Record(NpcObservationFact fact)
     {
-        var key = BuildKey(fact.GameId, fact.SaveId, fact.NpcId, fact.ProfileId);
+        var key = BuildKey(fact.GameId, fact.SaveId, fact.NpcId, fact.ProfileId, fact.SessionId);
         lock (_gate)
         {
             if (!_facts.TryGetValue(key, out var facts))
@@ -103,8 +105,8 @@ public sealed class NpcObservationFactStore
         }
     }
 
-    private static string BuildKey(string gameId, string saveId, string npcId, string profileId)
-        => $"{gameId}:{saveId}:{npcId}:{profileId}";
+    private static string BuildKey(string gameId, string saveId, string npcId, string profileId, string sessionId)
+        => $"{gameId}:{saveId}:{npcId}:{profileId}:{sessionId}";
 }
 
 public sealed record NpcObservationFact(
@@ -112,6 +114,7 @@ public sealed record NpcObservationFact(
     string GameId,
     string SaveId,
     string ProfileId,
+    string SessionId,
     string SourceKind,
     string? SourceId,
     DateTime TimestampUtc,
