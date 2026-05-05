@@ -402,6 +402,12 @@ public sealed class ModEntry : Mod
     {
         try
         {
+            if (!_httpHost.IsRunning)
+            {
+                _bridgeLogger.Write("bridge_discovery_skipped", null, "bridge", "bridge", null, "skipped", "http_bridge_not_running");
+                return;
+            }
+
             var path = GetDiscoveryFilePath();
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             var document = new BridgeDiscoveryDocument(

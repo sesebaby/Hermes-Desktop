@@ -34,6 +34,8 @@ public sealed class BridgeHttpHost
 
     public string BridgeToken { get; private set; } = "";
 
+    public bool IsRunning => _listener is not null && Port > 0 && !string.IsNullOrWhiteSpace(BridgeToken);
+
     public void Start(string host, int preferredPort)
     {
         if (_listener is not null)
@@ -41,9 +43,24 @@ public sealed class BridgeHttpHost
 
         BridgeToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
         Port = preferredPort;
-        _listener = new HttpListener();
-        _listener.Prefixes.Add($"http://{host}:{Port}/");
-        _listener.Start();
+        var listener = new HttpListener();
+        listener.Prefixes.Add($"http://{host}:{Port}/");
+        try
+        {
+            listener.Start();
+        }
+        catch (Exception ex)
+        {
+            listener.Close();
+            _listener = null;
+            _cts = null;
+            BridgeToken = string.Empty;
+            Port = 0;
+            _logger.Write("bridge_start_failed", null, "bridge", "bridge", null, "failed", ex.Message);
+            return;
+        }
+
+        _listener = listener;
         _cts = new CancellationTokenSource();
         _ = Task.Run(() => RunAsync(_cts.Token));
         _logger.Write("bridge_started", null, "bridge", "bridge", null, "online", $"127.0.0.1:{Port}");
@@ -55,6 +72,8 @@ public sealed class BridgeHttpHost
         _listener?.Close();
         _listener = null;
         _cts = null;
+        BridgeToken = string.Empty;
+        Port = 0;
     }
 
     private async Task RunAsync(CancellationToken ct)

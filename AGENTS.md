@@ -69,6 +69,23 @@
 - 涉及用户输入、HTTP、权限、密钥、文件系统访问时，先检查安全规则，不写硬编码密钥。
 - 不新增依赖，除非用户明确要求或已有项目模式强烈支持；新增前说明理由和替代方案。
 
+## 常用运行日志
+
+手测 Stardew/Hermes 时不要重新猜日志位置，优先看这些文件：
+
+- Hermes 桌面主日志：`%LOCALAPPDATA%\hermes\hermes-cs\logs\hermes.log`
+- SMAPI/Bridge 日志：`%APPDATA%\StardewValley\ErrorLogs\SMAPI-latest.txt`
+- bridge discovery：`%LOCALAPPDATA%\hermes\hermes-cs\stardew-bridge.json`
+- NPC runtime 活动日志：`%LOCALAPPDATA%\hermes\hermes-cs\runtime\stardew\games\stardew-valley\saves\<saveId>\npc\<npcId>\profiles\<profileId>\activity\runtime.jsonl`
+
+常用 PowerShell：
+
+```powershell
+Get-Content "$env:LOCALAPPDATA\hermes\hermes-cs\logs\hermes.log" -Tail 200 -Wait
+Get-Content "$env:APPDATA\StardewValley\ErrorLogs\SMAPI-latest.txt" -Tail 200 -Wait
+Get-ChildItem "$env:LOCALAPPDATA\hermes\hermes-cs\runtime\stardew\games\stardew-valley" -Recurse -Filter runtime.jsonl | Sort-Object LastWriteTime -Descending | Select-Object -First 5
+```
+
 ## 构建与测试
 
 优先运行与改动范围匹配的最小验证，再按风险扩大范围。
