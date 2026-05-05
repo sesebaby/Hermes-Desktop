@@ -35,7 +35,7 @@ public sealed class HermesPhoneState
     public bool KeyboardSubscriberOwnedByPhone { get; set; }
     public IReadOnlyDictionary<string, HermesPhoneThread> Threads => _threads;
 
-    public void OpenThread(string npcName, string conversationId)
+    public void OpenThread(string npcName, string? conversationId)
     {
         var thread = GetOrCreateThread(npcName, conversationId);
         OpenThread(thread);
@@ -70,7 +70,7 @@ public sealed class HermesPhoneState
         thread.UnreadCount = 0;
     }
 
-    public HermesPhoneMessage AddIncomingMessage(string npcName, string text, string? conversationId, bool openThread)
+    public HermesPhoneMessage AddIncomingMessage(string npcName, string text, string? conversationId, bool openThread, bool recordOnly = false)
     {
         var thread = GetOrCreateThread(npcName, conversationId);
         var message = new HermesPhoneMessage(npcName, text, Incoming: true, DateTime.UtcNow, conversationId);
@@ -84,7 +84,7 @@ public sealed class HermesPhoneState
             OpenState = HermesPhoneOpenState.PhoneThreadPassiveOpen;
             thread.UnreadCount = 0;
         }
-        else
+        else if (!recordOnly)
         {
             thread.UnreadCount++;
             if (OpenState == HermesPhoneOpenState.PhoneClosed)

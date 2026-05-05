@@ -44,7 +44,7 @@ public sealed class ModEntry : Mod
         _events = new BridgeEventBuffer();
         _overlay = new BridgeStatusOverlay();
         _phoneState = new HermesPhoneState();
-        _phoneOverlay = new HermesPhoneOverlay(_phoneState, _events, _bridgeLogger, npcName => _overlay.SetPrivateChatThinking(npcName));
+        _phoneOverlay = new HermesPhoneOverlay(_phoneState, _events, _bridgeLogger, Helper, npcName => _overlay.SetPrivateChatThinking(npcName));
         _bubbleOverlay = new NpcOverheadBubbleOverlay(_events, _bridgeLogger);
         _messageRouter = new StardewMessageDisplayRouter(_phoneState, _bubbleOverlay, _phoneOverlay, _events, _bridgeLogger);
         _commands = new BridgeCommandQueue(

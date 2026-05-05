@@ -41,7 +41,7 @@ public sealed class BridgeCommandQueue
         _messageRouter = messageRouter ?? new StardewMessageDisplayRouter(
             _phoneState,
             new NpcOverheadBubbleOverlay(_events, logger),
-            new HermesPhoneOverlay(_phoneState, _events, logger, privateChatSubmitted),
+            new HermesPhoneOverlay(_phoneState, _events, logger, null, privateChatSubmitted),
             _events,
             logger);
         _privateChatOpened = privateChatOpened;

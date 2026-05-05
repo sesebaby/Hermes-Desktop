@@ -261,6 +261,51 @@ public class RawDialogueDisplayRegressionTests
     }
 
     [TestMethod]
+    public void HermesPhoneOverlayUsesWeChatLikePhoneShellWithCloseButtonAndLogs()
+    {
+        var phoneOverlay = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "HermesPhoneOverlay.cs");
+        var modEntry = ReadRepositoryFile("Mods", "StardewHermesBridge", "ModEntry.cs");
+        var notice = ReadRepositoryFile("Mods", "StardewHermesBridge", "assets", "phone", "NOTICE.md");
+
+        StringAssert.Contains(
+            phoneOverlay,
+            "_closeRect",
+            "The phone overlay must keep an explicit close hitbox; players need a visible way to dismiss the phone.");
+        StringAssert.Contains(
+            phoneOverlay,
+            "phone_overlay_closed",
+            "Closing the overlay must write a diagnostic log instead of silently changing state.");
+        StringAssert.Contains(
+            phoneOverlay,
+            "DrawConversationList",
+            "The phone UI should expose a WeChat-like conversation list, not only a single raw text panel.");
+        StringAssert.Contains(
+            phoneOverlay,
+            "DrawChatMessages",
+            "The phone UI should draw chat bubbles/messages separately from the contact list.");
+        StringAssert.Contains(
+            phoneOverlay,
+            "assets/phone/skins/pink.png",
+            "The bridge should reuse the authorized MobilePhone phone shell asset instead of drawing only a generic texture box.");
+        StringAssert.Contains(
+            phoneOverlay,
+            "assets/phone/backgrounds/hearts.png",
+            "The bridge should reuse the authorized MobilePhone screen background asset.");
+        StringAssert.Contains(
+            phoneOverlay,
+            "assets/phone/phone_icon.png",
+            "The bridge should reuse the authorized MobilePhone phone icon asset.");
+        StringAssert.Contains(
+            modEntry,
+            "new HermesPhoneOverlay(_phoneState, _events, _bridgeLogger, Helper",
+            "The overlay needs the SMAPI helper so it can load bundled phone assets.");
+        StringAssert.Contains(
+            notice,
+            "Stardew-GitHub-aedenthorn-MobilePhone",
+            "Bundled phone assets must retain their source note.");
+    }
+
+    [TestMethod]
     public void ProactiveNpcMessagesRouteToBubbleOrPhoneWithoutRawDialogue()
     {
         var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
@@ -286,6 +331,10 @@ public class RawDialogueDisplayRegressionTests
             router,
             "_phoneState.AddIncomingMessage",
             "Far or cross-map NPC messages should enter the phone thread.");
+        StringAssert.Contains(
+            router,
+            "recordOnly: true",
+            "Nearby bubble messages must still be recorded in the phone history so opening the phone does not look empty after a visible NPC message.");
         StringAssert.Contains(
             bubbleOverlay,
             "private_chat_reply_closed",

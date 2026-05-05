@@ -35,7 +35,9 @@ public sealed class StardewMessageDisplayRouter
         var nearby = IsPlayerWithinNearbyRange(npc);
         if (nearby)
         {
+            _phoneState.AddIncomingMessage(npc.Name, text, conversationId, openThread: false, recordOnly: true);
             _bubbleOverlay.Show(npc, text, conversationId, privateChat);
+            _logger.Write("phone_message_recorded", npc.Name, channel, "phone", null, "recorded", conversationId);
             return new StardewMessageDisplayResult("bubble", "reply_displayed_bubble");
         }
 
