@@ -123,6 +123,8 @@ public sealed class NpcAutonomyLoop
                 Id = descriptor.SessionId,
                 Platform = descriptor.AdapterId
             };
+            decisionSession.State["traceId"] = traceId;
+            decisionSession.State["npcId"] = descriptor.NpcId;
             var decisionMessage = BuildDecisionMessage(descriptor, currentFacts);
             _logger?.LogInformation(
                 "NPC autonomy decision request prepared; npc={NpcId}; trace={TraceId}; facts={FactCount}; messageChars={MessageChars}; gameTime={GameTime}; location={Location}; tile={Tile}",
@@ -176,6 +178,7 @@ public sealed class NpcAutonomyLoop
             descriptor.GameId,
             descriptor.SaveId,
             descriptor.ProfileId,
+            descriptor.SessionId,
             "observation",
             null,
             observation.TimestampUtc,
@@ -188,6 +191,7 @@ public sealed class NpcAutonomyLoop
             descriptor.GameId,
             descriptor.SaveId,
             descriptor.ProfileId,
+            descriptor.SessionId,
             "event",
             record.EventId,
             record.TimestampUtc,

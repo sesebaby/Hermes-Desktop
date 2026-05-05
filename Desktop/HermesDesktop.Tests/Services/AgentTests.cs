@@ -2,6 +2,7 @@ using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Memory;
 using Hermes.Agent.Plugins;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
@@ -382,6 +383,54 @@ public class AgentTests
         Assert.AreEqual("[{\"id\":\"rs_1\",\"type\":\"reasoning\"}]", assistantToolMessage.CodexReasoningItems);
     }
 
+    [TestMethod]
+    public async Task ChatAsync_WhenMultipleStardewStatusToolsCalled_LogsBudgetWarningWithTrace()
+    {
+        var logger = new CapturingLogger<Agent>();
+        var agent = new Agent(_mockChatClient.Object, logger);
+        var playerTool = CreateMockTool("stardew_player_status");
+        playerTool.Setup(t => t.ExecuteAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ToolResult.Ok("{}"));
+        var socialTool = CreateMockTool("stardew_social_status");
+        socialTool.Setup(t => t.ExecuteAsync(It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ToolResult.Ok("{}"));
+        agent.RegisterTool(playerTool.Object);
+        agent.RegisterTool(socialTool.Object);
+        var session = new Session { Id = "sdv_save-1_haley_default" };
+        session.State["traceId"] = "trace-turn-1";
+        var callSequence = new Queue<ChatResponse>(new[]
+        {
+            new ChatResponse
+            {
+                Content = null,
+                ToolCalls = new List<ToolCall>
+                {
+                    new() { Id = "call-1", Name = "stardew_player_status", Arguments = "{}" },
+                    new() { Id = "call-2", Name = "stardew_social_status", Arguments = "{}" }
+                },
+                FinishReason = "tool_calls"
+            },
+            new ChatResponse { Content = "done", FinishReason = "stop" }
+        });
+        _mockChatClient
+            .Setup(c => c.CompleteWithToolsAsync(
+                It.IsAny<IEnumerable<Message>>(),
+                It.IsAny<IEnumerable<ToolDefinition>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(() => Task.FromResult(callSequence.Dequeue()));
+
+        await agent.ChatAsync("run tools", session, CancellationToken.None);
+
+        Assert.IsTrue(logger.Messages.Any(message =>
+            message.Contains("NPC autonomy tool summary", StringComparison.Ordinal) &&
+            message.Contains("trace-turn-1", StringComparison.Ordinal) &&
+            message.Contains("statusToolCalls=2", StringComparison.Ordinal)));
+        Assert.IsTrue(logger.Messages.Any(message =>
+            message.Contains("status_tool_budget_exceeded", StringComparison.Ordinal) &&
+            message.Contains("trace-turn-1", StringComparison.Ordinal) &&
+            message.Contains("stardew_player_status|stardew_social_status", StringComparison.Ordinal)));
+    }
+
     // ── Helpers ──
 
     private static Mock<ITool> CreateMockTool(string name)
@@ -403,6 +452,29 @@ public class AgentTests
         public Type ParametersType => typeof(EmptyParams);
         public string CanonicalName => "todo";
         public Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct) => Task.FromResult(ToolResult.Ok("{}"));
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = new();
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => Messages.Add(formatter(state, exception));
+
+        private sealed class NullScope : IDisposable
+        {
+            public static NullScope Instance { get; } = new();
+            public void Dispose() { }
+        }
     }
 }
 

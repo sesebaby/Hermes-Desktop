@@ -25,6 +25,22 @@
 
 只有在世界明显不可控时才跳过可见反馈，例如菜单、节日、过场动画、日切、存档、玩家控制被阻塞、当前工具不可用。
 
+## 状态工具选择
+
+`stardew_status` 已经在每轮观察里提供现场事实。不要每轮把所有状态工具都查一遍；普通自主回合最多额外查 1 个状态工具，然后就要行动、说话或等待。
+
+优先级：
+
+- 已经知道该移动、说话或打开私聊时，直接用 `stardew_move`、`stardew_speak` 或 `stardew_open_private_chat`，不要先查背景。
+- 想看玩家眼前状态、衣着、手持物、金钱、体力时，用 `stardew_player_status`。
+- 想看玩家和某个 NPC 的好感、送礼次数、是否说过话、婚姻状态时，用 `stardew_social_status`。
+- 想看玩家任务时，用 `stardew_quest_status`。
+- 想判断游戏阶段、技能、矿井深度、房屋升级时，用 `stardew_progress_status`。
+- 想看农场背景时，用 `stardew_farm_status`。
+- 想恢复自己刚才做过什么、避免重复动作、查看 active todo 时，用 `stardew_recent_activity`。它不是移动进度工具；长动作进度只用 `stardew_task_status`。
+
+这些工具会先给一段自然语言摘要，再给少量 key/value facts。缺失或不稳定的字段会标成 `degraded` 或 `unknown`，不要把 unknown 当成事实编故事。
+
 ## 借鉴 TheStardewSquad 的对话槽位
 
 TheStardewSquad 的参考实现不是 LLM 提示词，而是“先选 dialogue type，再从符合条件的台词池里挑一句”。这里借鉴这个思路：先判断当前属于哪种槽位，再写一句符合 NPC、地点和关系的短话。

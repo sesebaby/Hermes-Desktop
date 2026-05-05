@@ -76,12 +76,40 @@ public sealed record NpcRuntimeAutonomyBindingRequest(
     bool IncludeUser,
     int MaxToolIterations,
     Func<IGameAdapter> AdapterFactory,
-    Func<IGameAdapter, IEnumerable<ITool>> GameToolFactory,
+    Func<IGameAdapter, NpcObservationFactStore, IEnumerable<ITool>> GameToolFactory,
     NpcRuntimeCompositionServices Services,
     NpcToolSurface ToolSurface,
     long ToolSurfaceSnapshotVersion = 0,
     string? SystemPromptSupplement = null)
 {
+    public NpcRuntimeAutonomyBindingRequest(
+        string ChannelKey,
+        string AdapterKey,
+        bool IncludeMemory,
+        bool IncludeUser,
+        int MaxToolIterations,
+        Func<IGameAdapter> AdapterFactory,
+        Func<IGameAdapter, IEnumerable<ITool>> GameToolFactory,
+        NpcRuntimeCompositionServices Services,
+        NpcToolSurface ToolSurface,
+        long ToolSurfaceSnapshotVersion = 0,
+        string? SystemPromptSupplement = null)
+        : this(
+            ChannelKey,
+            AdapterKey,
+            IncludeMemory,
+            IncludeUser,
+            MaxToolIterations,
+            AdapterFactory,
+            (adapter, _) => GameToolFactory(adapter),
+            Services,
+            ToolSurface,
+            ToolSurfaceSnapshotVersion,
+            SystemPromptSupplement)
+    {
+        ArgumentNullException.ThrowIfNull(GameToolFactory);
+    }
+
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(ChannelKey))

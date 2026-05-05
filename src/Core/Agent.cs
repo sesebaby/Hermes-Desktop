@@ -197,6 +197,45 @@ public sealed class Agent : IAgent
             durationMs);
     }
 
+    private void LogToolCallSummary(string sessionId, string traceId, int iteration, IReadOnlyList<ToolCall> toolCalls, long durationMs)
+    {
+        var toolNames = toolCalls.Select(toolCall => toolCall.Name).ToArray();
+        var statusToolNames = toolNames.Where(IsStardewStatusTool).ToArray();
+        _logger.LogInformation(
+            "NPC autonomy tool summary; session={SessionId}; trace={TraceId}; iteration={Iteration}; toolCalls={ToolCallCount}; toolNames={ToolNames}; statusToolCalls={StatusToolCallCount}; durationMs={DurationMs}",
+            sessionId,
+            traceId,
+            iteration,
+            toolNames.Length,
+            string.Join("|", toolNames),
+            statusToolNames.Length,
+            durationMs);
+        if (statusToolNames.Length > 1)
+        {
+            _logger.LogWarning(
+                "status_tool_budget_exceeded; session={SessionId}; trace={TraceId}; iteration={Iteration}; statusToolCalls={StatusToolCallCount}; statusToolNames={StatusToolNames}",
+                sessionId,
+                traceId,
+                iteration,
+                statusToolNames.Length,
+                string.Join("|", statusToolNames));
+        }
+    }
+
+    private static string GetSessionTraceId(Session session)
+        => session.State.TryGetValue("traceId", out var value) && value is not null
+            ? value.ToString() ?? "-"
+            : "-";
+
+    private static bool IsStardewStatusTool(string toolName)
+        => toolName is "stardew_status" or
+           "stardew_player_status" or
+           "stardew_progress_status" or
+           "stardew_social_status" or
+           "stardew_quest_status" or
+           "stardew_farm_status" or
+           "stardew_recent_activity";
+
     /// <summary>Build ToolDefinition list from registered tools for the LLM.</summary>
     public List<ToolDefinition> GetToolDefinitions()
     {
@@ -392,6 +431,7 @@ public sealed class Agent : IAgent
 
             // Execute tool calls — parallel when safe, sequential otherwise
             var toolCallsList = normalizedToolCalls;
+            var toolSummaryStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
             if (ShouldParallelize(toolCallsList))
             {
@@ -608,6 +648,8 @@ public sealed class Agent : IAgent
                     await _transcripts.SaveMessageAsync(session.Id, toolResultMsg, ct);
             }
             } // end else (sequential path)
+            toolSummaryStopwatch.Stop();
+            LogToolCallSummary(session.Id, GetSessionTraceId(session), iterations, toolCallsList, toolSummaryStopwatch.ElapsedMilliseconds);
         }
 
             _logger.LogWarning("Hit max tool iterations ({Max}) for session {SessionId}", MaxToolIterations, session.Id);

@@ -467,11 +467,13 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                     IncludeUser: _includeUser,
                     MaxToolIterations: _budget.Options.MaxToolIterations,
                     AdapterFactory: () => _adapterFactory(dispatch.Snapshot),
-                    GameToolFactory: adapter => StardewNpcToolFactory.CreateDefault(
+                    GameToolFactory: (adapter, factStore) => StardewNpcToolFactory.CreateDefault(
                         adapter,
                         binding.Descriptor,
                         runtimeDriver: tracker.Driver,
-                        worldCoordination: _worldCoordination),
+                        worldCoordination: _worldCoordination,
+                        recentActivityProvider: new StardewRecentActivityProvider(factStore, tracker.Driver),
+                        logger: _logger),
                     Services: new NpcRuntimeCompositionServices(
                         _chatClient,
                         _loggerFactory,

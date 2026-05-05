@@ -19,7 +19,20 @@ public class StardewNpcToolFactoryTests
             CreateDescriptor("haley"));
 
         CollectionAssert.AreEqual(
-            new[] { "stardew_status", "stardew_move", "stardew_speak", "stardew_open_private_chat", "stardew_task_status" },
+            new[]
+            {
+                "stardew_status",
+                "stardew_player_status",
+                "stardew_progress_status",
+                "stardew_social_status",
+                "stardew_quest_status",
+                "stardew_farm_status",
+                "stardew_recent_activity",
+                "stardew_move",
+                "stardew_speak",
+                "stardew_open_private_chat",
+                "stardew_task_status"
+            },
             tools.Select(tool => tool.Name).ToArray());
 
         Assert.IsFalse(tools.Any(tool => tool.Name is "agent" or "todo" or "memory" or "ask_user" or "schedule_cron"));
@@ -29,6 +42,128 @@ public class StardewNpcToolFactoryTests
         Assert.IsFalse(moveSchema.Contains("saveId", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(moveSchema.Contains("traceId", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(moveSchema.Contains("idempotencyKey", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task RecentActivityTool_UsesProviderWhenAvailable()
+    {
+        var provider = new FakeRecentActivityProvider(new StardewStatusFactResponseData(
+            "最近有 1 条连续性记录。",
+            ["recent[0]=observation:Haley is in Town"],
+            "completed",
+            []));
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"),
+            recentActivityProvider: provider);
+        var tool = tools.Single(tool => tool.Name == "stardew_recent_activity");
+
+        var result = await tool.ExecuteAsync(new StardewStatusToolParameters(), CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        using var document = JsonDocument.Parse(result.Content);
+        Assert.AreEqual("最近有 1 条连续性记录。", document.RootElement.GetProperty("summary").GetString());
+        Assert.AreEqual("haley", provider.LastDescriptor?.NpcId);
+    }
+
+    [TestMethod]
+    public async Task RecentActivityProvider_KeepsObservationFactsSeparatedBySession()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-recent-session-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new NpcObservationFactStore();
+            var supervisor = new NpcRuntimeSupervisor();
+            var autonomyDescriptor = CreateDescriptor("haley");
+            var privateChatDescriptor = autonomyDescriptor with { SessionId = autonomyDescriptor.SessionId + ":private_chat:chat-1" };
+            var driver = await supervisor.GetOrCreateDriverAsync(autonomyDescriptor, tempDir, CancellationToken.None);
+            store.RecordObservation(
+                autonomyDescriptor,
+                new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Autonomy fact.",
+                    ["source=autonomy"]));
+            store.RecordObservation(
+                privateChatDescriptor,
+                new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Private chat fact.",
+                    ["source=private_chat"]));
+            var provider = new StardewRecentActivityProvider(store, driver);
+
+            var data = await provider.ReadRecentActivityAsync(autonomyDescriptor, CancellationToken.None);
+
+            Assert.AreEqual("completed", data.Status);
+            Assert.IsTrue(data.Facts.Any(fact => fact.Contains("source=autonomy", StringComparison.Ordinal)));
+            Assert.IsFalse(data.Facts.Any(fact => fact.Contains("source=private_chat", StringComparison.Ordinal)));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RecentActivityProvider_KeepsObservationFactsSeparatedByProfile()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-recent-profile-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new NpcObservationFactStore();
+            var supervisor = new NpcRuntimeSupervisor();
+            var defaultDescriptor = CreateDescriptor("haley");
+            var otherProfileDescriptor = defaultDescriptor with { ProfileId = "profile-2", SessionId = "sdv_save-1_haley_profile-2" };
+            var driver = await supervisor.GetOrCreateDriverAsync(defaultDescriptor, tempDir, CancellationToken.None);
+            store.RecordObservation(
+                defaultDescriptor,
+                new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "Default profile.", ["profile=default"]));
+            store.RecordObservation(
+                otherProfileDescriptor,
+                new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "Other profile.", ["profile=profile-2"]));
+            var provider = new StardewRecentActivityProvider(store, driver);
+
+            var data = await provider.ReadRecentActivityAsync(defaultDescriptor, CancellationToken.None);
+
+            Assert.IsTrue(data.Facts.Any(fact => fact.Contains("profile=default", StringComparison.Ordinal)));
+            Assert.IsFalse(data.Facts.Any(fact => fact.Contains("profile=profile-2", StringComparison.Ordinal)));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RecentActivityProvider_KeepsObservationFactsSeparatedByNpc()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-recent-npc-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new NpcObservationFactStore();
+            var supervisor = new NpcRuntimeSupervisor();
+            var haley = CreateDescriptor("haley");
+            var penny = CreateDescriptor("penny") with { BodyBinding = new NpcBodyBinding("penny", "Penny", "Penny", "Penny", "stardew") };
+            var driver = await supervisor.GetOrCreateDriverAsync(haley, tempDir, CancellationToken.None);
+            store.RecordObservation(haley, new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "Haley fact.", ["npc=haley"]));
+            store.RecordObservation(penny, new GameObservation("penny", "stardew-valley", DateTime.UtcNow, "Penny fact.", ["npc=penny"]));
+            var provider = new StardewRecentActivityProvider(store, driver);
+
+            var data = await provider.ReadRecentActivityAsync(haley, CancellationToken.None);
+
+            Assert.IsTrue(data.Facts.Any(fact => fact.Contains("npc=haley", StringComparison.Ordinal)));
+            Assert.IsFalse(data.Facts.Any(fact => fact.Contains("npc=penny", StringComparison.Ordinal)));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
     }
 
     [TestMethod]
@@ -598,5 +733,23 @@ public class StardewNpcToolFactoryTests
     {
         public Task<IReadOnlyList<GameEventRecord>> PollAsync(GameEventCursor cursor, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<GameEventRecord>>([]);
+    }
+
+    private sealed class FakeRecentActivityProvider : IStardewRecentActivityProvider
+    {
+        private readonly StardewStatusFactResponseData _response;
+
+        public FakeRecentActivityProvider(StardewStatusFactResponseData response)
+        {
+            _response = response;
+        }
+
+        public NpcRuntimeDescriptor? LastDescriptor { get; private set; }
+
+        public Task<StardewStatusFactResponseData> ReadRecentActivityAsync(NpcRuntimeDescriptor descriptor, CancellationToken ct)
+        {
+            LastDescriptor = descriptor;
+            return Task.FromResult(_response);
+        }
     }
 }

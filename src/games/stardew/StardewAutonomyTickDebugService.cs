@@ -204,11 +204,13 @@ public sealed class StardewAutonomyTickDebugService
                     IncludeUser: _includeUser,
                     MaxToolIterations: _maxToolIterations,
                     AdapterFactory: () => _adapterFactory(snapshot),
-                    GameToolFactory: adapter => StardewNpcToolFactory.CreateDefault(
+                    GameToolFactory: (adapter, factStore) => StardewNpcToolFactory.CreateDefault(
                         adapter,
                         descriptor,
                         runtimeDriver: driver,
-                        worldCoordination: _worldCoordination),
+                        worldCoordination: _worldCoordination,
+                        recentActivityProvider: new StardewRecentActivityProvider(factStore, driver),
+                        logger: _loggerFactory.CreateLogger<StardewRecentActivityTool>()),
                     Services: new NpcRuntimeCompositionServices(
                         _chatClient,
                         _loggerFactory,

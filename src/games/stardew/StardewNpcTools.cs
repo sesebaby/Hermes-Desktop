@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Hermes.Agent.Core;
 using Hermes.Agent.Game;
 using Hermes.Agent.Runtime;
+using Microsoft.Extensions.Logging;
 
 public static class StardewNpcToolFactory
 {
@@ -16,6 +17,8 @@ public static class StardewNpcToolFactory
         int maxStatusPolls = 3,
         NpcRuntimeDriver? runtimeDriver = null,
         WorldCoordinationService? worldCoordination = null,
+        IStardewRecentActivityProvider? recentActivityProvider = null,
+        ILogger? logger = null,
         Func<DateTime>? nowUtc = null,
         TimeSpan? actionTimeout = null)
     {
@@ -30,12 +33,78 @@ public static class StardewNpcToolFactory
         return
         [
             new StardewStatusTool(adapter.Queries, descriptor),
+            new StardewPlayerStatusTool(adapter.Queries, descriptor),
+            new StardewProgressStatusTool(adapter.Queries, descriptor),
+            new StardewSocialStatusTool(adapter.Queries, descriptor),
+            new StardewQuestStatusTool(adapter.Queries, descriptor),
+            new StardewFarmStatusTool(adapter.Queries, descriptor),
+            new StardewRecentActivityTool(recentActivityProvider, descriptor, logger),
             new StardewMoveTool(adapter.Commands, adapter.Queries, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
             new StardewSpeakTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewOpenPrivateChatTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewTaskStatusTool(adapter.Commands)
         ];
     }
+}
+
+public interface IStardewRecentActivityProvider
+{
+    Task<StardewStatusFactResponseData> ReadRecentActivityAsync(NpcRuntimeDescriptor descriptor, CancellationToken ct);
+}
+
+public sealed class StardewRecentActivityProvider : IStardewRecentActivityProvider
+{
+    private readonly NpcObservationFactStore _factStore;
+    private readonly NpcRuntimeDriver _runtimeDriver;
+
+    public StardewRecentActivityProvider(NpcObservationFactStore factStore, NpcRuntimeDriver runtimeDriver)
+    {
+        _factStore = factStore;
+        _runtimeDriver = runtimeDriver;
+    }
+
+    public Task<StardewStatusFactResponseData> ReadRecentActivityAsync(NpcRuntimeDescriptor descriptor, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(descriptor);
+        var snapshot = _runtimeDriver.Snapshot();
+        var facts = _factStore.Snapshot(descriptor)
+            .TakeLast(5)
+            .Select((fact, index) =>
+            {
+                var details = fact.Facts.Count == 0
+                    ? "-"
+                    : string.Join("|", fact.Facts.Select(SanitizeFact));
+                return $"recent[{index}]={fact.SourceKind}:{SanitizeFact(fact.Summary)};facts={details}";
+            })
+            .ToList();
+
+        if (snapshot.LastTerminalCommandStatus is { } last)
+            facts.Add($"lastAction={last.Action}:{last.Status}:{last.ErrorCode ?? last.BlockedReason ?? "none"}");
+
+        if (_runtimeDriver.Instance.TryGetTaskView(descriptor.SessionId, out var taskView) && taskView is not null)
+        {
+            foreach (var (todo, index) in taskView.ActiveSnapshot.Todos
+                         .Where(todo => todo.Status is "pending" or "in_progress")
+                         .Take(3)
+                         .Select((todo, index) => (todo, index)))
+            {
+                facts.Add($"todo[{index}]={todo.Status}:{SanitizeFact(todo.Content)}");
+            }
+        }
+
+        var unknownFields = facts.Count == 0 ? new[] { "recentFacts" } : Array.Empty<string>();
+        var summary = facts.Count == 0
+            ? "最近行动暂时没有可用记录。"
+            : $"最近有 {facts.Count} 条连续性记录；需要恢复任务或避免重复时参考这些记录。";
+        return Task.FromResult(new StardewStatusFactResponseData(
+            summary,
+            facts.Take(12).ToArray(),
+            unknownFields.Length > 0 ? "degraded" : "completed",
+            unknownFields));
+    }
+
+    private static string SanitizeFact(string value)
+        => value.Replace('\r', ' ').Replace('\n', ' ').Trim();
 }
 
 public sealed class StardewStatusTool : ITool, IToolSchemaProvider
@@ -59,6 +128,172 @@ public sealed class StardewStatusTool : ITool, IToolSchemaProvider
 
     public async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
         => ToolResult.Ok(StardewNpcToolJson.Serialize(await _queries.ObserveAsync(_descriptor.EffectiveBodyBinding, ct)));
+}
+
+public abstract class StardewFactStatusToolBase : ITool, IToolSchemaProvider
+{
+    protected readonly IGameQueryService Queries;
+    protected readonly NpcRuntimeDescriptor Descriptor;
+
+    protected StardewFactStatusToolBase(IGameQueryService queries, NpcRuntimeDescriptor descriptor)
+    {
+        Queries = queries;
+        Descriptor = descriptor;
+    }
+
+    public abstract string Name { get; }
+
+    public abstract string Description { get; }
+
+    public virtual Type ParametersType => typeof(StardewStatusToolParameters);
+
+    public virtual JsonElement GetParameterSchema() => StardewNpcToolSchemas.Empty();
+
+    public abstract Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct);
+
+    protected static ToolResult Serialize(StardewStatusFactResponseData data)
+        => ToolResult.Ok(StardewNpcToolJson.Serialize(data));
+
+    protected StardewQueryService RequireStardewQueries()
+        => Queries as StardewQueryService
+           ?? throw new InvalidOperationException("This Stardew status tool requires StardewQueryService.");
+}
+
+public sealed class StardewPlayerStatusTool : StardewFactStatusToolBase
+{
+    public StardewPlayerStatusTool(IGameQueryService queries, NpcRuntimeDescriptor descriptor) : base(queries, descriptor) { }
+
+    public override string Name => "stardew_player_status";
+
+    public override string Description => "Read a detailed natural-language player status report: player location, held item, money, basic clothing/equipment, stamina/health, spouse, and a short inventory summary. Use at most one extra status tool in a normal autonomy turn.";
+
+    public override async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+        => Serialize(await RequireStardewQueries().GetPlayerStatusAsync(Descriptor.EffectiveBodyBinding, ct));
+}
+
+public sealed class StardewProgressStatusTool : StardewFactStatusToolBase
+{
+    public StardewProgressStatusTool(IGameQueryService queries, NpcRuntimeDescriptor descriptor) : base(queries, descriptor) { }
+
+    public override string Name => "stardew_progress_status";
+
+    public override string Description => "Read a natural-language game progress report: year, season, day, time, farm name, money, skill levels, mine depth, and house upgrade. Use only when game-stage context matters.";
+
+    public override async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+        => Serialize(await RequireStardewQueries().GetProgressStatusAsync(Descriptor.EffectiveBodyBinding, ct));
+}
+
+public sealed class StardewSocialStatusTool : StardewFactStatusToolBase
+{
+    public StardewSocialStatusTool(IGameQueryService queries, NpcRuntimeDescriptor descriptor) : base(queries, descriptor) { }
+
+    public override string Name => "stardew_social_status";
+
+    public override string Description => "Read a natural-language social report for this NPC or a named NPC: friendship hearts, talked-today, gift counts, and marriage/spouse status. Use only when relationship context matters.";
+
+    public override Type ParametersType => typeof(StardewSocialStatusToolParameters);
+
+    public override JsonElement GetParameterSchema() => StardewNpcToolSchemas.SocialStatus();
+
+    public override async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+    {
+        var p = (StardewSocialStatusToolParameters)parameters;
+        return Serialize(await RequireStardewQueries().GetSocialStatusAsync(Descriptor.EffectiveBodyBinding, p.TargetNpcId, ct));
+    }
+}
+
+public sealed class StardewQuestStatusTool : StardewFactStatusToolBase
+{
+    public StardewQuestStatusTool(IGameQueryService queries, NpcRuntimeDescriptor descriptor) : base(queries, descriptor) { }
+
+    public override string Name => "stardew_quest_status";
+
+    public override string Description => "Read a natural-language quest report with up to five visible player quests. Use only when player tasks or quest context matters.";
+
+    public override async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+        => Serialize(await RequireStardewQueries().GetQuestStatusAsync(Descriptor.EffectiveBodyBinding, ct));
+}
+
+public sealed class StardewFarmStatusTool : StardewFactStatusToolBase
+{
+    public StardewFarmStatusTool(IGameQueryService queries, NpcRuntimeDescriptor descriptor) : base(queries, descriptor) { }
+
+    public override string Name => "stardew_farm_status";
+
+    public override string Description => "Read a natural-language farm report: farm name, date, weather, money, and degraded placeholders for expensive crop/animal scans. Use only when farm context matters.";
+
+    public override async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+        => Serialize(await RequireStardewQueries().GetFarmStatusAsync(Descriptor.EffectiveBodyBinding, ct));
+}
+
+public sealed class StardewRecentActivityTool : ITool, IToolSchemaProvider
+{
+    private readonly IStardewRecentActivityProvider? _provider;
+    private readonly NpcRuntimeDescriptor _descriptor;
+    private readonly ILogger? _logger;
+
+    public StardewRecentActivityTool(IStardewRecentActivityProvider? provider, NpcRuntimeDescriptor descriptor, ILogger? logger = null)
+    {
+        _provider = provider;
+        _descriptor = descriptor;
+        _logger = logger;
+    }
+
+    public string Name => "stardew_recent_activity";
+
+    public string Description => "Read this NPC runtime's recent continuity report: recent observations/events, last action status, and active todos. This is not a world-state query; use only to avoid repeating or to resume a prior task.";
+
+    public Type ParametersType => typeof(StardewStatusToolParameters);
+
+    public JsonElement GetParameterSchema() => StardewNpcToolSchemas.Empty();
+
+    public async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+    {
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        if (_provider is null)
+        {
+            var degraded = new StardewStatusFactResponseData(
+                "最近行动暂时不可用：当前运行时没有注入 recent activity provider。",
+                [
+                    "status=degraded",
+                    "unknownFields=recentObservation|lastAction|activeTodos"
+                ],
+                "degraded",
+                ["recentActivityProvider"]);
+            stopwatch.Stop();
+            LogRecentActivityCompleted(degraded, stopwatch.ElapsedMilliseconds);
+            return ToolResult.Ok(StardewNpcToolJson.Serialize(degraded));
+        }
+
+        var data = await _provider.ReadRecentActivityAsync(_descriptor, ct);
+        stopwatch.Stop();
+        LogRecentActivityCompleted(data, stopwatch.ElapsedMilliseconds);
+        return ToolResult.Ok(StardewNpcToolJson.Serialize(data));
+    }
+
+    private void LogRecentActivityCompleted(StardewStatusFactResponseData data, long durationMs)
+    {
+        if (_logger is null)
+            return;
+
+        var factCount = data.Facts.Count(fact => fact.StartsWith("recent[", StringComparison.OrdinalIgnoreCase));
+        var todoCount = data.Facts.Count(fact => fact.StartsWith("todo[", StringComparison.OrdinalIgnoreCase));
+        var lastActionStatus = data.Facts.FirstOrDefault(fact => fact.StartsWith("lastAction=", StringComparison.OrdinalIgnoreCase)) ?? "none";
+        _logger.LogInformation(
+            "recent_activity_query_completed; npc={NpcId}; trace={TraceId}; durationMs={DurationMs}; payloadChars={PayloadChars}; factCount={FactCount}; todoCount={TodoCount}; lastActionStatus={LastActionStatus}; saveId={SaveId}; profileId={ProfileId}; sessionId={SessionId}; status={Status}; unknownFields={UnknownFields}",
+            _descriptor.NpcId,
+            "runtime",
+            durationMs,
+            StardewNpcToolJson.Serialize(data).Length,
+            factCount,
+            todoCount,
+            lastActionStatus,
+            _descriptor.SaveId,
+            _descriptor.ProfileId,
+            _descriptor.SessionId,
+            data.Status,
+            string.Join("|", data.UnknownFields ?? []));
+    }
 }
 
 public sealed class StardewMoveTool : ITool, IToolSchemaProvider
@@ -737,6 +972,11 @@ public sealed class StardewStatusToolParameters
 {
 }
 
+public sealed class StardewSocialStatusToolParameters
+{
+    public string? TargetNpcId { get; init; }
+}
+
 public sealed class StardewMoveToolParameters
 {
     public required string Destination { get; init; }
@@ -826,6 +1066,14 @@ internal static class StardewNpcToolSchemas
             new Dictionary<string, object>
             {
                 ["prompt"] = new { type = "string", description = "Optional short prompt shown or logged with the private chat request." }
+            },
+            []);
+
+    public static JsonElement SocialStatus()
+        => Schema(
+            new Dictionary<string, object>
+            {
+                ["targetNpcId"] = new { type = "string", description = "Optional NPC id/name to inspect. Omit to inspect this NPC." }
             },
             []);
 
