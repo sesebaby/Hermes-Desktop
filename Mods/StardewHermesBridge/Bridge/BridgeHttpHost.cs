@@ -289,7 +289,11 @@ public sealed class BridgeHttpHost
             null,
             null,
             destinations,
-            nearbyTiles);
+            nearbyTiles,
+            Game1.timeOfDay,
+            Game1.currentSeason,
+            Game1.dayOfMonth,
+            GetWeatherFact(npc.currentLocation));
 
         return new BridgeResponse<NpcStatusData>(
             true,
@@ -419,12 +423,23 @@ public sealed class BridgeHttpHost
 
         var facts = new List<string>
         {
-            $"location={Game1.currentLocation?.NameOrUniqueName ?? Game1.currentLocation?.Name ?? "unknown"}"
+            $"location={Game1.currentLocation?.NameOrUniqueName ?? Game1.currentLocation?.Name ?? "unknown"}",
+            $"gameTime={Game1.timeOfDay}",
+            $"gameClock={FormatGameClock(Game1.timeOfDay)}",
+            $"season={Game1.currentSeason}",
+            $"dayOfMonth={Game1.dayOfMonth}"
         };
+        facts.Add($"weather={GetWeatherFact(Game1.currentLocation)}");
         if (Game1.activeClickableMenu is not null)
             facts.Add($"activeMenu={Game1.activeClickableMenu.GetType().Name}");
         if (Game1.eventUp)
             facts.Add("event_active");
         return facts;
     }
+
+    private static string FormatGameClock(int timeOfDay)
+        => $"{timeOfDay / 100:00}:{timeOfDay % 100:00}";
+
+    private static string GetWeatherFact(GameLocation? location)
+        => location is not null && Game1.IsRainingHere(location) ? "rain" : "sunny";
 }

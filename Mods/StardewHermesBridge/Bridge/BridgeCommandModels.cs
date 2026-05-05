@@ -105,7 +105,11 @@ public sealed record NpcStatusData(
     IReadOnlyList<MoveCandidateData>? MoveCandidates = null,
     IReadOnlyList<PlaceCandidateData>? PlaceCandidates = null,
     IReadOnlyList<DestinationData>? Destinations = null,
-    IReadOnlyList<MoveCandidateData>? NearbyTiles = null);
+    IReadOnlyList<MoveCandidateData>? NearbyTiles = null,
+    int? GameTime = null,
+    string? Season = null,
+    int? DayOfMonth = null,
+    string? Weather = null);
 
 public sealed record WorldEntityData(
     string NpcId,
