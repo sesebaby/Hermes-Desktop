@@ -27,7 +27,7 @@
   更新
 
   npm update -g @oh-my-codex/cli
-
+ npm i -g oh-my-codex
   omx setup
 
   启动
