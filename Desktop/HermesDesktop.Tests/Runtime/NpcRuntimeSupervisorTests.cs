@@ -391,12 +391,13 @@ public class NpcRuntimeSupervisorTests
 
         Assert.AreEqual(1, privateChatClient.CompleteWithToolsCalls);
         Assert.AreEqual(0, privateChatClient.StructuredStreamCalls);
-        Assert.AreEqual(1, autonomyClient.CompleteWithToolsCalls);
+        Assert.AreEqual(1, autonomyClient.CompleteCalls);
+        Assert.AreEqual(0, autonomyClient.CompleteWithToolsCalls);
         Assert.AreEqual(0, autonomyClient.StructuredStreamCalls);
     }
 
     [TestMethod]
-    public async Task GetOrCreateAutonomyHandleAsync_ParentToolSurfaceExcludesLocalExecutorTools()
+    public async Task GetOrCreateAutonomyHandleAsync_ParentUsesContractOnlyWithoutRegisteredTools()
     {
         var supervisor = new NpcRuntimeSupervisor();
         var pack = CreatePack("haley", "Haley");
@@ -446,9 +447,12 @@ public class NpcRuntimeSupervisorTests
             new Session { Id = $"{descriptor.SessionId}:autonomy:test" },
             CancellationToken.None);
 
-        CollectionAssert.Contains(autonomyClient.LastToolNames.ToArray(), "stardew_status");
-        CollectionAssert.Contains(autonomyClient.LastToolNames.ToArray(), "stardew_speak");
-        CollectionAssert.Contains(autonomyClient.LastToolNames.ToArray(), "mcp_tool_a");
+        Assert.AreEqual(1, autonomyClient.CompleteCalls);
+        Assert.AreEqual(0, autonomyClient.CompleteWithToolsCalls);
+        Assert.AreEqual(0, autonomyClient.LastToolNames.Count);
+        CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_status");
+        CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_speak");
+        CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "mcp_tool_a");
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_move");
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_task_status");
     }
@@ -520,7 +524,8 @@ public class NpcRuntimeSupervisorTests
             CancellationToken.None);
 
         Assert.AreEqual("local_executor_completed:stardew_move", result.DecisionResponse);
-        Assert.AreEqual(1, autonomyClient.CompleteWithToolsCalls);
+        Assert.AreEqual(1, autonomyClient.CompleteCalls);
+        Assert.AreEqual(0, autonomyClient.CompleteWithToolsCalls);
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_move");
         Assert.AreEqual(1, delegationClient.StructuredStreamCalls);
         CollectionAssert.Contains(delegationClient.LastToolNames.ToArray(), "stardew_move");
@@ -1208,19 +1213,36 @@ public class NpcRuntimeSupervisorTests
         public bool SawExpectedActiveTask { get; private set; }
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
-            => Task.FromResult("ok");
+        {
+            CaptureActiveTask(messages);
+            return Task.FromResult(
+                """
+                {
+                  "action": "wait",
+                  "reason": "continue later",
+                  "waitReason": "waiting",
+                  "allowedActions": ["move", "observe", "wait", "task_status"],
+                  "escalate": false
+                }
+                """);
+        }
 
         public Task<ChatResponse> CompleteWithToolsAsync(
             IEnumerable<Message> messages,
             IEnumerable<ToolDefinition> tools,
             CancellationToken ct)
         {
+            CaptureActiveTask(messages);
+
+            return Task.FromResult(new ChatResponse { Content = "I will continue the task.", FinishReason = "stop" });
+        }
+
+        private void CaptureActiveTask(IEnumerable<Message> messages)
+        {
             SawExpectedActiveTask = messages.Any(message =>
                 string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase) &&
                 message.Content.Contains("active task list", StringComparison.OrdinalIgnoreCase) &&
                 message.Content.Contains(expectedTask, StringComparison.Ordinal));
-
-            return Task.FromResult(new ChatResponse { Content = "I will continue the task.", FinishReason = "stop" });
         }
 
         public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
@@ -1243,13 +1265,18 @@ public class NpcRuntimeSupervisorTests
     private sealed class DelegationCapturingChatClient(string name) : IChatClient
     {
         public string Name { get; } = name;
+        public int CompleteCalls { get; private set; }
         public int CompleteWithToolsCalls { get; private set; }
         public int StructuredStreamCalls { get; private set; }
         public string? LastSystemPrompt { get; private set; }
         public List<string> LastToolNames { get; } = new();
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
-            => Task.FromResult("ok");
+        {
+            CompleteCalls++;
+            LastToolNames.Clear();
+            return Task.FromResult("ok");
+        }
 
         public Task<ChatResponse> CompleteWithToolsAsync(
             IEnumerable<Message> messages,
@@ -1284,11 +1311,16 @@ public class NpcRuntimeSupervisorTests
 
     private sealed class ParentIntentChatClient(string response) : IChatClient
     {
+        public int CompleteCalls { get; private set; }
         public int CompleteWithToolsCalls { get; private set; }
         public List<string> LastToolNames { get; } = new();
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
-            => Task.FromResult(response);
+        {
+            CompleteCalls++;
+            LastToolNames.Clear();
+            return Task.FromResult(response);
+        }
 
         public Task<ChatResponse> CompleteWithToolsAsync(
             IEnumerable<Message> messages,

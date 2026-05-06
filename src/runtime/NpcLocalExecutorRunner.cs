@@ -33,7 +33,7 @@ public sealed class NpcUnavailableLocalExecutorRunner : INpcLocalExecutorRunner
         string traceId,
         CancellationToken ct)
     {
-        if (intent.Action is NpcLocalActionKind.Observe or NpcLocalActionKind.Wait)
+        if (intent.Action is NpcLocalActionKind.Observe or NpcLocalActionKind.Wait or NpcLocalActionKind.Escalate)
             return Task.FromResult(NpcLocalExecutorRunner.CompleteHostInterpreted(intent));
 
         return Task.FromResult(new NpcLocalExecutorResult(
@@ -76,7 +76,7 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
         ArgumentNullException.ThrowIfNull(intent);
         ArgumentNullException.ThrowIfNull(facts);
 
-        if (intent.Action is NpcLocalActionKind.Observe or NpcLocalActionKind.Wait)
+        if (intent.Action is NpcLocalActionKind.Observe or NpcLocalActionKind.Wait or NpcLocalActionKind.Escalate)
             return CompleteHostInterpreted(intent);
 
         try
@@ -160,9 +160,12 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
     internal static NpcLocalExecutorResult CompleteHostInterpreted(NpcLocalActionIntent intent)
     {
         var action = FormatAction(intent.Action);
-        var result = intent.Action is NpcLocalActionKind.Wait
-            ? intent.WaitReason ?? intent.Reason
-            : intent.ObserveTarget ?? intent.Reason;
+        var result = intent.Action switch
+        {
+            NpcLocalActionKind.Wait => intent.WaitReason ?? intent.Reason,
+            NpcLocalActionKind.Observe => intent.ObserveTarget ?? intent.Reason,
+            _ => intent.Reason
+        };
         return new NpcLocalExecutorResult(
             action,
             "completed",

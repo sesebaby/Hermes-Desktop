@@ -211,7 +211,8 @@ public class NpcAutonomyLoopTests
         StringAssert.Contains(agent.LastMessage, "先看当前观察事实和 active todo");
         StringAssert.Contains(agent.LastMessage, "玩家给过的约定");
         StringAssert.Contains(agent.LastMessage, "blocked 或 failed");
-        StringAssert.Contains(agent.LastMessage, "用 stardew_speak");
+        StringAssert.Contains(agent.LastMessage, "用 speech 字段");
+        StringAssert.Contains(agent.LastMessage, "\"taskUpdate\"");
         StringAssert.Contains(agent.LastMessage, "只输出一个 JSON object");
         StringAssert.Contains(agent.LastMessage, "\"action\"");
         StringAssert.Contains(agent.LastMessage, "\"allowedActions\"");
@@ -817,7 +818,7 @@ public class NpcAutonomyLoopTests
 
             var records = ReadRuntimeLogRecords(logPath);
             AssertLogRecord(records, "diagnostic", "intent_contract", "accepted", "action=move;reason=meet the player near Pierre");
-            AssertLogRecord(records, "diagnostic", "parent_tool_surface", "verified", "stardew_move=0;stardew_task_status=0");
+            AssertLogRecord(records, "diagnostic", "parent_tool_surface", "verified", "registered_tools=0;stardew_move=0;stardew_task_status=0;stardew_speak=0;todo=0;agent=0");
             AssertLogRecord(records, "diagnostic", "local_executor", "selected", "action=move;lane=delegation");
             AssertLogRecord(records, "local_executor", "stardew_move", "completed", "queued", "cmd-move-1");
 
@@ -826,6 +827,145 @@ public class NpcAutonomyLoopTests
             StringAssert.Contains(entries[0], "tried moving to PierreShop");
             Assert.IsFalse(entries[0].Contains("\"action\"", StringComparison.Ordinal));
             Assert.IsFalse(entries[0].Contains("allowedActions", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithSpeechAndTaskUpdateIntent_SubmitsSpeechAndUpdatesExistingTodo()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-contract-side-effects-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("1", "Meet the player near Pierre", "in_progress")]);
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var parentContract =
+                """
+                {
+                  "action": "wait",
+                  "reason": "the path is blocked right now",
+                  "waitReason": "path blocked",
+                  "allowedActions": ["move", "observe", "wait", "task_status"],
+                  "speech": {
+                    "shouldSpeak": true,
+                    "channel": "player",
+                    "text": "I can't get there yet. The path is blocked."
+                  },
+                  "taskUpdate": {
+                    "taskId": "1",
+                    "status": "blocked",
+                    "reason": "path_blocked"
+                  },
+                  "escalate": false
+                }
+                """;
+            var commands = new CountingCommandService();
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    commands,
+                    new FakeQueryService(new GameObservation(
+                        "haley",
+                        "stardew-valley",
+                        DateTime.UtcNow,
+                        "Haley cannot reach Pierre right now.",
+                        ["location=Town"])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                new FakeAgent(() => { }, parentContract),
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                localExecutorRunner: new NpcUnavailableLocalExecutorRunner(),
+                traceIdFactory: () => "trace-contract-side-effects");
+
+            var result = await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.AreEqual("local_executor_completed:wait", result.DecisionResponse);
+            Assert.AreEqual(1, commands.SubmitCalls);
+            Assert.IsNotNull(commands.LastSubmittedAction);
+            Assert.AreEqual(GameActionType.Speak, commands.LastSubmittedAction.Type);
+            Assert.AreEqual("I can't get there yet. The path is blocked.", commands.LastSubmittedAction.Payload?["text"]?.GetValue<string>());
+            Assert.AreEqual("player", commands.LastSubmittedAction.Payload?["channel"]?.GetValue<string>());
+
+            var snapshot = instance.TodoStore.Read(descriptor.SessionId);
+            Assert.AreEqual(1, snapshot.Todos.Count);
+            Assert.AreEqual("blocked", snapshot.Todos[0].Status);
+            Assert.AreEqual("path_blocked", snapshot.Todos[0].Reason);
+
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertLogRecord(records, "diagnostic", "intent_contract", "accepted", "action=wait;reason=the path is blocked right now");
+            AssertLogRecord(records, "host_action", "stardew_speak", "submitted", "queued", "cmd-fallback");
+            AssertRuntimeRecord(records, "task_update_contract", "task_written", "blocked");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithUnknownTaskUpdate_DoesNotCreateTodo()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-unknown-task-update-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("1", "Keep waiting for the farmer", "pending")]);
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var parentContract =
+                """
+                {
+                  "action": "wait",
+                  "reason": "wait until morning",
+                  "waitReason": "night",
+                  "allowedActions": ["move", "observe", "wait", "task_status"],
+                  "taskUpdate": {
+                    "taskId": "missing",
+                    "status": "completed",
+                    "reason": "not found"
+                  },
+                  "escalate": false
+                }
+                """;
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation(
+                        "haley",
+                        "stardew-valley",
+                        DateTime.UtcNow,
+                        "Haley is waiting.",
+                        ["location=Town"])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                new FakeAgent(() => { }, parentContract),
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                localExecutorRunner: new NpcUnavailableLocalExecutorRunner(),
+                traceIdFactory: () => "trace-unknown-task-update");
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            var snapshot = instance.TodoStore.Read(descriptor.SessionId);
+            Assert.AreEqual(1, snapshot.Todos.Count);
+            Assert.AreEqual("1", snapshot.Todos[0].Id);
+            Assert.AreEqual("pending", snapshot.Todos[0].Status);
+
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertLogRecord(records, "diagnostic", "task_update_contract", "skipped", "task_not_found:missing");
         }
         finally
         {

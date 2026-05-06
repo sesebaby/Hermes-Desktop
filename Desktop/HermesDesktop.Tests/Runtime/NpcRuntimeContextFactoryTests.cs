@@ -73,6 +73,9 @@ public class NpcRuntimeContextFactoryTests
 
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("## Skills (mandatory)", StringComparison.Ordinal));
         Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("session_search", StringComparison.Ordinal));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("return one JSON intent contract only", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("Do not call tools", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("use the registered tools available in this session", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("native desktop environment", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("browser automation", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("web search tools", StringComparison.OrdinalIgnoreCase));

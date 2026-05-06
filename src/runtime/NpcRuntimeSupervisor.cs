@@ -249,10 +249,7 @@ public sealed class NpcRuntimeSupervisor
     {
         var adapter = request.AdapterFactory();
         var factStore = new NpcObservationFactStore();
-        var gameTools = request.GameToolFactory(adapter, factStore).ToArray();
         var localExecutorToolSurface = CreateLocalExecutorToolSurface(request, adapter, factStore);
-        var parentGameTools = ExcludeTools(gameTools, localExecutorToolSurface.Tools).ToArray();
-        var combinedTools = parentGameTools.Concat(request.ToolSurface.Tools).ToArray();
         var localExecutorRunner = CreateLocalExecutorRunner(request.Services, localExecutorToolSurface);
         var rebindKey = BuildRebindKey(
             request.ChannelKey,
@@ -264,7 +261,7 @@ public sealed class NpcRuntimeSupervisor
             request.ToolSurfaceSnapshotVersion,
             request.ToolSurface.Fingerprint,
             localExecutorToolSurface.Fingerprint);
-        var combinedToolSurface = NpcToolSurface.FromTools(combinedTools);
+        var combinedToolSurface = NpcToolSurface.FromTools([]);
         var agentHandle = CreateAgentHandle(
             instance,
             request.ChannelKey,
@@ -276,7 +273,8 @@ public sealed class NpcRuntimeSupervisor
             request.MaxToolIterations,
             combinedToolSurface.Tools,
             generation,
-            combinedToolSurface.Fingerprint);
+            combinedToolSurface.Fingerprint,
+            registerCapabilities: false);
 
         var loop = new NpcAutonomyLoop(
             adapter,
@@ -318,18 +316,6 @@ public sealed class NpcRuntimeSupervisor
             : new NpcLocalExecutorRunner(services.DelegationChatClient, localExecutorToolSurface.Tools);
     }
 
-    private static IEnumerable<ITool> ExcludeTools(IEnumerable<ITool> tools, IEnumerable<ITool> excludedTools)
-    {
-        var excludedNames = excludedTools
-            .Select(tool => tool.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var tool in tools)
-        {
-            if (!excludedNames.Contains(tool.Name))
-                yield return tool;
-        }
-    }
-
     private static NpcRuntimeAgentHandle CreateAgentHandle(
         NpcRuntimeInstance instance,
         string channelKey,
@@ -341,7 +327,8 @@ public sealed class NpcRuntimeSupervisor
         int maxToolIterations,
         IEnumerable<ITool> tools,
         int generation,
-        string toolFingerprint)
+        string toolFingerprint,
+        bool registerCapabilities = true)
     {
         var context = new NpcRuntimeContextFactory().Create(
             instance.Namespace,
@@ -361,24 +348,27 @@ public sealed class NpcRuntimeSupervisor
             services.LoggerFactory,
             maxToolIterations: maxToolIterations);
 
-        AgentCapabilityAssembler.RegisterAllTools(
-            agent,
-            new AgentCapabilityServices
-            {
-                ChatClient = services.ChatClient,
-                DelegationChatClient = services.DelegationChatClient,
-                LoggerFactory = services.LoggerFactory,
-                ToolRegistry = context.ToolRegistry,
-                TodoStore = context.TodoStore,
-                CronScheduler = services.CronScheduler,
-                MemoryManager = context.MemoryManager,
-                PluginManager = context.PluginManager,
-                TranscriptRecallService = context.TranscriptRecallService,
-                SkillManager = services.SkillManager,
-                CheckpointDirectory = Path.Combine(instance.Namespace.RuntimeRoot, "checkpoints"),
-                MemoryAvailable = includeMemory || includeUser
-            },
-            tools);
+        if (registerCapabilities)
+        {
+            AgentCapabilityAssembler.RegisterAllTools(
+                agent,
+                new AgentCapabilityServices
+                {
+                    ChatClient = services.ChatClient,
+                    DelegationChatClient = services.DelegationChatClient,
+                    LoggerFactory = services.LoggerFactory,
+                    ToolRegistry = context.ToolRegistry,
+                    TodoStore = context.TodoStore,
+                    CronScheduler = services.CronScheduler,
+                    MemoryManager = context.MemoryManager,
+                    PluginManager = context.PluginManager,
+                    TranscriptRecallService = context.TranscriptRecallService,
+                    SkillManager = services.SkillManager,
+                    CheckpointDirectory = Path.Combine(instance.Namespace.RuntimeRoot, "checkpoints"),
+                    MemoryAvailable = includeMemory || includeUser
+                },
+                tools);
+        }
 
         return new NpcRuntimeAgentHandle(
             instance,

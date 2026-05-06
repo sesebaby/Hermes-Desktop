@@ -14,9 +14,14 @@ namespace Hermes.Agent.Runtime;
 
 public sealed class NpcRuntimeContextFactory
 {
-    private const string DefaultSystemPromptSupplement =
+    private const string DefaultInteractiveSystemPromptSupplement =
         "You are acting as a Stardew Valley NPC runtime. Observe facts from NPC-local context, " +
         "keep continuity inside this NPC namespace, and use the registered tools available in this session.";
+
+    private const string DefaultAutonomySystemPromptSupplement =
+        "You are acting as a Stardew Valley NPC autonomy parent runtime. Observe facts from NPC-local context, " +
+        "keep continuity inside this NPC namespace, and return one JSON intent contract only. " +
+        "Do not call tools or write tool arguments; mechanical actions are executed by the host and local executor.";
 
     public NpcRuntimeContextBundle Create(
         NpcNamespace npcNamespace,
@@ -66,19 +71,18 @@ public sealed class NpcRuntimeContextFactory
             memoryManager,
             includeMemory: includeMemory,
             includeUser: includeUser));
+        var isAutonomyChannel = string.Equals(channelKey, "autonomy", StringComparison.OrdinalIgnoreCase);
         var promptBuilder = AgentCapabilityAssembler.CreatePromptBuilder(new AgentPromptServices
         {
             SkillManager = skillManager,
             MemoryAvailable = includeMemory || includeUser,
-            IncludeSkillsMandatoryCatalog = !string.Equals(channelKey, "autonomy", StringComparison.OrdinalIgnoreCase),
-            UseStardewNpcRuntimePrompt = string.Equals(channelKey, "autonomy", StringComparison.OrdinalIgnoreCase),
-            IncludeMemoryGuidance = !string.Equals(channelKey, "autonomy", StringComparison.OrdinalIgnoreCase),
-            IncludeSessionSearchGuidance = !string.Equals(channelKey, "autonomy", StringComparison.OrdinalIgnoreCase),
-            IncludeSkillsGuidance = !string.Equals(channelKey, "autonomy", StringComparison.OrdinalIgnoreCase),
-            IncludeRuntimeFactsGuidance = !string.Equals(channelKey, "autonomy", StringComparison.OrdinalIgnoreCase),
-            SupplementalSystemPrompt = string.IsNullOrWhiteSpace(systemPromptSupplement)
-                ? DefaultSystemPromptSupplement
-                : $"{DefaultSystemPromptSupplement}\n\n{systemPromptSupplement.Trim()}"
+            IncludeSkillsMandatoryCatalog = !isAutonomyChannel,
+            UseStardewNpcRuntimePrompt = isAutonomyChannel,
+            IncludeMemoryGuidance = !isAutonomyChannel,
+            IncludeSessionSearchGuidance = !isAutonomyChannel,
+            IncludeSkillsGuidance = !isAutonomyChannel,
+            IncludeRuntimeFactsGuidance = !isAutonomyChannel,
+            SupplementalSystemPrompt = BuildSystemPromptSupplement(isAutonomyChannel, systemPromptSupplement)
         });
         var contextManager = new ContextManager(
             transcriptStore,
@@ -121,6 +125,16 @@ public sealed class NpcRuntimeContextFactory
             new ToolRegistry(),
             firstCallContextBudgetPolicy,
             firstCallContextBudgetPolicy);
+    }
+
+    private static string BuildSystemPromptSupplement(bool isAutonomyChannel, string? systemPromptSupplement)
+    {
+        var defaultSupplement = isAutonomyChannel
+            ? DefaultAutonomySystemPromptSupplement
+            : DefaultInteractiveSystemPromptSupplement;
+        return string.IsNullOrWhiteSpace(systemPromptSupplement)
+            ? defaultSupplement
+            : $"{defaultSupplement}\n\n{systemPromptSupplement.Trim()}";
     }
 }
 

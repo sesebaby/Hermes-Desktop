@@ -51,11 +51,73 @@ public sealed class NpcLocalActionIntentTests
         Assert.AreEqual("player is not nearby", intent.WaitReason);
     }
 
+    [TestMethod]
+    public void TryParse_WhenSpeechAndTaskUpdateArePresent_AcceptsContract()
+    {
+        var ok = NpcLocalActionIntent.TryParse(
+            """
+            {
+              "action": "wait",
+              "reason": "path is blocked",
+              "waitReason": "path_blocked",
+              "allowedActions": ["move", "observe", "wait", "task_status"],
+              "speech": {
+                "shouldSpeak": true,
+                "channel": "player",
+                "text": "I can't get there yet."
+              },
+              "taskUpdate": {
+                "taskId": "1",
+                "status": "blocked",
+                "reason": "path_blocked"
+              },
+              "escalate": false
+            }
+            """,
+            out var intent,
+            out var error);
+
+        Assert.IsTrue(ok, error);
+        Assert.IsNotNull(intent);
+        Assert.AreEqual(NpcLocalActionKind.Wait, intent.Action);
+        Assert.IsNotNull(intent.Speech);
+        Assert.IsTrue(intent.Speech.ShouldSpeak);
+        Assert.AreEqual("player", intent.Speech.Channel);
+        Assert.AreEqual("I can't get there yet.", intent.Speech.Text);
+        Assert.IsNotNull(intent.TaskUpdate);
+        Assert.AreEqual("1", intent.TaskUpdate.TaskId);
+        Assert.AreEqual("blocked", intent.TaskUpdate.Status);
+        Assert.AreEqual("path_blocked", intent.TaskUpdate.Reason);
+    }
+
+    [TestMethod]
+    public void TryParse_WhenEscalateAppearsInAllowedActions_AcceptsContract()
+    {
+        var ok = NpcLocalActionIntent.TryParse(
+            """
+            {
+              "action": "escalate",
+              "reason": "needs private conversation",
+              "allowedActions": ["move", "observe", "wait", "task_status", "escalate"],
+              "escalate": true
+            }
+            """,
+            out var intent,
+            out var error);
+
+        Assert.IsTrue(ok, error);
+        Assert.IsNotNull(intent);
+        Assert.AreEqual(NpcLocalActionKind.Escalate, intent.Action);
+        Assert.IsTrue(intent.Escalate);
+    }
+
     [DataTestMethod]
     [DataRow("not json", "intent_contract_invalid")]
     [DataRow("""{"action":"move","reason":"go","allowedActions":["move"]}""", "destinationId_required")]
     [DataRow("""{"action":"gift","reason":"give flowers","allowedActions":["move","observe","wait","task_status"]}""", "action_not_allowed")]
     [DataRow("""{"action":"move","reason":"go","destinationId":"Town","allowedActions":["wait"]}""", "action_not_allowed")]
+    [DataRow("""{"action":"wait","reason":"wait","allowedActions":["wait"],"speech":{"shouldSpeak":true}}""", "speech_text_required")]
+    [DataRow("""{"action":"wait","reason":"wait","allowedActions":["wait"],"taskUpdate":{"taskId":"1","status":"done"}}""", "task_update_status_not_allowed")]
     public void TryParse_WhenContractIsInvalid_RejectsWithMachineReadableError(string contract, string expectedError)
     {
         var ok = NpcLocalActionIntent.TryParse(contract, out var intent, out var error);

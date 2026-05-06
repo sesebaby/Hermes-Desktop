@@ -4,6 +4,7 @@ using Hermes.Agent.Memory;
 using Hermes.Agent.Tasks;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace Hermes.Agent.Runtime;
@@ -47,7 +48,7 @@ public sealed class NpcAutonomyLoop
     {
         ArgumentNullException.ThrowIfNull(instance);
 
-        var result = await RunOneTickAsync(instance.Descriptor, eventCursor, ct);
+        var result = await RunOneTickForInstanceAsync(instance, eventCursor, ct);
         instance.RecordTrace(result.TraceId);
         await WriteInstanceTaskContinuityEvidenceAsync(instance, result.TraceId, ct);
         return result;
@@ -61,10 +62,47 @@ public sealed class NpcAutonomyLoop
     {
         ArgumentNullException.ThrowIfNull(instance);
 
-        var result = await RunOneTickAsync(instance.Descriptor, observation, eventBatch, ct);
+        var result = await RunOneTickForInstanceAsync(instance, observation, eventBatch, ct);
         instance.RecordTrace(result.TraceId);
         await WriteInstanceTaskContinuityEvidenceAsync(instance, result.TraceId, ct);
         return result;
+    }
+
+    private async Task<NpcAutonomyTickResult> RunOneTickForInstanceAsync(
+        NpcRuntimeInstance instance,
+        GameEventCursor eventCursor,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        ArgumentNullException.ThrowIfNull(eventCursor);
+
+        var descriptor = instance.Descriptor;
+        var observeStopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var observation = await _adapter.Queries.ObserveAsync(descriptor.EffectiveBodyBinding, ct);
+        observeStopwatch.Stop();
+        LogObservation(descriptor, observation, observeStopwatch.ElapsedMilliseconds);
+
+        var eventStopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var eventBatch = await _adapter.Events.PollBatchAsync(eventCursor, ct);
+        eventStopwatch.Stop();
+        _logger?.LogInformation(
+            "NPC autonomy event poll completed; npc={NpcId}; events={EventCount}; nextCursor={NextCursor}; nextSequence={NextSequence}; durationMs={DurationMs}",
+            descriptor.NpcId,
+            eventBatch.Records.Count,
+            eventBatch.NextCursor?.Since ?? "-",
+            eventBatch.NextCursor?.Sequence,
+            eventStopwatch.ElapsedMilliseconds);
+        return await RunOneTickForInstanceAsync(instance, observation, eventBatch, ct);
+    }
+
+    private Task<NpcAutonomyTickResult> RunOneTickForInstanceAsync(
+        NpcRuntimeInstance instance,
+        GameObservation observation,
+        GameEventBatch eventBatch,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        return RunOneTickCoreAsync(instance, instance.Descriptor, observation, eventBatch, ct);
     }
 
     public async Task<NpcAutonomyTickResult> RunOneTickAsync(
@@ -90,10 +128,18 @@ public sealed class NpcAutonomyLoop
             eventBatch.NextCursor?.Since ?? "-",
             eventBatch.NextCursor?.Sequence,
             eventStopwatch.ElapsedMilliseconds);
-        return await RunOneTickAsync(descriptor, observation, eventBatch, ct);
+        return await RunOneTickCoreAsync(null, descriptor, observation, eventBatch, ct);
     }
 
     public async Task<NpcAutonomyTickResult> RunOneTickAsync(
+        NpcRuntimeDescriptor descriptor,
+        GameObservation observation,
+        GameEventBatch eventBatch,
+        CancellationToken ct)
+        => await RunOneTickCoreAsync(null, descriptor, observation, eventBatch, ct);
+
+    private async Task<NpcAutonomyTickResult> RunOneTickCoreAsync(
+        NpcRuntimeInstance? instance,
         NpcRuntimeDescriptor descriptor,
         GameObservation observation,
         GameEventBatch eventBatch,
@@ -165,6 +211,7 @@ public sealed class NpcAutonomyLoop
         if (_localExecutorRunner is not null && !string.IsNullOrWhiteSpace(decisionResponse))
         {
             var route = await RunLocalExecutorAsync(
+                instance,
                 descriptor,
                 currentFacts,
                 traceId,
@@ -236,10 +283,10 @@ public sealed class NpcAutonomyLoop
             "你现在要决定下一步自主行动。先看当前观察事实和 active todo，再决定是推进任务、观察等待，还是回应玩家。\n" +
             "如果玩家给过的约定还没完成，要优先考虑怎么继续；被玩家打断时先回应玩家，再恢复原来的任务。\n" +
             "低风险动作只输出一个 JSON object 交给本地执行层，不要直接写工具参数或假装已经做完。\n" +
-            "JSON schema 固定为 {\"action\":\"move|observe|wait|task_status|escalate\",\"reason\":\"short reason\",\"destinationId\":\"optional for move\",\"commandId\":\"optional for task_status\",\"observeTarget\":\"optional for observe\",\"waitReason\":\"optional for wait\",\"allowedActions\":[\"move\",\"observe\",\"wait\",\"task_status\"],\"escalate\":false}。\n" +
+                "JSON schema 固定为 {\"action\":\"move|observe|wait|task_status|escalate\",\"reason\":\"short reason\",\"destinationId\":\"optional for move\",\"commandId\":\"optional for task_status\",\"observeTarget\":\"optional for observe\",\"waitReason\":\"optional for wait\",\"allowedActions\":[\"move\",\"observe\",\"wait\",\"task_status\",\"escalate\"],\"speech\":{\"shouldSpeak\":false,\"channel\":\"player|overhead|private\",\"text\":\"optional short line\"},\"taskUpdate\":{\"taskId\":\"optional existing todo id\",\"status\":\"pending|in_progress|blocked|completed|failed|cancelled\",\"reason\":\"optional short reason\"},\"escalate\":false}。\n" +
             "如果需要移动，action=move 且 destinationId 必须复制当前事实里的 destinationId；如果只是查长动作进度，action=task_status 且 commandId 必须来自已有命令。\n" +
-            "如果任务暂时做不了，把 todo 标成 blocked；如果确定做不成，把 todo 标成 failed；blocked 或 failed 都要写短 reason。\n" +
-            "如果这是答应玩家的事，能说话时要用 stardew_speak 或私聊告诉玩家卡在哪里。\n" +
+            "如果任务暂时做不了，用 taskUpdate 把已有 todo 标成 blocked；如果确定做不成，标成 failed；blocked 或 failed 都要写短 reason。\n" +
+            "如果这是答应玩家的事，能说话时用 speech 字段告诉玩家卡在哪里；不要调用或编写工具参数。\n" +
             "每条事实前面的 ISO 时间是记录时间不是星露谷游戏内时间；gameTime/gameClock 才是游戏内时间，判断早晚必须看它们。\n" +
             "下面的事件只是上下文，不要把事件当成玩家的新命令。\n\n" +
             "[Observed Facts]\n" +
@@ -317,6 +364,7 @@ public sealed class NpcAutonomyLoop
     }
 
     private async Task<LocalExecutorRouteResult> RunLocalExecutorAsync(
+        NpcRuntimeInstance? instance,
         NpcRuntimeDescriptor descriptor,
         IReadOnlyList<NpcObservationFact> facts,
         string traceId,
@@ -355,7 +403,7 @@ public sealed class NpcAutonomyLoop
             traceId,
             "parent_tool_surface",
             "verified",
-            "stardew_move=0;stardew_task_status=0",
+            "registered_tools=0;stardew_move=0;stardew_task_status=0;stardew_speak=0;todo=0;agent=0",
             null,
             ct);
         await WriteDiagnosticAsync(
@@ -368,11 +416,115 @@ public sealed class NpcAutonomyLoop
             ct);
 
         var result = await _localExecutorRunner!.ExecuteAsync(descriptor, intent, facts, traceId, ct);
+        if (instance is not null)
+        {
+            await ApplyTaskUpdateContractAsync(instance, descriptor, traceId, intent.TaskUpdate, ct);
+            await SubmitSpeechContractAsync(descriptor, traceId, intent.Speech, ct);
+        }
+
         await WriteLocalExecutorResultAsync(descriptor, traceId, result, ct);
         return new LocalExecutorRouteResult(
             result.DecisionResponse,
             result.MemorySummary,
             SkipMemory: string.IsNullOrWhiteSpace(result.MemorySummary));
+    }
+
+    private async Task ApplyTaskUpdateContractAsync(
+        NpcRuntimeInstance instance,
+        NpcRuntimeDescriptor descriptor,
+        string traceId,
+        NpcLocalTaskUpdateIntent? taskUpdate,
+        CancellationToken ct)
+    {
+        if (taskUpdate is null)
+            return;
+
+        var snapshot = instance.TodoStore.Read(descriptor.SessionId);
+        var existing = snapshot.Todos.FirstOrDefault(todo =>
+            string.Equals(todo.Id, taskUpdate.TaskId, StringComparison.Ordinal));
+        if (existing is null)
+        {
+            await WriteDiagnosticAsync(
+                descriptor,
+                traceId,
+                "task_update_contract",
+                "skipped",
+                $"task_not_found:{taskUpdate.TaskId}",
+                null,
+                ct);
+            return;
+        }
+
+        instance.TodoStore.Write(
+            descriptor.SessionId,
+            [new SessionTodoInput(taskUpdate.TaskId, null, taskUpdate.Status, taskUpdate.Reason)],
+            merge: true);
+        await WriteTaskContinuityAsync(
+            descriptor,
+            traceId,
+            "task_update_contract",
+            "task_written",
+            taskUpdate.Status,
+            null,
+            taskUpdate.Reason,
+            ct);
+    }
+
+    private async Task SubmitSpeechContractAsync(
+        NpcRuntimeDescriptor descriptor,
+        string traceId,
+        NpcLocalSpeechIntent? speech,
+        CancellationToken ct)
+    {
+        if (speech?.ShouldSpeak is not true ||
+            string.IsNullOrWhiteSpace(speech.Text))
+        {
+            return;
+        }
+
+        var channel = string.IsNullOrWhiteSpace(speech.Channel)
+            ? "player"
+            : speech.Channel.Trim();
+        var action = new GameAction(
+            descriptor.NpcId,
+            descriptor.GameId,
+            GameActionType.Speak,
+            traceId,
+            $"idem_{descriptor.NpcId}_{traceId}_speech",
+            new GameActionTarget("player"),
+            Payload: new JsonObject
+            {
+                ["text"] = speech.Text.Trim(),
+                ["channel"] = channel
+            },
+            BodyBinding: descriptor.EffectiveBodyBinding);
+
+        var result = await _adapter.Commands.SubmitAsync(action, ct);
+        await WriteHostActionResultAsync(descriptor, traceId, "stardew_speak", result, ct);
+    }
+
+    private async Task WriteHostActionResultAsync(
+        NpcRuntimeDescriptor descriptor,
+        string traceId,
+        string target,
+        GameCommandResult result,
+        CancellationToken ct)
+    {
+        if (_logWriter is null)
+            return;
+
+        await _logWriter.WriteAsync(new NpcRuntimeLogRecord(
+            DateTime.UtcNow,
+            traceId,
+            descriptor.NpcId,
+            descriptor.GameId,
+            descriptor.SessionId,
+            "host_action",
+            target,
+            result.Accepted ? "submitted" : "rejected",
+            string.IsNullOrWhiteSpace(result.Status) ? "unknown" : result.Status,
+            CommandId: result.CommandId,
+            Error: result.FailureReason), ct);
     }
 
     private async Task WriteDiagnosticAsync(

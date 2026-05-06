@@ -18,6 +18,8 @@ public sealed record NpcLocalActionIntent(
     string? CommandId = null,
     string? ObserveTarget = null,
     string? WaitReason = null,
+    NpcLocalSpeechIntent? Speech = null,
+    NpcLocalTaskUpdateIntent? TaskUpdate = null,
     bool Escalate = false)
 {
     private static readonly HashSet<string> AllowedActions = new(StringComparer.OrdinalIgnoreCase)
@@ -25,7 +27,18 @@ public sealed record NpcLocalActionIntent(
         "move",
         "observe",
         "wait",
-        "task_status"
+        "task_status",
+        "escalate"
+    };
+
+    private static readonly HashSet<string> AllowedTaskStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "pending",
+        "in_progress",
+        "completed",
+        "cancelled",
+        "blocked",
+        "failed"
     };
 
     public static bool TryParse(string? value, out NpcLocalActionIntent? intent, out string error)
@@ -69,8 +82,7 @@ public sealed record NpcLocalActionIntent(
         }
 
         var escalate = ReadBool(root, "escalate");
-        if (action is not NpcLocalActionKind.Escalate &&
-            !AllowedActions.Contains(actionText))
+        if (!AllowedActions.Contains(actionText))
         {
             error = "action_not_allowed";
             return false;
@@ -96,6 +108,12 @@ public sealed record NpcLocalActionIntent(
             return false;
         }
 
+        if (!TryReadSpeech(root, out var speech, out error))
+            return false;
+
+        if (!TryReadTaskUpdate(root, out var taskUpdate, out error))
+            return false;
+
         intent = new NpcLocalActionIntent(
             action,
             ReadString(root, "reason") ?? "",
@@ -103,7 +121,84 @@ public sealed record NpcLocalActionIntent(
             commandId,
             ReadString(root, "observeTarget"),
             ReadString(root, "waitReason"),
+            speech,
+            taskUpdate,
             escalate);
+        return true;
+    }
+
+    private static bool TryReadSpeech(JsonElement root, out NpcLocalSpeechIntent? speech, out string error)
+    {
+        speech = null;
+        error = "";
+        if (!root.TryGetProperty("speech", out var element) ||
+            element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return true;
+        }
+
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            error = "speech_contract_invalid";
+            return false;
+        }
+
+        var shouldSpeak = ReadBool(element, "shouldSpeak");
+        if (!shouldSpeak)
+        {
+            speech = new NpcLocalSpeechIntent(false, null, null);
+            return true;
+        }
+
+        var text = ReadString(element, "text");
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            error = "speech_text_required";
+            return false;
+        }
+
+        speech = new NpcLocalSpeechIntent(
+            true,
+            ReadString(element, "channel"),
+            text.Trim());
+        return true;
+    }
+
+    private static bool TryReadTaskUpdate(JsonElement root, out NpcLocalTaskUpdateIntent? taskUpdate, out string error)
+    {
+        taskUpdate = null;
+        error = "";
+        if (!root.TryGetProperty("taskUpdate", out var element) ||
+            element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return true;
+        }
+
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            error = "task_update_contract_invalid";
+            return false;
+        }
+
+        var taskId = ReadString(element, "taskId");
+        if (string.IsNullOrWhiteSpace(taskId))
+        {
+            error = "task_update_taskId_required";
+            return false;
+        }
+
+        var status = ReadString(element, "status");
+        if (string.IsNullOrWhiteSpace(status) ||
+            !AllowedTaskStatuses.Contains(status))
+        {
+            error = "task_update_status_not_allowed";
+            return false;
+        }
+
+        taskUpdate = new NpcLocalTaskUpdateIntent(
+            taskId.Trim(),
+            status.Trim().ToLowerInvariant(),
+            ReadString(element, "reason"));
         return true;
     }
 
@@ -161,3 +256,13 @@ public sealed record NpcLocalActionIntent(
         => element.TryGetProperty(propertyName, out var value) &&
            value.ValueKind == JsonValueKind.True;
 }
+
+public sealed record NpcLocalSpeechIntent(
+    bool ShouldSpeak,
+    string? Channel,
+    string? Text);
+
+public sealed record NpcLocalTaskUpdateIntent(
+    string TaskId,
+    string Status,
+    string? Reason);

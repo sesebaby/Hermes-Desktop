@@ -86,6 +86,31 @@ public sealed class NpcLocalExecutorRunnerTests
         Assert.AreEqual("local_executor_blocked:unknown_tool", result.DecisionResponse);
     }
 
+    [TestMethod]
+    public async Task ExecuteAsync_WithEscalateIntent_CompletesWithoutCallingModelOrTool()
+    {
+        var chatClient = new RecordingChatClient([]);
+        var moveTool = new RecordingTool(
+            "stardew_move",
+            typeof(MoveParameters),
+            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-move-1","status":"queued"}"""));
+        var runner = new NpcLocalExecutorRunner(chatClient, [moveTool]);
+
+        var result = await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            new NpcLocalActionIntent(NpcLocalActionKind.Escalate, "needs private conversation", Escalate: true),
+            [CreateObservationFact("Haley needs help from the higher-level lane.")],
+            "trace-escalate",
+            CancellationToken.None);
+
+        Assert.AreEqual(0, chatClient.StreamCalls);
+        Assert.AreEqual(0, moveTool.ExecuteCalls);
+        Assert.AreEqual("escalate", result.Target);
+        Assert.AreEqual("completed", result.Stage);
+        Assert.AreEqual("needs private conversation", result.Result);
+        Assert.AreEqual("local_executor_completed:escalate", result.DecisionResponse);
+    }
+
     private static NpcRuntimeDescriptor CreateDescriptor(string npcId)
         => new(
             npcId,
