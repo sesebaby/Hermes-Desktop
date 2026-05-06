@@ -9,6 +9,12 @@ using Microsoft.Extensions.Logging;
 
 public static class StardewNpcToolFactory
 {
+    private static readonly HashSet<string> LocalExecutorToolNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "stardew_move",
+        "stardew_task_status"
+    };
+
     public static IReadOnlyList<ITool> CreateDefault(
         IGameAdapter adapter,
         NpcRuntimeDescriptor descriptor,
@@ -44,6 +50,56 @@ public static class StardewNpcToolFactory
             new StardewOpenPrivateChatTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewTaskStatusTool(adapter.Commands)
         ];
+    }
+
+    public static IReadOnlyList<ITool> CreateLocalExecutorTools(
+        IGameAdapter adapter,
+        NpcRuntimeDescriptor descriptor,
+        Func<string>? traceIdFactory = null,
+        Func<string>? idempotencyKeyFactory = null,
+        int maxStatusPolls = 3,
+        NpcRuntimeDriver? runtimeDriver = null,
+        WorldCoordinationService? worldCoordination = null,
+        ILogger? logger = null,
+        Func<DateTime>? nowUtc = null,
+        TimeSpan? actionTimeout = null)
+        => CreateDefault(
+                adapter,
+                descriptor,
+                traceIdFactory,
+                idempotencyKeyFactory,
+                maxStatusPolls,
+                runtimeDriver,
+                worldCoordination,
+                recentActivityProvider: null,
+                logger,
+                nowUtc,
+                actionTimeout)
+            .Where(IsLocalExecutorTool)
+            .ToArray();
+
+    public static string LocalExecutorToolFingerprint()
+        => NpcToolSurface.FromTools(
+            [
+                new ToolFingerprintProbe("stardew_move"),
+                new ToolFingerprintProbe("stardew_task_status")
+            ])
+            .Fingerprint;
+
+    private static bool IsLocalExecutorTool(ITool tool)
+        => LocalExecutorToolNames.Contains(tool.Name);
+
+    private sealed class ToolFingerprintProbe(string name) : ITool
+    {
+        public string Name { get; } = name;
+        public string Description => "fingerprint probe";
+        public Type ParametersType => typeof(NoopParameters);
+        public Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+            => Task.FromResult(ToolResult.Fail("fingerprint probe is not executable"));
+    }
+
+    private sealed class NoopParameters
+    {
     }
 }
 

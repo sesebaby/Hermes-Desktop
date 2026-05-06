@@ -122,6 +122,7 @@ public sealed class NpcRuntimeSupervisor
 
         var instance = await GetOrStartAsync(descriptor, runtimeRoot, ct);
         instance.Namespace.SeedPersonaPack(pack);
+        var localExecutorToolFingerprint = request.LocalExecutorToolFingerprint ?? string.Empty;
 
         var rebindKey = BuildRebindKey(
             request.ChannelKey,
@@ -131,7 +132,8 @@ public sealed class NpcRuntimeSupervisor
             request.IncludeUser,
             request.MaxToolIterations,
             request.ToolSurfaceSnapshotVersion,
-            request.ToolSurface.Fingerprint);
+            request.ToolSurface.Fingerprint,
+            localExecutorToolFingerprint);
 
         return instance.GetOrCreateAutonomyHandle(
             rebindKey,
@@ -248,7 +250,9 @@ public sealed class NpcRuntimeSupervisor
         var adapter = request.AdapterFactory();
         var factStore = new NpcObservationFactStore();
         var gameTools = request.GameToolFactory(adapter, factStore).ToArray();
-        var combinedTools = gameTools.Concat(request.ToolSurface.Tools).ToArray();
+        var localExecutorToolSurface = CreateLocalExecutorToolSurface(request, adapter, factStore);
+        var parentGameTools = ExcludeTools(gameTools, localExecutorToolSurface.Tools).ToArray();
+        var combinedTools = parentGameTools.Concat(request.ToolSurface.Tools).ToArray();
         var rebindKey = BuildRebindKey(
             request.ChannelKey,
             request.AdapterKey,
@@ -257,7 +261,8 @@ public sealed class NpcRuntimeSupervisor
             request.IncludeUser,
             request.MaxToolIterations,
             request.ToolSurfaceSnapshotVersion,
-            request.ToolSurface.Fingerprint);
+            request.ToolSurface.Fingerprint,
+            localExecutorToolSurface.Fingerprint);
         var combinedToolSurface = NpcToolSurface.FromTools(combinedTools);
         var agentHandle = CreateAgentHandle(
             instance,
@@ -289,6 +294,26 @@ public sealed class NpcRuntimeSupervisor
             rebindKey,
             generation,
             combinedToolSurface.Fingerprint);
+    }
+
+    private static NpcToolSurface CreateLocalExecutorToolSurface(
+        NpcRuntimeAutonomyBindingRequest request,
+        IGameAdapter adapter,
+        NpcObservationFactStore factStore)
+        => request.LocalExecutorGameToolFactory is null
+            ? NpcToolSurface.FromTools([])
+            : NpcToolSurface.FromTools(request.LocalExecutorGameToolFactory(adapter, factStore));
+
+    private static IEnumerable<ITool> ExcludeTools(IEnumerable<ITool> tools, IEnumerable<ITool> excludedTools)
+    {
+        var excludedNames = excludedTools
+            .Select(tool => tool.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var tool in tools)
+        {
+            if (!excludedNames.Contains(tool.Name))
+                yield return tool;
+        }
     }
 
     private static NpcRuntimeAgentHandle CreateAgentHandle(

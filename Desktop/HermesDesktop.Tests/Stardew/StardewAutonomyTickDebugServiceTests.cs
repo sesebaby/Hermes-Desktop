@@ -53,7 +53,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_HaleyInjectsRequiredPersonaSkillsAndPreservesStardewTools()
+    public async Task RunOneTickAsync_HaleyInjectsRequiredPersonaSkillsAndExcludesLocalExecutorToolsFromParent()
     {
         var chatClient = new ToolSnapshotChatClient("I will wait near the library.");
         var queries = new FakeQueryService(new GameObservation(
@@ -102,11 +102,11 @@ public sealed class StardewAutonomyTickDebugServiceTests
         CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "skills_list");
         CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "skill_invoke");
         CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "stardew_status");
-        CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "stardew_move");
         CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "stardew_speak");
         CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "stardew_open_private_chat");
-        CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "stardew_task_status");
         CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "mcp_dynamic_test");
+        CollectionAssert.DoesNotContain(chatClient.ToolNames.ToArray(), "stardew_move");
+        CollectionAssert.DoesNotContain(chatClient.ToolNames.ToArray(), "stardew_task_status");
 
         Assert.IsTrue(chatClient.SystemMessages.Any(message =>
             message.Contains("## Persona Facts", StringComparison.Ordinal) &&

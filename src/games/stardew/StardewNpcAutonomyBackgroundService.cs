@@ -517,6 +517,12 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                         worldCoordination: _worldCoordination,
                         recentActivityProvider: new StardewRecentActivityProvider(factStore, tracker.Driver),
                         logger: _logger),
+                    LocalExecutorGameToolFactory: (adapter, factStore) => StardewNpcToolFactory.CreateLocalExecutorTools(
+                        adapter,
+                        binding.Descriptor,
+                        runtimeDriver: tracker.Driver,
+                        worldCoordination: _worldCoordination,
+                        logger: _logger),
                     Services: new NpcRuntimeCompositionServices(
                         _chatClient,
                         _loggerFactory,
@@ -525,7 +531,8 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                         _delegationChatClient),
                     ToolSurface: toolSnapshot.ToolSurface,
                     ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion,
-                    SystemPromptSupplement: systemPromptSupplement),
+                    SystemPromptSupplement: systemPromptSupplement,
+                    LocalExecutorToolFingerprint: StardewNpcToolFactory.LocalExecutorToolFingerprint()),
                 ct);
 
             var observeStopwatch = Stopwatch.StartNew();

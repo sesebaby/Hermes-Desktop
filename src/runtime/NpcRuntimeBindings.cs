@@ -81,7 +81,9 @@ public sealed record NpcRuntimeAutonomyBindingRequest(
     NpcRuntimeCompositionServices Services,
     NpcToolSurface ToolSurface,
     long ToolSurfaceSnapshotVersion = 0,
-    string? SystemPromptSupplement = null)
+    string? SystemPromptSupplement = null,
+    Func<IGameAdapter, NpcObservationFactStore, IEnumerable<ITool>>? LocalExecutorGameToolFactory = null,
+    string? LocalExecutorToolFingerprint = null)
 {
     public NpcRuntimeAutonomyBindingRequest(
         string ChannelKey,
@@ -106,7 +108,9 @@ public sealed record NpcRuntimeAutonomyBindingRequest(
             Services,
             ToolSurface,
             ToolSurfaceSnapshotVersion,
-            SystemPromptSupplement)
+            SystemPromptSupplement,
+            null,
+            null)
     {
         ArgumentNullException.ThrowIfNull(GameToolFactory);
     }
@@ -123,6 +127,13 @@ public sealed record NpcRuntimeAutonomyBindingRequest(
         ArgumentNullException.ThrowIfNull(GameToolFactory);
         Services.Validate();
         ArgumentNullException.ThrowIfNull(ToolSurface);
+        if (LocalExecutorGameToolFactory is not null &&
+            string.IsNullOrWhiteSpace(LocalExecutorToolFingerprint))
+        {
+            throw new ArgumentException(
+                "Local executor tool fingerprint is required when local executor tools are provided.",
+                nameof(LocalExecutorToolFingerprint));
+        }
     }
 }
 
