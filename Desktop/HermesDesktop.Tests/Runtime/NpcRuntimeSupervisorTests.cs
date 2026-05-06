@@ -528,6 +528,70 @@ public class NpcRuntimeSupervisorTests
     }
 
     [TestMethod]
+    public async Task GetOrCreateAutonomyHandleAsync_WhenDelegationClientMissing_BlocksLocalExecutorWithoutParentFallback()
+    {
+        var supervisor = new NpcRuntimeSupervisor();
+        var pack = CreatePack("haley", "Haley");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
+        var autonomyClient = new ParentIntentChatClient(
+            """
+            {
+              "action": "move",
+              "reason": "meet player",
+              "destinationId": "PierreShop",
+              "allowedActions": ["move", "observe", "wait", "task_status"],
+              "escalate": false
+            }
+            """);
+        var moveTool = new RecordingTool(
+            "stardew_move",
+            typeof(MoveParameters),
+            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-move-1","status":"queued"}"""));
+        var services = new NpcRuntimeCompositionServices(
+            autonomyClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler());
+
+        var handle = await supervisor.GetOrCreateAutonomyHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAutonomyBindingRequest(
+                ChannelKey: "autonomy",
+                AdapterKey: "bridge-a",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                AdapterFactory: () => new FakeGameAdapter(),
+                GameToolFactory: (adapter, factStore) =>
+                [
+                    new FakeTool("stardew_status"),
+                    new FakeTool("stardew_move")
+                ],
+                LocalExecutorGameToolFactory: (adapter, factStore) => [moveTool],
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([]),
+                LocalExecutorToolFingerprint: NpcToolSurface.FromTools([moveTool]).Fingerprint),
+            CancellationToken.None);
+
+        var result = await handle.Loop.RunOneTickAsync(
+            descriptor,
+            new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley can move to Pierre.",
+                ["location=Town", "destination[0].destinationId=PierreShop"]),
+            new GameEventBatch([], new GameEventCursor()),
+            CancellationToken.None);
+
+        Assert.AreEqual("local_executor_blocked:local_executor_unavailable", result.DecisionResponse);
+        CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_move");
+        Assert.AreEqual(0, moveTool.ExecuteCalls);
+    }
+
+    [TestMethod]
     public async Task GetOrCreateAutonomyHandleAsync_RebindsWhenLocalExecutorToolSurfaceChanges()
     {
         var supervisor = new NpcRuntimeSupervisor();
