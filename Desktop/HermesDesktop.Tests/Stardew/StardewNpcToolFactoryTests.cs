@@ -45,6 +45,25 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
+    public void CreateLocalExecutorTools_ContainsOnlyAllowedMechanicalReadOnlyTools()
+    {
+        var tools = StardewNpcToolFactory.CreateLocalExecutorTools(
+            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"));
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "stardew_status",
+                "stardew_move",
+                "stardew_task_status"
+            },
+            tools.Select(tool => tool.Name).ToArray());
+        CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_speak");
+        CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_open_private_chat");
+    }
+
+    [TestMethod]
     public async Task RecentActivityTool_UsesProviderWhenAvailable()
     {
         var provider = new FakeRecentActivityProvider(new StardewStatusFactResponseData(

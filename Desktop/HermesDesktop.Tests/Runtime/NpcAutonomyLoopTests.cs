@@ -210,6 +210,10 @@ public class NpcAutonomyLoopTests
         Assert.IsNotNull(agent.LastMessage);
         StringAssert.Contains(agent.LastMessage, "先看当前观察事实和 active todo");
         StringAssert.Contains(agent.LastMessage, "玩家给过的约定");
+        StringAssert.Contains(agent.LastMessage, "用 schedule_cron 工具预约下一次继续");
+        StringAssert.Contains(agent.LastMessage, "不要把 todo 标成 blocked");
+        StringAssert.Contains(agent.LastMessage, "wait 只作为");
+        StringAssert.Contains(agent.LastMessage, "不要把 wait 当普通世界动作");
         StringAssert.Contains(agent.LastMessage, "blocked 或 failed");
         StringAssert.Contains(agent.LastMessage, "用 speech 字段");
         StringAssert.Contains(agent.LastMessage, "\"taskUpdate\"");
@@ -822,6 +826,7 @@ public class NpcAutonomyLoopTests
             AssertLogRecord(records, "diagnostic", "parent_tool_surface", "verified", "registered_tools=0;stardew_move=0;stardew_task_status=0;stardew_speak=0;todo=0;agent=0");
             AssertLogRecord(records, "diagnostic", "local_executor", "selected", "action=move;lane=delegation");
             AssertLogRecord(records, "local_executor", "stardew_move", "completed", "queued", "cmd-move-1");
+            AssertLogRecordExecutorMode(records, "local_executor", "stardew_move", "model_called");
 
             var entries = await memoryManager.ReadEntriesAsync("memory", CancellationToken.None);
             Assert.AreEqual(1, entries.Count);
@@ -904,6 +909,70 @@ public class NpcAutonomyLoopTests
             AssertLogRecord(records, "diagnostic", "intent_contract", "accepted", "action=wait;reason=the path is blocked right now");
             AssertLogRecord(records, "host_action", "stardew_speak", "submitted", "queued", "cmd-fallback");
             AssertRuntimeRecord(records, "task_update_contract", "task_written", "blocked");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithSpeechAndBlockedLocalExecutor_KeepsSpeechAsHostAction()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-speech-blocked-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var parentContract =
+                """
+                {
+                  "action": "move",
+                  "reason": "meet player",
+                  "destinationId": "PierreShop",
+                  "speech": {
+                    "shouldSpeak": true,
+                    "channel": "player",
+                    "text": "I will try, but I may be blocked."
+                  }
+                }
+                """;
+            var commands = new CountingCommandService();
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    commands,
+                    new FakeQueryService(new GameObservation(
+                        "haley",
+                        "stardew-valley",
+                        DateTime.UtcNow,
+                        "Haley can move to Pierre.",
+                        ["location=Town", "destination[0].destinationId=PierreShop"])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                new FakeAgent(() => { }, parentContract),
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                localExecutorRunner: new FakeLocalExecutorRunner(new NpcLocalExecutorResult(
+                    "local_executor",
+                    "blocked",
+                    "no_tool_call",
+                    "local_executor_blocked:no_tool_call",
+                    Error: "no_tool_call",
+                    ExecutorMode: "blocked")),
+                traceIdFactory: () => "trace-speech-blocked");
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertLogRecord(records, "local_executor", "local_executor", "blocked", "no_tool_call");
+            AssertLogRecordExecutorMode(records, "local_executor", "local_executor", "blocked");
+            AssertLogRecord(records, "host_action", "stardew_speak", "submitted", "queued", "cmd-fallback");
+            Assert.IsFalse(records.Any(record =>
+                record.GetProperty("actionType").GetString() == "local_executor" &&
+                record.GetProperty("target").GetString() == "stardew_speak"));
         }
         finally
         {
@@ -1076,6 +1145,20 @@ public class NpcAutonomyLoopTests
              (record.TryGetProperty("commandId", out var commandProperty) &&
               commandProperty.GetString() == commandId))),
             $"Missing {actionType} record target={target}, stage={stage}, result={result}, commandId={commandId ?? "-"}.");
+    }
+
+    private static void AssertLogRecordExecutorMode(
+        IReadOnlyList<JsonElement> records,
+        string actionType,
+        string target,
+        string executorMode)
+    {
+        Assert.IsTrue(records.Any(record =>
+            record.GetProperty("actionType").GetString() == actionType &&
+            record.GetProperty("target").GetString() == target &&
+            record.TryGetProperty("executorMode", out var modeProperty) &&
+            modeProperty.GetString() == executorMode),
+            $"Missing {actionType} record target={target}, executorMode={executorMode}.");
     }
 
     private sealed class FakeGameAdapter : IGameAdapter

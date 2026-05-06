@@ -22,7 +22,12 @@ public sealed record NpcLocalExecutorResult(
     string DecisionResponse,
     string? MemorySummary = null,
     string? CommandId = null,
-    string? Error = null);
+    string? Error = null,
+    string ExecutorMode = "model_called",
+    IReadOnlyList<string>? Diagnostics = null)
+{
+    public IReadOnlyList<string> Diagnostics { get; init; } = Diagnostics ?? [];
+}
 
 public sealed class NpcUnavailableLocalExecutorRunner : INpcLocalExecutorRunner
 {
@@ -33,7 +38,7 @@ public sealed class NpcUnavailableLocalExecutorRunner : INpcLocalExecutorRunner
         string traceId,
         CancellationToken ct)
     {
-        if (intent.Action is NpcLocalActionKind.Observe or NpcLocalActionKind.Wait or NpcLocalActionKind.Escalate)
+        if (intent.Action is NpcLocalActionKind.Wait or NpcLocalActionKind.Escalate)
             return Task.FromResult(NpcLocalExecutorRunner.CompleteHostInterpreted(intent));
 
         return Task.FromResult(new NpcLocalExecutorResult(
@@ -42,7 +47,8 @@ public sealed class NpcUnavailableLocalExecutorRunner : INpcLocalExecutorRunner
             "local_executor_unavailable",
             "local_executor_blocked:local_executor_unavailable",
             "local executor was unavailable; low-risk action was not delegated or executed.",
-            Error: "local_executor_unavailable"));
+            Error: "local_executor_unavailable",
+            ExecutorMode: "blocked"));
     }
 }
 
@@ -76,35 +82,43 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
         ArgumentNullException.ThrowIfNull(intent);
         ArgumentNullException.ThrowIfNull(facts);
 
-        if (intent.Action is NpcLocalActionKind.Observe or NpcLocalActionKind.Wait or NpcLocalActionKind.Escalate)
+        if (intent.Action is NpcLocalActionKind.Wait or NpcLocalActionKind.Escalate)
             return CompleteHostInterpreted(intent);
 
         try
         {
-            var messages = new[]
+            var selectedTools = SelectTools(intent.Action);
+            if (selectedTools.Count == 0)
+                return Block("local_executor", "required_tool_unavailable", "required_tool_unavailable", $"required tool unavailable for {FormatAction(intent.Action)}");
+
+            var firstAttempt = await TryRunModelToolCallAsync(descriptor, intent, facts, traceId, selectedTools, correctiveRetry: false, ct);
+            if (firstAttempt.Stage != "blocked" ||
+                !string.Equals(firstAttempt.Error, "no_tool_call", StringComparison.Ordinal))
             {
-                new Message
-                {
-                    Role = "user",
-                    Content = BuildUserMessage(descriptor, intent, facts, traceId)
-                }
-            };
-            await foreach (var streamEvent in _chatClient.StreamAsync(
-                               BuildSystemPrompt(),
-                               messages,
-                               _tools.Values.Select(BuildToolDefinition),
-                               ct))
-            {
-                switch (streamEvent)
-                {
-                    case StreamEvent.ToolUseComplete toolUse:
-                        return await ExecuteToolUseAsync(toolUse, ct);
-                    case StreamEvent.StreamError error:
-                        return Block("local_executor", "stream_error", "stream_error", error.Error.Message);
-                }
+                return firstAttempt;
             }
 
-            return Block("local_executor", "no_tool_call", "no_tool_call", "no tool call returned");
+            var retry = await TryRunModelToolCallAsync(descriptor, intent, facts, traceId, selectedTools, correctiveRetry: true, ct);
+            if (retry.Stage == "blocked" &&
+                string.Equals(retry.Error, "no_tool_call", StringComparison.Ordinal))
+            {
+                return retry with
+                {
+                    Diagnostics =
+                    [
+                        "target=local_executor stage=attempt result=no_tool_call;attempt=1",
+                        "target=local_executor stage=retry result=no_tool_call;attempt=2"
+                    ]
+                };
+            }
+
+            return retry with
+            {
+                Diagnostics =
+                [
+                    "target=local_executor stage=attempt result=no_tool_call;attempt=1"
+                ]
+            };
         }
         catch (OperationCanceledException)
         {
@@ -116,9 +130,66 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
         }
     }
 
-    private async Task<NpcLocalExecutorResult> ExecuteToolUseAsync(StreamEvent.ToolUseComplete toolUse, CancellationToken ct)
+    private async Task<NpcLocalExecutorResult> TryRunModelToolCallAsync(
+        NpcRuntimeDescriptor descriptor,
+        NpcLocalActionIntent intent,
+        IReadOnlyList<NpcObservationFact> facts,
+        string traceId,
+        IReadOnlyList<ITool> selectedTools,
+        bool correctiveRetry,
+        CancellationToken ct)
     {
-        if (!_tools.TryGetValue(toolUse.Name, out var tool))
+        var messages = new[]
+            {
+                new Message
+                {
+                    Role = "user",
+                    Content = BuildUserMessage(descriptor, intent, facts, traceId, correctiveRetry)
+                }
+            };
+        await foreach (var streamEvent in _chatClient.StreamAsync(
+                           BuildSystemPrompt(),
+                           messages,
+                           selectedTools.Select(BuildToolDefinition),
+                           ct))
+        {
+            switch (streamEvent)
+            {
+                case StreamEvent.ToolUseComplete toolUse:
+                    return await ExecuteToolUseAsync(toolUse, selectedTools, ct);
+                case StreamEvent.StreamError error:
+                    return Block("local_executor", "stream_error", "stream_error", error.Error.Message);
+            }
+        }
+
+        return Block("local_executor", "no_tool_call", "no_tool_call", "no tool call returned");
+    }
+
+    private IReadOnlyList<ITool> SelectTools(NpcLocalActionKind action)
+    {
+        var requiredTool = action switch
+        {
+            NpcLocalActionKind.Move => "stardew_move",
+            NpcLocalActionKind.TaskStatus => "stardew_task_status",
+            NpcLocalActionKind.Observe => "stardew_status",
+            _ => null
+        };
+
+        if (requiredTool is null)
+            return [];
+
+        return _tools.TryGetValue(requiredTool, out var tool)
+            ? [tool]
+            : [];
+    }
+
+    private async Task<NpcLocalExecutorResult> ExecuteToolUseAsync(
+        StreamEvent.ToolUseComplete toolUse,
+        IReadOnlyList<ITool> selectedTools,
+        CancellationToken ct)
+    {
+        var tool = selectedTools.FirstOrDefault(candidate => string.Equals(candidate.Name, toolUse.Name, StringComparison.OrdinalIgnoreCase));
+        if (tool is null)
             return Block(toolUse.Name, $"unknown_tool:{toolUse.Name}", "unknown_tool", $"unknown tool {toolUse.Name}");
 
         object parameters;
@@ -154,7 +225,8 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
             shortResult,
             $"local_executor_completed:{toolUse.Name}",
             BuildMemorySummary(toolUse.Name, shortResult, commandId),
-            commandId);
+            commandId,
+            ExecutorMode: "model_called");
     }
 
     internal static NpcLocalExecutorResult CompleteHostInterpreted(NpcLocalActionIntent intent)
@@ -171,7 +243,8 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
             "completed",
             string.IsNullOrWhiteSpace(result) ? "host_interpreted" : result,
             $"local_executor_completed:{action}",
-            $"{action} completed by host interpretation; reason: {intent.Reason}");
+            $"{action} completed by host interpretation; reason: {intent.Reason}",
+            ExecutorMode: "host_interpreted");
     }
 
     private static NpcLocalExecutorResult Block(string target, string result, string error, string? memorySummary)
@@ -183,7 +256,8 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
             string.IsNullOrWhiteSpace(memorySummary)
                 ? null
                 : $"local executor blocked: {memorySummary}",
-            Error: error);
+            Error: error,
+            ExecutorMode: "blocked");
 
     private static string BuildSystemPrompt()
         => "You are a local Stardew NPC action executor. Execute only the provided intent using only the provided tools. Do not make personality, relationship, gift, trade, or long-term planning decisions.";
@@ -192,11 +266,16 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
         NpcRuntimeDescriptor descriptor,
         NpcLocalActionIntent intent,
         IReadOnlyList<NpcObservationFact> facts,
-        string traceId)
+        string traceId,
+        bool correctiveRetry)
     {
         var factLines = facts.TakeLast(6).Select(fact =>
             $"- [{fact.SourceKind}] {fact.Summary} ({string.Join("; ", fact.Facts.Take(12))})");
+        var retryInstruction = correctiveRetry
+            ? "retryInstruction: Previous attempt returned no tool call. Call the single provided tool now; do not answer in text.\n"
+            : "";
         return
+            retryInstruction +
             $"traceId: {traceId}\n" +
             $"npc: {descriptor.DisplayName} ({descriptor.NpcId})\n" +
             $"intent: {SerializeIntent(intent)}\n" +
@@ -205,16 +284,39 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
     }
 
     private static string SerializeIntent(NpcLocalActionIntent intent)
-        => JsonSerializer.Serialize(new
+    {
+        var values = new Dictionary<string, object?>
         {
-            action = FormatAction(intent.Action),
-            reason = intent.Reason,
-            destinationId = intent.DestinationId,
-            commandId = intent.CommandId,
-            observeTarget = intent.ObserveTarget,
-            waitReason = intent.WaitReason,
-            escalate = intent.Escalate
-        });
+            ["action"] = FormatAction(intent.Action),
+            ["reason"] = intent.Reason
+        };
+        switch (intent.Action)
+        {
+            case NpcLocalActionKind.Move:
+                AddIfNotBlank(values, "destinationId", intent.DestinationId);
+                break;
+            case NpcLocalActionKind.Observe:
+                AddIfNotBlank(values, "observeTarget", intent.ObserveTarget);
+                break;
+            case NpcLocalActionKind.Wait:
+                AddIfNotBlank(values, "waitReason", intent.WaitReason);
+                break;
+            case NpcLocalActionKind.TaskStatus:
+                AddIfNotBlank(values, "commandId", intent.CommandId);
+                break;
+            case NpcLocalActionKind.Escalate:
+                values["escalate"] = true;
+                break;
+        }
+
+        return JsonSerializer.Serialize(values);
+    }
+
+    private static void AddIfNotBlank(Dictionary<string, object?> values, string key, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+            values[key] = value;
+    }
 
     private static ToolDefinition BuildToolDefinition(ITool tool)
         => new()

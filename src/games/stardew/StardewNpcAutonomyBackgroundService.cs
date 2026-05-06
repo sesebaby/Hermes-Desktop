@@ -16,6 +16,8 @@ public sealed record StardewNpcAutonomyBackgroundOptions(
 
 public sealed class StardewNpcAutonomyBackgroundService : IDisposable
 {
+    internal static TimeSpan DefaultPollInterval { get; } = TimeSpan.FromSeconds(20);
+
     private readonly object _gate = new();
     private readonly IStardewBridgeDiscovery _discovery;
     private readonly Func<StardewBridgeDiscoverySnapshot, IGameAdapter> _adapterFactory;
@@ -140,9 +142,11 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 .Where(id => !string.IsNullOrWhiteSpace(id))
                 .Select(id => id.Trim()),
             StringComparer.OrdinalIgnoreCase);
-        _pollInterval = options.PollInterval == default ? TimeSpan.FromSeconds(2) : options.PollInterval;
+        _pollInterval = options.PollInterval == default ? DefaultPollInterval : options.PollInterval;
         _cronScheduler.TaskDue += OnCronTaskDue;
     }
+
+    internal TimeSpan PollInterval => _pollInterval;
 
     public void Start()
     {

@@ -26,7 +26,11 @@ public sealed class NpcLocalExecutorRunnerTests
             "stardew_move",
             typeof(MoveParameters),
             ToolResult.Ok("""{"accepted":true,"commandId":"cmd-move-1","status":"queued"}"""));
-        var runner = new NpcLocalExecutorRunner(chatClient, [moveTool]);
+        var taskTool = new RecordingTool(
+            "stardew_task_status",
+            typeof(TaskStatusParameters),
+            ToolResult.Ok("""{"commandId":"cmd-status-1","status":"completed"}"""));
+        var runner = new NpcLocalExecutorRunner(chatClient, [moveTool, taskTool]);
         var intent = new NpcLocalActionIntent(
             NpcLocalActionKind.Move,
             "meet player",
@@ -41,8 +45,10 @@ public sealed class NpcLocalExecutorRunnerTests
 
         Assert.AreEqual(1, chatClient.StreamCalls);
         Assert.AreEqual("stardew_move", chatClient.LastTools.Single().Name);
+        Assert.AreEqual("model_called", result.ExecutorMode);
         Assert.IsTrue(chatClient.LastMessages.Single().Content?.Contains("PierreShop", StringComparison.Ordinal) ?? false);
         Assert.AreEqual(1, moveTool.ExecuteCalls);
+        Assert.AreEqual(0, taskTool.ExecuteCalls);
         var parameters = (MoveParameters)moveTool.LastParameters!;
         Assert.AreEqual("PierreShop", parameters.Destination);
         Assert.AreEqual("meet player", parameters.Reason);
@@ -53,6 +59,236 @@ public sealed class NpcLocalExecutorRunnerTests
         Assert.AreEqual("local_executor_completed:stardew_move", result.DecisionResponse);
         StringAssert.Contains(result.MemorySummary!, "stardew_move");
         Assert.IsFalse(result.MemorySummary!.Contains("\"commandId\"", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_WithTaskStatusIntent_ExposesOnlyTaskStatusTool()
+    {
+        var chatClient = new RecordingChatClient(
+            [
+                new StreamEvent.ToolUseComplete(
+                    "call-status",
+                    "stardew_task_status",
+                    Json("""{"commandId":"cmd-move-1"}"""))
+            ]);
+        var moveTool = new RecordingTool(
+            "stardew_move",
+            typeof(MoveParameters),
+            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-move-1","status":"queued"}"""));
+        var taskTool = new RecordingTool(
+            "stardew_task_status",
+            typeof(TaskStatusParameters),
+            ToolResult.Ok("""{"commandId":"cmd-move-1","status":"completed"}"""));
+        var runner = new NpcLocalExecutorRunner(chatClient, [moveTool, taskTool]);
+
+        var result = await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            new NpcLocalActionIntent(NpcLocalActionKind.TaskStatus, "check progress", CommandId: "cmd-move-1"),
+            [CreateObservationFact("Haley has a move command in progress.")],
+            "trace-task-status",
+            CancellationToken.None);
+
+        Assert.AreEqual(1, chatClient.StreamCalls);
+        Assert.AreEqual("stardew_task_status", chatClient.LastTools.Single().Name);
+        Assert.AreEqual(0, moveTool.ExecuteCalls);
+        Assert.AreEqual(1, taskTool.ExecuteCalls);
+        Assert.AreEqual("model_called", result.ExecutorMode);
+        Assert.AreEqual("local_executor_completed:stardew_task_status", result.DecisionResponse);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_WithObserveIntent_UsesReadOnlyStatusTool()
+    {
+        var chatClient = new RecordingChatClient(
+            [
+                new StreamEvent.ToolUseComplete(
+                    "call-observe",
+                    "stardew_status",
+                    Json("{}"))
+            ]);
+        var statusTool = new RecordingTool(
+            "stardew_status",
+            typeof(NoParameters),
+            ToolResult.Ok("""{"status":"completed","summary":"Haley is in Town."}"""));
+        var moveTool = new RecordingTool(
+            "stardew_move",
+            typeof(MoveParameters),
+            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-move-1","status":"queued"}"""));
+        var runner = new NpcLocalExecutorRunner(chatClient, [statusTool, moveTool]);
+
+        var result = await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            new NpcLocalActionIntent(NpcLocalActionKind.Observe, "recheck current state", ObserveTarget: "current location"),
+            [CreateObservationFact("Haley should observe current state.")],
+            "trace-observe",
+            CancellationToken.None);
+
+        Assert.AreEqual(1, chatClient.StreamCalls);
+        Assert.AreEqual("stardew_status", chatClient.LastTools.Single().Name);
+        Assert.AreEqual(1, statusTool.ExecuteCalls);
+        Assert.AreEqual(0, moveTool.ExecuteCalls);
+        Assert.AreEqual("model_called", result.ExecutorMode);
+        Assert.AreEqual("local_executor_completed:stardew_status", result.DecisionResponse);
+        Assert.IsTrue(chatClient.LastMessages.Single().Content?.Contains("observeTarget", StringComparison.Ordinal) ?? false);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_WithWaitIntent_CompletesHostInterpretedWithoutModelCall()
+    {
+        var chatClient = new RecordingChatClient([]);
+        var runner = new NpcLocalExecutorRunner(
+            chatClient,
+            [new RecordingTool("stardew_move", typeof(MoveParameters), ToolResult.Ok("{}"))]);
+
+        var result = await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            new NpcLocalActionIntent(NpcLocalActionKind.Wait, "wait for morning", WaitReason: "night"),
+            [CreateObservationFact("It is late.")],
+            "trace-wait",
+            CancellationToken.None);
+
+        Assert.AreEqual(0, chatClient.StreamCalls);
+        Assert.AreEqual("host_interpreted", result.ExecutorMode);
+        Assert.AreEqual("local_executor_completed:wait", result.DecisionResponse);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_WithObserveIntentAndUnavailableDelegation_Blocks()
+    {
+        var runner = new NpcUnavailableLocalExecutorRunner();
+
+        var observe = await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            new NpcLocalActionIntent(NpcLocalActionKind.Observe, "recheck current state", ObserveTarget: "current location"),
+            [CreateObservationFact("Haley should observe current state.")],
+            "trace-observe-unavailable",
+            CancellationToken.None);
+        var wait = await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            new NpcLocalActionIntent(NpcLocalActionKind.Wait, "wait", WaitReason: "night"),
+            [CreateObservationFact("Haley should wait.")],
+            "trace-wait-unavailable",
+            CancellationToken.None);
+
+        Assert.AreEqual("blocked", observe.Stage);
+        Assert.AreEqual("blocked", observe.ExecutorMode);
+        Assert.AreEqual("local_executor_blocked:local_executor_unavailable", observe.DecisionResponse);
+        Assert.AreEqual("host_interpreted", wait.ExecutorMode);
+        Assert.AreEqual("local_executor_completed:wait", wait.DecisionResponse);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_WithNoToolCall_RetriesOnceThenBlocks()
+    {
+        var chatClient = new RecordingChatClient([]);
+        var moveTool = new RecordingTool(
+            "stardew_move",
+            typeof(MoveParameters),
+            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-move-1","status":"queued"}"""));
+        var runner = new NpcLocalExecutorRunner(chatClient, [moveTool]);
+
+        var result = await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            new NpcLocalActionIntent(NpcLocalActionKind.Move, "meet player", DestinationId: "PierreShop"),
+            [CreateObservationFact("Haley can move to Pierre.", "destination[0].destinationId=PierreShop")],
+            "trace-no-tool",
+            CancellationToken.None);
+
+        Assert.AreEqual(2, chatClient.StreamCalls);
+        Assert.AreEqual(0, moveTool.ExecuteCalls);
+        Assert.AreEqual("blocked", result.ExecutorMode);
+        Assert.AreEqual("local_executor_blocked:no_tool_call", result.DecisionResponse);
+        CollectionAssert.Contains(result.Diagnostics.ToArray(), "target=local_executor stage=attempt result=no_tool_call;attempt=1");
+        CollectionAssert.Contains(result.Diagnostics.ToArray(), "target=local_executor stage=retry result=no_tool_call;attempt=2");
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_WithNoToolCallThenRetrySuccess_RecordsOnlyFirstFailedAttempt()
+    {
+        var chatClient = RecordingChatClient.WithEventsByCall(
+            [
+                [],
+                [
+                    new StreamEvent.ToolUseComplete(
+                        "call-move",
+                        "stardew_move",
+                        Json("""{"destination":"PierreShop","reason":"meet player"}"""))
+                ]
+            ]);
+        var moveTool = new RecordingTool(
+            "stardew_move",
+            typeof(MoveParameters),
+            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-move-1","status":"queued"}"""));
+        var runner = new NpcLocalExecutorRunner(chatClient, [moveTool]);
+
+        var result = await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            new NpcLocalActionIntent(NpcLocalActionKind.Move, "meet player", DestinationId: "PierreShop"),
+            [CreateObservationFact("Haley can move to Pierre.", "destination[0].destinationId=PierreShop")],
+            "trace-retry-success",
+            CancellationToken.None);
+
+        Assert.AreEqual(2, chatClient.StreamCalls);
+        Assert.AreEqual(1, moveTool.ExecuteCalls);
+        Assert.AreEqual("model_called", result.ExecutorMode);
+        Assert.AreEqual("local_executor_completed:stardew_move", result.DecisionResponse);
+        CollectionAssert.Contains(result.Diagnostics.ToArray(), "target=local_executor stage=attempt result=no_tool_call;attempt=1");
+        CollectionAssert.DoesNotContain(result.Diagnostics.ToArray(), "target=local_executor stage=retry result=no_tool_call;attempt=2");
+    }
+
+    [TestMethod]
+    public async Task BuildUserMessage_OmitsIrrelevantOptionalIntentFieldsByAction()
+    {
+        var chatClient = new RecordingChatClient([]);
+        var runner = new NpcLocalExecutorRunner(
+            chatClient,
+            [new RecordingTool("stardew_move", typeof(MoveParameters), ToolResult.Ok("{}"))]);
+
+        await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            new NpcLocalActionIntent(NpcLocalActionKind.Move, "move", DestinationId: "PierreShop"),
+            [CreateObservationFact("Move.")],
+            "trace-move-fields",
+            CancellationToken.None);
+        AssertIntentOmits(chatClient.LastMessages.Last().Content!, "commandId", "observeTarget", "waitReason", "\"escalate\":false");
+
+        await new NpcLocalExecutorRunner(
+                chatClient,
+                [new RecordingTool("stardew_status", typeof(NoParameters), ToolResult.Ok("{}"))])
+            .ExecuteAsync(
+                CreateDescriptor("haley"),
+                new NpcLocalActionIntent(NpcLocalActionKind.Observe, "observe", ObserveTarget: "current"),
+                [CreateObservationFact("Observe.")],
+                "trace-observe-fields",
+                CancellationToken.None);
+        AssertIntentOmits(chatClient.LastMessages.Last().Content!, "destinationId", "commandId", "waitReason");
+
+        var waitResult = await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            new NpcLocalActionIntent(NpcLocalActionKind.Wait, "wait", WaitReason: "night"),
+            [CreateObservationFact("Wait.")],
+            "trace-wait-fields",
+            CancellationToken.None);
+        Assert.AreEqual("host_interpreted", waitResult.ExecutorMode);
+
+        await new NpcLocalExecutorRunner(
+                chatClient,
+                [new RecordingTool("stardew_task_status", typeof(TaskStatusParameters), ToolResult.Ok("{}"))])
+            .ExecuteAsync(
+                CreateDescriptor("haley"),
+                new NpcLocalActionIntent(NpcLocalActionKind.TaskStatus, "status", CommandId: "cmd-1"),
+                [CreateObservationFact("Status.")],
+                "trace-task-fields",
+                CancellationToken.None);
+        AssertIntentOmits(chatClient.LastMessages.Last().Content!, "destinationId", "observeTarget", "waitReason", "\"escalate\":false");
+
+        var escalate = await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            new NpcLocalActionIntent(NpcLocalActionKind.Escalate, "need parent", Escalate: true),
+            [CreateObservationFact("Escalate.")],
+            "trace-escalate-fields",
+            CancellationToken.None);
+        Assert.AreEqual("host_interpreted", escalate.ExecutorMode);
     }
 
     [TestMethod]
@@ -83,6 +319,7 @@ public sealed class NpcLocalExecutorRunnerTests
         Assert.AreEqual("blocked", result.Stage);
         Assert.AreEqual("unknown_tool:stardew_gift", result.Result);
         Assert.AreEqual("unknown_tool", result.Error);
+        Assert.AreEqual("blocked", result.ExecutorMode);
         Assert.AreEqual("local_executor_blocked:unknown_tool", result.DecisionResponse);
     }
 
@@ -108,7 +345,15 @@ public sealed class NpcLocalExecutorRunnerTests
         Assert.AreEqual("escalate", result.Target);
         Assert.AreEqual("completed", result.Stage);
         Assert.AreEqual("needs private conversation", result.Result);
+        Assert.AreEqual("host_interpreted", result.ExecutorMode);
         Assert.AreEqual("local_executor_completed:escalate", result.DecisionResponse);
+    }
+
+    private static void AssertIntentOmits(string message, params string[] forbidden)
+    {
+        var intentLine = message.Split('\n').Single(line => line.StartsWith("intent: ", StringComparison.Ordinal));
+        foreach (var value in forbidden)
+            Assert.IsFalse(intentLine.Contains(value, StringComparison.Ordinal), $"Intent line should omit {value}: {intentLine}");
     }
 
     private static NpcRuntimeDescriptor CreateDescriptor(string npcId)
@@ -143,16 +388,24 @@ public sealed class NpcLocalExecutorRunnerTests
 
     private sealed class RecordingChatClient : IChatClient
     {
-        private readonly IReadOnlyList<StreamEvent> _events;
+        private readonly IReadOnlyList<IReadOnlyList<StreamEvent>> _eventsByCall;
 
         public RecordingChatClient(IReadOnlyList<StreamEvent> events)
         {
-            _events = events;
+            _eventsByCall = [events];
         }
 
         public int StreamCalls { get; private set; }
-        public IReadOnlyList<Message> LastMessages { get; private set; } = [];
+        public List<Message> LastMessages { get; } = [];
         public IReadOnlyList<ToolDefinition> LastTools { get; private set; } = [];
+
+        public static RecordingChatClient WithEventsByCall(IReadOnlyList<IReadOnlyList<StreamEvent>> eventsByCall)
+            => new(eventsByCall.Count == 0 ? [[]] : eventsByCall);
+
+        private RecordingChatClient(IReadOnlyList<IReadOnlyList<StreamEvent>> eventsByCall)
+        {
+            _eventsByCall = eventsByCall;
+        }
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
             => Task.FromResult("unused");
@@ -178,9 +431,10 @@ public sealed class NpcLocalExecutorRunnerTests
             [EnumeratorCancellation] CancellationToken ct = default)
         {
             StreamCalls++;
-            LastMessages = messages.ToArray();
+            LastMessages.AddRange(messages);
             LastTools = (tools ?? []).ToArray();
-            foreach (var streamEvent in _events)
+            var callEvents = _eventsByCall[Math.Min(StreamCalls - 1, _eventsByCall.Count - 1)];
+            foreach (var streamEvent in callEvents)
             {
                 ct.ThrowIfCancellationRequested();
                 await Task.Yield();
@@ -230,5 +484,14 @@ public sealed class NpcLocalExecutorRunnerTests
     {
         public required string Destination { get; init; }
         public string? Reason { get; init; }
+    }
+
+    private sealed class TaskStatusParameters
+    {
+        public required string CommandId { get; init; }
+    }
+
+    private sealed class NoParameters
+    {
     }
 }

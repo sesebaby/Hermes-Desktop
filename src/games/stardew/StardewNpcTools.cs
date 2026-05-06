@@ -11,6 +11,7 @@ public static class StardewNpcToolFactory
 {
     private static readonly HashSet<string> LocalExecutorToolNames = new(StringComparer.OrdinalIgnoreCase)
     {
+        "stardew_status",
         "stardew_move",
         "stardew_task_status"
     };
@@ -81,6 +82,7 @@ public static class StardewNpcToolFactory
     public static string LocalExecutorToolFingerprint()
         => NpcToolSurface.FromTools(
             [
+                new ToolFingerprintProbe("stardew_status"),
                 new ToolFingerprintProbe("stardew_move"),
                 new ToolFingerprintProbe("stardew_task_status")
             ])

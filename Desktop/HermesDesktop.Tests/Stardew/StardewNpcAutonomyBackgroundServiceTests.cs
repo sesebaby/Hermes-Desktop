@@ -85,6 +85,59 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
+    public void Constructor_WithoutExplicitPollInterval_UsesLowCostIdleCadence()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+
+        var service = new StardewNpcAutonomyBackgroundService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            supervisor,
+            new NpcRuntimeHost(new FileSystemNpcPackLoader(), supervisor, _tempDir),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            new StardewNpcAutonomyPromptSupplementBuilder(new FixedStardewGamingSkillRootProvider(_gamingSkillRoot)),
+            new NpcToolSurfaceSnapshotProvider(() => [new DiscoveredNoopTool("mcp_dynamic_test")]),
+            new StardewPrivateChatRuntimeAdapter(
+                new NoopPrivateChatAgentRunner(),
+                NullLogger<StardewPrivateChatRuntimeAdapter>.Instance),
+            new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(MaxToolIterations: 2, MaxConcurrentLlmRequests: 1, MaxRestartsPerScene: 2)),
+            new WorldCoordinationService(new ResourceClaimRegistry()),
+            NullLogger<StardewNpcAutonomyBackgroundService>.Instance,
+            new StardewNpcAutonomyBackgroundOptions(["haley"]),
+            true,
+            true,
+            _tempDir);
+        _services.Add(service);
+
+        Assert.AreEqual(TimeSpan.FromSeconds(20), service.PollInterval);
+    }
+
+    [TestMethod]
+    public void Constructor_WithExplicitPollInterval_PreservesOverride()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"],
+            pollInterval: TimeSpan.FromMilliseconds(10));
+
+        Assert.AreEqual(TimeSpan.FromMilliseconds(10), service.PollInterval);
+    }
+
+    [TestMethod]
     public async Task RunOneIterationAsync_AgentToolUsesDelegationClientWhenSupplied()
     {
         var discovery = CreateDiscovery("save-42");
@@ -1306,7 +1359,8 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         NpcAutonomyBudget? budget = null,
         ICronScheduler? cronScheduler = null,
         INpcPrivateChatAgentRunner? privateChatAgentRunner = null,
-        IChatClient? delegationChatClient = null)
+        IChatClient? delegationChatClient = null,
+        TimeSpan? pollInterval = null)
     {
         var service = new StardewNpcAutonomyBackgroundService(
             discovery,
@@ -1326,7 +1380,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             budget ?? new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(MaxToolIterations: 2, MaxConcurrentLlmRequests: 1, MaxRestartsPerScene: 2)),
             worldCoordination ?? new WorldCoordinationService(new ResourceClaimRegistry()),
             NullLogger<StardewNpcAutonomyBackgroundService>.Instance,
-            new StardewNpcAutonomyBackgroundOptions(enabledNpcIds, TimeSpan.FromMilliseconds(10)),
+            new StardewNpcAutonomyBackgroundOptions(enabledNpcIds, pollInterval ?? TimeSpan.FromMilliseconds(10)),
             true,
             true,
             _tempDir,
