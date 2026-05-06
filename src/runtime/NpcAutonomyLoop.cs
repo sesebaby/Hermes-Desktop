@@ -16,6 +16,7 @@ public sealed class NpcAutonomyLoop
     private readonly Hermes.Agent.Core.IAgent? _agent;
     private readonly NpcRuntimeLogWriter? _logWriter;
     private readonly MemoryManager? _memoryManager;
+    private readonly INpcLocalExecutorRunner? _localExecutorRunner;
     private readonly ILogger<NpcAutonomyLoop>? _logger;
     private readonly Func<string> _traceIdFactory;
 
@@ -26,13 +27,15 @@ public sealed class NpcAutonomyLoop
         NpcRuntimeLogWriter? logWriter = null,
         MemoryManager? memoryManager = null,
         ILogger<NpcAutonomyLoop>? logger = null,
-        Func<string>? traceIdFactory = null)
+        Func<string>? traceIdFactory = null,
+        INpcLocalExecutorRunner? localExecutorRunner = null)
     {
         _adapter = adapter;
         _factStore = factStore;
         _agent = agent;
         _logWriter = logWriter;
         _memoryManager = memoryManager;
+        _localExecutorRunner = localExecutorRunner;
         _logger = logger;
         _traceIdFactory = traceIdFactory ?? (() => $"trace_{Guid.NewGuid():N}");
     }
@@ -157,12 +160,32 @@ public sealed class NpcAutonomyLoop
         if (IsToolIterationLimitFallback(decisionResponse))
             decisionResponse = null;
 
+        var memorySummary = decisionResponse;
+        var skipMemory = false;
+        if (_localExecutorRunner is not null && !string.IsNullOrWhiteSpace(decisionResponse))
+        {
+            var route = await RunLocalExecutorAsync(
+                descriptor,
+                currentFacts,
+                traceId,
+                decisionResponse,
+                ct);
+            decisionResponse = route.DecisionResponse;
+            memorySummary = route.MemorySummary;
+            skipMemory = route.SkipMemory;
+        }
+
         await WriteActivityAsync(descriptor, traceId, eventFacts, decisionResponse, ct);
         await WriteToolBudgetDiagnosticAsync(descriptor, traceId, rawDecisionResponse, ct);
-        await WriteNarrativeMovementDiagnosticAsync(descriptor, traceId, decisionResponse, decisionSession, ct);
-        await WriteNoToolActionDiagnosticAsync(descriptor, traceId, decisionResponse, decisionSession, ct);
+        if (_localExecutorRunner is null)
+        {
+            await WriteNarrativeMovementDiagnosticAsync(descriptor, traceId, decisionResponse, decisionSession, ct);
+            await WriteNoToolActionDiagnosticAsync(descriptor, traceId, decisionResponse, decisionSession, ct);
+        }
+
         await WriteSessionTaskContinuityEvidenceAsync(descriptor, traceId, decisionSession, null, ct);
-        await WriteMemoryAsync(traceId, decisionResponse, ct);
+        if (!skipMemory)
+            await WriteMemoryAsync(traceId, memorySummary, ct);
 
         return new NpcAutonomyTickResult(descriptor.NpcId, traceId, 1, eventFacts, decisionResponse, eventBatch.NextCursor);
     }
@@ -289,6 +312,113 @@ public sealed class NpcAutonomyLoop
             "warning",
             "max_tool_iterations",
             Error: "agent_max_tool_iterations_fallback_dropped"), ct);
+    }
+
+    private async Task<LocalExecutorRouteResult> RunLocalExecutorAsync(
+        NpcRuntimeDescriptor descriptor,
+        IReadOnlyList<NpcObservationFact> facts,
+        string traceId,
+        string decisionResponse,
+        CancellationToken ct)
+    {
+        if (!NpcLocalActionIntent.TryParse(decisionResponse, out var intent, out var error) ||
+            intent is null)
+        {
+            await WriteDiagnosticAsync(
+                descriptor,
+                traceId,
+                "intent_contract",
+                "rejected",
+                error,
+                "intent_contract_invalid",
+                ct);
+
+            return new LocalExecutorRouteResult(
+                $"local_executor_escalated:{error}",
+                null,
+                SkipMemory: true);
+        }
+
+        var action = FormatLocalAction(intent.Action);
+        await WriteDiagnosticAsync(
+            descriptor,
+            traceId,
+            "intent_contract",
+            "accepted",
+            $"action={action};reason={intent.Reason}",
+            null,
+            ct);
+        await WriteDiagnosticAsync(
+            descriptor,
+            traceId,
+            "parent_tool_surface",
+            "verified",
+            "stardew_move=0;stardew_task_status=0",
+            null,
+            ct);
+        await WriteDiagnosticAsync(
+            descriptor,
+            traceId,
+            "local_executor",
+            "selected",
+            $"action={action};lane=delegation",
+            null,
+            ct);
+
+        var result = await _localExecutorRunner!.ExecuteAsync(descriptor, intent, facts, traceId, ct);
+        await WriteLocalExecutorResultAsync(descriptor, traceId, result, ct);
+        return new LocalExecutorRouteResult(
+            result.DecisionResponse,
+            result.MemorySummary,
+            SkipMemory: string.IsNullOrWhiteSpace(result.MemorySummary));
+    }
+
+    private async Task WriteDiagnosticAsync(
+        NpcRuntimeDescriptor descriptor,
+        string traceId,
+        string target,
+        string stage,
+        string result,
+        string? error,
+        CancellationToken ct)
+    {
+        if (_logWriter is null)
+            return;
+
+        await _logWriter.WriteAsync(new NpcRuntimeLogRecord(
+            DateTime.UtcNow,
+            traceId,
+            descriptor.NpcId,
+            descriptor.GameId,
+            descriptor.SessionId,
+            "diagnostic",
+            target,
+            stage,
+            Truncate(result, 300),
+            Error: string.IsNullOrWhiteSpace(error) ? null : error), ct);
+    }
+
+    private async Task WriteLocalExecutorResultAsync(
+        NpcRuntimeDescriptor descriptor,
+        string traceId,
+        NpcLocalExecutorResult result,
+        CancellationToken ct)
+    {
+        if (_logWriter is null)
+            return;
+
+        await _logWriter.WriteAsync(new NpcRuntimeLogRecord(
+            DateTime.UtcNow,
+            traceId,
+            descriptor.NpcId,
+            descriptor.GameId,
+            descriptor.SessionId,
+            "local_executor",
+            result.Target,
+            result.Stage,
+            Truncate(result.Result, 300),
+            CommandId: result.CommandId,
+            Error: string.IsNullOrWhiteSpace(result.Error) ? null : result.Error), ct);
     }
 
     private async Task WriteNarrativeMovementDiagnosticAsync(
@@ -685,6 +815,22 @@ public sealed class NpcAutonomyLoop
     private static bool IsBlockedOrFailed(string? status)
         => string.Equals(status, "blocked", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(status, "failed", StringComparison.OrdinalIgnoreCase);
+
+    private static string FormatLocalAction(NpcLocalActionKind action)
+        => action switch
+        {
+            NpcLocalActionKind.Move => "move",
+            NpcLocalActionKind.Observe => "observe",
+            NpcLocalActionKind.Wait => "wait",
+            NpcLocalActionKind.TaskStatus => "task_status",
+            NpcLocalActionKind.Escalate => "escalate",
+            _ => action.ToString()
+        };
+
+    private sealed record LocalExecutorRouteResult(
+        string DecisionResponse,
+        string? MemorySummary,
+        bool SkipMemory);
 
     private sealed record ToolResultEvidence(string? CommandId, GameCommandStatus? TerminalStatus);
 

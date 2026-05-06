@@ -756,6 +756,127 @@ public class NpcAutonomyLoopTests
         }
     }
 
+    [TestMethod]
+    public async Task RunOneTickAsync_WithLocalExecutorMoveIntent_ExecutesRunnerLogsEvidenceAndWritesSummaryMemory()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-local-executor-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            ns.EnsureDirectories();
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var memoryManager = ns.CreateMemoryManager(new FakeChatClient(), NullLogger<MemoryManager>.Instance);
+            var parentContract =
+                """
+                {
+                  "action": "move",
+                  "reason": "meet the player near Pierre",
+                  "destinationId": "PierreShop",
+                  "allowedActions": ["move", "observe", "wait", "task_status"],
+                  "escalate": false
+                }
+                """;
+            var localExecutor = new FakeLocalExecutorRunner(new NpcLocalExecutorResult(
+                Target: "stardew_move",
+                Stage: "completed",
+                Result: "queued",
+                DecisionResponse: "local_executor_completed:stardew_move",
+                MemorySummary: "tried moving to PierreShop; command queued; reason: meet the player near Pierre",
+                CommandId: "cmd-move-1"));
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation(
+                        "haley",
+                        "stardew-valley",
+                        DateTime.UtcNow,
+                        "Haley can move to Pierre.",
+                        ["location=Town", "destination[0].destinationId=PierreShop"])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                new FakeAgent(() => { }, parentContract),
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                memoryManager: memoryManager,
+                localExecutorRunner: localExecutor,
+                traceIdFactory: () => "trace-local-move");
+
+            var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.AreEqual(1, localExecutor.CallCount);
+            Assert.IsNotNull(localExecutor.LastIntent);
+            Assert.AreEqual(NpcLocalActionKind.Move, localExecutor.LastIntent.Action);
+            Assert.AreEqual("PierreShop", localExecutor.LastIntent.DestinationId);
+            Assert.AreEqual("local_executor_completed:stardew_move", result.DecisionResponse);
+
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertLogRecord(records, "diagnostic", "intent_contract", "accepted", "action=move;reason=meet the player near Pierre");
+            AssertLogRecord(records, "diagnostic", "parent_tool_surface", "verified", "stardew_move=0;stardew_task_status=0");
+            AssertLogRecord(records, "diagnostic", "local_executor", "selected", "action=move;lane=delegation");
+            AssertLogRecord(records, "local_executor", "stardew_move", "completed", "queued", "cmd-move-1");
+
+            var entries = await memoryManager.ReadEntriesAsync("memory", CancellationToken.None);
+            Assert.AreEqual(1, entries.Count);
+            StringAssert.Contains(entries[0], "tried moving to PierreShop");
+            Assert.IsFalse(entries[0].Contains("\"action\"", StringComparison.Ordinal));
+            Assert.IsFalse(entries[0].Contains("allowedActions", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithLocalExecutorInvalidParentContract_RejectsAndDoesNotWriteMemory()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-invalid-local-executor-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            ns.EnsureDirectories();
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var memoryManager = ns.CreateMemoryManager(new FakeChatClient(), NullLogger<MemoryManager>.Instance);
+            var localExecutor = new FakeLocalExecutorRunner(new NpcLocalExecutorResult(
+                Target: "stardew_move",
+                Stage: "completed",
+                Result: "queued",
+                DecisionResponse: "local_executor_completed:stardew_move"));
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation(
+                        "haley",
+                        "stardew-valley",
+                        DateTime.UtcNow,
+                        "Haley is idle.",
+                        ["location=Town"])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                new FakeAgent(() => { }, "not json"),
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                memoryManager: memoryManager,
+                localExecutorRunner: localExecutor,
+                traceIdFactory: () => "trace-invalid-contract");
+
+            var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.AreEqual(0, localExecutor.CallCount);
+            Assert.AreEqual("local_executor_escalated:intent_contract_invalid", result.DecisionResponse);
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertLogRecord(records, "diagnostic", "intent_contract", "rejected", "intent_contract_invalid");
+            var entries = await memoryManager.ReadEntriesAsync("memory", CancellationToken.None);
+            Assert.AreEqual(0, entries.Count);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
     private static NpcRuntimeDescriptor CreateDescriptor(string npcId)
         => new(
             npcId,
@@ -791,6 +912,25 @@ public class NpcAutonomyLoopTests
              (record.TryGetProperty("commandId", out var commandProperty) &&
               commandProperty.GetString() == commandId))),
             $"Missing task_continuity record target={target}, stage={stage}, result={result}, commandId={commandId ?? "-"}.");
+    }
+
+    private static void AssertLogRecord(
+        IReadOnlyList<JsonElement> records,
+        string actionType,
+        string target,
+        string stage,
+        string result,
+        string? commandId = null)
+    {
+        Assert.IsTrue(records.Any(record =>
+            record.GetProperty("actionType").GetString() == actionType &&
+            record.GetProperty("target").GetString() == target &&
+            record.GetProperty("stage").GetString() == stage &&
+            record.GetProperty("result").GetString() == result &&
+            (commandId is null ||
+             (record.TryGetProperty("commandId", out var commandProperty) &&
+              commandProperty.GetString() == commandId))),
+            $"Missing {actionType} record target={target}, stage={stage}, result={result}, commandId={commandId ?? "-"}.");
     }
 
     private sealed class FakeGameAdapter : IGameAdapter
@@ -964,6 +1104,31 @@ public class NpcAutonomyLoopTests
         {
             await Task.CompletedTask;
             yield break;
+        }
+    }
+
+    private sealed class FakeLocalExecutorRunner : INpcLocalExecutorRunner
+    {
+        private readonly NpcLocalExecutorResult _result;
+
+        public FakeLocalExecutorRunner(NpcLocalExecutorResult result)
+        {
+            _result = result;
+        }
+
+        public int CallCount { get; private set; }
+        public NpcLocalActionIntent? LastIntent { get; private set; }
+
+        public Task<NpcLocalExecutorResult> ExecuteAsync(
+            NpcRuntimeDescriptor descriptor,
+            NpcLocalActionIntent intent,
+            IReadOnlyList<NpcObservationFact> facts,
+            string traceId,
+            CancellationToken ct)
+        {
+            CallCount++;
+            LastIntent = intent;
+            return Task.FromResult(_result);
         }
     }
 }
