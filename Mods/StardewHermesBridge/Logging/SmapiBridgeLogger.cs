@@ -11,6 +11,11 @@ public sealed class SmapiBridgeLogger
     public const string OriginalDialogueCompleted = "original_dialogue_completed";
     public const string CustomDialogueQueued = "custom_dialogue_queued";
     public const string CustomDialogueDisplayed = "custom_dialogue_displayed";
+    private static readonly HashSet<string> SilentMonitorEndpoints = new(StringComparer.Ordinal)
+    {
+        NpcClickRejected,
+        "query_status_completed"
+    };
 
     private readonly string _logPath;
     private readonly IMonitor _monitor;
@@ -41,6 +46,7 @@ public sealed class SmapiBridgeLogger
         lock (_gate)
             File.AppendAllText(_logPath, json + Environment.NewLine);
 
-        _monitor.Log($"{endpoint} npc={npcId ?? "-"} trace={traceId} command={commandId ?? "-"} result={result} error={error ?? "-"}", LogLevel.Info);
+        if (!SilentMonitorEndpoints.Contains(endpoint))
+            _monitor.Log($"{endpoint} npc={npcId ?? "-"} trace={traceId} command={commandId ?? "-"} result={result} error={error ?? "-"}", LogLevel.Info);
     }
 }
