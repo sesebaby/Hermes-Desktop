@@ -1,0 +1,1 @@
+- [ ] Confirm `stardew-autonomy-context-compression-consensus-plan.md`: `proceed`, `adjust [X]`, or `restart`.

@@ -1,0 +1,26 @@
+# Stardew Private Chat Pending HUD Context
+
+- task statement: Continue the current NPC private-chat loop work. Add an immediate non-blocking HUD/overlay message after Haley's vanilla dialogue completes so the player sees that Haley noticed the chat intent while Desktop/core waits for the Agent decision.
+- desired outcome:
+  - Do not leave the player staring at nothing during a 10s+ Agent decision.
+  - Show wording equivalent to: "海莉知道你想和她聊天，她正在考虑是否回答你".
+  - Keep the overlay/HUD non-blocking; do not open the text-entry menu until the Agent explicitly chooses `stardew_open_private_chat`.
+  - Preserve the autonomy boundary: bridge events remain facts, and only the explicit tick/Agent path decides whether private chat opens.
+- known facts/evidence:
+  - Current uncommitted changes already record `vanilla_dialogue_completed` facts in `Mods/StardewHermesBridge/ModEntry.cs`.
+  - `BridgeStatusOverlay` currently draws a simple bridge status HUD from `Mods/StardewHermesBridge/Ui/BridgeStatusOverlay.cs`.
+  - `BridgeCommandQueue.OpenPrivateChat` opens the real text-entry surface only after the core tool call reaches `/action/open_private_chat`.
+  - `StardewEventSource` and `NpcAutonomyLoop` already allow the next tick to poll bridge events as passive facts.
+- constraints:
+  - Work with existing uncommitted changes; do not revert them.
+  - No new dependencies.
+  - Prefer a small, testable bridge-side change over a new UI system.
+  - Avoid blocking Stardew's game loop or setting `Game1.activeClickableMenu` for the waiting state.
+- unknowns/open questions:
+  - Exact visual placement can reuse the current overlay for now.
+  - A later polish pass may replace the debug-style overlay with a native-looking thought bubble, but that is not required for this slice.
+- likely codebase touchpoints:
+  - `Mods/StardewHermesBridge/Ui/BridgeStatusOverlay.cs`
+  - `Mods/StardewHermesBridge/ModEntry.cs`
+  - `Mods/StardewHermesBridge/Bridge/BridgeCommandQueue.cs`
+  - `Mods/StardewHermesBridge.Tests/RawDialogueDisplayRegressionTests.cs`

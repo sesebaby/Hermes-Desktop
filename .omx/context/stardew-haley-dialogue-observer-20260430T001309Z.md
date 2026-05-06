@@ -1,0 +1,24 @@
+# Stardew Haley Dialogue Observer Context
+
+- task statement: Fix StardewHermesBridge so clicking Haley in-game first shows original Stardew NPC dialogue, then shows Hermes custom dialogue. User agreed to replace the fragile click-start path with an observer path, and asked to consult the SVE reference project when blocked.
+- desired outcome: In SMAPI/Stardew, normal NPC interaction remains vanilla-owned. Hermes observes a Haley `DialogueBox`, waits for it to close, then displays a raw custom NPC dialogue using `new Dialogue(npc, null, text)`.
+- known facts/evidence:
+  - Current logs show `menu_open` and `original_start_failed` after clicking Haley, meaning the mod is racing or replaying vanilla interaction from `ButtonPressed`.
+  - Previous crash came from passing raw text to `Game1.DrawDialogue(NPC,string)`; current renderer uses `Game1.DrawDialogue(new Dialogue(npc, null, text))`.
+  - SVE injects normal NPC dialogue into `Characters/Dialogue/*` and event scripts, and only calls `npc.checkAction` from tightly scoped vanilla location action patches.
+  - SMAPI/Stardew docs recommend observing `DialogueBox.characterDialogue.speaker` via menu lifecycle for dialogue state.
+- constraints:
+  - Do not create a custom overlay or independent UI to imitate Stardew dialogue.
+  - Do not regress the raw dialogue renderer fix.
+  - Do not revert unrelated existing worktree changes.
+  - Keep `/action/speak` and desktop debug paths diagnostic-only.
+- unknowns/open questions:
+  - Exact in-game event ordering for SMAPI `ButtonPressed` vs vanilla menu creation may vary by binding/mod load order.
+  - Manual in-game validation may not be possible from this shell; automated build/tests must provide fresh evidence.
+- likely codebase touchpoints:
+  - `Mods/StardewHermesBridge/ModEntry.cs`
+  - `Mods/StardewHermesBridge/Dialogue/NpcDialogueClickRouter.cs`
+  - `Mods/StardewHermesBridge/Dialogue/NpcDialogueFlowService.cs`
+  - `Mods/StardewHermesBridge/Dialogue/NpcOriginalDialogueStarter.cs`
+  - `Mods/StardewHermesBridge.Tests/NpcDialogueClickRouterTests.cs`
+  - `Mods/StardewHermesBridge.Tests/NpcDialogueFlowServiceTests.cs`

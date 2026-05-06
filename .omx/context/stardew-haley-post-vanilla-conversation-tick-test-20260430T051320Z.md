@@ -1,0 +1,43 @@
+# Stardew Haley Post-Vanilla Conversation + Tick Test Context
+
+- task statement: Plan a modification to the existing StardewHermesBridge Haley follow-up path. Do not delete the custom dialogue feature. Change it so Hermes does not show a hard-coded custom line after every vanilla dialogue. Instead, after all vanilla Haley dialogue is complete, enter a native-looking in-game conversation surface where the player can input a custom message and Haley can answer through the autonomy loop. Also add a manual test command for the autonomy tick loop.
+- desired outcome:
+  - Preserve vanilla Haley dialogue first.
+  - Show Hermes conversation entry only after vanilla dialogue has fully settled/closed.
+  - Avoid immediate hard-coded follow-up lines per original dialogue page.
+  - Allow player input for Haley conversation in game.
+  - Preserve the hard autonomy boundary: game/SMAPI/dialogue/player input produce facts only; only the NPC autonomy loop tick may call the Agent and tools.
+  - Add a clear test command to run one Haley tick manually.
+- known facts/evidence:
+  - Current hard-coded line is in `Mods/StardewHermesBridge/ModEntry.cs` via `BuildCustomDialogueText("Haley")`.
+  - Current follow-up display is `DisplayCustomDialogue`, called after `NpcDialogueFlowService.Advance` returns `ShouldDisplayCustomDialogue`.
+  - Current bridge HTTP host exposes `/health`, `/task/move`, `/task/status`, `/task/cancel`, and `/action/speak`.
+  - Core desktop Stardew client already has contracts/tests for `/query/status`, `/query/world_snapshot`, and `/events/poll`, but the SMAPI bridge host does not yet expose those live routes.
+  - `NpcAutonomyLoop.RunOneTickAsync` already implements observe -> poll events -> record facts -> optional Agent decision -> activity log -> memory.
+  - SVE reference mostly uses Stardew-native event/dialogue/question primitives (`speak`, `question`, `createQuestionDialogue`, `afterQuestion`) instead of replacing the visible dialogue style with a separate web/desktop UI.
+- constraints:
+  - User hard rule remains for the general autonomy loop: do not use event-driven Agent behavior. No proximity change, inbox, scheduler notification, ordinary bridge event, or world-state change may directly invoke Agent decision/action.
+  - User clarified on 2026-04-30 that the explicit private-chat case is exempt from the hard rule. The exemption is scoped to the player-initiated post-vanilla Haley private conversation: after vanilla dialogue is fully settled, the private-chat UI may open and player input may drive a Haley chat response.
+  - Keep the exemption narrow: it must not turn general game events into Agent triggers, and must not make autonomous world actions happen outside the autonomy loop.
+  - The game side may provide facts and display surfaces for autonomy; private chat may have its own explicit chat-response path.
+  - User clarified that if any request outside the private-chat exception violates the hard autonomy rule, creates a dual-brain path, or introduces other hidden architecture risks, the agent must explain that directly.
+  - SMAPI must not directly invoke `NpcAutonomyLoop`; the tick loop belongs to Desktop/core. A SMAPI console command may only be a shim/fact/request if needed, while Desktop/core performs the tick.
+  - Private chat must not become an independent second brain. If it invokes an Agent response, it must use the same Haley persona/profile/session/memory boundary as the rest of the NPC runtime, or explicitly document any temporary deviation.
+  - No deletion of the custom dialogue feature; modify its activation and content flow.
+  - Avoid custom overlay if a Stardew-native or native-looking surface is possible.
+- unknowns/open questions:
+  - Whether the first implementation should use a simple native-looking custom `IClickableMenu` with `TextBox` for free text, or a constrained Stardew question menu before adding free text.
+  - Whether the manual tick test command should live in SMAPI console, Desktop debug UI, or both.
+  - How much of the live `/query/*` and `/events/poll` bridge routes should be implemented in the same execution slice versus using a fake/test adapter for the command.
+- likely codebase touchpoints:
+  - `Mods/StardewHermesBridge/ModEntry.cs`
+  - `Mods/StardewHermesBridge/Dialogue/NpcDialogueFlowService.cs`
+  - `Mods/StardewHermesBridge/Dialogue/NpcDialogueClickRouter.cs`
+  - `Mods/StardewHermesBridge/Dialogue/NpcDialogueMenuGuard.cs`
+  - `Mods/StardewHermesBridge/Bridge/BridgeHttpHost.cs`
+  - `Mods/StardewHermesBridge/Bridge/BridgeCommandQueue.cs`
+  - `src/runtime/NpcAutonomyLoop.cs`
+  - `src/games/stardew/StardewQueryService.cs`
+  - `src/games/stardew/StardewEventSource.cs`
+  - `Desktop/HermesDesktop.Tests/Runtime/NpcAutonomyLoopTests.cs`
+  - `Mods/StardewHermesBridge.Tests/*`

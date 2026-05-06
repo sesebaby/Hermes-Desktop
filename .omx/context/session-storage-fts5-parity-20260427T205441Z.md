@@ -1,0 +1,28 @@
+# Ralph Context Snapshot: Session Storage + FTS5 Parity
+
+- UTC timestamp: 20260427T205441Z
+- Task statement: Align C# Hermes Desktop session storage + FTS5 with Python reference `external/hermes-agent-main`, then commit.
+- Desired outcome: C# session persistence uses SQLite as authoritative session/message store with FTS5 search behavior matching Python `hermes_state.py` where practical, while preserving current Desktop integrations and tests.
+- Known facts/evidence:
+  - Python built-in curated memory remains file-backed `memories/MEMORY.md` and `memories/USER.md`.
+  - Python session storage is SQLite `state.db` with `sessions`, `messages`, `state_meta`, FTS5 `messages_fts`, WAL, schema version, source filtering, parent session chains, message counters, and CJK LIKE fallback.
+  - Current C# curated memory is already file-backed and not the target of this task.
+  - Current C# transcript persistence is JSONL `TranscriptStore`; SQLite exists only as derived `SessionSearchIndex` (`session-search.sqlite`) with limited `messages` table and FTS.
+- Constraints:
+  - Reference-first parity: do not call partial behavior aligned if core session storage is still JSONL-authoritative.
+  - Keep Desktop app behavior compatible; avoid destructive migration.
+  - No new dependencies unless already present; `Microsoft.Data.Sqlite` exists.
+  - TDD: add failing tests before production changes.
+  - Commit after verification.
+- Unknowns/open questions:
+  - Exact minimum Python parity surface needed by current C# callers.
+  - Whether to replace JSONL immediately or use SQLite authoritative store with JSONL best-effort compatibility.
+- Likely codebase touchpoints:
+  - `src/transcript/TranscriptStore.cs`
+  - `src/search/SessionSearchIndex.cs`
+  - `src/search/TranscriptRecallService.cs`
+  - `src/Tools/SessionSearchTool.cs`
+  - `Desktop/HermesDesktop/App.xaml.cs`
+  - `Desktop/HermesDesktop.Tests/Services/TranscriptStoreTests.cs`
+  - `Desktop/HermesDesktop.Tests/Services/MemoryParityTests.cs`
+  - New session SQLite store if needed under `src/transcript/` or `src/search/`.
