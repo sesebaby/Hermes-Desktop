@@ -518,6 +518,60 @@ public class StardewAutonomyContextBudgetTests
     }
 
     [TestMethod]
+    public void BudgetPolicy_SanitizesOrphanAndMissingToolPairs()
+    {
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(NullLogger<StardewAutonomyFirstCallContextBudgetPolicy>.Instance);
+        var session = CreateAutonomySession();
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "system" },
+            new() { Role = "tool", ToolName = "stardew_move", ToolCallId = "orphan-call", Content = new string('o', 7000) },
+            new()
+            {
+                Role = "assistant",
+                Content = "latest request",
+                ToolCalls = [new ToolCall { Id = "missing-result", Name = "stardew_task_status", Arguments = "{}" }]
+            },
+            new() { Role = "user", Content = "current decision" }
+        };
+
+        var result = policy.Apply(new FirstCallContextBudgetRequest(session, messages, "current decision", 2));
+        var output = result.Messages.ToList();
+
+        Assert.IsFalse(output.Any(message => message.Role == "tool" && message.ToolCallId == "orphan-call"));
+        Assert.IsTrue(output.Any(message =>
+            message.Role == "tool" &&
+            message.ToolCallId == "missing-result" &&
+            message.Content.Contains("missing tool result", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public void BudgetPolicy_CompletedLogIncludesEstimatedTokenAndDeepSeekCostFields()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "system" },
+            new() { Role = "assistant", Content = new string('a', 6000) },
+            new() { Role = "user", Content = "current decision" }
+        };
+
+        policy.Apply(new FirstCallContextBudgetRequest(session, messages, "current decision", 2));
+        var completed = CompletedLog(logger);
+
+        foreach (var field in new[]
+                 {
+                     "promptTokensEstimatedBefore", "promptTokensEstimatedAfter", "usageSource",
+                     "estimatedDeepSeekInputRmbBefore", "estimatedDeepSeekInputRmbAfter"
+                 })
+        {
+            StringAssert.Contains(completed, field + "=");
+        }
+    }
+
+    [TestMethod]
     public async Task Agent_FirstToolIteration_AppliesPolicyBeforeClientCall()
     {
         var chatClient = new CapturingChatClient();
@@ -539,6 +593,59 @@ public class StardewAutonomyContextBudgetTests
         Assert.AreEqual(1, policy.Calls);
         Assert.IsNotNull(chatClient.FirstToolMessages);
         CollectionAssert.AreEqual(new[] { "policy output", "trimmed user" }, chatClient.FirstToolMessages.Select(message => message.Content).ToArray());
+    }
+
+    [TestMethod]
+    public async Task Agent_LaterToolIteration_AppliesOutboundCompactionBeforeClientCall()
+    {
+        var chatClient = new SequencedToolChatClient(
+            new ChatResponse
+            {
+                FinishReason = "tool_calls",
+                ToolCalls = [new ToolCall { Id = "call-1", Name = "noop", Arguments = "{}" }]
+            },
+            new ChatResponse { Content = "done", FinishReason = "stop" });
+        var outboundPolicy = new ReplacingOutboundPolicy(iteration: 2, [
+            new Message { Role = "system", Content = "second policy output" },
+            new Message { Role = "user", Content = "second trimmed user" }
+        ]);
+        var agent = new Agent(
+            chatClient,
+            NullLogger<Agent>.Instance,
+            outboundContextCompactionPolicy: outboundPolicy);
+        agent.RegisterTool(new NoopTool("noop"));
+        var session = CreateAutonomySession();
+
+        await agent.ChatAsync("original user", session, CancellationToken.None);
+
+        Assert.AreEqual(2, chatClient.ToolMessageBatches.Count);
+        CollectionAssert.AreEqual(
+            new[] { "second policy output", "second trimmed user" },
+            chatClient.ToolMessageBatches[1].Select(message => message.Content).ToArray());
+        Assert.IsFalse(session.Messages.Any(message => message.Content == "second policy output"),
+            "Outbound compaction must not rewrite authoritative session messages.");
+    }
+
+    [TestMethod]
+    public async Task Agent_LlmCompletionLogUsesProviderUsageWhenAvailable()
+    {
+        var logger = new CapturingLogger<Agent>();
+        var chatClient = new SequencedToolChatClient(new ChatResponse
+        {
+            Content = "done",
+            FinishReason = "stop",
+            Usage = new UsageStats(InputTokens: 1200, OutputTokens: 40, CacheCreationTokens: 20, CacheReadTokens: 100)
+        });
+        var agent = new Agent(chatClient, logger);
+        agent.RegisterTool(new NoopTool("noop"));
+        var session = CreateAutonomySession();
+
+        await agent.ChatAsync("usage test", session, CancellationToken.None);
+
+        Assert.IsTrue(logger.Messages.Any(message =>
+            message.Contains("usageSource=provider", StringComparison.Ordinal) &&
+            message.Contains("promptTokensActual=1200", StringComparison.Ordinal) &&
+            message.Contains("estimatedDeepSeekRmb=", StringComparison.Ordinal)));
     }
 
     [TestMethod]
@@ -754,6 +861,14 @@ public class StardewAutonomyContextBudgetTests
         }
     }
 
+    private sealed class ReplacingOutboundPolicy(int iteration, IReadOnlyList<Message> replacement) : IOutboundContextCompactionPolicy
+    {
+        public ContextCompactionResult Apply(ContextCompactionRequest request)
+            => request.Iteration == iteration
+                ? new ContextCompactionResult(replacement, Applied: true, BudgetMet: true)
+                : new ContextCompactionResult(request.Messages, Applied: false, BudgetMet: true);
+    }
+
     private sealed class CapturingChatClient : IChatClient
     {
         public List<Message>? FirstToolMessages { get; private set; }
@@ -790,6 +905,7 @@ public class StardewAutonomyContextBudgetTests
     private sealed class SequencedToolChatClient(params ChatResponse[] responses) : IChatClient
     {
         private readonly Queue<ChatResponse> _responses = new(responses);
+        public List<List<Message>> ToolMessageBatches { get; } = new();
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
             => Task.FromResult("done");
@@ -798,7 +914,10 @@ public class StardewAutonomyContextBudgetTests
             IEnumerable<Message> messages,
             IEnumerable<ToolDefinition> tools,
             CancellationToken ct)
-            => Task.FromResult(_responses.Dequeue());
+        {
+            ToolMessageBatches.Add(messages.ToList());
+            return Task.FromResult(_responses.Dequeue());
+        }
 
         public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
         {

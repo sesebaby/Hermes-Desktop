@@ -623,6 +623,43 @@ public sealed class MemoryParityTests
     }
 
     [TestMethod]
+    public async Task PrepareContextAsync_AutonomySessionCompactsSessionStateBeforePromptBuild()
+    {
+        var transcripts = new TranscriptStore(_tempDir);
+        var client = new RecordingChatClient { CompleteResponse = "summary" };
+        var contextManager = new ContextManager(
+            transcripts,
+            client,
+            new TokenBudget(maxTokens: 8000, recentTurnWindow: 6),
+            new PromptBuilder("stable system"),
+            NullLogger<ContextManager>.Instance);
+        var sessionId = "sdv_save-1_haley_default";
+
+        for (var i = 0; i < 18; i++)
+            await contextManager.RecordDecisionAsync(sessionId, $"decision-{i}", $"reason-{i}", CancellationToken.None);
+
+        var session = contextManager.GetOrCreateState(sessionId);
+        session.ActiveGoal = "keep the current game goal";
+        session.OpenQuestions.AddRange(["q-1", "q-2", "q-3", "q-4"]);
+        session.ImportantEntities.AddRange(["entity-1", "entity-2", "entity-3", "entity-4", "entity-5", "entity-6"]);
+
+        var messages = await contextManager.PrepareContextAsync(
+            sessionId,
+            toolSessionId: null,
+            userMessage: "continue autonomy",
+            retrievedContext: null,
+            CancellationToken.None);
+
+        var sessionStateMessage = messages.Single(message =>
+            message.Role == "system" &&
+            message.Content.StartsWith("[Session State]", StringComparison.Ordinal));
+        StringAssert.Contains(sessionStateMessage.Content, "decision-17");
+        Assert.IsFalse(sessionStateMessage.Content.Contains("decision-0", StringComparison.Ordinal));
+        Assert.IsTrue(sessionStateMessage.Content.Contains("\"openQuestions\"", StringComparison.Ordinal));
+        Assert.IsTrue(sessionStateMessage.Content.Contains("\"importantEntities\"", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public async Task ChatAsync_EmptyAssistantResponseDoesNotSyncMemory()
     {
         var transcripts = new TranscriptStore(_tempDir);

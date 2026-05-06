@@ -31,6 +31,7 @@ public sealed class Agent : IAgent
     private readonly SoulService? _soulService;
     private readonly PluginManager? _pluginManager;
     private readonly IFirstCallContextBudgetPolicy _firstCallContextBudgetPolicy;
+    private readonly IOutboundContextCompactionPolicy _outboundContextCompactionPolicy;
 
     // INV-004/005: Provider fallback state machine
     private readonly IChatClient? _fallbackChatClient;
@@ -98,7 +99,8 @@ public sealed class Agent : IAgent
         CredentialPool? credentialPool = null,
         TurnMemoryCoordinator? turnMemoryCoordinator = null,
         MemoryReviewService? memoryReviewService = null,
-        IFirstCallContextBudgetPolicy? firstCallContextBudgetPolicy = null)
+        IFirstCallContextBudgetPolicy? firstCallContextBudgetPolicy = null,
+        IOutboundContextCompactionPolicy? outboundContextCompactionPolicy = null)
     {
         _chatClient = chatClient;
         _logger = logger;
@@ -113,6 +115,7 @@ public sealed class Agent : IAgent
         _credentialPool = credentialPool;
         _memoryReviewService = memoryReviewService;
         _firstCallContextBudgetPolicy = firstCallContextBudgetPolicy ?? NoopFirstCallContextBudgetPolicy.Instance;
+        _outboundContextCompactionPolicy = outboundContextCompactionPolicy ?? NoopOutboundContextCompactionPolicy.Instance;
         if (_memoryReviewService is not null)
             _memoryReviewService.BackgroundReviewCompleted += HandleBackgroundReviewCompleted;
     }
@@ -187,17 +190,73 @@ public sealed class Agent : IAgent
         int iteration,
         ChatResponse response,
         IReadOnlyList<ToolDefinition> toolDefs,
+        IReadOnlyList<Message> messages,
         long durationMs)
     {
+        var promptTokensEstimated = EstimatePromptTokens(messages);
+        var usageSource = response.Usage is null ? "estimated" : "provider";
+        var promptTokensActual = response.Usage?.InputTokens.ToString() ?? "unavailable";
+        var outputTokensActual = response.Usage?.OutputTokens.ToString() ?? "unavailable";
+        var cacheCreationTokens = response.Usage?.CacheCreationTokens?.ToString() ?? "unavailable";
+        var cacheReadTokens = response.Usage?.CacheReadTokens?.ToString() ?? "unavailable";
+        var estimatedDeepSeekRmb = EstimateDeepSeekFlashRmb(response.Usage, promptTokensEstimated);
+
         _logger.LogInformation(
-            "Agent LLM request completed; session={SessionId}; iteration={Iteration}; finishReason={FinishReason}; contentChars={ContentChars}; toolCalls={ToolCallCount}; tools={ToolCount}; durationMs={DurationMs}",
+            "Agent LLM request completed; session={SessionId}; iteration={Iteration}; finishReason={FinishReason}; contentChars={ContentChars}; toolCalls={ToolCallCount}; tools={ToolCount}; durationMs={DurationMs}; usageSource={UsageSource}; promptTokensEstimated={PromptTokensEstimated}; promptTokensActual={PromptTokensActual}; outputTokensActual={OutputTokensActual}; cacheCreationTokens={CacheCreationTokens}; cacheReadTokens={CacheReadTokens}; estimatedDeepSeekRmb={EstimatedDeepSeekRmb}",
             sessionId,
             iteration,
             response.FinishReason ?? "-",
             response.Content?.Length ?? 0,
             response.ToolCalls?.Count ?? 0,
             toolDefs.Count,
-            durationMs);
+            durationMs,
+            usageSource,
+            promptTokensEstimated,
+            promptTokensActual,
+            outputTokensActual,
+            cacheCreationTokens,
+            cacheReadTokens,
+            estimatedDeepSeekRmb);
+    }
+
+    private static int EstimatePromptTokens(IEnumerable<Message> messages)
+        => Math.Max(1, (int)Math.Ceiling(messages.Sum(message => message.Content?.Length ?? 0) / 4.0));
+
+    private static decimal EstimateDeepSeekFlashRmb(UsageStats? usage, int promptTokensEstimated)
+    {
+        if (usage is null)
+            return Math.Round(promptTokensEstimated / 1_000_000m, 8);
+
+        var cacheReadTokens = usage.CacheReadTokens ?? 0;
+        var cacheCreationTokens = usage.CacheCreationTokens ?? 0;
+        var uncachedInputTokens = Math.Max(0, usage.InputTokens - cacheReadTokens - cacheCreationTokens);
+        var cost = (uncachedInputTokens / 1_000_000m) +
+                   (cacheCreationTokens / 1_000_000m) +
+                   (cacheReadTokens * 0.02m / 1_000_000m) +
+                   (usage.OutputTokens * 2m / 1_000_000m);
+        return Math.Round(cost, 8);
+    }
+
+    private IReadOnlyList<Message> ApplyOutboundContextPolicies(
+        Session session,
+        IReadOnlyList<Message> messages,
+        string currentUserMessage,
+        int iteration,
+        bool hasPreparedContext)
+    {
+        var output = messages;
+        if (hasPreparedContext)
+        {
+            var firstCallResult = _firstCallContextBudgetPolicy.Apply(
+                new FirstCallContextBudgetRequest(session, output, currentUserMessage, iteration));
+            output = firstCallResult.Messages;
+            if (firstCallResult.Applied)
+                return output;
+        }
+
+        var compactionResult = _outboundContextCompactionPolicy.Apply(
+            new ContextCompactionRequest(session, output, currentUserMessage, iteration));
+        return compactionResult.Messages;
     }
 
     private void LogToolCallSummary(
@@ -429,12 +488,12 @@ public sealed class Agent : IAgent
             IReadOnlyList<Message> messagesToUse = (iterations == 1 && preparedContext is not null)
                 ? preparedContext
                 : session.Messages;
-            if (iterations == 1 && preparedContext is not null)
-            {
-                var budgetResult = _firstCallContextBudgetPolicy.Apply(
-                    new FirstCallContextBudgetRequest(session, messagesToUse, message, iterations));
-                messagesToUse = budgetResult.Messages;
-            }
+            messagesToUse = ApplyOutboundContextPolicies(
+                session,
+                messagesToUse,
+                message,
+                iterations,
+                hasPreparedContext: iterations == 1 && preparedContext is not null);
 
             // INV-004/005: Use active client with fallback support
             var activeClientForTools = GetActiveChatClient();
@@ -445,7 +504,7 @@ public sealed class Agent : IAgent
                 var llmStopwatch = System.Diagnostics.Stopwatch.StartNew();
                 response = await activeClientForTools.CompleteWithToolsAsync(messagesToUse, toolDefs, ct);
                 llmStopwatch.Stop();
-                LogLlmRequestComplete(session.Id, iterations, response, toolDefs, llmStopwatch.ElapsedMilliseconds);
+                LogLlmRequestComplete(session.Id, iterations, response, toolDefs, messagesToUse, llmStopwatch.ElapsedMilliseconds);
             }
             catch (HttpRequestException ex) when (_fallbackChatClient is not null)
             {
@@ -454,7 +513,7 @@ public sealed class Agent : IAgent
                 var llmStopwatch = System.Diagnostics.Stopwatch.StartNew();
                 response = await activeClientForTools.CompleteWithToolsAsync(messagesToUse, toolDefs, ct);
                 llmStopwatch.Stop();
-                LogLlmRequestComplete(session.Id, iterations, response, toolDefs, llmStopwatch.ElapsedMilliseconds);
+                LogLlmRequestComplete(session.Id, iterations, response, toolDefs, messagesToUse, llmStopwatch.ElapsedMilliseconds);
             }
 
             if (!response.HasToolCalls)

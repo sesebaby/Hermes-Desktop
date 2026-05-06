@@ -1,5 +1,6 @@
 namespace Hermes.Agent.Core;
 
+using Hermes.Agent.LLM;
 using System.Text.Json;
 
 public sealed class Message
@@ -121,6 +122,7 @@ public sealed class ChatResponse
     public string? ReasoningContent { get; init; }
     public string? ReasoningDetails { get; init; }
     public string? CodexReasoningItems { get; init; }
+    public UsageStats? Usage { get; init; }
 
     public bool HasToolCalls => ToolCalls is { Count: > 0 };
 }

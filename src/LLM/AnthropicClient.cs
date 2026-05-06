@@ -95,6 +95,7 @@ public sealed class AnthropicClient : IChatClient
         var stopReason = root.TryGetProperty("stop_reason", out var sr) ? sr.GetString() : "stop";
         string? textContent = null;
         List<ToolCall>? toolCalls = null;
+        UsageStats? usage = null;
 
         if (root.TryGetProperty("content", out var contentArray))
         {
@@ -123,11 +124,29 @@ public sealed class AnthropicClient : IChatClient
             textContent = textParts.Length > 0 ? textParts.ToString() : null;
         }
 
+        if (root.TryGetProperty("usage", out var usageElement))
+        {
+            var inputTokens = usageElement.TryGetProperty("input_tokens", out var inputTokensEl)
+                ? inputTokensEl.GetInt32()
+                : 0;
+            var outputTokens = usageElement.TryGetProperty("output_tokens", out var outputTokensEl)
+                ? outputTokensEl.GetInt32()
+                : 0;
+            var cacheCreationTokens = usageElement.TryGetProperty("cache_creation_input_tokens", out var cacheCreationEl)
+                ? cacheCreationEl.GetInt32()
+                : (int?)null;
+            var cacheReadTokens = usageElement.TryGetProperty("cache_read_input_tokens", out var cacheReadEl)
+                ? cacheReadEl.GetInt32()
+                : (int?)null;
+            usage = new UsageStats(inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens);
+        }
+
         return new ChatResponse
         {
             Content = textContent,
             ToolCalls = toolCalls,
-            FinishReason = stopReason
+            FinishReason = stopReason,
+            Usage = usage
         };
     }
 

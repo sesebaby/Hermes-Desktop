@@ -119,6 +119,7 @@ public sealed class NpcRuntimeContextFactory
             taskProjectionService,
             todoStore,
             new ToolRegistry(),
+            firstCallContextBudgetPolicy,
             firstCallContextBudgetPolicy);
     }
 }
@@ -137,4 +138,5 @@ public sealed record NpcRuntimeContextBundle(
     SessionTaskProjectionService TaskProjectionService,
     SessionTodoStore TodoStore,
     IToolRegistry ToolRegistry,
-    Hermes.Agent.Core.IFirstCallContextBudgetPolicy? FirstCallContextBudgetPolicy = null);
+    Hermes.Agent.Core.IFirstCallContextBudgetPolicy? FirstCallContextBudgetPolicy = null,
+    Hermes.Agent.Core.IOutboundContextCompactionPolicy? OutboundContextCompactionPolicy = null);

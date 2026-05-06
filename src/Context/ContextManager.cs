@@ -88,6 +88,11 @@ public sealed class ContextManager
         await sessionLock.WaitAsync(ct);
         try
         {
+            var isStardewNpcRuntimeSession =
+                sessionId.StartsWith("sdv_", StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(toolSessionId) &&
+                 toolSessionId.StartsWith("sdv_", StringComparison.OrdinalIgnoreCase));
+
             // Load transcript from archive — empty list for brand-new sessions
             List<Message> allMessages;
             if (_transcripts.SessionExists(sessionId))
@@ -166,11 +171,6 @@ public sealed class ContextManager
             // Increment turn count only after all async work succeeds
             state.TurnCount++;
 
-            var isStardewNpcRuntimeSession =
-                sessionId.StartsWith("sdv_", StringComparison.OrdinalIgnoreCase) ||
-                (!string.IsNullOrWhiteSpace(toolSessionId) &&
-                 toolSessionId.StartsWith("sdv_", StringComparison.OrdinalIgnoreCase));
-
             // Load soul context (identity, user profile, project rules, learned behaviors)
             string? soulContext = null;
             if (_soulService is not null)
@@ -202,9 +202,12 @@ public sealed class ContextManager
             }
 
             // Build the prompt
+            var promptState = isStardewNpcRuntimeSession
+                ? ShapeAutonomyPromptState(state)
+                : state;
             var packet = _promptBuilder.Build(new BuildRequest
             {
-                State = state,
+                State = promptState,
                 CurrentUserMessage = userMessage,
                 RecentTurns = recentTurns,
                 RetrievedContext = retrievedContext,
@@ -323,6 +326,48 @@ public sealed class ContextManager
     {
         _sessionStates.TryRemove(sessionId, out _);
         _sessionLocks.TryRemove(sessionId, out _);
+    }
+
+    private static SessionState ShapeAutonomyPromptState(SessionState state)
+    {
+        return new SessionState
+        {
+            ActiveGoal = TruncateField(state.ActiveGoal, 500),
+            Constraints = TakeLastTrimmed(state.Constraints, maxItems: 3, maxChars: 240),
+            Decisions = state.Decisions
+                .TakeLast(5)
+                .Select(decision => new Decision
+                {
+                    What = TruncateField(decision.What, 240),
+                    Why = TruncateField(decision.Why, 240),
+                    TurnNumber = decision.TurnNumber
+                })
+                .ToList(),
+            OpenQuestions = TakeLastTrimmed(state.OpenQuestions, maxItems: 3, maxChars: 240),
+            ImportantEntities = TakeLastTrimmed(state.ImportantEntities, maxItems: 10, maxChars: 160),
+            Summary = new ContextSummary
+            {
+                Content = TruncateField(state.Summary.Content, 1200),
+                CoveredThroughTurn = state.Summary.CoveredThroughTurn
+            },
+            PreviousResponseId = state.PreviousResponseId,
+            TurnCount = state.TurnCount
+        };
+    }
+
+    private static List<string> TakeLastTrimmed(IEnumerable<string> values, int maxItems, int maxChars)
+        => values
+            .TakeLast(maxItems)
+            .Select(value => TruncateField(value, maxChars))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToList();
+
+    private static string TruncateField(string value, int maxChars)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= maxChars)
+            return value;
+
+        return value[..maxChars] + "...[trimmed]";
     }
 
     /// <summary>

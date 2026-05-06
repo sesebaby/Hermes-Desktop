@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Hermes.Agent.Runtime;
 
-public sealed class StardewAutonomyFirstCallContextBudgetPolicy : IFirstCallContextBudgetPolicy
+public sealed class StardewAutonomyFirstCallContextBudgetPolicy : IFirstCallContextBudgetPolicy, IOutboundContextCompactionPolicy
 {
     public const int DefaultBudgetChars = 5000;
     private const int DynamicRecallCapChars = 1000;
@@ -32,6 +32,8 @@ public sealed class StardewAutonomyFirstCallContextBudgetPolicy : IFirstCallCont
 
         var messagesBefore = request.Messages.Count;
         var charsBefore = CountCharacters(request.Messages);
+        var promptTokensEstimatedBefore = EstimateTokensFromChars(charsBefore);
+        var estimatedDeepSeekInputRmbBefore = EstimateDeepSeekFlashInputRmb(promptTokensEstimatedBefore);
         var toolResultCharsBefore = request.Messages
             .Where(message => IsRole(message, "tool"))
             .Sum(message => message.Content.Length);
@@ -117,8 +119,12 @@ public sealed class StardewAutonomyFirstCallContextBudgetPolicy : IFirstCallCont
                 output.RemoveAt(i);
         }
 
+        output = SanitizeToolPairs(output);
+
         var finalMessages = output.Select(slot => slot.Message).ToList();
         var charsAfter = CountCharacters(finalMessages);
+        var promptTokensEstimatedAfter = EstimateTokensFromChars(charsAfter);
+        var estimatedDeepSeekInputRmbAfter = EstimateDeepSeekFlashInputRmb(promptTokensEstimatedAfter);
         var budgetMet = charsAfter <= _budgetChars;
         var categoryCounts = CountCategories(output, dynamicRecallTrim.DynamicRecallCharsBefore);
         var unmetReason = budgetMet
@@ -131,7 +137,7 @@ public sealed class StardewAutonomyFirstCallContextBudgetPolicy : IFirstCallCont
             truncatedToolCallArgs);
 
         _logger.LogInformation(
-            "autonomy_context_budget_completed; sessionId={SessionId}; traceId={TraceId}; npcId={NpcId}; messagesAfter={MessagesAfter}; charsBefore={CharsBefore}; charsAfter={CharsAfter}; charsSaved={CharsSaved}; budgetMet={BudgetMet}; budgetUnmetReason={BudgetUnmetReason}; systemChars={SystemChars}; builtinMemoryChars={BuiltinMemoryChars}; dynamicRecallCharsBefore={DynamicRecallCharsBefore}; dynamicRecallCharsAfter={DynamicRecallCharsAfter}; activeTaskChars={ActiveTaskChars}; protectedTailChars={ProtectedTailChars}; currentUserChars={CurrentUserChars}; trimDiagnostics={TrimDiagnostics}; protectedTailMessages={ProtectedTailMessages}; prunedToolResults={PrunedToolResults}; prunedDuplicateStatusResults={PrunedDuplicateStatusResults}; truncatedToolCallArgs={TruncatedToolCallArgs}; replacedWithPlaceholders={ReplacedWithPlaceholders}",
+            "autonomy_context_budget_completed; sessionId={SessionId}; traceId={TraceId}; npcId={NpcId}; messagesAfter={MessagesAfter}; charsBefore={CharsBefore}; charsAfter={CharsAfter}; charsSaved={CharsSaved}; promptTokensEstimatedBefore={PromptTokensEstimatedBefore}; promptTokensEstimatedAfter={PromptTokensEstimatedAfter}; usageSource={UsageSource}; estimatedDeepSeekInputRmbBefore={EstimatedDeepSeekInputRmbBefore}; estimatedDeepSeekInputRmbAfter={EstimatedDeepSeekInputRmbAfter}; budgetMet={BudgetMet}; budgetUnmetReason={BudgetUnmetReason}; systemChars={SystemChars}; builtinMemoryChars={BuiltinMemoryChars}; dynamicRecallCharsBefore={DynamicRecallCharsBefore}; dynamicRecallCharsAfter={DynamicRecallCharsAfter}; activeTaskChars={ActiveTaskChars}; protectedTailChars={ProtectedTailChars}; currentUserChars={CurrentUserChars}; trimDiagnostics={TrimDiagnostics}; protectedTailMessages={ProtectedTailMessages}; prunedToolResults={PrunedToolResults}; prunedDuplicateStatusResults={PrunedDuplicateStatusResults}; truncatedToolCallArgs={TruncatedToolCallArgs}; replacedWithPlaceholders={ReplacedWithPlaceholders}",
             request.Session.Id,
             traceId,
             npcId,
@@ -139,6 +145,11 @@ public sealed class StardewAutonomyFirstCallContextBudgetPolicy : IFirstCallCont
             charsBefore,
             charsAfter,
             Math.Max(0, charsBefore - charsAfter),
+            promptTokensEstimatedBefore,
+            promptTokensEstimatedAfter,
+            "estimated",
+            estimatedDeepSeekInputRmbBefore,
+            estimatedDeepSeekInputRmbAfter,
             budgetMet,
             unmetReason,
             categoryCounts.SystemChars,
@@ -158,6 +169,18 @@ public sealed class StardewAutonomyFirstCallContextBudgetPolicy : IFirstCallCont
         return new FirstCallContextBudgetResult(finalMessages, Applied: true, BudgetMet: budgetMet, BudgetUnmetReason: unmetReason);
     }
 
+    public ContextCompactionResult Apply(ContextCompactionRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var result = Apply(new FirstCallContextBudgetRequest(
+            request.Session,
+            request.Messages,
+            request.CurrentUserMessage,
+            request.Iteration));
+        return new ContextCompactionResult(result.Messages, result.Applied, result.BudgetMet, result.BudgetUnmetReason);
+    }
+
     public static int CountCharacters(IEnumerable<Message> messages)
         => messages.Sum(CountCharacters);
 
@@ -174,6 +197,12 @@ public sealed class StardewAutonomyFirstCallContextBudgetPolicy : IFirstCallCont
             count += message.ToolCalls.Sum(call => call.Id.Length + call.Name.Length + call.Arguments.Length);
         return count;
     }
+
+    private static int EstimateTokensFromChars(int chars)
+        => Math.Max(1, (int)Math.Ceiling(chars / 4.0));
+
+    private static decimal EstimateDeepSeekFlashInputRmb(int inputTokens)
+        => Math.Round(inputTokens / 1_000_000m, 8);
 
     private static ProtectionDecision[] BuildProtectionDecisions(
         IReadOnlyList<Message> messages,
@@ -242,6 +271,54 @@ public sealed class StardewAutonomyFirstCallContextBudgetPolicy : IFirstCallCont
         }
 
         return decisions;
+    }
+
+    private static List<MessageSlot> SanitizeToolPairs(IReadOnlyList<MessageSlot> slots)
+    {
+        var survivingToolCallIds = slots
+            .Where(slot => IsRole(slot.Message, "assistant") && slot.Message.ToolCalls is { Count: > 0 })
+            .SelectMany(slot => slot.Message.ToolCalls!)
+            .Select(call => call.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var withoutOrphans = slots
+            .Where(slot =>
+                !IsRole(slot.Message, "tool") ||
+                (slot.Message.ToolCallId is { } toolCallId && survivingToolCallIds.Contains(toolCallId)))
+            .ToList();
+        var survivingToolResultIds = withoutOrphans
+            .Where(slot => IsRole(slot.Message, "tool") && !string.IsNullOrWhiteSpace(slot.Message.ToolCallId))
+            .Select(slot => slot.Message.ToolCallId!)
+            .ToHashSet(StringComparer.Ordinal);
+        var output = new List<MessageSlot>(withoutOrphans.Count);
+
+        foreach (var slot in withoutOrphans)
+        {
+            output.Add(slot);
+            if (!IsRole(slot.Message, "assistant") || slot.Message.ToolCalls is not { Count: > 0 })
+                continue;
+
+            foreach (var toolCall in slot.Message.ToolCalls)
+            {
+                if (string.IsNullOrWhiteSpace(toolCall.Id) || survivingToolResultIds.Contains(toolCall.Id))
+                    continue;
+
+                output.Add(slot with
+                {
+                    Message = new Message
+                    {
+                        Role = "tool",
+                        ToolCallId = toolCall.Id,
+                        ToolName = toolCall.Name,
+                        Content = $"[missing tool result after context compression: {toolCall.Name}]"
+                    }
+                });
+                survivingToolResultIds.Add(toolCall.Id);
+            }
+        }
+
+        return output;
     }
 
     private static CategoryCounts CountCategories(

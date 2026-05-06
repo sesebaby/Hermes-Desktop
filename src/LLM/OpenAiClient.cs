@@ -67,6 +67,24 @@ public sealed class OpenAiClient : IChatClient
         var reasoning = ReadStringOrRawJson(msg, "reasoning");
         var reasoningDetails = ReadStringOrRawJson(msg, "reasoning_details");
         var codexReasoningItems = ReadStringOrRawJson(msg, "codex_reasoning_items");
+        UsageStats? usage = null;
+        if (doc.RootElement.TryGetProperty("usage", out var usageElement))
+        {
+            var inputTokens = usageElement.TryGetProperty("prompt_tokens", out var promptTokensEl)
+                ? promptTokensEl.GetInt32()
+                : 0;
+            var outputTokens = usageElement.TryGetProperty("completion_tokens", out var completionTokensEl)
+                ? completionTokensEl.GetInt32()
+                : 0;
+            int? cacheReadTokens = null;
+            if (usageElement.TryGetProperty("prompt_tokens_details", out var promptTokensDetails) &&
+                promptTokensDetails.TryGetProperty("cached_tokens", out var cachedTokensEl))
+            {
+                cacheReadTokens = cachedTokensEl.GetInt32();
+            }
+
+            usage = new UsageStats(inputTokens, outputTokens, null, cacheReadTokens);
+        }
 
         // Fallback: reasoning models (MiniMax, DeepSeek-R1, etc.) may put text in "reasoning" with empty "content"
         if (string.IsNullOrEmpty(content) &&
@@ -99,7 +117,8 @@ public sealed class OpenAiClient : IChatClient
             Reasoning = reasoning,
             ReasoningContent = reasoningContent,
             ReasoningDetails = reasoningDetails,
-            CodexReasoningItems = codexReasoningItems
+            CodexReasoningItems = codexReasoningItems,
+            Usage = usage
         };
     }
 
