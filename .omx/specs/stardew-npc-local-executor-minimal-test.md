@@ -148,47 +148,31 @@ DeepSeek 价格按用户提供截图记录：
 
 ## 意图合同
 
-主 agent 输出应收敛为短的 `intent contract`。
+主 agent 输出必须收敛为短的 `intent contract`，并且 v1 固定为单个 JSON object；不接受自由文本混排或另一个宽泛 goal/persona schema。
 
-示例：
-
-```json
-{
-  "goal": "去 Pierre 店附近等玩家",
-  "reason": "玩家刚才说可能会去买种子",
-  "persona_constraints": [
-    "自然",
-    "不要像执行命令",
-    "如果遇到熟人可以礼貌打招呼"
-  ],
-  "priority": "medium",
-  "allowed_actions": [
-    "move",
-    "observe",
-    "wait"
-  ],
-  "stop_conditions": [
-    "玩家发来私聊",
-    "路径失败两次",
-    "到达目标地点",
-    "发现重要事件"
-  ]
-}
-```
-
-本地执行层输入该合同和短观察事实，输出结构化 action intent。
-
-示例：
+最终计划采用的 parent response contract：
 
 ```json
 {
-  "action": "move",
-  "destination": "PierreShop",
-  "reason": "玩家可能会去买种子，先到附近等待",
-  "confidence": 0.82,
-  "fallback": "如果路径失败，重新 observe 并选择 Town 作为附近等待点"
+  "action": "move|observe|wait|task_status|escalate",
+  "reason": "short natural-language reason",
+  "destinationId": "optional for move",
+  "commandId": "optional for task_status",
+  "observeTarget": "optional for observe",
+  "waitReason": "optional for wait",
+  "allowedActions": ["move", "observe", "wait", "task_status"],
+  "escalate": false
 }
 ```
+
+最低校验规则：
+
+- `action=move` 必须有 `destinationId`。
+- `action=task_status` 必须有 `commandId`，或能从 runtime driver action slot 推断。
+- `action=escalate` 或 `escalate=true` 不进入本地执行层 tool execution，只记录升级。
+- 非 JSON、字段缺失、action 不在 allowlist、高风险 action，都记录 diagnostic 并升级，不调用 local executor。
+
+本地执行层输入该合同和短观察事实，输出同一套结构化 action intent；它不能重新发明更宽的动作合同。
 
 ## 最小验证方案
 
