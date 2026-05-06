@@ -46,6 +46,22 @@ public class ChatRouteResolverTests
     }
 
     [TestMethod]
+    public void Resolve_AutonomyResponseFormatOverride_UsesLaneResponseFormat()
+    {
+        var root = CreateRootConfig();
+        var values = new Dictionary<(string Section, string Key), string>(StringTupleComparer.OrdinalIgnoreCase)
+        {
+            [("stardew_autonomy", "response_format")] = "json_object"
+        };
+        var resolver = new ChatRouteResolver(root, Read(values));
+
+        var route = resolver.Resolve(ChatRouteNames.StardewAutonomy);
+
+        Assert.AreEqual("json_object", route.Config.ResponseFormat);
+        Assert.AreEqual("stardew_autonomy.response_format", route.Sources.ResponseFormat);
+    }
+
+    [TestMethod]
     public void Resolve_DelegationBaseUrlOverride_UsesLaneEndpoint()
     {
         var root = CreateRootConfig();

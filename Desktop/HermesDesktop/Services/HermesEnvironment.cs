@@ -57,7 +57,8 @@ internal static class HermesEnvironment
         AuthScheme = ModelAuthScheme,
         ApiKeyEnv = ModelApiKeyEnv,
         AuthTokenEnv = ModelAuthTokenEnv,
-        AuthTokenCommand = ModelAuthTokenCommand
+        AuthTokenCommand = ModelAuthTokenCommand,
+        ResponseFormat = ModelResponseFormat
     };
 
     /// <summary>
@@ -201,6 +202,8 @@ internal static class HermesEnvironment
     internal static string? ModelAuthTokenEnv => ReadModelSetting("auth_token_env");
 
     internal static string? ModelAuthTokenCommand => ReadModelSetting("auth_token_command");
+
+    internal static string? ModelResponseFormat => ReadModelSetting("response_format");
 
     internal static string AgentWorkingDirectory
     {

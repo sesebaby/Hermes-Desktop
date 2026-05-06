@@ -38,6 +38,7 @@ public sealed class LlmConfig
     public string? ApiKeyEnv { get; init; }
     public string? AuthTokenEnv { get; init; }
     public string? AuthTokenCommand { get; init; }
+    public string? ResponseFormat { get; init; }
     public double Temperature { get; init; } = 0.7;
     public int MaxTokens { get; init; } = 4096;
 }

@@ -60,9 +60,21 @@ sync the local machine configuration with:
 powershell -ExecutionPolicy Bypass -File ..\..\scripts\sync-stardew-npc-config.ps1
 ```
 
-This sets:
+This sets the NPC allowlist plus a local LM Studio `delegation` lane for child
+agent work only. The root `model` and player-visible lanes stay on the existing
+machine config unless you change them separately. The committed reference file is
+`config.stardew-lmstudio.example.yaml`.
+
+The sync script writes:
 
 ```yaml
+delegation:
+  provider: openai
+  base_url: http://127.0.0.1:1234/v1
+  model: qwen3.5-2b-gpt-5.1-highiq-instruct-i1
+  max_spawn_depth: 1
+  max_concurrent_children: 1
+
 stardew:
   npc_autonomy_enabled_ids: haley,penny
 ```

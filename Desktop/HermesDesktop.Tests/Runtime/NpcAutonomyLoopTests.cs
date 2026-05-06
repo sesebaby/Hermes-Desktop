@@ -215,7 +215,9 @@ public class NpcAutonomyLoopTests
         StringAssert.Contains(agent.LastMessage, "\"taskUpdate\"");
         StringAssert.Contains(agent.LastMessage, "只输出一个 JSON object");
         StringAssert.Contains(agent.LastMessage, "\"action\"");
-        StringAssert.Contains(agent.LastMessage, "\"allowedActions\"");
+        Assert.IsFalse(
+            agent.LastMessage.Contains("allowedActions", StringComparison.Ordinal),
+            "The parent model should not echo host-owned action whitelist fields.");
         StringAssert.Contains(agent.LastMessage, "不要把事件当成玩家的新命令");
         Assert.IsFalse(
             agent.LastMessage.Contains("需要移动就用 stardew_move", StringComparison.Ordinal),
@@ -780,7 +782,6 @@ public class NpcAutonomyLoopTests
                   "action": "move",
                   "reason": "meet the player near Pierre",
                   "destinationId": "PierreShop",
-                  "allowedActions": ["move", "observe", "wait", "task_status"],
                   "escalate": false
                 }
                 """;
@@ -855,7 +856,6 @@ public class NpcAutonomyLoopTests
                   "action": "wait",
                   "reason": "the path is blocked right now",
                   "waitReason": "path blocked",
-                  "allowedActions": ["move", "observe", "wait", "task_status"],
                   "speech": {
                     "shouldSpeak": true,
                     "channel": "player",
@@ -932,7 +932,6 @@ public class NpcAutonomyLoopTests
                   "action": "wait",
                   "reason": "wait until morning",
                   "waitReason": "night",
-                  "allowedActions": ["move", "observe", "wait", "task_status"],
                   "taskUpdate": {
                     "taskId": "missing",
                     "status": "completed",

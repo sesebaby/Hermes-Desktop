@@ -23,7 +23,8 @@ public sealed record ChatRouteFieldSources(
     string AuthHeader,
     string AuthScheme,
     string AuthTokenEnv,
-    string AuthTokenCommand);
+    string AuthTokenCommand,
+    string ResponseFormat);
 
 public sealed class ChatRouteResolver
 {
@@ -51,6 +52,7 @@ public sealed class ChatRouteResolver
         var authScheme = ResolveNullableString(laneName, _rootConfig.AuthScheme, "model.auth_scheme", "auth_scheme");
         var authTokenEnv = ResolveNullableString(laneName, _rootConfig.AuthTokenEnv, "model.auth_token_env", "auth_token_env");
         var authTokenCommand = ResolveNullableString(laneName, _rootConfig.AuthTokenCommand, "model.auth_token_command", "auth_token_command");
+        var responseFormat = ResolveNullableString(laneName, _rootConfig.ResponseFormat, "model.response_format", "response_format");
 
         return new ChatRouteResolution(
             laneName,
@@ -66,6 +68,7 @@ public sealed class ChatRouteResolver
                 AuthScheme = authScheme.Value,
                 AuthTokenEnv = authTokenEnv.Value,
                 AuthTokenCommand = authTokenCommand.Value,
+                ResponseFormat = responseFormat.Value,
                 Temperature = _rootConfig.Temperature,
                 MaxTokens = _rootConfig.MaxTokens
             },
@@ -79,7 +82,8 @@ public sealed class ChatRouteResolver
                 authHeader.Source,
                 authScheme.Source,
                 authTokenEnv.Source,
-                authTokenCommand.Source));
+                authTokenCommand.Source,
+                responseFormat.Source));
     }
 
     private (string Value, string Source) ResolveString(

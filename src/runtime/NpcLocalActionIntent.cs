@@ -88,12 +88,6 @@ public sealed record NpcLocalActionIntent(
             return false;
         }
 
-        if (!ActionAppearsInAllowedActions(root, actionText))
-        {
-            error = "action_not_allowed";
-            return false;
-        }
-
         var destinationId = ReadString(root, "destinationId");
         if (action is NpcLocalActionKind.Move && string.IsNullOrWhiteSpace(destinationId))
         {
@@ -200,26 +194,6 @@ public sealed record NpcLocalActionIntent(
             status.Trim().ToLowerInvariant(),
             ReadString(element, "reason"));
         return true;
-    }
-
-    private static bool ActionAppearsInAllowedActions(JsonElement root, string actionText)
-    {
-        if (!root.TryGetProperty("allowedActions", out var allowedActions) ||
-            allowedActions.ValueKind != JsonValueKind.Array)
-        {
-            return false;
-        }
-
-        foreach (var allowedAction in allowedActions.EnumerateArray())
-        {
-            if (allowedAction.ValueKind == JsonValueKind.String &&
-                string.Equals(allowedAction.GetString(), actionText, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static bool TryReadActionKind(string value, out NpcLocalActionKind action)

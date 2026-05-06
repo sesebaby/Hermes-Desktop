@@ -264,24 +264,36 @@ public sealed class OpenAiClient : IChatClient
 
         if (tools is not null)
         {
-            return new
+            var payload = new Dictionary<string, object?>
             {
-                model = _config.Model,
-                messages = msgs,
-                tools,
-                tool_choice = "auto",
-                temperature = _config.Temperature,
-                stream
+                ["model"] = _config.Model,
+                ["messages"] = msgs,
+                ["tools"] = tools,
+                ["tool_choice"] = "auto",
+                ["temperature"] = _config.Temperature,
+                ["stream"] = stream
             };
+            AddResponseFormat(payload);
+            return payload;
         }
 
-        return new
-            {
-                model = _config.Model,
-                messages = msgs,
-                temperature = _config.Temperature,
-                stream
-            };
+        var textPayload = new Dictionary<string, object?>
+        {
+            ["model"] = _config.Model,
+            ["messages"] = msgs,
+            ["temperature"] = _config.Temperature,
+            ["stream"] = stream
+        };
+        AddResponseFormat(textPayload);
+        return textPayload;
+    }
+
+    private void AddResponseFormat(Dictionary<string, object?> payload)
+    {
+        if (!string.Equals(_config.ResponseFormat, "json_object", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        payload["response_format"] = new { type = "json_object" };
     }
 
     private async Task<HttpResponseMessage> PostAsync(object payload, CancellationToken ct)

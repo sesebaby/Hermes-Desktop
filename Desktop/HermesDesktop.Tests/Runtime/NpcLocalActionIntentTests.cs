@@ -15,7 +15,6 @@ public sealed class NpcLocalActionIntentTests
               "action": "move",
               "reason": "meet the player near Pierre",
               "destinationId": "PierreShop",
-              "allowedActions": ["move", "observe", "wait", "task_status"],
               "escalate": false
             }
             """,
@@ -38,7 +37,6 @@ public sealed class NpcLocalActionIntentTests
               "action": "wait",
               "reason": "no safe movement right now",
               "waitReason": "player is not nearby",
-              "allowedActions": ["move", "observe", "wait", "task_status"],
               "escalate": false
             }
             """,
@@ -60,7 +58,6 @@ public sealed class NpcLocalActionIntentTests
               "action": "wait",
               "reason": "path is blocked",
               "waitReason": "path_blocked",
-              "allowedActions": ["move", "observe", "wait", "task_status"],
               "speech": {
                 "shouldSpeak": true,
                 "channel": "player",
@@ -91,14 +88,13 @@ public sealed class NpcLocalActionIntentTests
     }
 
     [TestMethod]
-    public void TryParse_WhenEscalateAppearsInAllowedActions_AcceptsContract()
+    public void TryParse_WhenEscalateIsRequested_AcceptsContract()
     {
         var ok = NpcLocalActionIntent.TryParse(
             """
             {
               "action": "escalate",
               "reason": "needs private conversation",
-              "allowedActions": ["move", "observe", "wait", "task_status", "escalate"],
               "escalate": true
             }
             """,
@@ -113,11 +109,10 @@ public sealed class NpcLocalActionIntentTests
 
     [DataTestMethod]
     [DataRow("not json", "intent_contract_invalid")]
-    [DataRow("""{"action":"move","reason":"go","allowedActions":["move"]}""", "destinationId_required")]
-    [DataRow("""{"action":"gift","reason":"give flowers","allowedActions":["move","observe","wait","task_status"]}""", "action_not_allowed")]
-    [DataRow("""{"action":"move","reason":"go","destinationId":"Town","allowedActions":["wait"]}""", "action_not_allowed")]
-    [DataRow("""{"action":"wait","reason":"wait","allowedActions":["wait"],"speech":{"shouldSpeak":true}}""", "speech_text_required")]
-    [DataRow("""{"action":"wait","reason":"wait","allowedActions":["wait"],"taskUpdate":{"taskId":"1","status":"done"}}""", "task_update_status_not_allowed")]
+    [DataRow("""{"action":"move","reason":"go"}""", "destinationId_required")]
+    [DataRow("""{"action":"gift","reason":"give flowers"}""", "action_not_allowed")]
+    [DataRow("""{"action":"wait","reason":"wait","speech":{"shouldSpeak":true}}""", "speech_text_required")]
+    [DataRow("""{"action":"wait","reason":"wait","taskUpdate":{"taskId":"1","status":"done"}}""", "task_update_status_not_allowed")]
     public void TryParse_WhenContractIsInvalid_RejectsWithMachineReadableError(string contract, string expectedError)
     {
         var ok = NpcLocalActionIntent.TryParse(contract, out var intent, out var error);

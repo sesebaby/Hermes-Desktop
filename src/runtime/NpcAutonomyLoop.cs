@@ -283,7 +283,8 @@ public sealed class NpcAutonomyLoop
             "你现在要决定下一步自主行动。先看当前观察事实和 active todo，再决定是推进任务、观察等待，还是回应玩家。\n" +
             "如果玩家给过的约定还没完成，要优先考虑怎么继续；被玩家打断时先回应玩家，再恢复原来的任务。\n" +
             "低风险动作只输出一个 JSON object 交给本地执行层，不要直接写工具参数或假装已经做完。\n" +
-                "JSON schema 固定为 {\"action\":\"move|observe|wait|task_status|escalate\",\"reason\":\"short reason\",\"destinationId\":\"optional for move\",\"commandId\":\"optional for task_status\",\"observeTarget\":\"optional for observe\",\"waitReason\":\"optional for wait\",\"allowedActions\":[\"move\",\"observe\",\"wait\",\"task_status\",\"escalate\"],\"speech\":{\"shouldSpeak\":false,\"channel\":\"player|overhead|private\",\"text\":\"optional short line\"},\"taskUpdate\":{\"taskId\":\"optional existing todo id\",\"status\":\"pending|in_progress|blocked|completed|failed|cancelled\",\"reason\":\"optional short reason\"},\"escalate\":false}。\n" +
+            "必须只输出 raw JSON object；不要 Markdown code fence，不要解释文字，不要在 JSON 前后添加任何自然语言。\n" +
+            "JSON schema 固定为 {\"action\":\"move|observe|wait|task_status|escalate\",\"reason\":\"short reason\",\"destinationId\":\"optional for move\",\"commandId\":\"optional for task_status\",\"observeTarget\":\"optional for observe\",\"waitReason\":\"optional for wait\",\"speech\":{\"shouldSpeak\":false,\"channel\":\"player|overhead|private\",\"text\":\"optional short line\"},\"taskUpdate\":{\"taskId\":\"optional existing todo id\",\"status\":\"pending|in_progress|blocked|completed|failed|cancelled\",\"reason\":\"optional short reason\"},\"escalate\":false}。\n" +
             "如果需要移动，action=move 且 destinationId 必须复制当前事实里的 destinationId；如果只是查长动作进度，action=task_status 且 commandId 必须来自已有命令。\n" +
             "如果任务暂时做不了，用 taskUpdate 把已有 todo 标成 blocked；如果确定做不成，标成 failed；blocked 或 failed 都要写短 reason。\n" +
             "如果这是答应玩家的事，能说话时用 speech 字段告诉玩家卡在哪里；不要调用或编写工具参数。\n" +

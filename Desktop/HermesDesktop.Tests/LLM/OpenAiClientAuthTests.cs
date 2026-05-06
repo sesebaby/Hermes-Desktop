@@ -385,6 +385,37 @@ public class OpenAiClientAuthTests
     }
 
     [TestMethod]
+    public async Task CompleteAsync_WithJsonObjectResponseFormat_IncludesResponseFormatInPayload()
+    {
+        string? capturedBody = null;
+        using var httpClient = new HttpClient(new CaptureHandler(request =>
+        {
+            capturedBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return CreateSuccessResponse();
+        }));
+
+        var client = new OpenAiClient(
+            new LlmConfig
+            {
+                Provider = "deepseek",
+                Model = "deepseek-v4-flash",
+                BaseUrl = "https://api.deepseek.com/v1",
+                AuthMode = "none",
+                ResponseFormat = "json_object"
+            },
+            httpClient);
+
+        await client.CompleteAsync(
+            new[] { new Message { Role = "user", Content = "Return json: {\"action\":\"wait\"}" } },
+            CancellationToken.None);
+
+        Assert.IsNotNull(capturedBody);
+        using var doc = JsonDocument.Parse(capturedBody!);
+        var responseFormat = doc.RootElement.GetProperty("response_format");
+        Assert.AreEqual("json_object", responseFormat.GetProperty("type").GetString());
+    }
+
+    [TestMethod]
     public async Task StreamAsync_ToolCallDeltas_EmitToolUseEventsWithCompleteArguments()
     {
         var sse =

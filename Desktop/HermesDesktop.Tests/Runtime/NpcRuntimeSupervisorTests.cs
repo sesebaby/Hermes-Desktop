@@ -469,7 +469,6 @@ public class NpcRuntimeSupervisorTests
               "action": "move",
               "reason": "meet player",
               "destinationId": "PierreShop",
-              "allowedActions": ["move", "observe", "wait", "task_status"],
               "escalate": false
             }
             """;
@@ -544,7 +543,6 @@ public class NpcRuntimeSupervisorTests
               "action": "move",
               "reason": "meet player",
               "destinationId": "PierreShop",
-              "allowedActions": ["move", "observe", "wait", "task_status"],
               "escalate": false
             }
             """);
@@ -1221,7 +1219,6 @@ public class NpcRuntimeSupervisorTests
                   "action": "wait",
                   "reason": "continue later",
                   "waitReason": "waiting",
-                  "allowedActions": ["move", "observe", "wait", "task_status"],
                   "escalate": false
                 }
                 """);
