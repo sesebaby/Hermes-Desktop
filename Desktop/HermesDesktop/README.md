@@ -50,6 +50,27 @@ If the build succeeds but the app window never appears:
 - check `C:\ProgramData\Microsoft\Windows\WER\ReportArchive` for Windows crash reports
 - temporarily close overlay/injection tools such as RTSS / MSI Afterburner and retry
 
+## Stardew NPC Autonomy Config
+
+NPC autonomy reads enabled villagers from `%LOCALAPPDATA%\hermes\config.yaml`
+under `stardew.npc_autonomy_enabled_ids`. For the current Stardew test pair,
+sync the local machine configuration with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ..\..\scripts\sync-stardew-npc-config.ps1
+```
+
+This sets:
+
+```yaml
+stardew:
+  npc_autonomy_enabled_ids: haley,penny
+```
+
+The script preserves the rest of `config.yaml` and writes a timestamped backup by
+default. Run it on each machine used for Stardew/Hermes testing because the local
+config file is intentionally not committed.
+
 ## Project Layout
 
 - `Views/` WinUI pages
