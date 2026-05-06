@@ -101,6 +101,28 @@
 - `Desktop/HermesDesktop/.github/instructions/code-quality.instructions.md` 是桌面子项目的静态分析、StyleCop、命名与清理规则来源。
 - 对桌面子树来说，通常通过 `dotnet build` 暴露 analyzers / code style / warnings；不要再凭空发明一个不存在的 lint 流程。
 
+## 手测日志检查
+
+- 手测 Stardew / Hermes 时，不要先猜日志位置，也不要先全仓库搜索；先按固定顺序看：
+  - 桌面主日志：`%LOCALAPPDATA%\hermes\hermes-cs\logs\hermes.log`
+  - 桌面启动失败：`%LOCALAPPDATA%\hermes\hermes-cs\logs\desktop-startup.log`
+  - SMAPI / bridge：`%APPDATA%\StardewValley\ErrorLogs\SMAPI-latest.txt`
+  - bridge discovery：`%LOCALAPPDATA%\hermes\hermes-cs\stardew-bridge.json`
+  - NPC runtime：`%LOCALAPPDATA%\hermes\hermes-cs\runtime\stardew\games\stardew-valley\saves\<saveId>\npc\<npcId>\profiles\<profileId>\activity\runtime.jsonl`
+- 默认先看 `hermes.log` 和 `SMAPI-latest.txt` 的最新 200 行，再看对应 NPC 的 `runtime.jsonl`；不要一上来把所有文件全量扫一遍。
+- 常用命令：
+  ```powershell
+  Get-Content "$env:LOCALAPPDATA\hermes\hermes-cs\logs\hermes.log" -Tail 200
+  Get-Content "$env:APPDATA\StardewValley\ErrorLogs\SMAPI-latest.txt" -Tail 200
+  Get-ChildItem "$env:LOCALAPPDATA\hermes\hermes-cs\runtime\stardew\games\stardew-valley" -Recurse -Filter runtime.jsonl | Sort-Object LastWriteTime -Descending | Select-Object -First 5 FullName,LastWriteTime
+  ```
+- 先分层判断再追根因：
+  - `runtime.jsonl` 里只有 `wait` / 没有 `local_executor`、`host_action`：先查父层决策是不是没发出行动。
+  - `runtime.jsonl` 里有 `local_executor_blocked:*`：先查本地执行层 / tool-call / delegation lane。
+  - `runtime.jsonl` 里有 `host_action stardew_speak` 但没有 `move`：说明父层在说话，不代表本地模型承担了动作。
+  - SMAPI 有 `task_move_enqueued` / `task_running` / `task_completed`：说明 bridge 收到命令了；没有这些就先别怀疑游戏寻路。
+  - `hermes.log` 里先看 `StardewNpcAutonomyBackgroundService`、`NpcAutonomyLoop`、`ChatLaneClientProvider` 这三类日志，优先回答“有没有唤醒 / 走了哪条模型 lane / 有没有进入 LLM turn”。
+
 ## 当前技术事实
 
 这些事实来自当前 `.csproj`，后续若有差异，以项目文件为准。
