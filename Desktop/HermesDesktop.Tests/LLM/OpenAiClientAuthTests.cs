@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -268,6 +269,74 @@ public class OpenAiClientAuthTests
         {
             Environment.SetEnvironmentVariable(envVarName, null);
         }
+    }
+
+    [TestMethod]
+    public async Task StreamAsync_WithSystemPromptAndTools_IncludesBothInRequestPayload()
+    {
+        HttpRequestMessage? capturedRequest = null;
+        string? capturedBody = null;
+        var sse =
+            """
+            data: {"choices":[{"delta":{"content":"z"}}]}
+
+            data: [DONE]
+
+            """;
+        using var httpClient = new HttpClient(new CaptureHandler(request =>
+        {
+            capturedRequest = request;
+            capturedBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new MemoryStream(Encoding.UTF8.GetBytes(sse)))
+            };
+        }));
+
+        var client = new OpenAiClient(
+            new LlmConfig
+            {
+                Provider = "openai",
+                Model = "gpt-5.4",
+                BaseUrl = "https://proxy.example/v1",
+                AuthMode = "none"
+            },
+            httpClient);
+
+        var tools = new[]
+        {
+            new ToolDefinition
+            {
+                Name = "lookup",
+                Description = "Lookup a fact",
+                Parameters = JsonSerializer.SerializeToElement(new
+                {
+                    type = "object",
+                    properties = new { },
+                    required = Array.Empty<string>()
+                })
+            }
+        };
+
+        await foreach (var _ in client.StreamAsync(
+                           "You are a local NPC.",
+                           new[] { new Message { Role = "user", Content = "hello" } },
+                           tools,
+                           CancellationToken.None))
+        {
+            // Drain SSE until completion
+        }
+
+        Assert.IsNotNull(capturedRequest);
+        Assert.IsNotNull(capturedBody);
+        using var doc = JsonDocument.Parse(capturedBody!);
+
+        Assert.IsTrue(doc.RootElement.TryGetProperty("messages", out var messages));
+        Assert.AreEqual("system", messages[0].GetProperty("role").GetString());
+        Assert.AreEqual("You are a local NPC.", messages[0].GetProperty("content").GetString());
+        Assert.IsTrue(doc.RootElement.TryGetProperty("tools", out var toolsElement));
+        Assert.AreEqual("lookup", toolsElement[0].GetProperty("function").GetProperty("name").GetString());
+        Assert.AreEqual("auto", doc.RootElement.GetProperty("tool_choice").GetString());
     }
 
     [TestMethod]

@@ -85,6 +85,58 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
+    public async Task RunOneIterationAsync_AgentToolUsesDelegationClientWhenSupplied()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("I will wait near the library.");
+        var delegationClient = new DelegationStreamingChatClient();
+        var adapter = CreateAdapter("penny");
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["penny"],
+            delegationChatClient: delegationClient);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, chatClient.CompleteWithToolsCalls);
+        var snapshot = supervisor.Snapshot().Single(snapshot => snapshot.NpcId == "penny");
+        var pack = new FileSystemNpcPackLoader().LoadPacks(_packRoot).Single(pack => pack.Manifest.NpcId == "penny");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-42");
+        var handle = await supervisor.GetOrCreateAutonomyHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAutonomyBindingRequest(
+                ChannelKey: "autonomy",
+                AdapterKey: snapshot.CurrentBridgeKey!,
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                AdapterFactory: () => adapter,
+                GameToolFactory: gameAdapter => [new DiscoveredNoopTool("stardew_status")],
+                Services: new NpcRuntimeCompositionServices(
+                    chatClient,
+                    NullLoggerFactory.Instance,
+                    _skillManager,
+                    new NoopCronScheduler(),
+                    delegationClient),
+                ToolSurface: NpcToolSurface.FromTools([])),
+            CancellationToken.None);
+
+        var result = await handle.AgentHandle.Agent.Tools["agent"].ExecuteAsync(
+            new AgentParameters { AgentType = "general", Task = "Summarize nearby context." },
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual(1, delegationClient.StructuredStreamCalls);
+        Assert.IsTrue(delegationClient.LastSystemPrompt?.Contains("helpful assistant", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
     public async Task RunOneIterationAsync_MissingRequiredSkillPausesNpcWithoutLlmRetryLoop()
     {
         File.Delete(Path.Combine(_gamingSkillRoot, "stardew-social.md"));
@@ -1253,7 +1305,8 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         WorldCoordinationService? worldCoordination = null,
         NpcAutonomyBudget? budget = null,
         ICronScheduler? cronScheduler = null,
-        INpcPrivateChatAgentRunner? privateChatAgentRunner = null)
+        INpcPrivateChatAgentRunner? privateChatAgentRunner = null,
+        IChatClient? delegationChatClient = null)
     {
         var service = new StardewNpcAutonomyBackgroundService(
             discovery,
@@ -1276,7 +1329,8 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             new StardewNpcAutonomyBackgroundOptions(enabledNpcIds, TimeSpan.FromMilliseconds(10)),
             true,
             true,
-            _tempDir);
+            _tempDir,
+            delegationChatClient);
         _services.Add(service);
         return service;
     }
@@ -1728,6 +1782,40 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         {
             await Task.CompletedTask;
             yield break;
+        }
+    }
+
+    private sealed class DelegationStreamingChatClient : IChatClient
+    {
+        public int StructuredStreamCalls { get; private set; }
+        public string? LastSystemPrompt { get; private set; }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+            => Task.FromResult(new ChatResponse { Content = "delegation", FinishReason = "stop" });
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            StructuredStreamCalls++;
+            LastSystemPrompt = systemPrompt;
+            yield return new StreamEvent.TokenDelta("delegated");
+            yield return new StreamEvent.MessageComplete("stop", new UsageStats(1, 1));
         }
     }
 

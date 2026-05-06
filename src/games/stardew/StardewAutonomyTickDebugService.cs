@@ -25,6 +25,7 @@ public sealed class StardewAutonomyTickDebugService
     private readonly bool _includeMemory;
     private readonly bool _includeUser;
     private readonly int _maxToolIterations;
+    private readonly IChatClient? _delegationChatClient;
 
     public StardewAutonomyTickDebugService(
         IStardewBridgeDiscovery discovery,
@@ -41,7 +42,8 @@ public sealed class StardewAutonomyTickDebugService
         bool includeMemory,
         bool includeUser,
         int maxToolIterations,
-        string runtimeRoot)
+        string runtimeRoot,
+        IChatClient? delegationChatClient = null)
         : this(
             discovery,
             snapshot => new StardewGameAdapter(
@@ -59,7 +61,8 @@ public sealed class StardewAutonomyTickDebugService
             includeMemory,
             includeUser,
             maxToolIterations,
-            runtimeRoot)
+            runtimeRoot,
+            delegationChatClient)
     {
     }
 
@@ -78,7 +81,8 @@ public sealed class StardewAutonomyTickDebugService
         bool includeMemory,
         bool includeUser,
         int maxToolIterations,
-        string runtimeRoot)
+        string runtimeRoot,
+        IChatClient? delegationChatClient = null)
         : this(
             discovery,
             snapshot => new StardewGameAdapter(
@@ -96,7 +100,8 @@ public sealed class StardewAutonomyTickDebugService
             includeMemory,
             includeUser,
             maxToolIterations,
-            runtimeRoot)
+            runtimeRoot,
+            delegationChatClient)
     {
     }
 
@@ -115,7 +120,8 @@ public sealed class StardewAutonomyTickDebugService
         bool includeMemory,
         bool includeUser,
         int maxToolIterations,
-        string runtimeRoot)
+        string runtimeRoot,
+        IChatClient? delegationChatClient = null)
     {
         _discovery = discovery;
         _adapterFactory = adapterFactory;
@@ -133,6 +139,7 @@ public sealed class StardewAutonomyTickDebugService
         _includeUser = includeUser;
         _maxToolIterations = Math.Max(2, maxToolIterations);
         _runtimeRoot = runtimeRoot;
+        _delegationChatClient = delegationChatClient;
     }
 
     public StardewAutonomyTickDebugService(
@@ -150,7 +157,8 @@ public sealed class StardewAutonomyTickDebugService
         bool includeMemory,
         bool includeUser,
         int maxToolIterations,
-        string runtimeRoot)
+        string runtimeRoot,
+        IChatClient? delegationChatClient = null)
         : this(
             discovery,
             adapterFactory,
@@ -166,7 +174,8 @@ public sealed class StardewAutonomyTickDebugService
             includeMemory,
             includeUser,
             maxToolIterations,
-            runtimeRoot)
+            runtimeRoot,
+            delegationChatClient)
     {
     }
 
@@ -215,7 +224,8 @@ public sealed class StardewAutonomyTickDebugService
                         _chatClient,
                         _loggerFactory,
                         _skillManager,
-                        _cronScheduler),
+                        _cronScheduler,
+                        _delegationChatClient),
                     ToolSurface: toolSnapshot.ToolSurface,
                     ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion,
                     SystemPromptSupplement: systemPromptSupplement),

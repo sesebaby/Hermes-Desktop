@@ -2,6 +2,7 @@ namespace Hermes.Agent.Tools;
 
 using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
+using Microsoft.Extensions.Logging;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 
@@ -13,16 +14,22 @@ public sealed class AgentTool : ITool
     private readonly IChatClient _chatClient;
     private readonly IToolRegistry _toolRegistry;
     private readonly AgentToolConfig _config;
+    private readonly ILogger<AgentTool>? _logger;
     
     public string Name => "agent";
     public string Description => "Spawn a subagent to handle a specialized task with isolated context";
     public Type ParametersType => typeof(AgentParameters);
     
-    public AgentTool(IChatClient chatClient, IToolRegistry toolRegistry, AgentToolConfig? config = null)
+    public AgentTool(
+        IChatClient chatClient,
+        IToolRegistry toolRegistry,
+        AgentToolConfig? config = null,
+        ILogger<AgentTool>? logger = null)
     {
         _chatClient = chatClient;
         _toolRegistry = toolRegistry;
         _config = config ?? new AgentToolConfig();
+        _logger = logger;
     }
     
     public async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
@@ -35,6 +42,13 @@ public sealed class AgentTool : ITool
             output.AppendLine($"[Agent: {p.AgentType}] Started");
             output.AppendLine($"Task: {p.Task}");
             output.AppendLine("---");
+
+            _logger?.LogInformation(
+                "Starting child agent; childAgentType={ChildAgentType}; depthPolicy={DepthPolicy}; maxSubagentDepth={MaxSubagentDepth}; maxSteps={MaxSteps}",
+                p.AgentType,
+                "flat-single-child-v1",
+                _config.MaxSubagentDepth,
+                p.MaxSteps);
             
             // Build agent definition
             var definition = GetAgentDefinition(p.AgentType);

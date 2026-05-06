@@ -327,6 +327,8 @@ public sealed class NpcRuntimeSupervisor
             new AgentCapabilityServices
             {
                 ChatClient = services.ChatClient,
+                DelegationChatClient = services.DelegationChatClient,
+                LoggerFactory = services.LoggerFactory,
                 ToolRegistry = context.ToolRegistry,
                 TodoStore = context.TodoStore,
                 CronScheduler = services.CronScheduler,

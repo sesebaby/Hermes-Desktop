@@ -139,6 +139,7 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
     private readonly bool _includeMemory;
     private readonly bool _includeUser;
     private readonly int _maxToolIterations;
+    private readonly IChatClient? _delegationChatClient;
 
     public StardewNpcPrivateChatAgentRunner(
         IChatClient chatClient,
@@ -151,7 +152,8 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
         INpcToolSurfaceSnapshotProvider toolSnapshotProvider,
         bool includeMemory = true,
         bool includeUser = true,
-        int maxToolIterations = 25)
+        int maxToolIterations = 25,
+        IChatClient? delegationChatClient = null)
     {
         _chatClient = chatClient;
         _loggerFactory = loggerFactory;
@@ -164,6 +166,7 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
         _includeMemory = includeMemory;
         _includeUser = includeUser;
         _maxToolIterations = Math.Max(2, maxToolIterations);
+        _delegationChatClient = delegationChatClient;
     }
 
     public StardewNpcPrivateChatAgentRunner(
@@ -177,7 +180,8 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
         bool includeMemory = true,
         bool includeUser = true,
         Func<IEnumerable<ITool>>? discoveredToolProvider = null,
-        int maxToolIterations = 25)
+        int maxToolIterations = 25,
+        IChatClient? delegationChatClient = null)
         : this(
             chatClient,
             loggerFactory,
@@ -189,7 +193,8 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
             new NpcToolSurfaceSnapshotProvider(discoveredToolProvider ?? (() => Enumerable.Empty<ITool>())),
             includeMemory,
             includeUser,
-            maxToolIterations)
+            maxToolIterations,
+            delegationChatClient)
     {
     }
 
@@ -218,7 +223,8 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
                     _chatClient,
                     _loggerFactory,
                     _skillManager,
-                    _cronScheduler),
+                    _cronScheduler,
+                    _delegationChatClient),
                 ToolSurface: toolSnapshot.ToolSurface,
                 ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion),
             ct);

@@ -32,6 +32,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
     private readonly NpcAutonomyBudget _budget;
     private readonly WorldCoordinationService _worldCoordination;
     private readonly ILogger<StardewNpcAutonomyBackgroundService> _logger;
+    private readonly IChatClient? _delegationChatClient;
     private readonly string _runtimeRoot;
     private readonly HashSet<string> _enabledNpcIds;
     private readonly bool _includeMemory;
@@ -64,7 +65,8 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         StardewNpcAutonomyBackgroundOptions options,
         bool includeMemory,
         bool includeUser,
-        string runtimeRoot)
+        string runtimeRoot,
+        IChatClient? delegationChatClient = null)
         : this(
             discovery,
             snapshot => new StardewGameAdapter(
@@ -86,7 +88,8 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             options,
             includeMemory,
             includeUser,
-            runtimeRoot)
+            runtimeRoot,
+            delegationChatClient)
     {
     }
 
@@ -109,7 +112,8 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         StardewNpcAutonomyBackgroundOptions options,
         bool includeMemory,
         bool includeUser,
-        string runtimeRoot)
+        string runtimeRoot,
+        IChatClient? delegationChatClient = null)
     {
         _discovery = discovery;
         _adapterFactory = adapterFactory;
@@ -127,6 +131,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         _budget = budget;
         _worldCoordination = worldCoordination;
         _logger = logger;
+        _delegationChatClient = delegationChatClient;
         _runtimeRoot = runtimeRoot;
         _includeMemory = includeMemory;
         _includeUser = includeUser;
@@ -516,7 +521,8 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                         _chatClient,
                         _loggerFactory,
                         _skillManager,
-                        _cronScheduler),
+                        _cronScheduler,
+                        _delegationChatClient),
                     ToolSurface: toolSnapshot.ToolSurface,
                     ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion,
                     SystemPromptSupplement: systemPromptSupplement),

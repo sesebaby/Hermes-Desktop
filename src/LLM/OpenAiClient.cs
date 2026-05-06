@@ -30,7 +30,7 @@ public sealed class OpenAiClient : IChatClient
 
     public async Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
     {
-        var payload = BuildPayload(messages, tools: null, stream: false);
+        var payload = BuildPayload(null, messages, tools: null, stream: false);
         using var response = await PostAsync(payload, ct);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         return doc.RootElement.GetProperty("choices")[0]
@@ -51,7 +51,7 @@ public sealed class OpenAiClient : IChatClient
             function = new { name = t.Name, description = t.Description, parameters = t.Parameters }
         }).ToArray();
 
-        var payload = BuildPayload(messages, toolDefs, stream: false);
+        var payload = BuildPayload(null, messages, toolDefs, stream: false);
         using var response = await PostAsync(payload, ct);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
 
@@ -128,7 +128,7 @@ public sealed class OpenAiClient : IChatClient
         IEnumerable<Message> messages,
         [EnumeratorCancellation] CancellationToken ct)
     {
-        var payload = BuildPayload(messages, tools: null, stream: true);
+        var payload = BuildPayload(null, messages, tools: null, stream: true);
         var json = JsonSerializer.Serialize(payload);
         using var request = await CreateRequestAsync($"{_config.BaseUrl}/chat/completions", json, ct);
 
@@ -210,9 +210,9 @@ public sealed class OpenAiClient : IChatClient
 
     // ── Helpers ──
 
-    private object BuildPayload(IEnumerable<Message> messages, object? tools, bool stream)
+    private object BuildPayload(string? systemPrompt, IEnumerable<Message> messages, object? tools, bool stream)
     {
-        var msgs = messages.Select(m =>
+        var convertedMessages = messages.Select(m =>
         {
             // Tool result message
             if (m.Role == "tool")
@@ -255,7 +255,12 @@ public sealed class OpenAiClient : IChatClient
             }
 
             return (object)new { role = m.Role, content = m.Content };
-        }).ToArray();
+        });
+        var msgs = string.IsNullOrWhiteSpace(systemPrompt)
+            ? convertedMessages.ToArray()
+            : new[] { (object)new { role = "system", content = systemPrompt.Trim() } }
+                .Concat(convertedMessages)
+                .ToArray();
 
         if (tools is not null)
         {
@@ -548,7 +553,12 @@ public sealed class OpenAiClient : IChatClient
         var inThinkBlock = false;
         var contentBuffer = new StringBuilder();
 
-        var payload = BuildPayload(messages, tools: null, stream: true);
+        var toolDefs = tools?.Select(t => new
+        {
+            type = "function",
+            function = new { name = t.Name, description = t.Description, parameters = t.Parameters }
+        }).ToArray();
+        var payload = BuildPayload(systemPrompt, messages, toolDefs, stream: true);
         var json = JsonSerializer.Serialize(payload);
         using var request = await CreateRequestAsync($"{_config.BaseUrl}/chat/completions", json, ct);
 

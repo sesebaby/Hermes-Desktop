@@ -12,7 +12,8 @@ public sealed record NpcRuntimeCompositionServices(
     IChatClient ChatClient,
     ILoggerFactory LoggerFactory,
     SkillManager SkillManager,
-    ICronScheduler CronScheduler)
+    ICronScheduler CronScheduler,
+    IChatClient? DelegationChatClient = null)
 {
     public void Validate()
     {

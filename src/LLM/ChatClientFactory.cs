@@ -55,6 +55,12 @@ public sealed class ChatClientFactory
         get { lock (_lock) { return _currentConfig; } }
     }
 
+    public IChatClient CreateClientForConfig(LlmConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        return CreateClient(config);
+    }
+
     /// <summary>
     /// Switch to a different provider/model at runtime. Creates a new client immediately.
     /// This is the equivalent of Claude Code's /model command.

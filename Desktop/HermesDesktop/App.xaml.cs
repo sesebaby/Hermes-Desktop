@@ -304,6 +304,14 @@ public partial class App : Application
         // through the factory's current client. No code changes needed anywhere else.
         services.AddSingleton<IChatClient>(sp =>
             new SwappableChatClient(sp.GetRequiredService<ChatClientFactory>()));
+        services.AddSingleton(sp => new ChatRouteResolver(
+            sp.GetRequiredService<LlmConfig>(),
+            HermesEnvironment.ReadConfigSetting));
+        services.AddSingleton(sp => new ChatLaneClientProvider(
+            sp.GetRequiredService<ChatClientFactory>(),
+            sp.GetRequiredService<ChatRouteResolver>(),
+            sp.GetRequiredService<ILogger<ChatLaneClientProvider>>(),
+            HermesEnvironment.ReadConfigSetting));
 
         // Hermes home directory — ensure all required dirs exist on startup
         var hermesHome = HermesEnvironment.HermesHomePath;
@@ -401,60 +409,75 @@ public partial class App : Application
         services.AddSingleton(sp => new StardewNpcDebugActionService(
             sp.GetRequiredService<IStardewBridgeDiscovery>(),
             sp.GetRequiredService<HttpClient>()));
-        services.AddSingleton(sp => new StardewAutonomyTickDebugService(
-            sp.GetRequiredService<IStardewBridgeDiscovery>(),
-            sp.GetRequiredService<HttpClient>(),
-            sp.GetRequiredService<IChatClient>(),
-            sp.GetRequiredService<ILoggerFactory>(),
-            sp.GetRequiredService<SkillManager>(),
-            sp.GetRequiredService<ICronScheduler>(),
-            sp.GetRequiredService<NpcRuntimeSupervisor>(),
-            sp.GetRequiredService<StardewNpcRuntimeBindingResolver>(),
-            sp.GetRequiredService<StardewNpcAutonomyPromptSupplementBuilder>(),
-            sp.GetRequiredService<INpcToolSurfaceSnapshotProvider>(),
-            sp.GetRequiredService<WorldCoordinationService>(),
-            memoryEnabled,
-            userProfileEnabled,
-            HermesEnvironment.MaxAgentIterations,
-            projectDir));
-        services.AddSingleton<INpcPrivateChatAgentRunner>(sp => new StardewNpcPrivateChatAgentRunner(
-            sp.GetRequiredService<IChatClient>(),
-            sp.GetRequiredService<ILoggerFactory>(),
-            projectDir,
-            sp.GetRequiredService<NpcRuntimeSupervisor>(),
-            sp.GetRequiredService<SkillManager>(),
-            sp.GetRequiredService<ICronScheduler>(),
-            sp.GetRequiredService<StardewNpcRuntimeBindingResolver>(),
-            sp.GetRequiredService<INpcToolSurfaceSnapshotProvider>(),
-            memoryEnabled,
-            userProfileEnabled,
-            HermesEnvironment.MaxAgentIterations));
+        services.AddSingleton(sp =>
+        {
+            var chatLanes = sp.GetRequiredService<ChatLaneClientProvider>();
+            return new StardewAutonomyTickDebugService(
+                sp.GetRequiredService<IStardewBridgeDiscovery>(),
+                sp.GetRequiredService<HttpClient>(),
+                chatLanes.GetClient(ChatRouteNames.StardewAutonomy),
+                sp.GetRequiredService<ILoggerFactory>(),
+                sp.GetRequiredService<SkillManager>(),
+                sp.GetRequiredService<ICronScheduler>(),
+                sp.GetRequiredService<NpcRuntimeSupervisor>(),
+                sp.GetRequiredService<StardewNpcRuntimeBindingResolver>(),
+                sp.GetRequiredService<StardewNpcAutonomyPromptSupplementBuilder>(),
+                sp.GetRequiredService<INpcToolSurfaceSnapshotProvider>(),
+                sp.GetRequiredService<WorldCoordinationService>(),
+                memoryEnabled,
+                userProfileEnabled,
+                HermesEnvironment.MaxAgentIterations,
+                projectDir,
+                chatLanes.GetClient(ChatRouteNames.Delegation));
+        });
+        services.AddSingleton<INpcPrivateChatAgentRunner>(sp =>
+        {
+            var chatLanes = sp.GetRequiredService<ChatLaneClientProvider>();
+            return new StardewNpcPrivateChatAgentRunner(
+                chatLanes.GetClient(ChatRouteNames.StardewPrivateChat),
+                sp.GetRequiredService<ILoggerFactory>(),
+                projectDir,
+                sp.GetRequiredService<NpcRuntimeSupervisor>(),
+                sp.GetRequiredService<SkillManager>(),
+                sp.GetRequiredService<ICronScheduler>(),
+                sp.GetRequiredService<StardewNpcRuntimeBindingResolver>(),
+                sp.GetRequiredService<INpcToolSurfaceSnapshotProvider>(),
+                memoryEnabled,
+                userProfileEnabled,
+                HermesEnvironment.MaxAgentIterations,
+                chatLanes.GetClient(ChatRouteNames.Delegation));
+        });
         services.AddSingleton(sp => new StardewPrivateChatRuntimeAdapter(
             sp.GetRequiredService<INpcPrivateChatAgentRunner>(),
             sp.GetRequiredService<ILogger<StardewPrivateChatRuntimeAdapter>>(),
             sessionLeaseCoordinator: sp.GetRequiredService<IPrivateChatSessionLeaseCoordinator>(),
             bindingResolver: sp.GetRequiredService<StardewNpcRuntimeBindingResolver>()));
-        services.AddSingleton(sp => new StardewNpcAutonomyBackgroundService(
-            sp.GetRequiredService<IStardewBridgeDiscovery>(),
-            sp.GetRequiredService<HttpClient>(),
-            sp.GetRequiredService<IChatClient>(),
-            sp.GetRequiredService<ILoggerFactory>(),
-            sp.GetRequiredService<SkillManager>(),
-            sp.GetRequiredService<ICronScheduler>(),
-            sp.GetRequiredService<NpcRuntimeSupervisor>(),
-            sp.GetRequiredService<NpcRuntimeHost>(),
-            sp.GetRequiredService<StardewNpcRuntimeBindingResolver>(),
-            sp.GetRequiredService<StardewNpcAutonomyPromptSupplementBuilder>(),
-            sp.GetRequiredService<INpcToolSurfaceSnapshotProvider>(),
-            sp.GetRequiredService<StardewPrivateChatRuntimeAdapter>(),
-            sp.GetRequiredService<NpcAutonomyBudget>(),
-            sp.GetRequiredService<WorldCoordinationService>(),
-            sp.GetRequiredService<ILogger<StardewNpcAutonomyBackgroundService>>(),
-            new StardewNpcAutonomyBackgroundOptions(
-                ReadConfigList("stardew", "npc_autonomy_enabled_ids")),
-            memoryEnabled,
-            userProfileEnabled,
-            projectDir));
+        services.AddSingleton(sp =>
+        {
+            var chatLanes = sp.GetRequiredService<ChatLaneClientProvider>();
+            return new StardewNpcAutonomyBackgroundService(
+                sp.GetRequiredService<IStardewBridgeDiscovery>(),
+                sp.GetRequiredService<HttpClient>(),
+                chatLanes.GetClient(ChatRouteNames.StardewAutonomy),
+                sp.GetRequiredService<ILoggerFactory>(),
+                sp.GetRequiredService<SkillManager>(),
+                sp.GetRequiredService<ICronScheduler>(),
+                sp.GetRequiredService<NpcRuntimeSupervisor>(),
+                sp.GetRequiredService<NpcRuntimeHost>(),
+                sp.GetRequiredService<StardewNpcRuntimeBindingResolver>(),
+                sp.GetRequiredService<StardewNpcAutonomyPromptSupplementBuilder>(),
+                sp.GetRequiredService<INpcToolSurfaceSnapshotProvider>(),
+                sp.GetRequiredService<StardewPrivateChatRuntimeAdapter>(),
+                sp.GetRequiredService<NpcAutonomyBudget>(),
+                sp.GetRequiredService<WorldCoordinationService>(),
+                sp.GetRequiredService<ILogger<StardewNpcAutonomyBackgroundService>>(),
+                new StardewNpcAutonomyBackgroundOptions(
+                    ReadConfigList("stardew", "npc_autonomy_enabled_ids")),
+                memoryEnabled,
+                userProfileEnabled,
+                projectDir,
+                chatLanes.GetClient(ChatRouteNames.Delegation));
+        });
 
         // Memory manager
         var memoryDir = Path.Combine(hermesHome, "memories");
@@ -898,6 +921,7 @@ public partial class App : Application
             new AgentCapabilityServices
             {
                 ChatClient = chatClient,
+                LoggerFactory = services.GetRequiredService<ILoggerFactory>(),
                 ToolRegistry = toolRegistry,
                 TodoStore = todoStore,
                 CronScheduler = services.GetRequiredService<ICronScheduler>(),

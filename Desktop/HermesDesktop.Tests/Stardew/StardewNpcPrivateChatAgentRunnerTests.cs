@@ -142,6 +142,55 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     }
 
     [TestMethod]
+    public async Task ReplyAsync_AgentToolUsesDelegationClientWhenSupplied()
+    {
+        var runtimeSupervisor = new NpcRuntimeSupervisor();
+        var privateChatClient = new SnapshotAnswerChatClient("unused");
+        var delegationClient = new DelegationStreamingChatClient();
+        var runner = CreateRunner(
+            privateChatClient,
+            runtimeSupervisor,
+            delegationChatClient: delegationClient);
+
+        await runner.ReplyAsync(
+            new NpcPrivateChatRequest("haley", "save-1", "conversation-delegation", "你先整理一下附近情况"),
+            CancellationToken.None);
+        var handle = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
+        var found = runtimeSupervisor.TryGetTaskView(handle.SessionId, out _);
+        Assert.IsTrue(found, "Private-chat runner must create the long-term NPC runtime before agent delegation is inspected.");
+
+        var pack = new FileSystemNpcPackLoader().LoadPacks(_packRoot).Single(pack => pack.Manifest.NpcId == "haley");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
+        var privateHandle = await runtimeSupervisor.GetOrCreatePrivateChatHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAgentBindingRequest(
+                ChannelKey: "private_chat",
+                SystemPromptSupplement: "Reply directly.",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                Services: new NpcRuntimeCompositionServices(
+                    privateChatClient,
+                    NullLoggerFactory.Instance,
+                    _skillManager,
+                    new NoopCronScheduler(),
+                    delegationClient),
+                ToolSurface: NpcToolSurface.FromTools([])),
+            CancellationToken.None);
+
+        var result = await privateHandle.Agent.Tools["agent"].ExecuteAsync(
+            new AgentParameters { AgentType = "general", Task = "Summarize nearby context." },
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual(1, privateChatClient.CompleteWithToolsCalls);
+        Assert.AreEqual(1, delegationClient.StructuredStreamCalls);
+        Assert.IsTrue(delegationClient.LastSystemPrompt?.Contains("helpful assistant", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
     public async Task ReplyAsync_AfterSupervisorRestart_HydratesPendingTodoBeforeNewMessage()
     {
         var firstSupervisor = new NpcRuntimeSupervisor();
@@ -180,7 +229,8 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     private StardewNpcPrivateChatAgentRunner CreateRunner(
         IChatClient chatClient,
         NpcRuntimeSupervisor runtimeSupervisor,
-        IEnumerable<ITool>? discoveredTools = null)
+        IEnumerable<ITool>? discoveredTools = null,
+        IChatClient? delegationChatClient = null)
         => new(
             chatClient,
             NullLoggerFactory.Instance,
@@ -192,7 +242,8 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             includeMemory: true,
             includeUser: true,
             discoveredToolProvider: () => discoveredTools ?? Enumerable.Empty<ITool>(),
-            maxToolIterations: 2);
+            maxToolIterations: 2,
+            delegationChatClient: delegationChatClient);
 
     private void CreatePack(string npcId, string displayName)
     {
@@ -291,6 +342,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
 
         public bool SawExpectedMemoryInPrompt { get; private set; }
         public bool SawOriginalNamingTurn { get; private set; }
+        public int CompleteWithToolsCalls { get; private set; }
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
             => Task.FromResult("ok");
@@ -300,6 +352,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             IEnumerable<ToolDefinition> tools,
             CancellationToken ct)
         {
+            CompleteWithToolsCalls++;
             var snapshot = messages.ToList();
             SawExpectedMemoryInPrompt = snapshot.Any(message =>
                 string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase) &&
@@ -329,6 +382,40 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         {
             await Task.CompletedTask;
             yield break;
+        }
+    }
+
+    private sealed class DelegationStreamingChatClient : IChatClient
+    {
+        public int StructuredStreamCalls { get; private set; }
+        public string? LastSystemPrompt { get; private set; }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+            => Task.FromResult(new ChatResponse { Content = "delegation", FinishReason = "stop" });
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            StructuredStreamCalls++;
+            LastSystemPrompt = systemPrompt;
+            yield return new StreamEvent.TokenDelta("delegated");
+            yield return new StreamEvent.MessageComplete("stop", new UsageStats(1, 1));
         }
     }
 

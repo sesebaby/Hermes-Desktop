@@ -9,6 +9,7 @@ using Hermes.Agent.Search;
 using Hermes.Agent.Skills;
 using Hermes.Agent.Tasks;
 using Hermes.Agent.Tools;
+using Microsoft.Extensions.Logging;
 
 /// <summary>
 /// Shared registration source for desktop and NPC agent capabilities.
@@ -40,7 +41,14 @@ public static class AgentCapabilityAssembler
         RegisterAndTrack(agent, services.ToolRegistry, new TodoTool(services.TodoStore));
         RegisterAndTrack(agent, services.ToolRegistry, new TodoWriteTool(services.TodoStore));
         RegisterAndTrack(agent, services.ToolRegistry, new ScheduleCronTool(services.CronScheduler));
-        RegisterAndTrack(agent, services.ToolRegistry, new AgentTool(services.ChatClient, services.ToolRegistry));
+        RegisterAndTrack(
+            agent,
+            services.ToolRegistry,
+            new AgentTool(
+                services.DelegationChatClient ?? services.ChatClient,
+                services.ToolRegistry,
+                new AgentToolConfig { MaxSubagentDepth = 1 },
+                logger: services.LoggerFactory?.CreateLogger<AgentTool>()));
         RegisterAndTrack(agent, services.ToolRegistry, new MemoryTool(
             services.MemoryManager,
             services.PluginManager,
@@ -111,6 +119,8 @@ public static class AgentCapabilityAssembler
 public sealed class AgentCapabilityServices
 {
     public required IChatClient ChatClient { get; init; }
+    public IChatClient? DelegationChatClient { get; init; }
+    public ILoggerFactory? LoggerFactory { get; init; }
     public required IToolRegistry ToolRegistry { get; init; }
     public required SessionTodoStore TodoStore { get; init; }
     public required ICronScheduler CronScheduler { get; init; }

@@ -295,6 +295,106 @@ public class NpcRuntimeSupervisorTests
     }
 
     [TestMethod]
+    public async Task GetOrCreatePrivateChatHandleAsync_AgentToolUsesDelegationClientWhenSupplied()
+    {
+        var supervisor = new NpcRuntimeSupervisor();
+        var pack = CreatePack("penny", "Penny");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
+        var parentClient = new DelegationCapturingChatClient("parent");
+        var delegationClient = new DelegationCapturingChatClient("delegation");
+        var services = new NpcRuntimeCompositionServices(
+            parentClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            DelegationChatClient: delegationClient);
+        var handle = await supervisor.GetOrCreatePrivateChatHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAgentBindingRequest(
+                ChannelKey: "private_chat",
+                SystemPromptSupplement: "Reply directly.",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("session_search")])),
+            CancellationToken.None);
+
+        var result = await handle.Agent.Tools["agent"].ExecuteAsync(
+            new AgentParameters { AgentType = "general", Task = "Summarize nearby context." },
+            CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.AreEqual(0, parentClient.StructuredStreamCalls);
+        Assert.AreEqual(1, delegationClient.StructuredStreamCalls);
+        Assert.AreEqual("delegation", delegationClient.Name);
+        Assert.IsTrue(delegationClient.LastSystemPrompt?.Contains("helpful assistant", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task GetOrCreateHandles_PrivateChatAndAutonomyCanUseDifferentParentClients()
+    {
+        var supervisor = new NpcRuntimeSupervisor();
+        var pack = CreatePack("haley", "Haley");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
+        var privateChatClient = new DelegationCapturingChatClient("private_chat");
+        var autonomyClient = new DelegationCapturingChatClient("autonomy");
+
+        var privateHandle = await supervisor.GetOrCreatePrivateChatHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAgentBindingRequest(
+                ChannelKey: "private_chat",
+                SystemPromptSupplement: "Reply directly.",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                Services: new NpcRuntimeCompositionServices(
+                    privateChatClient,
+                    NullLoggerFactory.Instance,
+                    _skillManager,
+                    new NoopCronScheduler()),
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")])),
+            CancellationToken.None);
+        var autonomyHandle = await supervisor.GetOrCreateAutonomyHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAutonomyBindingRequest(
+                ChannelKey: "autonomy",
+                AdapterKey: "bridge-a",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                AdapterFactory: () => new FakeGameAdapter(),
+                GameToolFactory: adapter => [new FakeTool("stardew_status"), new FakeTool("stardew_move")],
+                Services: new NpcRuntimeCompositionServices(
+                    autonomyClient,
+                    NullLoggerFactory.Instance,
+                    _skillManager,
+                    new NoopCronScheduler()),
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")])),
+            CancellationToken.None);
+
+        await privateHandle.Agent.ChatAsync(
+            "reply",
+            new Session { Id = $"{descriptor.SessionId}:private_chat:test" },
+            CancellationToken.None);
+        await autonomyHandle.AgentHandle.Agent.ChatAsync(
+            "decide",
+            new Session { Id = $"{descriptor.SessionId}:autonomy:test" },
+            CancellationToken.None);
+
+        Assert.AreEqual(1, privateChatClient.CompleteWithToolsCalls);
+        Assert.AreEqual(0, privateChatClient.StructuredStreamCalls);
+        Assert.AreEqual(1, autonomyClient.CompleteWithToolsCalls);
+        Assert.AreEqual(0, autonomyClient.StructuredStreamCalls);
+    }
+
+    [TestMethod]
     public async Task TryGetTaskView_AfterPrivateChatHandle_ReturnsReadOnlyLongTermTaskSnapshot()
     {
         var supervisor = new NpcRuntimeSupervisor();
@@ -848,6 +948,45 @@ public class NpcRuntimeSupervisorTests
         {
             await Task.CompletedTask;
             yield break;
+        }
+    }
+
+    private sealed class DelegationCapturingChatClient(string name) : IChatClient
+    {
+        public string Name { get; } = name;
+        public int CompleteWithToolsCalls { get; private set; }
+        public int StructuredStreamCalls { get; private set; }
+        public string? LastSystemPrompt { get; private set; }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            CompleteWithToolsCalls++;
+            return Task.FromResult(new ChatResponse { Content = $"{Name}: ok", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            StructuredStreamCalls++;
+            LastSystemPrompt = systemPrompt;
+            yield return new StreamEvent.TokenDelta($"{Name}: done");
+            yield return new StreamEvent.MessageComplete("stop", new UsageStats(1, 1));
         }
     }
 
