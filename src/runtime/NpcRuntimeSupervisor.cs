@@ -309,6 +309,7 @@ public sealed class NpcRuntimeSupervisor
             services.ChatClient,
             services.LoggerFactory,
             services.SkillManager,
+            channelKey,
             systemPromptSupplement,
             includeMemory: includeMemory,
             includeUser: includeUser,

@@ -52,6 +52,35 @@ public class NpcRuntimeContextFactoryTests
         Assert.AreEqual("Observe the latest Stardew facts and decide whether to act.", messages[^1].Content);
     }
 
+    [TestMethod]
+    public async Task Create_AutonomyChannel_OmitsGlobalSkillsMandatoryIndex()
+    {
+        var ns = new NpcNamespace(_tempDir, "stardew-valley", "save-1", "haley", "default");
+        var factory = new NpcRuntimeContextFactory();
+        var skillManager = CreateSkillManager();
+
+        var bundle = factory.Create(
+            ns,
+            new FakeChatClient(),
+            NullLoggerFactory.Instance,
+            skillManager,
+            channelKey: "autonomy");
+        var messages = await bundle.ContextManager.PrepareContextAsync(
+            "sdv_save-1_haley_default",
+            "Observe and decide.",
+            ["location=Town"],
+            CancellationToken.None);
+
+        Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("## Skills (mandatory)", StringComparison.Ordinal));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("session_search", StringComparison.Ordinal));
+        Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("native desktop environment", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("browser automation", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("web search tools", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(messages.Any(message =>
+            message.Role == "system" &&
+            message.Content.Contains("[Agent Identity]", StringComparison.Ordinal)));
+    }
+
     private SkillManager CreateSkillManager()
     {
         var skillsDir = Path.Combine(_tempDir, "skills", "memory");

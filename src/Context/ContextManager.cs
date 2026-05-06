@@ -166,13 +166,21 @@ public sealed class ContextManager
             // Increment turn count only after all async work succeeds
             state.TurnCount++;
 
+            var isStardewNpcRuntimeSession =
+                sessionId.StartsWith("sdv_", StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(toolSessionId) &&
+                 toolSessionId.StartsWith("sdv_", StringComparison.OrdinalIgnoreCase));
+
             // Load soul context (identity, user profile, project rules, learned behaviors)
             string? soulContext = null;
             if (_soulService is not null)
             {
                 try
                 {
-                    soulContext = await _soulService.AssembleSoulContextAsync();
+                    soulContext = await _soulService.AssembleSoulContextAsync(
+                        profile: isStardewNpcRuntimeSession
+                            ? SoulContextProfile.AutonomyCompact
+                            : SoulContextProfile.Default);
                 }
                 catch (Exception ex)
                 {
@@ -204,6 +212,31 @@ public sealed class ContextManager
                 PluginSystemContext = pluginSystemContext,
                 ActiveTaskContext = _taskProjectionService?.FormatActiveTasksForInjection(toolSessionId ?? sessionId)
             });
+
+            if (isStardewNpcRuntimeSession)
+            {
+                var recentTurnChars = recentTurns.Sum(message =>
+                    message.Role.Length +
+                    message.Content.Length +
+                    (message.ToolCallId?.Length ?? 0) +
+                    (message.ToolName?.Length ?? 0) +
+                    (message.TaskSessionId?.Length ?? 0) +
+                    (message.ToolCalls?.Sum(call => call.Id.Length + call.Name.Length + call.Arguments.Length) ?? 0));
+                var retrievedContextChars = retrievedContext?.Sum(chunk => chunk.Length) ?? 0;
+
+                _logger.LogInformation(
+                    "autonomy_prompt_packet_built; sessionId={SessionId}; toolSessionId={ToolSessionId}; systemPromptChars={SystemPromptChars}; soulContextChars={SoulContextChars}; pluginSystemContextChars={PluginSystemContextChars}; sessionStateChars={SessionStateChars}; activeTaskChars={ActiveTaskChars}; recentTurnChars={RecentTurnChars}; retrievedContextChars={RetrievedContextChars}; currentUserChars={CurrentUserChars}",
+                    sessionId,
+                    toolSessionId,
+                    packet.SystemPrompt.Length,
+                    packet.SoulContext?.Length ?? 0,
+                    packet.PluginSystemContext?.Length ?? 0,
+                    packet.SessionStateJson.Length,
+                    packet.ActiveTaskContext?.Length ?? 0,
+                    recentTurnChars,
+                    retrievedContextChars,
+                    packet.CurrentUserMessage.Length);
+            }
 
             return _promptBuilder.ToOpenAiMessages(packet);
         }

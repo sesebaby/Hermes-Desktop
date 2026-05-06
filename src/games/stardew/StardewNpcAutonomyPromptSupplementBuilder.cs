@@ -52,6 +52,7 @@ public sealed class CompositeStardewGamingSkillRootProvider : IStardewGamingSkil
 
 public sealed class StardewNpcAutonomyPromptSupplementBuilder
 {
+    private const int MaxFallbackSummaryChars = 280;
     private readonly IStardewGamingSkillRootProvider _gamingSkillRootProvider;
 
     public StardewNpcAutonomyPromptSupplementBuilder(IStardewGamingSkillRootProvider gamingSkillRootProvider)
@@ -79,13 +80,13 @@ public sealed class StardewNpcAutonomyPromptSupplementBuilder
         AppendSection(builder, "Persona Voice", voice);
         AppendSection(builder, "Persona Boundaries", boundaries);
 
-        builder.AppendLine("## Stardew Required Skills");
+        builder.AppendLine("## Stardew Runtime Contract");
         var skillRoots = _gamingSkillRootProvider.GetRequiredGamingSkillRoots();
         foreach (var skillId in requiredSkillIds)
         {
             var skillPath = ResolveRequiredSkillPath(descriptor, skillRoots, skillId);
             builder.AppendLine($"### {skillId}");
-            builder.AppendLine(File.ReadAllText(skillPath).Trim());
+            builder.AppendLine(BuildCompactSkillContract(skillId, File.ReadAllText(skillPath)));
             builder.AppendLine();
         }
 
@@ -188,6 +189,128 @@ public sealed class StardewNpcAutonomyPromptSupplementBuilder
             descriptor,
             $"required skill '{skillId}' was not found at any configured Stardew gaming skill root. Checked: {checkedPathList}.");
     }
+
+    private static string BuildCompactSkillContract(string skillId, string rawContent)
+    {
+        var lines = rawContent
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line) && !IsFrontmatterMetadata(line))
+            .ToArray();
+
+        if (lines.Length == 0)
+            return "- (empty skill)";
+
+        var summaryLines = skillId switch
+        {
+            "stardew-core" => SelectSummaryLines(
+                lines,
+                "本轮目标",
+                "session_search",
+                "`memory`",
+                "memory",
+                "避免重复广泛状态扫描",
+                "stardew_task_status"),
+            "stardew-social" => SelectSummaryLines(
+                lines,
+                "玩家指令优先级最高",
+                "`stardew_speak`",
+                "stardew_speak",
+                "移动开始",
+                "移动到达",
+                "闲置",
+                "任务状态"),
+            "stardew-navigation" => SelectSummaryLines(
+                lines,
+                "`stardew_move(destination, reason)`",
+                "stardew_move",
+                "destination=<destinationId 精确值>",
+                "destinationId",
+                "不要发明",
+                "stardew_task_status"),
+            "stardew-task-continuity" => SelectSummaryLines(
+                lines,
+                "`todo`",
+                "todo",
+                "玩家给你以后要兑现的约定",
+                "先回应玩家，再恢复原来的任务",
+                "stardew_task_status",
+                "blocked",
+                "failed",
+                "session_search"),
+            "stardew-world" => SelectSummaryLines(
+                lines,
+                "destination[n]",
+                "destinationId",
+                "label",
+                "schedule_entry[n]",
+                "skill_view",
+                "references/stardew-places.md"),
+            _ => SelectFallbackSummaryLines(lines)
+        };
+
+        if (summaryLines.Count == 0)
+            summaryLines = SelectFallbackSummaryLines(lines);
+
+        if (string.Equals(skillId, "stardew-world", StringComparison.OrdinalIgnoreCase) &&
+            rawContent.Contains("references/stardew-places.md", StringComparison.OrdinalIgnoreCase) &&
+            !summaryLines.Any(line => line.Contains("skill_view(", StringComparison.Ordinal)))
+        {
+            summaryLines.Add("`skill_view(name=\"stardew-world\", file_path=\"references/stardew-places.md\")`");
+        }
+
+        return string.Join(
+            "\n",
+            summaryLines.Select(line => line.StartsWith("- ", StringComparison.Ordinal) ? line : "- " + line));
+    }
+
+    private static List<string> SelectSummaryLines(IReadOnlyList<string> lines, params string[] needles)
+    {
+        var selected = new List<string>();
+        foreach (var needle in needles)
+        {
+            var line = lines.FirstOrDefault(line => line.Contains(needle, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(line) &&
+                !selected.Contains(line, StringComparer.Ordinal))
+            {
+                selected.Add(line);
+            }
+        }
+
+        return selected;
+    }
+
+    private static List<string> SelectFallbackSummaryLines(IReadOnlyList<string> lines)
+    {
+        var selected = new List<string>();
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("---", StringComparison.Ordinal))
+                continue;
+
+            if (line.StartsWith("#", StringComparison.Ordinal))
+                continue;
+
+            if (IsFrontmatterMetadata(line))
+                continue;
+
+            selected.Add(line.Length <= MaxFallbackSummaryChars
+                ? line
+                : line[..MaxFallbackSummaryChars] + "...");
+
+            if (selected.Count >= 3)
+                break;
+        }
+
+        return selected;
+    }
+
+    private static bool IsFrontmatterMetadata(string line)
+        => line.StartsWith("name:", StringComparison.OrdinalIgnoreCase) ||
+           line.StartsWith("description:", StringComparison.OrdinalIgnoreCase) ||
+           line.StartsWith("tools:", StringComparison.OrdinalIgnoreCase) ||
+           line.StartsWith("model:", StringComparison.OrdinalIgnoreCase);
 
     private static string ResolveInsideRoot(
         NpcRuntimeDescriptor descriptor,

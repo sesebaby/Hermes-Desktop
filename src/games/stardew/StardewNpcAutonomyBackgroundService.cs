@@ -444,6 +444,11 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 binding.Descriptor,
                 tracker.Instance.Namespace,
                 binding.Pack);
+            _logger.LogInformation(
+                "Stardew autonomy prompt contract built; npc={NpcId}; channel=autonomy; supplementChars={SupplementChars}; supplementHasMandatorySkills={SupplementHasMandatorySkills}",
+                binding.Descriptor.NpcId,
+                systemPromptSupplement.Length,
+                systemPromptSupplement.Contains("## Skills (mandatory)", StringComparison.Ordinal));
             await using var llmSlot = await _budget.TryAcquireLlmSlotAsync(binding.Descriptor.NpcId, ct);
             if (llmSlot is null)
             {

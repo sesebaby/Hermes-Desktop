@@ -82,13 +82,17 @@ public static class AgentCapabilityAssembler
 
         return new PromptBuilder(() =>
         {
-            var prompt = SystemPrompts.BuildFromBase(
-                services.BaseSystemPrompt,
-                includeMemoryGuidance: services.IncludeMemoryGuidance && services.MemoryAvailable,
-                includeSessionSearchGuidance: services.IncludeSessionSearchGuidance,
-                includeSkillsGuidance: services.IncludeSkillsGuidance,
-                skillsMandatoryPrompt: services.SkillManager.BuildSkillsMandatoryPrompt(),
-                includeRuntimeFactsGuidance: services.IncludeRuntimeFactsGuidance);
+            var prompt = services.UseStardewNpcRuntimePrompt
+                ? SystemPrompts.StardewNpcRuntime
+                : SystemPrompts.BuildFromBase(
+                    services.BaseSystemPrompt,
+                    includeMemoryGuidance: services.IncludeMemoryGuidance && services.MemoryAvailable,
+                    includeSessionSearchGuidance: services.IncludeSessionSearchGuidance,
+                    includeSkillsGuidance: services.IncludeSkillsGuidance,
+                    skillsMandatoryPrompt: services.IncludeSkillsMandatoryCatalog
+                        ? services.SkillManager.BuildSkillsMandatoryPrompt()
+                        : null,
+                    includeRuntimeFactsGuidance: services.IncludeRuntimeFactsGuidance);
 
             if (!string.IsNullOrWhiteSpace(services.SupplementalSystemPrompt))
                 prompt += "\n\n" + services.SupplementalSystemPrompt.Trim();
@@ -137,9 +141,11 @@ public sealed class AgentPromptServices
     public required SkillManager SkillManager { get; init; }
     public string BaseSystemPrompt { get; init; } = SystemPrompts.Default;
     public string? SupplementalSystemPrompt { get; init; }
+    public bool UseStardewNpcRuntimePrompt { get; init; }
     public bool IncludeMemoryGuidance { get; init; } = true;
     public bool IncludeSessionSearchGuidance { get; init; } = true;
     public bool IncludeSkillsGuidance { get; init; } = true;
+    public bool IncludeSkillsMandatoryCatalog { get; init; } = true;
     public bool IncludeRuntimeFactsGuidance { get; init; } = true;
     public bool MemoryAvailable { get; init; } = true;
 

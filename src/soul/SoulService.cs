@@ -17,6 +17,12 @@ using System.Text.Json;
 ///   soul/habits.jsonl    — Append-only good-habit journal
 ///   projects/{dir}/AGENTS.md — Per-project rules
 /// </summary>
+public enum SoulContextProfile
+{
+    Default = 0,
+    AutonomyCompact = 1
+}
+
 public sealed class SoulService
 {
     private readonly string _hermesHome;
@@ -136,59 +142,67 @@ public sealed class SoulService
     /// Returns a single string containing identity, user profile, project rules,
     /// recent mistakes, and recent habits — capped at ~1500 tokens.
     /// </summary>
-    public async Task<string> AssembleSoulContextAsync(string? projectDir = null)
+    public async Task<string> AssembleSoulContextAsync(
+        string? projectDir = null,
+        SoulContextProfile profile = SoulContextProfile.Default)
     {
         var sb = new StringBuilder();
+        var autonomyCompact = profile == SoulContextProfile.AutonomyCompact;
 
         // 1. Agent identity (SOUL.md) — always included in full
         var soul = await LoadFileAsync(SoulFileType.Soul);
         if (!string.IsNullOrWhiteSpace(soul))
         {
             sb.AppendLine("[Agent Identity]");
-            sb.AppendLine(soul.Trim());
+            sb.AppendLine(autonomyCompact ? Truncate(soul.Trim(), 240) : soul.Trim());
             sb.AppendLine();
         }
 
-        // 2. User profile (USER.md) — truncated
+        // 2. User profile (USER.md)
         var user = await LoadFileAsync(SoulFileType.User);
         if (!string.IsNullOrWhiteSpace(user) && user.Trim().Length > 50) // Skip near-empty templates
         {
             sb.AppendLine("[User Profile]");
-            sb.AppendLine(Truncate(user.Trim(), MaxUserChars));
+            sb.AppendLine(autonomyCompact
+                ? Truncate(BuildAutonomyUserProfile(user.Trim()), 220)
+                : Truncate(user.Trim(), MaxUserChars));
             sb.AppendLine();
         }
 
         // 3. Project rules (AGENTS.md) — truncated
-        var agents = await LoadFileAsync(SoulFileType.ProjectRules, projectDir);
-        if (!string.IsNullOrWhiteSpace(agents) && agents.Trim().Length > 50)
+        if (!autonomyCompact)
         {
-            sb.AppendLine("[Project Rules]");
-            sb.AppendLine(Truncate(agents.Trim(), MaxAgentsChars));
-            sb.AppendLine();
-        }
-
-        // 4. Recent mistakes (lesson only, last 5)
-        var mistakes = await LoadMistakesAsync();
-        if (mistakes.Count > 0)
-        {
-            sb.AppendLine("[Learned from Mistakes]");
-            foreach (var m in mistakes.TakeLast(MaxJournalEntries))
+            var agents = await LoadFileAsync(SoulFileType.ProjectRules, projectDir);
+            if (!string.IsNullOrWhiteSpace(agents) && agents.Trim().Length > 50)
             {
-                sb.AppendLine($"- {m.Lesson}");
+                sb.AppendLine("[Project Rules]");
+                sb.AppendLine(Truncate(agents.Trim(), MaxAgentsChars));
+                sb.AppendLine();
             }
-            sb.AppendLine();
-        }
 
-        // 5. Recent habits (habit only, last 5)
-        var habits = await LoadHabitsAsync();
-        if (habits.Count > 0)
-        {
-            sb.AppendLine("[Good Habits]");
-            foreach (var h in habits.TakeLast(MaxJournalEntries))
+            // 4. Recent mistakes (lesson only, last 5)
+            var mistakes = await LoadMistakesAsync();
+            if (mistakes.Count > 0)
             {
-                sb.AppendLine($"- {h.Habit}");
+                sb.AppendLine("[Learned from Mistakes]");
+                foreach (var m in mistakes.TakeLast(MaxJournalEntries))
+                {
+                    sb.AppendLine($"- {m.Lesson}");
+                }
+                sb.AppendLine();
             }
-            sb.AppendLine();
+
+            // 5. Recent habits (habit only, last 5)
+            var habits = await LoadHabitsAsync();
+            if (habits.Count > 0)
+            {
+                sb.AppendLine("[Good Habits]");
+                foreach (var h in habits.TakeLast(MaxJournalEntries))
+                {
+                    sb.AppendLine($"- {h.Habit}");
+                }
+                sb.AppendLine();
+            }
         }
 
         var result = sb.ToString();
@@ -273,6 +287,27 @@ public sealed class SoulService
         }
 
         return entries;
+    }
+
+    private static string BuildAutonomyUserProfile(string user)
+    {
+        var segments = user.Split("\n§\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length > 1)
+            return segments[^1];
+
+        var filteredLines = user
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(line =>
+                !line.StartsWith("#", StringComparison.Ordinal) &&
+                !line.Contains("living document", StringComparison.OrdinalIgnoreCase) &&
+                !line.Contains("Not configured yet", StringComparison.OrdinalIgnoreCase) &&
+                !line.Contains("Not specified", StringComparison.OrdinalIgnoreCase) &&
+                !line.Contains("updated automatically", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return filteredLines.Count == 0
+            ? "No additional user preferences recorded."
+            : string.Join(" ", filteredLines);
     }
 
     private static string Truncate(string text, int maxChars)

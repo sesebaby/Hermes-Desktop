@@ -109,22 +109,20 @@ public sealed class StardewAutonomyTickDebugServiceTests
         CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "mcp_dynamic_test");
 
         Assert.IsTrue(chatClient.SystemMessages.Any(message =>
-            message.Contains("## Skills (mandatory)", StringComparison.Ordinal) &&
-            message.Contains("npc-autonomy-skill", StringComparison.Ordinal)));
-        Assert.IsTrue(chatClient.SystemMessages.Any(message =>
             message.Contains("## Persona Facts", StringComparison.Ordinal) &&
             message.Contains("Haley facts", StringComparison.Ordinal) &&
             message.Contains("## Persona Voice", StringComparison.Ordinal) &&
             message.Contains("Haley voice", StringComparison.Ordinal) &&
             message.Contains("## Persona Boundaries", StringComparison.Ordinal) &&
             message.Contains("Haley boundaries", StringComparison.Ordinal) &&
-            message.Contains("## Stardew Required Skills", StringComparison.Ordinal) &&
-            message.Contains("stardew-core test guidance", StringComparison.Ordinal) &&
-            message.Contains("stardew-social test guidance", StringComparison.Ordinal) &&
-            message.Contains("stardew-navigation test guidance", StringComparison.Ordinal) &&
-            message.Contains("stardew-task-continuity test guidance", StringComparison.Ordinal) &&
-            message.Contains("stardew-world test guidance", StringComparison.Ordinal) &&
-            message.Contains("references/stardew-places.md", StringComparison.Ordinal) &&
+            message.Contains("## Stardew Runtime Contract", StringComparison.Ordinal) &&
+            message.Contains("### stardew-core", StringComparison.Ordinal) &&
+            message.Contains("### stardew-social", StringComparison.Ordinal) &&
+            message.Contains("### stardew-navigation", StringComparison.Ordinal) &&
+            message.Contains("### stardew-task-continuity", StringComparison.Ordinal) &&
+            message.Contains("### stardew-world", StringComparison.Ordinal) &&
+            message.Contains("skill_view(name=\"stardew-world\", file_path=\"references/stardew-places.md\")", StringComparison.Ordinal) &&
+            !message.Contains("## Skills (mandatory)", StringComparison.Ordinal) &&
             !message.Contains("full stardew places encyclopedia fixture", StringComparison.Ordinal)));
 
         var runtimeSoulPath = Path.Combine(
@@ -184,18 +182,14 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
         Assert.IsTrue(result.Success, result.FailureReason);
         var systemPrompt = chatClient.SystemMessages.First(message =>
-            message.Contains("## Stardew Required Skills", StringComparison.Ordinal));
+            message.Contains("## Stardew Runtime Contract", StringComparison.Ordinal));
         StringAssert.Contains(systemPrompt, "### stardew-world");
-        StringAssert.Contains(systemPrompt, "本 skill 是地点意义与候选解释 owner");
-        StringAssert.Contains(systemPrompt, "`destination[n]` 的 `destinationId`、`label`、`tags`、`reason`、`endBehavior`");
+        StringAssert.Contains(systemPrompt, "destination[n]");
+        StringAssert.Contains(systemPrompt, "skill_view(name=\"stardew-world\", file_path=\"references/stardew-places.md\")");
         StringAssert.Contains(systemPrompt, "### stardew-navigation");
-        StringAssert.Contains(systemPrompt, "本技能负责移动循环");
-        StringAssert.Contains(systemPrompt, "观察目的地");
-        StringAssert.Contains(systemPrompt, "选择匹配意图的目的地");
         StringAssert.Contains(systemPrompt, "`stardew_move(destination, reason)`");
         StringAssert.Contains(systemPrompt, "destination=<destinationId 精确值>");
-        StringAssert.Contains(systemPrompt, "移动不是叙述文本");
-        StringAssert.Contains(systemPrompt, "你必须调用 `stardew_move`");
+        StringAssert.Contains(systemPrompt, "destinationId");
         Assert.IsFalse(
             systemPrompt.Contains("stardew-world test guidance", StringComparison.Ordinal),
             "Repo-backed prompt supplement coverage must use the real skills/gaming root, not fixture-only text.");
@@ -243,18 +237,14 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
         Assert.IsTrue(result.Success, result.FailureReason);
         var systemPrompt = chatClient.SystemMessages.First(message =>
-            message.Contains("## Stardew Required Skills", StringComparison.Ordinal));
+            message.Contains("## Stardew Runtime Contract", StringComparison.Ordinal));
         StringAssert.Contains(systemPrompt, "### stardew-social");
-        StringAssert.Contains(systemPrompt, "如果连续多轮只移动、观察或查任务状态");
         StringAssert.Contains(systemPrompt, "`stardew_speak`");
-        StringAssert.Contains(systemPrompt, "手机");
-        StringAssert.Contains(systemPrompt, "头顶气泡");
-        StringAssert.Contains(systemPrompt, "TheStardewSquad");
         StringAssert.Contains(systemPrompt, "移动开始");
         StringAssert.Contains(systemPrompt, "移动到达");
         StringAssert.Contains(systemPrompt, "闲置");
         StringAssert.Contains(systemPrompt, "任务状态");
-        StringAssert.Contains(systemPrompt, "移动完成后一轮内");
+        StringAssert.Contains(systemPrompt, "玩家指令优先级最高");
     }
 
     [TestMethod]
@@ -299,7 +289,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
         Assert.IsTrue(result.Success, result.FailureReason);
         var systemPrompt = chatClient.SystemMessages.First(message =>
-            message.Contains("## Stardew Required Skills", StringComparison.Ordinal));
+            message.Contains("## Stardew Runtime Contract", StringComparison.Ordinal));
         StringAssert.Contains(systemPrompt, "### stardew-task-continuity");
         StringAssert.Contains(systemPrompt, "玩家给你以后要兑现的约定");
         StringAssert.Contains(systemPrompt, "先回应玩家，再恢复原来的任务");
@@ -402,10 +392,11 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
         Assert.IsTrue(result.Success, result.FailureReason);
         Assert.IsTrue(chatClient.SystemMessages.Any(message =>
-            message.Contains("## Stardew Required Skills", StringComparison.Ordinal) &&
-            message.Contains("stardew-core test guidance", StringComparison.Ordinal) &&
-            message.Contains("stardew-social test guidance", StringComparison.Ordinal) &&
-            message.Contains("stardew-navigation test guidance", StringComparison.Ordinal)));
+            message.Contains("## Stardew Runtime Contract", StringComparison.Ordinal) &&
+            message.Contains("### stardew-core", StringComparison.Ordinal) &&
+            message.Contains("### stardew-social", StringComparison.Ordinal) &&
+            message.Contains("### stardew-navigation", StringComparison.Ordinal) &&
+            !message.Contains("## Skills (mandatory)", StringComparison.Ordinal)));
     }
 
     [TestMethod]

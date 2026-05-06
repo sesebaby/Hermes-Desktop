@@ -23,6 +23,7 @@ public sealed class NpcRuntimeContextFactory
         IChatClient chatClient,
         ILoggerFactory loggerFactory,
         SkillManager skillManager,
+        string? channelKey = null,
         string? systemPromptSupplement = null,
         int maxTokens = 8000,
         int recentTurnWindow = 6,
@@ -69,6 +70,12 @@ public sealed class NpcRuntimeContextFactory
         {
             SkillManager = skillManager,
             MemoryAvailable = includeMemory || includeUser,
+            IncludeSkillsMandatoryCatalog = !string.Equals(channelKey, "autonomy", StringComparison.OrdinalIgnoreCase),
+            UseStardewNpcRuntimePrompt = string.Equals(channelKey, "autonomy", StringComparison.OrdinalIgnoreCase),
+            IncludeMemoryGuidance = !string.Equals(channelKey, "autonomy", StringComparison.OrdinalIgnoreCase),
+            IncludeSessionSearchGuidance = !string.Equals(channelKey, "autonomy", StringComparison.OrdinalIgnoreCase),
+            IncludeSkillsGuidance = !string.Equals(channelKey, "autonomy", StringComparison.OrdinalIgnoreCase),
+            IncludeRuntimeFactsGuidance = !string.Equals(channelKey, "autonomy", StringComparison.OrdinalIgnoreCase),
             SupplementalSystemPrompt = string.IsNullOrWhiteSpace(systemPromptSupplement)
                 ? DefaultSystemPromptSupplement
                 : $"{DefaultSystemPromptSupplement}\n\n{systemPromptSupplement.Trim()}"
