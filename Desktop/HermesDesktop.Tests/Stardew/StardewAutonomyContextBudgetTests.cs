@@ -518,6 +518,57 @@ public class StardewAutonomyContextBudgetTests
     }
 
     [TestMethod]
+    public void BudgetPolicy_TrimmedHistoricalAssistantToolRequest_DropsToolCallsToKeepArgumentsJsonValid()
+    {
+        var logger = new CapturingLogger<StardewAutonomyFirstCallContextBudgetPolicy>();
+        var policy = new StardewAutonomyFirstCallContextBudgetPolicy(logger);
+        var session = CreateAutonomySession();
+        var messages = new List<Message>
+        {
+            new() { Role = "system", Content = "system" },
+            new()
+            {
+                Role = "assistant",
+                Content = "",
+                ToolCalls =
+                [
+                    new ToolCall
+                    {
+                        Id = "old-call",
+                        Name = "todo",
+                        Arguments = $$"""{"todos":[{"id":"go_living_room","content":"{{new string('x', 6000)}}","status":"in_progress","reason":"Move to haley_house.living_room (7,9) after mirror check and stay indoors until the weather changes"}]}"""
+                    }
+                ]
+            },
+            new() { Role = "tool", ToolName = "todo", ToolCallId = "old-call", Content = new string('o', 7000) },
+            new()
+            {
+                Role = "assistant",
+                Content = "latest request without continuation keywords",
+                ToolCalls = [new ToolCall { Id = "latest-task", Name = "stardew_task_status", Arguments = "{}" }]
+            },
+            new() { Role = "tool", ToolName = "stardew_task_status", ToolCallId = "latest-task", Content = "task result survives" },
+            new() { Role = "user", Content = "current decision" }
+        };
+
+        var result = policy.Apply(new FirstCallContextBudgetRequest(session, messages, "current decision", 1));
+        var output = result.Messages.ToList();
+
+        Assert.IsFalse(output.Any(message =>
+                message.Role == "assistant" &&
+                message.ToolCalls?.Any(call => call.Id == "old-call") == true),
+            "Compressed historical assistant tool requests must not retain truncated tool call arguments.");
+        var trimmedHistoricalAssistant = output.SingleOrDefault(message =>
+            message.Role == "assistant" &&
+            string.Equals(message.Content, "[trimmed old assistant tool request]", StringComparison.Ordinal));
+        if (trimmedHistoricalAssistant is not null)
+            Assert.IsNull(trimmedHistoricalAssistant.ToolCalls, "Historical assistant placeholders must not keep tool calls.");
+        Assert.IsTrue(output.Any(message => message.Role == "assistant" && message.ToolCalls?.Any(call => call.Id == "latest-task") == true));
+        Assert.IsTrue(output.Any(message => message.Role == "tool" && message.ToolCallId == "latest-task" && message.Content.Contains("survives", StringComparison.Ordinal)));
+        StringAssert.Contains(CompletedLog(logger), "assistant_tool_args_trimmed");
+    }
+
+    [TestMethod]
     public void BudgetPolicy_SanitizesOrphanAndMissingToolPairs()
     {
         var policy = new StardewAutonomyFirstCallContextBudgetPolicy(NullLogger<StardewAutonomyFirstCallContextBudgetPolicy>.Instance);

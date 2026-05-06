@@ -93,7 +93,7 @@ public sealed class StardewAutonomyFirstCallContextBudgetPolicy : IFirstCallCont
                         string.IsNullOrWhiteSpace(slot.Message.Content)
                             ? "[trimmed old assistant tool request]"
                             : Truncate(slot.Message.Content, 240),
-                        TruncateToolCalls(slot.Message.ToolCalls))
+                        toolCalls: null)
                 };
                 truncatedToolCallArgs += slot.Message.ToolCalls.Count;
                 continue;
@@ -609,16 +609,6 @@ public sealed class StardewAutonomyFirstCallContextBudgetPolicy : IFirstCallCont
             ReasoningDetails = message.ReasoningDetails,
             CodexReasoningItems = message.CodexReasoningItems
         };
-
-    private static List<ToolCall> TruncateToolCalls(IEnumerable<ToolCall> toolCalls)
-        => toolCalls.Select(call => new ToolCall
-        {
-            Id = call.Id,
-            Name = call.Name,
-            Arguments = call.Arguments.Length <= 180
-                ? call.Arguments
-                : call.Arguments[..180] + "...[trimmed]"
-        }).ToList();
 
     private static string Truncate(string value, int maxChars)
         => value.Length <= maxChars ? value : value[..maxChars] + "...[trimmed]";
