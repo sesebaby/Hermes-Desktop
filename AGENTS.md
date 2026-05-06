@@ -301,6 +301,9 @@
 - `ChatLaneClientProvider` 与 Desktop/Stardew runtime 会分别拿 `ChatRouteNames.Delegation`、`StardewAutonomy`、`StardewPrivateChat` 等 lane client。
 - `sync-stardew-npc-config.ps1` 也明确写 delegation lane 只用于 child agent work。
 - 文档里可以写“存在专用 delegation lane 支持子 agent / NPC autonomy”，不要写成“任意多层 agent 树默认打开”。
+- 最近这条设计还要明确成“父云子本地”：parent decision / player-facing lane 继续走云模型，child agent / local executor / delegation work 才走本地小模型 lane。
+- 当前本地小模型 lane 是配置层概念，走 OpenAI-compatible `delegation` endpoint；当前仓库文档与脚本示例里对应的是本地 `LM Studio`。
+- 默认不要把 `stardew_autonomy` 或 `stardew_private_chat` 直接改到本地小模型；除非产品设计明确改变，否则保持 parent-cloud / delegation-local 路由。
 
 ## 当前已实现能力与未实现边界
 
