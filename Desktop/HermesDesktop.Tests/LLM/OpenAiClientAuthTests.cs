@@ -340,6 +340,77 @@ public class OpenAiClientAuthTests
     }
 
     [TestMethod]
+    public async Task StreamAsync_ToolCallDeltas_EmitToolUseEventsWithCompleteArguments()
+    {
+        var sse =
+            """
+            data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"stardew_move","arguments":""}}]}}]}
+
+            data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"destination\":\"PierreShop\""}}]}}]}
+
+            data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":",\"reason\":\"meet player\"}"}}]},"finish_reason":"tool_calls"}]}
+
+            data: [DONE]
+
+            """;
+        using var httpClient = new HttpClient(new CaptureHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new MemoryStream(Encoding.UTF8.GetBytes(sse)))
+            }));
+        var client = new OpenAiClient(
+            new LlmConfig
+            {
+                Provider = "openai",
+                Model = "gpt-5.4",
+                BaseUrl = "https://proxy.example/v1",
+                AuthMode = "none"
+            },
+            httpClient);
+        var tools = new[]
+        {
+            new ToolDefinition
+            {
+                Name = "stardew_move",
+                Description = "Move an NPC",
+                Parameters = JsonSerializer.SerializeToElement(new
+                {
+                    type = "object",
+                    properties = new
+                    {
+                        destination = new { type = "string" },
+                        reason = new { type = "string" }
+                    },
+                    required = new[] { "destination" }
+                })
+            }
+        };
+
+        var events = new List<StreamEvent>();
+        await foreach (var streamEvent in client.StreamAsync(
+                           "You execute local Stardew actions.",
+                           new[] { new Message { Role = "user", Content = "move Haley" } },
+                           tools,
+                           CancellationToken.None))
+        {
+            events.Add(streamEvent);
+        }
+
+        var start = events.OfType<StreamEvent.ToolUseStart>().Single();
+        var complete = events.OfType<StreamEvent.ToolUseComplete>().Single();
+
+        Assert.AreEqual("call_1", start.Id);
+        Assert.AreEqual("stardew_move", start.Name);
+        Assert.AreEqual("call_1", complete.Id);
+        Assert.AreEqual("stardew_move", complete.Name);
+        Assert.AreEqual("PierreShop", complete.Arguments.GetProperty("destination").GetString());
+        Assert.AreEqual("meet player", complete.Arguments.GetProperty("reason").GetString());
+        Assert.AreEqual(
+            "tool_calls",
+            events.OfType<StreamEvent.MessageComplete>().Single().StopReason);
+    }
+
+    [TestMethod]
     public async Task CompleteWithToolsAsync_BadRequestExceptionIncludesResponseBody()
     {
         using var httpClient = new HttpClient(new CaptureHandler(_ =>

@@ -552,6 +552,8 @@ public sealed class OpenAiClient : IChatClient
         // 2. Separate "reasoning" JSON field (MiniMax-M2.7, etc.)
         var inThinkBlock = false;
         var contentBuffer = new StringBuilder();
+        var stopReason = "stop";
+        var pendingToolCalls = new SortedDictionary<int, PendingOpenAiToolCall>();
 
         var toolDefs = tools?.Select(t => new
         {
@@ -610,7 +612,12 @@ public sealed class OpenAiClient : IChatClient
                 if (line is null) break;
                 if (!line.StartsWith("data: ")) continue;
                 var data = line["data: ".Length..];
-                if (data == "[DONE]") break;
+                if (data == "[DONE]")
+                {
+                    foreach (var toolEvent in CompletePendingOpenAiToolCalls(pendingToolCalls))
+                        yield return toolEvent;
+                    break;
+                }
 
                 JsonDocument? chunk;
                 try { chunk = JsonDocument.Parse(data); }
@@ -621,7 +628,80 @@ public sealed class OpenAiClient : IChatClient
                     if (!chunk.RootElement.TryGetProperty("choices", out var choices) ||
                         choices.GetArrayLength() == 0) continue;
 
-                    var delta = choices[0].GetProperty("delta");
+                    var choice = choices[0];
+                    if (choice.TryGetProperty("finish_reason", out var finishReasonEl) &&
+                        finishReasonEl.ValueKind == JsonValueKind.String)
+                    {
+                        stopReason = finishReasonEl.GetString() ?? stopReason;
+                    }
+
+                    if (!choice.TryGetProperty("delta", out var delta) ||
+                        delta.ValueKind != JsonValueKind.Object)
+                    {
+                        if (string.Equals(stopReason, "tool_calls", StringComparison.Ordinal))
+                        {
+                            foreach (var toolEvent in CompletePendingOpenAiToolCalls(pendingToolCalls))
+                                yield return toolEvent;
+                        }
+
+                        continue;
+                    }
+
+                    if (delta.TryGetProperty("tool_calls", out var toolCallsEl) &&
+                        toolCallsEl.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var toolCallEl in toolCallsEl.EnumerateArray())
+                        {
+                            var index = toolCallEl.TryGetProperty("index", out var indexEl) &&
+                                indexEl.ValueKind == JsonValueKind.Number
+                                    ? indexEl.GetInt32()
+                                    : pendingToolCalls.Count;
+
+                            if (!pendingToolCalls.TryGetValue(index, out var pendingToolCall))
+                            {
+                                pendingToolCall = new PendingOpenAiToolCall();
+                                pendingToolCalls[index] = pendingToolCall;
+                            }
+
+                            if (toolCallEl.TryGetProperty("id", out var idEl) &&
+                                idEl.ValueKind == JsonValueKind.String)
+                            {
+                                pendingToolCall.Id = idEl.GetString();
+                            }
+
+                            string? argumentsDelta = null;
+                            if (toolCallEl.TryGetProperty("function", out var functionEl) &&
+                                functionEl.ValueKind == JsonValueKind.Object)
+                            {
+                                if (functionEl.TryGetProperty("name", out var nameEl) &&
+                                    nameEl.ValueKind == JsonValueKind.String)
+                                {
+                                    pendingToolCall.Name = nameEl.GetString();
+                                }
+
+                                if (functionEl.TryGetProperty("arguments", out var argumentsEl) &&
+                                    argumentsEl.ValueKind == JsonValueKind.String)
+                                {
+                                    argumentsDelta = argumentsEl.GetString();
+                                }
+                            }
+
+                            if (pendingToolCall.TryMarkStarted(out var id, out var name))
+                                yield return new StreamEvent.ToolUseStart(id, name);
+
+                            if (!string.IsNullOrEmpty(argumentsDelta))
+                            {
+                                pendingToolCall.Arguments.Append(argumentsDelta);
+                                if (pendingToolCall.StartEmitted &&
+                                    !string.IsNullOrWhiteSpace(pendingToolCall.Id))
+                                {
+                                    yield return new StreamEvent.ToolUseDelta(
+                                        pendingToolCall.Id!,
+                                        argumentsDelta);
+                                }
+                            }
+                        }
+                    }
 
                     // Extract reasoning field (MiniMax, DeepSeek-R1 JSON format)
                     if (delta.TryGetProperty("reasoning", out var reasoningEl) &&
@@ -713,6 +793,12 @@ public sealed class OpenAiClient : IChatClient
                             }
                         }
                     }
+
+                    if (string.Equals(stopReason, "tool_calls", StringComparison.Ordinal))
+                    {
+                        foreach (var toolEvent in CompletePendingOpenAiToolCalls(pendingToolCalls))
+                            yield return toolEvent;
+                    }
                 }
             }
         }
@@ -726,6 +812,75 @@ public sealed class OpenAiClient : IChatClient
                 : new StreamEvent.TokenDelta(remaining);
         }
 
-        yield return new StreamEvent.MessageComplete("stop", new UsageStats(0, 0));
+        yield return new StreamEvent.MessageComplete(stopReason, new UsageStats(0, 0));
+    }
+
+    private static IEnumerable<StreamEvent> CompletePendingOpenAiToolCalls(
+        SortedDictionary<int, PendingOpenAiToolCall> pendingToolCalls)
+    {
+        foreach (var toolCallEntry in pendingToolCalls)
+        {
+            var pendingToolCall = toolCallEntry.Value;
+            if (pendingToolCall.Completed)
+                continue;
+
+            pendingToolCall.Completed = true;
+            if (string.IsNullOrWhiteSpace(pendingToolCall.Id) ||
+                string.IsNullOrWhiteSpace(pendingToolCall.Name))
+            {
+                yield return new StreamEvent.StreamError(
+                    new InvalidOperationException(
+                        $"Incomplete streaming tool call at index {toolCallEntry.Key}."));
+                continue;
+            }
+
+            var rawArguments = pendingToolCall.Arguments.Length == 0
+                ? "{}"
+                : pendingToolCall.Arguments.ToString();
+            StreamEvent toolEvent;
+            try
+            {
+                using var argumentsDoc = JsonDocument.Parse(rawArguments);
+                toolEvent = new StreamEvent.ToolUseComplete(
+                    pendingToolCall.Id!,
+                    pendingToolCall.Name!,
+                    argumentsDoc.RootElement.Clone());
+            }
+            catch (JsonException ex)
+            {
+                toolEvent = new StreamEvent.StreamError(
+                    new JsonException($"Invalid tool arguments: {rawArguments}", ex));
+            }
+
+            yield return toolEvent;
+        }
+    }
+
+    private sealed class PendingOpenAiToolCall
+    {
+        public string? Id { get; set; }
+
+        public string? Name { get; set; }
+
+        public StringBuilder Arguments { get; } = new();
+
+        public bool StartEmitted { get; private set; }
+
+        public bool Completed { get; set; }
+
+        public bool TryMarkStarted(out string id, out string name)
+        {
+            id = Id ?? "";
+            name = Name ?? "";
+            if (StartEmitted ||
+                string.IsNullOrWhiteSpace(id) ||
+                string.IsNullOrWhiteSpace(name))
+            {
+                return false;
+            }
+
+            StartEmitted = true;
+            return true;
+        }
     }
 }
