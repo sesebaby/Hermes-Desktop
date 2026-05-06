@@ -1041,6 +1041,90 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
+    public async Task RunOneIterationAsync_WithNoEnabledNpc_ProcessesPrivateChatTriggerWithoutStartingAutonomy()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("I will wait near the library.");
+        var privateChatAgent = new CountingPrivateChatAgentRunner();
+        var commands = new RecordingCommandService();
+        var events = new ScriptedEventSource(
+            new GameEventBatch(Array.Empty<GameEventRecord>(), new GameEventCursor()),
+            new GameEventBatch(
+                [
+                    new GameEventRecord("evt-41", "vanilla_dialogue_completed", "Haley", DateTime.UtcNow, "Haley finished vanilla dialogue.", Sequence: 41)
+                ],
+                new GameEventCursor("evt-41", 41)));
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is idle.",
+                ["location=Town"])),
+            events);
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: [],
+            privateChatAgentRunner: privateChatAgent);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, commands.Submitted.Count(action => action.Type == GameActionType.OpenPrivateChat));
+        Assert.AreEqual(0, supervisor.Snapshot().Count);
+        Assert.AreEqual(0, chatClient.CompleteWithToolsCalls);
+        Assert.AreEqual(0, privateChatAgent.Requests.Count);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WithNoEnabledNpc_CommitsPrivateChatCursorSoServiceRebuildDoesNotReopen()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("I will wait near the library.");
+        var commands = new RecordingCommandService();
+        var events = new CursorAwareEventSource(
+            new Dictionary<string, GameEventBatch?>
+            {
+                ["<root>"] = new GameEventBatch(Array.Empty<GameEventRecord>(), new GameEventCursor(null, 0)),
+                ["0"] = new GameEventBatch(
+                    [
+                        new GameEventRecord("evt-42", "vanilla_dialogue_completed", "Haley", DateTime.UtcNow, "Haley finished vanilla dialogue.", Sequence: 42)
+                    ],
+                    new GameEventCursor("evt-42", 42)),
+                ["42"] = new GameEventBatch(Array.Empty<GameEventRecord>(), new GameEventCursor("evt-42", 42))
+            });
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is idle.",
+                ["location=Town"])),
+            events);
+
+        var supervisor1 = new NpcRuntimeSupervisor();
+        var service1 = CreateService(discovery, _ => adapter, chatClient, supervisor1, enabledNpcIds: []);
+        await service1.RunOneIterationAsync(CancellationToken.None);
+        await service1.RunOneIterationAsync(CancellationToken.None);
+
+        var supervisor2 = new NpcRuntimeSupervisor();
+        var service2 = CreateService(discovery, _ => adapter, chatClient, supervisor2, enabledNpcIds: []);
+        await service2.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, commands.Submitted.Count(action => action.Type == GameActionType.OpenPrivateChat));
+        CollectionAssert.AreEqual(new long?[] { null, 0, 42 }, events.SeenCursors.Select(cursor => cursor.Sequence).ToArray());
+        Assert.AreEqual(0, supervisor1.Snapshot().Count);
+        Assert.AreEqual(0, supervisor2.Snapshot().Count);
+        Assert.AreEqual(0, chatClient.CompleteWithToolsCalls);
+    }
+
+    [TestMethod]
     public async Task RunOneIterationAsync_WhenDrainOnlyBatchIsReplayed_DoesNotOpenPrivateChat()
     {
         var discovery = CreateDiscovery("save-42");
@@ -1168,7 +1252,8 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         IReadOnlyCollection<string> enabledNpcIds,
         WorldCoordinationService? worldCoordination = null,
         NpcAutonomyBudget? budget = null,
-        ICronScheduler? cronScheduler = null)
+        ICronScheduler? cronScheduler = null,
+        INpcPrivateChatAgentRunner? privateChatAgentRunner = null)
     {
         var service = new StardewNpcAutonomyBackgroundService(
             discovery,
@@ -1183,7 +1268,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             new StardewNpcAutonomyPromptSupplementBuilder(new FixedStardewGamingSkillRootProvider(_gamingSkillRoot)),
             new NpcToolSurfaceSnapshotProvider(() => [new DiscoveredNoopTool("mcp_dynamic_test")]),
             new StardewPrivateChatRuntimeAdapter(
-                new NoopPrivateChatAgentRunner(),
+                privateChatAgentRunner ?? new NoopPrivateChatAgentRunner(),
                 NullLogger<StardewPrivateChatRuntimeAdapter>.Instance),
             budget ?? new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(MaxToolIterations: 2, MaxConcurrentLlmRequests: 1, MaxRestartsPerScene: 2)),
             worldCoordination ?? new WorldCoordinationService(new ResourceClaimRegistry()),
@@ -1833,6 +1918,17 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     {
         public Task<NpcPrivateChatReply> ReplyAsync(NpcPrivateChatRequest request, CancellationToken ct)
             => Task.FromResult(new NpcPrivateChatReply("noop"));
+    }
+
+    private sealed class CountingPrivateChatAgentRunner : INpcPrivateChatAgentRunner
+    {
+        public List<NpcPrivateChatRequest> Requests { get; } = new();
+
+        public Task<NpcPrivateChatReply> ReplyAsync(NpcPrivateChatRequest request, CancellationToken ct)
+        {
+            Requests.Add(request);
+            return Task.FromResult(new NpcPrivateChatReply("noop"));
+        }
     }
 
     private sealed class NoopCronScheduler : ICronScheduler

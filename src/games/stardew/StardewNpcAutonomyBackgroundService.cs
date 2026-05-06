@@ -208,12 +208,6 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             _bridgeEventCursor.Since ?? "-",
             _bridgeEventCursor.Sequence);
 
-        if (_enabledNpcIds.Count == 0)
-        {
-            _logger.LogInformation("Stardew autonomy host iteration skipped; reason=no_enabled_npcs");
-            return;
-        }
-
         if (!_discovery.TryReadLatest(out var snapshot, out var failureReason) || snapshot is null)
         {
             _privateChatRuntimeAdapter.Reset();
@@ -239,7 +233,9 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         var bridgeKey = BuildBridgeKey(snapshot, saveId);
         if (!string.Equals(bridgeKey, _bridgeKey, StringComparison.Ordinal))
         {
-            await _runtimeHost.StartDiscoveredAsync(_bindingResolver.PackRoot, saveId, _enabledNpcIds.ToArray(), ct);
+            if (_enabledNpcIds.Count > 0)
+                await _runtimeHost.StartDiscoveredAsync(_bindingResolver.PackRoot, saveId, _enabledNpcIds.ToArray(), ct);
+
             await ResetTrackersForBridgeAsync(bridgeKey, ct);
             _bridgeKey = bridgeKey;
             _logger.LogInformation("Stardew autonomy bridge attached: {BridgeKey}", bridgeKey);
@@ -283,6 +279,28 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             ct,
             drainOnly: privateChatDrainOnly);
 
+        // enabledNpcIds gates autonomous NPC workers only. Shared private-chat ingress
+        // must still be consumed so UI opening is not coupled to AI/autonomy config.
+        if (_enabledNpcIds.Count == 0)
+        {
+            await FinalizeSharedEventBatchAsync(
+                hostStateStore,
+                hostState,
+                sharedEventBatch,
+                shouldStageBatch,
+                initialPrivateChatHistoryDrained,
+                ct);
+            _bridgeEventCursor = sharedEventBatch.NextCursor;
+            iterationStopwatch.Stop();
+            _logger.LogInformation(
+                "Stardew autonomy host iteration skipped; reason=no_enabled_npcs_after_private_chat_processing; startedAtUtc={StartedAtUtc:o}; durationMs={DurationMs}; nextCursor={NextCursor}; nextSequence={NextSequence}",
+                iterationStartedAtUtc,
+                iterationStopwatch.ElapsedMilliseconds,
+                _bridgeEventCursor.Since ?? "-",
+                _bridgeEventCursor.Sequence);
+            return;
+        }
+
         List<Task>? workerTasks = waitForWorkerCompletion ? new List<Task>(_enabledNpcIds.Count) : null;
         foreach (var npcId in _enabledNpcIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase))
         {
@@ -315,14 +333,13 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         if (workerTasks is not null)
             await Task.WhenAll(workerTasks);
 
-        if (shouldStageBatch)
-        {
-            await hostStateStore.CommitBatchAsync(sharedEventBatch.NextCursor, initialPrivateChatHistoryDrained, ct);
-        }
-        else if (initialPrivateChatHistoryDrained != hostState.InitialPrivateChatHistoryDrained)
-        {
-            await hostStateStore.CommitBatchAsync(hostState.SourceCursor, initialPrivateChatHistoryDrained, ct);
-        }
+        await FinalizeSharedEventBatchAsync(
+            hostStateStore,
+            hostState,
+            sharedEventBatch,
+            shouldStageBatch,
+            initialPrivateChatHistoryDrained,
+            ct);
 
         _bridgeEventCursor = sharedEventBatch.NextCursor;
         iterationStopwatch.Stop();
@@ -332,6 +349,22 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             iterationStopwatch.ElapsedMilliseconds,
             _bridgeEventCursor.Since ?? "-",
             _bridgeEventCursor.Sequence);
+    }
+
+    private static Task FinalizeSharedEventBatchAsync(
+        StardewRuntimeHostStateStore hostStateStore,
+        StardewRuntimeHostState hostState,
+        GameEventBatch sharedEventBatch,
+        bool shouldStageBatch,
+        bool initialPrivateChatHistoryDrained,
+        CancellationToken ct)
+    {
+        if (shouldStageBatch)
+            return hostStateStore.CommitBatchAsync(sharedEventBatch.NextCursor, initialPrivateChatHistoryDrained, ct);
+
+        return initialPrivateChatHistoryDrained != hostState.InitialPrivateChatHistoryDrained
+            ? hostStateStore.CommitBatchAsync(hostState.SourceCursor, initialPrivateChatHistoryDrained, ct)
+            : Task.CompletedTask;
     }
 
     private async Task RunLoopAsync(CancellationToken ct)

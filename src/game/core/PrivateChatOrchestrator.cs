@@ -145,6 +145,14 @@ public sealed class PrivateChatOrchestrator : IDisposable
             }
             catch
             {
+                var failureSource = _options.Policy.ExtractReplySource(record);
+                await SubmitSpeakAsync(
+                    _activeNpcId!,
+                    "AI connection failed. Check Hermes provider settings.",
+                    _conversationId,
+                    failureSource,
+                    ct,
+                    messageKind: "system_error");
                 EndSession();
                 return;
             }
@@ -273,7 +281,13 @@ public sealed class PrivateChatOrchestrator : IDisposable
         return _commands.SubmitAsync(action, ct);
     }
 
-    private Task<GameCommandResult> SubmitSpeakAsync(string npcId, string text, string conversationId, string source, CancellationToken ct)
+    private Task<GameCommandResult> SubmitSpeakAsync(
+        string npcId,
+        string text,
+        string conversationId,
+        string source,
+        CancellationToken ct,
+        string? messageKind = null)
     {
         var payload = new JsonObject
         {
@@ -282,6 +296,9 @@ public sealed class PrivateChatOrchestrator : IDisposable
             ["conversationId"] = conversationId,
             ["source"] = source
         };
+        if (!string.IsNullOrWhiteSpace(messageKind))
+            payload["message_kind"] = messageKind;
+
         var action = new GameAction(
             npcId,
             _options.Policy.GameId,

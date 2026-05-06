@@ -369,6 +369,50 @@ public class StardewPrivateChatOrchestratorTests
     }
 
     [TestMethod]
+    public async Task ProcessNextAsync_WhenAgentReplyThrows_SubmitsSystemErrorWithoutChangingDisplaySource()
+    {
+        var events = new FakeEventSource(
+            new GameEventRecord(
+                "evt-1",
+                "vanilla_dialogue_completed",
+                "Haley",
+                DateTime.UtcNow,
+                "Haley vanilla dialogue completed."),
+            new GameEventRecord(
+                "evt-2",
+                "player_private_message_submitted",
+                "Haley",
+                DateTime.UtcNow,
+                "Player submitted a private chat message.",
+                "pc_evt-1",
+                new JsonObject
+                {
+                    ["conversationId"] = "pc_evt-1",
+                    ["text"] = "hi Haley",
+                    ["source"] = "input_menu"
+                }));
+        var commands = new FakeCommandService();
+        var agent = new FakePrivateChatAgentRunner { ThrowOnReply = true };
+        var orchestrator = new StardewPrivateChatOrchestrator(
+            events,
+            commands,
+            agent,
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never));
+
+        await orchestrator.ProcessNextAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, agent.Requests.Count);
+        Assert.AreEqual(2, commands.Submitted.Count);
+        Assert.AreEqual(GameActionType.OpenPrivateChat, commands.Submitted[0].Type);
+        Assert.AreEqual(GameActionType.Speak, commands.Submitted[1].Type);
+        Assert.AreEqual("input_menu", commands.Submitted[1].Payload?["source"]?.GetValue<string>());
+        Assert.AreEqual("system_error", commands.Submitted[1].Payload?["message_kind"]?.GetValue<string>());
+        StringAssert.Contains(
+            commands.Submitted[1].Payload?["text"]?.GetValue<string>() ?? string.Empty,
+            "AI connection failed");
+    }
+
+    [TestMethod]
     public async Task ProcessNextAsync_PhonePrivateMessageSubmitted_RoutesReplyWithPhoneOverlaySource()
     {
         var events = new FakeEventSource(
@@ -805,10 +849,14 @@ public class StardewPrivateChatOrchestratorTests
     {
         public List<NpcPrivateChatRequest> Requests { get; } = new();
         public string ReplyText { get; init; } = "Hello.";
+        public bool ThrowOnReply { get; init; }
 
         public Task<NpcPrivateChatReply> ReplyAsync(NpcPrivateChatRequest request, CancellationToken ct)
         {
             Requests.Add(request);
+            if (ThrowOnReply)
+                throw new InvalidOperationException("provider unavailable");
+
             return Task.FromResult(new NpcPrivateChatReply(ReplyText));
         }
     }
