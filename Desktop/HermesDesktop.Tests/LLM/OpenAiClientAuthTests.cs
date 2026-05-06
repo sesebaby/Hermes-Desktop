@@ -340,6 +340,51 @@ public class OpenAiClientAuthTests
     }
 
     [TestMethod]
+    public async Task StreamAsync_WithConfiguredTemperature_UsesConfiguredTemperatureInPayload()
+    {
+        string? capturedBody = null;
+        var sse =
+            """
+            data: {"choices":[{"delta":{"content":"z"},"finish_reason":"stop"}]}
+
+            data: [DONE]
+
+            """;
+        using var httpClient = new HttpClient(new CaptureHandler(request =>
+        {
+            capturedBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(new MemoryStream(Encoding.UTF8.GetBytes(sse)))
+            };
+        }));
+
+        var client = new OpenAiClient(
+            new LlmConfig
+            {
+                Provider = "openai",
+                Model = "gpt-5.4",
+                BaseUrl = "https://proxy.example/v1",
+                AuthMode = "none",
+                Temperature = 0.1
+            },
+            httpClient);
+
+        await foreach (var _ in client.StreamAsync(
+                           "You are deterministic.",
+                           new[] { new Message { Role = "user", Content = "hello" } },
+                           null,
+                           CancellationToken.None))
+        {
+            // Drain SSE until completion
+        }
+
+        Assert.IsNotNull(capturedBody);
+        using var doc = JsonDocument.Parse(capturedBody!);
+        Assert.AreEqual(0.1, doc.RootElement.GetProperty("temperature").GetDouble(), 0.0001);
+    }
+
+    [TestMethod]
     public async Task StreamAsync_ToolCallDeltas_EmitToolUseEventsWithCompleteArguments()
     {
         var sse =

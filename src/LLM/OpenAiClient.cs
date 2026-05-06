@@ -270,18 +270,18 @@ public sealed class OpenAiClient : IChatClient
                 messages = msgs,
                 tools,
                 tool_choice = "auto",
-                temperature = 0.7,
+                temperature = _config.Temperature,
                 stream
             };
         }
 
         return new
-        {
-            model = _config.Model,
-            messages = msgs,
-            temperature = 0.7,
-            stream
-        };
+            {
+                model = _config.Model,
+                messages = msgs,
+                temperature = _config.Temperature,
+                stream
+            };
     }
 
     private async Task<HttpResponseMessage> PostAsync(object payload, CancellationToken ct)
