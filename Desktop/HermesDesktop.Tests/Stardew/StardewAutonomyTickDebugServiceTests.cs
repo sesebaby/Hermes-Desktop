@@ -55,7 +55,16 @@ public sealed class StardewAutonomyTickDebugServiceTests
     [TestMethod]
     public async Task RunOneTickAsync_HaleyInjectsRequiredPersonaSkillsAndExcludesLocalExecutorToolsFromParent()
     {
-        var chatClient = new ToolSnapshotChatClient("I will wait near the library.");
+        var chatClient = new ToolSnapshotChatClient(
+            """
+            {
+              "action": "wait",
+              "reason": "stay near the library",
+              "waitReason": "I will wait near the library.",
+              "allowedActions": ["move", "observe", "wait", "task_status"],
+              "escalate": false
+            }
+            """);
         var queries = new FakeQueryService(new GameObservation(
             "haley",
             "stardew-valley",
@@ -94,7 +103,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
         Assert.IsTrue(result.Success);
         Assert.AreEqual("haley", result.NpcId);
-        Assert.AreEqual("I will wait near the library.", result.DecisionResponse);
+        Assert.AreEqual("local_executor_completed:wait", result.DecisionResponse);
         Assert.AreEqual("haley", queries.LastNpcId);
 
         CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "memory");
@@ -620,20 +629,20 @@ public sealed class StardewAutonomyTickDebugServiceTests
     {
         var commands = new FakeCommandService();
         var chatClient = new ToolSnapshotChatClient(
-            new ChatResponse
+            """
             {
-                FinishReason = "tool_calls",
-                ToolCalls =
-                [
-                    new ToolCall
-                    {
-                        Id = "call-move",
-                        Name = "stardew_move",
-                        Arguments = """{"destination":"town.fountain","reason":"stand somewhere bright and visible in town"}"""
-                    }
-                ]
-            },
-            new ChatResponse { Content = "Moved toward the Town fountain.", FinishReason = "stop" });
+              "action": "move",
+              "reason": "stand somewhere bright and visible in town",
+              "destinationId": "town.fountain",
+              "allowedActions": ["move", "observe", "wait", "task_status"],
+              "escalate": false
+            }
+            """);
+        var delegationChatClient = new ToolSnapshotChatClient(
+            new StreamEvent.ToolUseComplete(
+                "call-move",
+                "stardew_move",
+                Json("""{"destination":"town.fountain","reason":"stand somewhere bright and visible in town"}""")));
         var queries = new FakeQueryService(new GameObservation(
             "haley",
             "stardew-valley",
@@ -665,15 +674,18 @@ public sealed class StardewAutonomyTickDebugServiceTests
             includeMemory: true,
             includeUser: true,
             maxToolIterations: 2,
-            runtimeRoot: _tempDir);
+            runtimeRoot: _tempDir,
+            delegationChatClient: delegationChatClient);
 
         var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
 
         Assert.IsTrue(result.Success, result.FailureReason);
-        Assert.AreEqual("Moved toward the Town fountain.", result.DecisionResponse);
+        Assert.AreEqual("local_executor_completed:stardew_move", result.DecisionResponse);
         Assert.IsTrue(
             chatClient.UserMessages.Any(message => message.Contains("destinationId=town.fountain", StringComparison.Ordinal)),
             "The model-facing autonomy prompt must expose executable destinationId before the tool call happens.");
+        CollectionAssert.DoesNotContain(chatClient.ToolNames.ToArray(), "stardew_move");
+        CollectionAssert.Contains(delegationChatClient.ToolNames.ToArray(), "stardew_move");
         Assert.IsNotNull(commands.LastAction);
         Assert.AreEqual(GameActionType.Move, commands.LastAction.Type);
         Assert.AreEqual("town.fountain", commands.LastAction.Payload?["destinationId"]?.ToString());
@@ -685,7 +697,16 @@ public sealed class StardewAutonomyTickDebugServiceTests
     public async Task RunOneTickAsync_WithPlaceCandidateButNoMoveToolCall_DoesNotMove()
     {
         var commands = new FakeCommandService();
-        var chatClient = new ToolSnapshotChatClient("I'll look around first.");
+        var chatClient = new ToolSnapshotChatClient(
+            """
+            {
+              "action": "observe",
+              "reason": "look around before deciding whether to move",
+              "observeTarget": "Bedroom mirror",
+              "allowedActions": ["move", "observe", "wait", "task_status"],
+              "escalate": false
+            }
+            """);
         var queries = new FakeQueryService(new GameObservation(
             "haley",
             "stardew-valley",
@@ -721,7 +742,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
         var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
 
         Assert.IsTrue(result.Success, result.FailureReason);
-        Assert.AreEqual("I'll look around first.", result.DecisionResponse);
+        Assert.AreEqual("local_executor_completed:observe", result.DecisionResponse);
         Assert.IsTrue(
             chatClient.UserMessages.Any(message => message.Contains("destination[0]=label=Bedroom mirror", StringComparison.Ordinal)),
             "The candidate should be visible to the model, not converted into a host-side movement.");
@@ -819,6 +840,12 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
     private StardewNpcAutonomyPromptSupplementBuilder CreatePromptSupplementBuilder(IStardewGamingSkillRootProvider? provider = null)
         => new(provider ?? new FixedStardewGamingSkillRootProvider(_gamingSkillRoot));
+
+    private static JsonElement Json(string value)
+    {
+        using var document = JsonDocument.Parse(value);
+        return document.RootElement.Clone();
+    }
 
     private static string FindRepositoryPath(params string[] relativePath)
     {
@@ -965,17 +992,27 @@ public sealed class StardewAutonomyTickDebugServiceTests
     {
         private readonly string _response;
         private readonly Queue<ChatResponse> _responses;
+        private readonly Queue<StreamEvent> _streamEvents;
 
         public ToolSnapshotChatClient(string response)
         {
             _response = response;
             _responses = new Queue<ChatResponse>();
+            _streamEvents = new Queue<StreamEvent>();
         }
 
         public ToolSnapshotChatClient(params ChatResponse[] responses)
         {
             _response = responses.LastOrDefault()?.Content ?? "";
             _responses = new Queue<ChatResponse>(responses);
+            _streamEvents = new Queue<StreamEvent>();
+        }
+
+        public ToolSnapshotChatClient(params StreamEvent[] streamEvents)
+        {
+            _response = "";
+            _responses = new Queue<ChatResponse>();
+            _streamEvents = new Queue<StreamEvent>(streamEvents);
         }
 
         public List<string> ToolNames { get; } = new();
@@ -1025,8 +1062,21 @@ public sealed class StardewAutonomyTickDebugServiceTests
             IEnumerable<ToolDefinition>? tools = null,
             [EnumeratorCancellation] CancellationToken ct = default)
         {
-            await Task.CompletedTask;
-            yield break;
+            ToolNames.Clear();
+            ToolNames.AddRange((tools ?? []).Select(tool => tool.Name));
+            SystemMessages.Clear();
+            if (!string.IsNullOrWhiteSpace(systemPrompt))
+                SystemMessages.Add(systemPrompt);
+            UserMessages.Clear();
+            UserMessages.AddRange(messages
+                .Where(message => string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase))
+                .Select(message => message.Content));
+
+            while (_streamEvents.Count > 0)
+            {
+                await Task.Yield();
+                yield return _streamEvents.Dequeue();
+            }
         }
     }
 

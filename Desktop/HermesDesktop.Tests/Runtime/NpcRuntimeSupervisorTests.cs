@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Hermes.Agent.Core;
 using Hermes.Agent.Game;
 using Hermes.Agent.LLM;
@@ -450,6 +451,80 @@ public class NpcRuntimeSupervisorTests
         CollectionAssert.Contains(autonomyClient.LastToolNames.ToArray(), "mcp_tool_a");
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_move");
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_task_status");
+    }
+
+    [TestMethod]
+    public async Task GetOrCreateAutonomyHandleAsync_LocalExecutorRunnerUsesDelegationClientAndRestrictedTools()
+    {
+        var supervisor = new NpcRuntimeSupervisor();
+        var pack = CreatePack("haley", "Haley");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
+        var parentContract =
+            """
+            {
+              "action": "move",
+              "reason": "meet player",
+              "destinationId": "PierreShop",
+              "allowedActions": ["move", "observe", "wait", "task_status"],
+              "escalate": false
+            }
+            """;
+        var autonomyClient = new ParentIntentChatClient(parentContract);
+        var delegationClient = new DelegationToolCallChatClient(
+            new StreamEvent.ToolUseComplete(
+                "call-move",
+                "stardew_move",
+                Json("""{"destination":"PierreShop","reason":"meet player"}""")));
+        var moveTool = new RecordingTool(
+            "stardew_move",
+            typeof(MoveParameters),
+            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-move-1","status":"queued"}"""));
+        var services = new NpcRuntimeCompositionServices(
+            autonomyClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            DelegationChatClient: delegationClient);
+
+        var handle = await supervisor.GetOrCreateAutonomyHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAutonomyBindingRequest(
+                ChannelKey: "autonomy",
+                AdapterKey: "bridge-a",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 2,
+                AdapterFactory: () => new FakeGameAdapter(),
+                GameToolFactory: (adapter, factStore) =>
+                [
+                    new FakeTool("stardew_status"),
+                    new FakeTool("stardew_move")
+                ],
+                LocalExecutorGameToolFactory: (adapter, factStore) => [moveTool],
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
+                LocalExecutorToolFingerprint: NpcToolSurface.FromTools([moveTool]).Fingerprint),
+            CancellationToken.None);
+
+        var result = await handle.Loop.RunOneTickAsync(
+            descriptor,
+            new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley can move to Pierre.",
+                ["location=Town", "destination[0].destinationId=PierreShop"]),
+            new GameEventBatch([], new GameEventCursor()),
+            CancellationToken.None);
+
+        Assert.AreEqual("local_executor_completed:stardew_move", result.DecisionResponse);
+        Assert.AreEqual(1, autonomyClient.CompleteWithToolsCalls);
+        CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_move");
+        Assert.AreEqual(1, delegationClient.StructuredStreamCalls);
+        CollectionAssert.Contains(delegationClient.LastToolNames.ToArray(), "stardew_move");
+        Assert.AreEqual(1, moveTool.ExecuteCalls);
     }
 
     [TestMethod]
@@ -1143,6 +1218,77 @@ public class NpcRuntimeSupervisorTests
         }
     }
 
+    private sealed class ParentIntentChatClient(string response) : IChatClient
+    {
+        public int CompleteWithToolsCalls { get; private set; }
+        public List<string> LastToolNames { get; } = new();
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult(response);
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            CompleteWithToolsCalls++;
+            LastToolNames.Clear();
+            LastToolNames.AddRange(tools.Select(tool => tool.Name));
+            return Task.FromResult(new ChatResponse { Content = response, FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class DelegationToolCallChatClient(StreamEvent.ToolUseComplete toolUse) : IChatClient
+    {
+        public int StructuredStreamCalls { get; private set; }
+        public List<string> LastToolNames { get; } = new();
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("unused");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+            => Task.FromResult(new ChatResponse { Content = "unused", FinishReason = "stop" });
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            StructuredStreamCalls++;
+            LastToolNames.Clear();
+            LastToolNames.AddRange((tools ?? []).Select(tool => tool.Name));
+            await Task.Yield();
+            yield return toolUse;
+            yield return new StreamEvent.MessageComplete("stop");
+        }
+    }
+
     private sealed class NoopCronScheduler : ICronScheduler
     {
         public event EventHandler<CronTaskDueEventArgs>? TaskDue;
@@ -1163,8 +1309,55 @@ public class NpcRuntimeSupervisorTests
             => Task.FromResult(ToolResult.Ok("ok"));
     }
 
+    private sealed class RecordingTool : ITool, IToolSchemaProvider
+    {
+        private readonly ToolResult _result;
+
+        public RecordingTool(string name, Type parametersType, ToolResult result)
+        {
+            Name = name;
+            ParametersType = parametersType;
+            _result = result;
+        }
+
+        public string Name { get; }
+        public string Description => "test recording tool";
+        public Type ParametersType { get; }
+        public int ExecuteCalls { get; private set; }
+
+        public JsonElement GetParameterSchema()
+            => JsonSerializer.SerializeToElement(new
+            {
+                type = "object",
+                properties = new
+                {
+                    destination = new { type = "string" },
+                    reason = new { type = "string" }
+                },
+                required = new[] { "destination" }
+            });
+
+        public Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+        {
+            ExecuteCalls++;
+            return Task.FromResult(_result);
+        }
+    }
+
     private sealed class NoopParameters
     {
+    }
+
+    private sealed class MoveParameters
+    {
+        public required string Destination { get; init; }
+        public string? Reason { get; init; }
+    }
+
+    private static JsonElement Json(string value)
+    {
+        using var document = JsonDocument.Parse(value);
+        return document.RootElement.Clone();
     }
 
     private sealed class WritingTaskHydrator(string content) : INpcRuntimeTaskHydrator

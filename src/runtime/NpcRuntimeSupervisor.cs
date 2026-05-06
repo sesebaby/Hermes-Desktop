@@ -253,6 +253,7 @@ public sealed class NpcRuntimeSupervisor
         var localExecutorToolSurface = CreateLocalExecutorToolSurface(request, adapter, factStore);
         var parentGameTools = ExcludeTools(gameTools, localExecutorToolSurface.Tools).ToArray();
         var combinedTools = parentGameTools.Concat(request.ToolSurface.Tools).ToArray();
+        var localExecutorRunner = CreateLocalExecutorRunner(request.Services, localExecutorToolSurface);
         var rebindKey = BuildRebindKey(
             request.ChannelKey,
             request.AdapterKey,
@@ -283,7 +284,8 @@ public sealed class NpcRuntimeSupervisor
             agentHandle.Agent,
             new NpcRuntimeLogWriter(Path.Combine(instance.Namespace.ActivityPath, "runtime.jsonl")),
             agentHandle.Context.MemoryManager,
-            request.Services.LoggerFactory.CreateLogger<NpcAutonomyLoop>());
+            request.Services.LoggerFactory.CreateLogger<NpcAutonomyLoop>(),
+            localExecutorRunner: localExecutorRunner);
 
         return new NpcRuntimeAutonomyHandle(
             instance,
@@ -303,6 +305,18 @@ public sealed class NpcRuntimeSupervisor
         => request.LocalExecutorGameToolFactory is null
             ? NpcToolSurface.FromTools([])
             : NpcToolSurface.FromTools(request.LocalExecutorGameToolFactory(adapter, factStore));
+
+    private static INpcLocalExecutorRunner? CreateLocalExecutorRunner(
+        NpcRuntimeCompositionServices services,
+        NpcToolSurface localExecutorToolSurface)
+    {
+        if (localExecutorToolSurface.Tools.Count == 0)
+            return null;
+
+        return services.DelegationChatClient is null
+            ? new NpcUnavailableLocalExecutorRunner()
+            : new NpcLocalExecutorRunner(services.DelegationChatClient, localExecutorToolSurface.Tools);
+    }
 
     private static IEnumerable<ITool> ExcludeTools(IEnumerable<ITool> tools, IEnumerable<ITool> excludedTools)
     {

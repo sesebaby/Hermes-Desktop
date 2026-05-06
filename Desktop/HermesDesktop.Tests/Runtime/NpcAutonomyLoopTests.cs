@@ -212,7 +212,13 @@ public class NpcAutonomyLoopTests
         StringAssert.Contains(agent.LastMessage, "玩家给过的约定");
         StringAssert.Contains(agent.LastMessage, "blocked 或 failed");
         StringAssert.Contains(agent.LastMessage, "用 stardew_speak");
+        StringAssert.Contains(agent.LastMessage, "只输出一个 JSON object");
+        StringAssert.Contains(agent.LastMessage, "\"action\"");
+        StringAssert.Contains(agent.LastMessage, "\"allowedActions\"");
         StringAssert.Contains(agent.LastMessage, "不要把事件当成玩家的新命令");
+        Assert.IsFalse(
+            agent.LastMessage.Contains("需要移动就用 stardew_move", StringComparison.Ordinal),
+            "Parent autonomy prompt must not tell the parent agent to call local-executor-owned movement tools directly.");
         Assert.IsFalse(
             agent.LastMessage.Contains("Use these passive game facts", StringComparison.Ordinal),
             "Autonomy decision prompt should use Chinese plain-language continuity guidance instead of the old generic English instruction.");
