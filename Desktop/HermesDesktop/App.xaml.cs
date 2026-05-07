@@ -391,6 +391,9 @@ public partial class App : Application
             sp.GetRequiredService<NpcRuntimeSupervisor>(),
             projectDir));
         services.AddSingleton<NpcRuntimeWorkspaceService>();
+        services.AddSingleton<INpcDeveloperTranscriptReader, SqliteNpcDeveloperTranscriptReader>();
+        services.AddSingleton<INpcDeveloperTodoReader, SupervisorNpcDeveloperTodoReader>();
+        services.AddSingleton<INpcDeveloperInspectorText, NpcDeveloperInspectorResourceText>();
         services.AddSingleton<NpcDeveloperInspectorService>();
         services.AddSingleton(sp => new StardewNpcRuntimeBindingResolver(
             sp.GetRequiredService<INpcPackLoader>(),

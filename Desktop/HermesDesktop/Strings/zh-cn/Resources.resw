@@ -1503,6 +1503,81 @@
   <data name="DeveloperNoTraceDiagnostics" xml:space="preserve">
     <value>没有解析诊断。</value>
   </data>
+  <data name="DeveloperInspectorFileMissing" xml:space="preserve">
+    <value>未找到文件。</value>
+  </data>
+  <data name="DeveloperInspectorFileLoaded" xml:space="preserve">
+    <value>已读取。</value>
+  </data>
+  <data name="DeveloperInspectorFileTruncatedFormat" xml:space="preserve">
+    <value>已截断，仅显示前 {0} 个字符。</value>
+  </data>
+  <data name="DeveloperInspectorFileReadFailedFormat" xml:space="preserve">
+    <value>读取失败：{0}</value>
+  </data>
+  <data name="DeveloperInspectorTraceLogMissing" xml:space="preserve">
+    <value>未找到运行时活动日志。</value>
+  </data>
+  <data name="DeveloperInspectorTraceParseFailedFormat" xml:space="preserve">
+    <value>第 {0} 行无法解析：{1}</value>
+  </data>
+  <data name="DeveloperInspectorTraceEmptyForNpc" xml:space="preserve">
+    <value>当前 NPC 没有可显示的运行时事件。</value>
+  </data>
+  <data name="DeveloperInspectorTraceSelectionMissing" xml:space="preserve">
+    <value>未找到所选追踪。</value>
+  </data>
+  <data name="DeveloperInspectorTranscriptSessionMissing" xml:space="preserve">
+    <value>当前 NPC 没有关联会话。</value>
+  </data>
+  <data name="DeveloperInspectorModelReplyEmpty" xml:space="preserve">
+    <value>当前会话还没有保存模型回复。</value>
+  </data>
+  <data name="DeveloperInspectorToolCallEmpty" xml:space="preserve">
+    <value>当前记录未包含工具调用。</value>
+  </data>
+  <data name="DeveloperInspectorDelegationEmpty" xml:space="preserve">
+    <value>本次追踪未发现委托。</value>
+  </data>
+  <data name="DeveloperInspectorTodoEmpty" xml:space="preserve">
+    <value>当前会话没有待办事项。</value>
+  </data>
+  <data name="DeveloperInspectorReasoningMissing" xml:space="preserve">
+    <value>当前记录未包含推理摘要。</value>
+  </data>
+  <data name="DeveloperInspectorToolResultMissing" xml:space="preserve">
+    <value>当前记录未包含工具结果。</value>
+  </data>
+  <data name="DeveloperInspectorTraceKindObservation" xml:space="preserve">
+    <value>观察事实</value>
+  </data>
+  <data name="DeveloperInspectorTraceKindModelRequest" xml:space="preserve">
+    <value>模型请求</value>
+  </data>
+  <data name="DeveloperInspectorTraceKindModelReply" xml:space="preserve">
+    <value>模型回复</value>
+  </data>
+  <data name="DeveloperInspectorTraceKindIntent" xml:space="preserve">
+    <value>意图解析</value>
+  </data>
+  <data name="DeveloperInspectorTraceKindLocalExecutor" xml:space="preserve">
+    <value>本地执行</value>
+  </data>
+  <data name="DeveloperInspectorTraceKindToolCall" xml:space="preserve">
+    <value>工具调用</value>
+  </data>
+  <data name="DeveloperInspectorTraceKindBridge" xml:space="preserve">
+    <value>游戏桥接</value>
+  </data>
+  <data name="DeveloperInspectorTraceKindResult" xml:space="preserve">
+    <value>执行结果</value>
+  </data>
+  <data name="DeveloperInspectorTraceKindDiagnostic" xml:space="preserve">
+    <value>诊断</value>
+  </data>
+  <data name="DeveloperInspectorTraceKindRaw" xml:space="preserve">
+    <value>原始事件</value>
+  </data>
   <data name="AgentRuntimeUnavailable" xml:space="preserve">
     <value>当前构建不支持 NPC 运行时工作台。</value>
   </data>

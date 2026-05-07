@@ -6,7 +6,6 @@ using Hermes.Agent.LLM;
 using Hermes.Agent.Search;
 using Hermes.Agent.Tasks;
 using Hermes.Agent.Transcript;
-using Microsoft.Extensions.Logging.Abstractions;
 
 public sealed class NpcDeveloperInspectorService
 {
@@ -14,17 +13,20 @@ public sealed class NpcDeveloperInspectorService
     private const int DefaultRuntimeLogMaxLines = 1000;
 
     private readonly NpcDeveloperInspectorOptions _options;
-    private readonly Func<NpcNamespace, TranscriptStore> _transcriptFactory;
-    private readonly Func<NpcNamespace, SessionTodoStore?> _todoStoreFactory;
+    private readonly INpcDeveloperInspectorText _text;
+    private readonly INpcDeveloperTranscriptReader _transcriptReader;
+    private readonly INpcDeveloperTodoReader _todoReader;
 
     public NpcDeveloperInspectorService(
         NpcDeveloperInspectorOptions? options = null,
-        Func<NpcNamespace, TranscriptStore>? transcriptFactory = null,
-        Func<NpcNamespace, SessionTodoStore?>? todoStoreFactory = null)
+        INpcDeveloperInspectorText? text = null,
+        INpcDeveloperTranscriptReader? transcriptReader = null,
+        INpcDeveloperTodoReader? todoReader = null)
     {
         _options = options ?? new NpcDeveloperInspectorOptions();
-        _transcriptFactory = transcriptFactory ?? CreateTranscriptStore;
-        _todoStoreFactory = todoStoreFactory ?? (_ => null);
+        _text = text ?? throw new ArgumentNullException(nameof(text));
+        _transcriptReader = transcriptReader ?? new SqliteNpcDeveloperTranscriptReader();
+        _todoReader = todoReader ?? EmptyNpcDeveloperTodoReader.Instance;
     }
 
     public async Task<NpcDeveloperInspectorView> InspectAsync(
@@ -43,9 +45,9 @@ public sealed class NpcDeveloperInspectorService
             snapshot.ProfileId);
         var documents = await LoadDocumentsAsync(npcNamespace, ct);
         var tracePath = Path.Combine(npcNamespace.ActivityPath, "runtime.jsonl");
-        var trace = await LoadTraceAsync(tracePath, snapshot.NpcId, snapshot.LastTraceId, ct);
+        var trace = await Task.Run(() => LoadTrace(tracePath, snapshot.NpcId, snapshot.LastTraceId, ct), ct);
         var transcript = await LoadTranscriptAsync(npcNamespace, snapshot.SessionId, ct);
-        var todos = LoadTodos(npcNamespace, snapshot.SessionId);
+        var todos = LoadTodos(snapshot.SessionId);
 
         return new NpcDeveloperInspectorView(
             snapshot.NpcId,
@@ -94,7 +96,7 @@ public sealed class NpcDeveloperInspectorService
     {
         ct.ThrowIfCancellationRequested();
         if (!File.Exists(path))
-            return new NpcDeveloperDocument(name, path, false, "", "未找到文件。", false);
+            return new NpcDeveloperDocument(name, path, false, "", _text.FileMissing, false);
 
         try
         {
@@ -104,17 +106,23 @@ public sealed class NpcDeveloperInspectorService
                 content = content[..PreviewCharacterLimit];
 
             var status = truncated
-                ? $"已截断，仅显示前 {PreviewCharacterLimit} 个字符。"
-                : "已读取。";
+                ? string.Format(System.Globalization.CultureInfo.CurrentCulture, _text.FileTruncatedFormat, PreviewCharacterLimit)
+                : _text.FileLoaded;
             return new NpcDeveloperDocument(name, path, true, content, status, truncated);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return new NpcDeveloperDocument(name, path, false, "", $"读取失败：{ex.Message}", false);
+            return new NpcDeveloperDocument(
+                name,
+                path,
+                false,
+                "",
+                string.Format(System.Globalization.CultureInfo.CurrentCulture, _text.FileReadFailedFormat, ex.Message),
+                false);
         }
     }
 
-    private async Task<TraceProjection> LoadTraceAsync(
+    private TraceProjection LoadTrace(
         string path,
         string npcId,
         string? preferredTraceId,
@@ -122,15 +130,16 @@ public sealed class NpcDeveloperInspectorService
     {
         ct.ThrowIfCancellationRequested();
         if (!File.Exists(path))
-            return new TraceProjection([], [], "未找到运行时活动日志。");
+            return new TraceProjection([], [], _text.TraceLogMissing);
 
-        var lines = await ReadTailLinesAsync(path, RuntimeLogMaxLines, ct);
+        var tail = ReadTailLines(path, RuntimeLogMaxLines, ct);
         var records = new List<NpcRuntimeLogRecord>();
         var diagnostics = new List<string>();
-        var lineNumberOffset = Math.Max(0, CountLines(path) - lines.Count);
-        for (var i = 0; i < lines.Count; i++)
+        var lineNumberOffset = tail.StartLineNumber - 1;
+        for (var i = 0; i < tail.Lines.Count; i++)
         {
-            var line = lines[i];
+            ct.ThrowIfCancellationRequested();
+            var line = tail.Lines[i];
             if (string.IsNullOrWhiteSpace(line))
                 continue;
 
@@ -145,12 +154,16 @@ public sealed class NpcDeveloperInspectorService
             }
             catch (JsonException ex)
             {
-                diagnostics.Add($"第 {lineNumberOffset + i + 1} 行无法解析：{ex.Message}");
+                diagnostics.Add(string.Format(
+                    System.Globalization.CultureInfo.CurrentCulture,
+                    _text.TraceParseFailedFormat,
+                    lineNumberOffset + i + 1,
+                    ex.Message));
             }
         }
 
         if (records.Count == 0)
-            return new TraceProjection([], diagnostics, "当前 NPC 没有可显示的运行时事件。");
+            return new TraceProjection([], diagnostics, _text.TraceEmptyForNpc);
 
         var traceId = string.IsNullOrWhiteSpace(preferredTraceId)
             ? records.OrderByDescending(record => record.TimestampUtc).First().TraceId
@@ -162,7 +175,7 @@ public sealed class NpcDeveloperInspectorService
             .ToArray();
 
         if (selected.Length == 0)
-            return new TraceProjection([], diagnostics, "未找到所选追踪。");
+            return new TraceProjection([], diagnostics, _text.TraceSelectionMissing);
 
         return new TraceProjection(selected, diagnostics, "");
     }
@@ -175,15 +188,15 @@ public sealed class NpcDeveloperInspectorService
                 [],
                 [],
                 [],
-                "当前 NPC 没有关联会话。",
-                "当前记录未包含工具调用。",
-                "本次追踪未发现委托。");
+                _text.TranscriptSessionMissing,
+                _text.ToolCallEmpty,
+                _text.DelegationEmpty);
         }
 
         List<Message> messages;
         try
         {
-            messages = await _transcriptFactory(npcNamespace).LoadSessionAsync(sessionId, ct);
+            messages = await _transcriptReader.LoadSessionAsync(npcNamespace, sessionId, ct);
         }
         catch (SessionNotFoundException)
         {
@@ -191,9 +204,9 @@ public sealed class NpcDeveloperInspectorService
                 [],
                 [],
                 [],
-                "当前会话还没有保存模型回复。",
-                "当前记录未包含工具调用。",
-                "本次追踪未发现委托。");
+                _text.ModelReplyEmpty,
+                _text.ToolCallEmpty,
+                _text.DelegationEmpty);
         }
 
         var modelReplies = messages
@@ -218,24 +231,24 @@ public sealed class NpcDeveloperInspectorService
             modelReplies,
             toolCalls,
             delegations,
-            modelReplies.Length == 0 ? "当前会话还没有保存模型回复。" : "",
-            toolCalls.Length == 0 ? "当前记录未包含工具调用。" : "",
-            delegations.Length == 0 ? "本次追踪未发现委托。" : "");
+            modelReplies.Length == 0 ? _text.ModelReplyEmpty : "",
+            toolCalls.Length == 0 ? _text.ToolCallEmpty : "",
+            delegations.Length == 0 ? _text.DelegationEmpty : "");
     }
 
-    private TodoProjection LoadTodos(NpcNamespace npcNamespace, string sessionId)
+    private TodoProjection LoadTodos(string sessionId)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
-            return new TodoProjection([], "当前会话没有待办事项。");
+            return new TodoProjection([], _text.TodoEmpty);
 
-        var snapshot = _todoStoreFactory(npcNamespace)?.Read(sessionId) ?? SessionTodoSnapshot.Empty;
+        var snapshot = _todoReader.Read(sessionId);
         var todos = snapshot.Todos
             .Select(todo => new NpcDeveloperTodo(todo.Id, todo.Content, todo.Status, todo.Reason ?? ""))
             .ToArray();
-        return new TodoProjection(todos, todos.Length == 0 ? "当前会话没有待办事项。" : "");
+        return new TodoProjection(todos, todos.Length == 0 ? _text.TodoEmpty : "");
     }
 
-    private static NpcDeveloperTraceEvent ToTraceEvent(NpcRuntimeLogRecord record)
+    private NpcDeveloperTraceEvent ToTraceEvent(NpcRuntimeLogRecord record)
         => new(
             record.TimestampUtc,
             record.TraceId,
@@ -249,48 +262,48 @@ public sealed class NpcDeveloperInspectorService
             record.ExecutorMode ?? "",
             record.TargetSource ?? "");
 
-    private static string MapTraceKind(NpcRuntimeLogRecord record)
+    private string MapTraceKind(NpcRuntimeLogRecord record)
     {
         if (string.Equals(record.ActionType, "observation", StringComparison.OrdinalIgnoreCase))
-            return "观察事实";
+            return _text.TraceKindObservation;
 
         if (string.Equals(record.ActionType, "tick", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(record.Stage, "started", StringComparison.OrdinalIgnoreCase))
         {
-            return "模型请求";
+            return _text.TraceKindModelRequest;
         }
 
         if (string.Equals(record.ActionType, "tick", StringComparison.OrdinalIgnoreCase))
-            return "模型回复";
+            return _text.TraceKindModelReply;
 
         if (string.Equals(record.ActionType, "diagnostic", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(record.Target, "intent_contract", StringComparison.OrdinalIgnoreCase))
         {
-            return "意图解析";
+            return _text.TraceKindIntent;
         }
 
         if (string.Equals(record.ActionType, "diagnostic", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(record.Target, "local_executor", StringComparison.OrdinalIgnoreCase))
         {
-            return "本地执行";
+            return _text.TraceKindLocalExecutor;
         }
 
         if (string.Equals(record.ActionType, "local_executor", StringComparison.OrdinalIgnoreCase))
-            return "工具调用";
+            return _text.TraceKindToolCall;
 
         if (string.Equals(record.ActionType, "host_action", StringComparison.OrdinalIgnoreCase))
-            return "游戏桥接";
+            return _text.TraceKindBridge;
 
         if (string.Equals(record.ActionType, "task_continuity", StringComparison.OrdinalIgnoreCase))
-            return "执行结果";
+            return _text.TraceKindResult;
 
         if (string.Equals(record.ActionType, "diagnostic", StringComparison.OrdinalIgnoreCase))
-            return "诊断";
+            return _text.TraceKindDiagnostic;
 
-        return "原始事件";
+        return _text.TraceKindRaw;
     }
 
-    private static NpcDeveloperModelReply ToModelReply(Message message)
+    private NpcDeveloperModelReply ToModelReply(Message message)
         => new(
             message.Timestamp,
             message.Content,
@@ -298,42 +311,35 @@ public sealed class NpcDeveloperInspectorService
                 message.ReasoningContent,
                 message.Reasoning,
                 message.ReasoningDetails,
-                message.CodexReasoningItems) ?? "当前记录未包含推理摘要。");
+                message.CodexReasoningItems) ?? _text.ReasoningMissing);
 
-    private static NpcDeveloperToolCall ToToolCall(ToolCall call, Message? result)
+    private NpcDeveloperToolCall ToToolCall(ToolCall call, Message? result)
         => new(
             call.Id,
             call.Name,
             call.Arguments,
-            result?.Content ?? "当前记录未包含工具结果。",
+            result?.Content ?? _text.ToolResultMissing,
             result?.Timestamp);
 
     private static string? FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
-    private static async Task<IReadOnlyList<string>> ReadTailLinesAsync(string path, int maxLines, CancellationToken ct)
+    private static TailLines ReadTailLines(string path, int maxLines, CancellationToken ct)
     {
-        var all = await File.ReadAllLinesAsync(path, ct);
-        if (all.Length <= maxLines)
-            return all;
-
-        return all.Skip(all.Length - maxLines).ToArray();
-    }
-
-    private static int CountLines(string path)
-    {
-        try
+        var lines = new Queue<string>(maxLines);
+        var total = 0;
+        foreach (var line in File.ReadLines(path))
         {
-            return File.ReadLines(path).Count();
-        }
-        catch (IOException)
-        {
-            return 0;
-        }
-    }
+            ct.ThrowIfCancellationRequested();
+            total++;
+            if (lines.Count == maxLines)
+                lines.Dequeue();
 
-    private static TranscriptStore CreateTranscriptStore(NpcNamespace npcNamespace)
-        => npcNamespace.CreateTranscriptStore(NullLogger<SessionSearchIndex>.Instance);
+            lines.Enqueue(line);
+        }
+
+        return new TailLines(lines.ToArray(), Math.Max(1, total - lines.Count + 1));
+    }
 
     private int PreviewCharacterLimit => Math.Max(1, _options.PreviewCharacterLimit ?? DefaultPreviewCharacterLimit);
 
@@ -360,6 +366,10 @@ public sealed class NpcDeveloperInspectorService
     private sealed record TodoProjection(
         IReadOnlyList<NpcDeveloperTodo> Todos,
         string EmptyState);
+
+    private sealed record TailLines(
+        IReadOnlyList<string> Lines,
+        int StartLineNumber);
 }
 
 public sealed record NpcDeveloperInspectorOptions
@@ -367,6 +377,110 @@ public sealed record NpcDeveloperInspectorOptions
     public int? PreviewCharacterLimit { get; init; }
 
     public int? RuntimeLogMaxLines { get; init; }
+}
+
+public interface INpcDeveloperTranscriptReader
+{
+    Task<List<Message>> LoadSessionAsync(NpcNamespace npcNamespace, string sessionId, CancellationToken ct);
+}
+
+public interface INpcDeveloperTodoReader
+{
+    SessionTodoSnapshot Read(string sessionId);
+}
+
+public interface INpcDeveloperInspectorText
+{
+    string FileMissing { get; }
+
+    string FileLoaded { get; }
+
+    string FileTruncatedFormat { get; }
+
+    string FileReadFailedFormat { get; }
+
+    string TraceLogMissing { get; }
+
+    string TraceParseFailedFormat { get; }
+
+    string TraceEmptyForNpc { get; }
+
+    string TraceSelectionMissing { get; }
+
+    string TranscriptSessionMissing { get; }
+
+    string ModelReplyEmpty { get; }
+
+    string ToolCallEmpty { get; }
+
+    string DelegationEmpty { get; }
+
+    string TodoEmpty { get; }
+
+    string ReasoningMissing { get; }
+
+    string ToolResultMissing { get; }
+
+    string TraceKindObservation { get; }
+
+    string TraceKindModelRequest { get; }
+
+    string TraceKindModelReply { get; }
+
+    string TraceKindIntent { get; }
+
+    string TraceKindLocalExecutor { get; }
+
+    string TraceKindToolCall { get; }
+
+    string TraceKindBridge { get; }
+
+    string TraceKindResult { get; }
+
+    string TraceKindDiagnostic { get; }
+
+    string TraceKindRaw { get; }
+}
+
+public sealed class SqliteNpcDeveloperTranscriptReader : INpcDeveloperTranscriptReader
+{
+    public Task<List<Message>> LoadSessionAsync(NpcNamespace npcNamespace, string sessionId, CancellationToken ct)
+        => Task.Run(() => LoadSession(npcNamespace, sessionId, ct), ct);
+
+    private static List<Message> LoadSession(NpcNamespace npcNamespace, string sessionId, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(npcNamespace);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        ct.ThrowIfCancellationRequested();
+
+        var dbPath = npcNamespace.TranscriptStateDbPath;
+        if (!SessionSearchIndex.TryLoadMessagesReadOnly(dbPath, sessionId, ct, out var messages))
+            throw new SessionNotFoundException(sessionId);
+
+        return messages;
+    }
+}
+
+public sealed class SupervisorNpcDeveloperTodoReader : INpcDeveloperTodoReader
+{
+    private readonly NpcRuntimeSupervisor _supervisor;
+
+    public SupervisorNpcDeveloperTodoReader(NpcRuntimeSupervisor supervisor)
+    {
+        _supervisor = supervisor ?? throw new ArgumentNullException(nameof(supervisor));
+    }
+
+    public SessionTodoSnapshot Read(string sessionId)
+        => _supervisor.TryGetTaskView(sessionId, out var taskView) && taskView is not null
+            ? taskView.ActiveSnapshot
+            : SessionTodoSnapshot.Empty;
+}
+
+public sealed class EmptyNpcDeveloperTodoReader : INpcDeveloperTodoReader
+{
+    public static EmptyNpcDeveloperTodoReader Instance { get; } = new();
+
+    public SessionTodoSnapshot Read(string sessionId) => SessionTodoSnapshot.Empty;
 }
 
 public sealed record NpcDeveloperInspectorView(

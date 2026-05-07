@@ -124,8 +124,9 @@ public sealed class NpcDeveloperInspectorServiceTests
                 PreviewCharacterLimit = 200,
                 RuntimeLogMaxLines = 20
             },
-            transcriptFactory: _ => transcriptStore,
-            todoStoreFactory: _ => todoStore);
+            TestInspectorText.Instance,
+            new StaticTranscriptReader(transcriptStore),
+            new StaticTodoReader(todoStore.Read(descriptor.SessionId)));
 
         var view = await service.InspectAsync(runtimeSnapshot, _tempDir, CancellationToken.None);
 
@@ -188,8 +189,7 @@ public sealed class NpcDeveloperInspectorServiceTests
                 PreviewCharacterLimit = 200,
                 RuntimeLogMaxLines = 20
             },
-            transcriptFactory: ns => ns.CreateTranscriptStore(Microsoft.Extensions.Logging.Abstractions.NullLogger<global::Hermes.Agent.Search.SessionSearchIndex>.Instance),
-            todoStoreFactory: _ => new SessionTodoStore());
+            TestInspectorText.Instance);
 
         var view = await service.InspectAsync(snapshot, _tempDir, CancellationToken.None);
 
@@ -203,6 +203,71 @@ public sealed class NpcDeveloperInspectorServiceTests
         Assert.AreEqual("未找到运行时活动日志。", view.TraceEmptyState);
     }
 
+    [TestMethod]
+    public async Task InspectAsync_WhenTranscriptDatabaseIsMissing_DoesNotCreateTranscriptState()
+    {
+        var descriptor = CreateDescriptor();
+        var snapshot = new NpcRuntimeSnapshot(
+            descriptor.NpcId,
+            descriptor.DisplayName,
+            descriptor.GameId,
+            descriptor.SaveId,
+            descriptor.ProfileId,
+            descriptor.SessionId,
+            NpcRuntimeState.Created,
+            null,
+            null,
+            0,
+            0,
+            NpcAutonomyLoopState.NotStarted,
+            null,
+            null,
+            null,
+            0,
+            0,
+            null,
+            NpcRuntimeControllerSnapshot.Empty);
+        var npcNamespace = new NpcNamespace(_tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+        var service = new NpcDeveloperInspectorService(
+            new NpcDeveloperInspectorOptions
+            {
+                PreviewCharacterLimit = 200,
+                RuntimeLogMaxLines = 20
+            },
+            TestInspectorText.Instance);
+
+        var view = await service.InspectAsync(snapshot, _tempDir, CancellationToken.None);
+
+        Assert.AreEqual("当前会话还没有保存模型回复。", view.ModelReplyEmptyState);
+        Assert.IsFalse(File.Exists(npcNamespace.TranscriptStateDbPath), "Inspector must not create transcript state.db while reading.");
+    }
+
+    [TestMethod]
+    public async Task InspectAsync_WithSupervisorTodoReader_ProjectsLiveRuntimeTodos()
+    {
+        var descriptor = CreateDescriptor();
+        var supervisor = new NpcRuntimeSupervisor();
+        var instance = supervisor.Register(descriptor, _tempDir);
+        instance.TodoStore.Write(
+            descriptor.SessionId,
+            [new SessionTodoInput("live-1", "来自运行时的待办", "pending")]);
+        var runtimeSnapshot = instance.Snapshot();
+        var service = new NpcDeveloperInspectorService(
+            new NpcDeveloperInspectorOptions
+            {
+                PreviewCharacterLimit = 200,
+                RuntimeLogMaxLines = 20
+            },
+            TestInspectorText.Instance,
+            todoReader: new SupervisorNpcDeveloperTodoReader(supervisor));
+
+        var view = await service.InspectAsync(runtimeSnapshot, _tempDir, CancellationToken.None);
+
+        Assert.AreEqual(1, view.Todos.Count);
+        Assert.AreEqual("live-1", view.Todos[0].Id);
+        Assert.AreEqual("来自运行时的待办", view.Todos[0].Content);
+    }
+
     private static NpcRuntimeDescriptor CreateDescriptor()
         => new(
             "haley",
@@ -213,4 +278,84 @@ public sealed class NpcDeveloperInspectorServiceTests
             "stardew",
             "pack-root",
             "npc-session");
+
+    private sealed class StaticTranscriptReader : INpcDeveloperTranscriptReader
+    {
+        private readonly TranscriptStore _transcriptStore;
+
+        public StaticTranscriptReader(TranscriptStore transcriptStore)
+        {
+            _transcriptStore = transcriptStore;
+        }
+
+        public Task<List<Message>> LoadSessionAsync(NpcNamespace npcNamespace, string sessionId, CancellationToken ct)
+            => _transcriptStore.LoadSessionAsync(sessionId, ct);
+    }
+
+    private sealed class StaticTodoReader : INpcDeveloperTodoReader
+    {
+        private readonly SessionTodoSnapshot _snapshot;
+
+        public StaticTodoReader(SessionTodoSnapshot snapshot)
+        {
+            _snapshot = snapshot;
+        }
+
+        public SessionTodoSnapshot Read(string sessionId) => _snapshot;
+    }
+
+    private sealed class TestInspectorText : INpcDeveloperInspectorText
+    {
+        public static TestInspectorText Instance { get; } = new();
+
+        public string FileMissing => "未找到文件。";
+
+        public string FileLoaded => "已读取。";
+
+        public string FileTruncatedFormat => "已截断，仅显示前 {0} 个字符。";
+
+        public string FileReadFailedFormat => "读取失败：{0}";
+
+        public string TraceLogMissing => "未找到运行时活动日志。";
+
+        public string TraceParseFailedFormat => "第 {0} 行无法解析：{1}";
+
+        public string TraceEmptyForNpc => "当前 NPC 没有可显示的运行时事件。";
+
+        public string TraceSelectionMissing => "未找到所选追踪。";
+
+        public string TranscriptSessionMissing => "当前 NPC 没有关联会话。";
+
+        public string ModelReplyEmpty => "当前会话还没有保存模型回复。";
+
+        public string ToolCallEmpty => "当前记录未包含工具调用。";
+
+        public string DelegationEmpty => "本次追踪未发现委托。";
+
+        public string TodoEmpty => "当前会话没有待办事项。";
+
+        public string ReasoningMissing => "当前记录未包含推理摘要。";
+
+        public string ToolResultMissing => "当前记录未包含工具结果。";
+
+        public string TraceKindObservation => "观察事实";
+
+        public string TraceKindModelRequest => "模型请求";
+
+        public string TraceKindModelReply => "模型回复";
+
+        public string TraceKindIntent => "意图解析";
+
+        public string TraceKindLocalExecutor => "本地执行";
+
+        public string TraceKindToolCall => "工具调用";
+
+        public string TraceKindBridge => "游戏桥接";
+
+        public string TraceKindResult => "执行结果";
+
+        public string TraceKindDiagnostic => "诊断";
+
+        public string TraceKindRaw => "原始事件";
+    }
 }

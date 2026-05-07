@@ -97,7 +97,8 @@ public sealed partial class DeveloperPage : Page
 
         try
         {
-            _currentView = await _inspectorService.InspectAsync(snapshot, _workspaceService.RuntimeRoot, CancellationToken.None);
+            var runtimeRoot = _workspaceService.RuntimeRoot;
+            _currentView = await _inspectorService.InspectAsync(snapshot, runtimeRoot, CancellationToken.None);
             ApplyView(_currentView);
         }
         catch (Exception ex)

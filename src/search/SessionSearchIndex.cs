@@ -291,6 +291,46 @@ public sealed class SessionSearchIndex : IDisposable
         }
     }
 
+    public static bool TryLoadMessagesReadOnly(
+        string dbPath,
+        string sessionId,
+        CancellationToken ct,
+        out List<Message> messages)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(dbPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        messages = [];
+        if (!File.Exists(dbPath))
+            return false;
+
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = dbPath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
+        }.ToString();
+
+        using var db = new SqliteConnection(connectionString);
+        db.Open();
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = @"
+            SELECT role, content, tool_call_id, tool_calls, tool_name, timestamp, task_session_id,
+                   reasoning, reasoning_content, reasoning_details, codex_reasoning_items
+            FROM messages
+            WHERE session_id = $session_id
+            ORDER BY id";
+        cmd.Parameters.AddWithValue("$session_id", sessionId);
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            ct.ThrowIfCancellationRequested();
+            messages.Add(ReadMessage(reader));
+        }
+
+        return messages.Count > 0 || SessionExists(db, sessionId);
+    }
+
     public IReadOnlyList<Message> LoadTodoToolResultsByTaskSessionId(
         string taskSessionId,
         string legacyPrivateChatPrefix,
@@ -431,11 +471,16 @@ public sealed class SessionSearchIndex : IDisposable
         lock (_gate)
         {
             using var db = OpenConnection();
-            using var cmd = db.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(*) FROM sessions WHERE id = $session_id";
-            cmd.Parameters.AddWithValue("$session_id", sessionId);
-            return (long)(cmd.ExecuteScalar() ?? 0L) > 0;
+            return SessionExists(db, sessionId);
         }
+    }
+
+    private static bool SessionExists(SqliteConnection db, string sessionId)
+    {
+        using var cmd = db.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sessions WHERE id = $session_id";
+        cmd.Parameters.AddWithValue("$session_id", sessionId);
+        return (long)(cmd.ExecuteScalar() ?? 0L) > 0;
     }
 
     public SessionMetadata? GetSessionMetadata(string sessionId)
