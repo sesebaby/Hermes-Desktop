@@ -55,4 +55,5 @@ public sealed record NpcRuntimeLogRecord(
     long LatencyMs = 0,
     string? CommandId = null,
     string? Error = null,
-    string? ExecutorMode = null);
+    string? ExecutorMode = null,
+    string? TargetSource = null);

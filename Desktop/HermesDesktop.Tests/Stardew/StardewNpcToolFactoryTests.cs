@@ -56,11 +56,50 @@ public class StardewNpcToolFactoryTests
             {
                 "stardew_status",
                 "stardew_move",
+                "stardew_navigate_to_tile",
                 "stardew_task_status"
             },
             tools.Select(tool => tool.Name).ToArray());
         CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_speak");
         CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_open_private_chat");
+    }
+
+    [TestMethod]
+    public async Task NavigateToTileTool_BindsRuntimeIdentityAndSubmitsTargetMove()
+    {
+        var commands = new CapturingCommandService();
+        var tools = StardewNpcToolFactory.CreateLocalExecutorTools(
+            new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"),
+            traceIdFactory: () => "trace-nav",
+            idempotencyKeyFactory: () => "idem-nav");
+        var navigateTool = tools.Single(tool => tool.Name == "stardew_navigate_to_tile");
+
+        var result = await navigateTool.ExecuteAsync(new StardewNavigateToTileToolParameters
+        {
+            LocationName = "Beach",
+            X = 20,
+            Y = 35,
+            FacingDirection = 2,
+            Reason = "go to the beach",
+            Thought = "海风应该很舒服。"
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.IsNotNull(commands.LastAction);
+        Assert.AreEqual("haley", commands.LastAction.NpcId);
+        Assert.AreEqual("Haley", commands.LastAction.BodyBinding?.TargetEntityId);
+        Assert.AreEqual(GameActionType.Move, commands.LastAction.Type);
+        Assert.AreEqual("trace-nav", commands.LastAction.TraceId);
+        Assert.AreEqual("idem-nav", commands.LastAction.IdempotencyKey);
+        Assert.AreEqual("tile", commands.LastAction.Target.Kind);
+        Assert.AreEqual("Beach", commands.LastAction.Target.LocationName);
+        Assert.IsNotNull(commands.LastAction.Target.Tile);
+        Assert.AreEqual(20, commands.LastAction.Target.Tile.X);
+        Assert.AreEqual(35, commands.LastAction.Target.Tile.Y);
+        Assert.AreEqual(2, (int?)commands.LastAction.Payload?["facingDirection"]);
+        Assert.AreEqual("海风应该很舒服。", commands.LastAction.Payload?["thought"]?.ToString());
+        Assert.IsFalse(commands.LastAction.Payload?.ContainsKey("destinationId") is true);
     }
 
     [TestMethod]

@@ -75,7 +75,41 @@ public class NpcRuntimeLogWriterTests
     }
 
     [TestMethod]
-    public void NpcRuntimeLogRecord_DeserializesOlderJsonWithoutExecutorMode()
+    public async Task WriteAsync_WithTargetSource_WritesOptionalTargetSource()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-runtime-log-target-source-tests", Guid.NewGuid().ToString("N"));
+        var logPath = Path.Combine(tempDir, "runtime.jsonl");
+        try
+        {
+            var writer = new NpcRuntimeLogWriter(logPath);
+
+            await writer.WriteAsync(new NpcRuntimeLogRecord(
+                DateTime.UtcNow,
+                "trace-1",
+                "haley",
+                "stardew-valley",
+                "session-1",
+                "local_executor",
+                "stardew_navigate_to_tile",
+                "completed",
+                "queued",
+                ExecutorMode: "host_deterministic",
+                TargetSource: "map-skill:stardew.navigation.poi.beach.shoreline"), CancellationToken.None);
+
+            var line = File.ReadAllLines(logPath).Single();
+            using var doc = JsonDocument.Parse(line);
+
+            Assert.AreEqual("map-skill:stardew.navigation.poi.beach.shoreline", doc.RootElement.GetProperty("targetSource").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void NpcRuntimeLogRecord_DeserializesOlderJsonWithoutExecutorModeOrTargetSource()
     {
         var oldJson =
             """
@@ -99,5 +133,6 @@ public class NpcRuntimeLogWriterTests
         Assert.IsNotNull(record);
         Assert.AreEqual("trace-old", record.TraceId);
         Assert.IsNull(record.ExecutorMode);
+        Assert.IsNull(record.TargetSource);
     }
 }

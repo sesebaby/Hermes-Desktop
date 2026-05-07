@@ -24,6 +24,7 @@ public sealed record NpcLocalExecutorResult(
     string? CommandId = null,
     string? Error = null,
     string ExecutorMode = "model_called",
+    string? TargetSource = null,
     IReadOnlyList<string>? Diagnostics = null)
 {
     public IReadOnlyList<string> Diagnostics { get; init; } = Diagnostics ?? [];
@@ -87,6 +88,9 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
 
         try
         {
+            if (intent.Action is NpcLocalActionKind.Move && intent.Target is not null)
+                return await ExecuteMechanicalMoveAsync(intent, ct);
+
             var selectedTools = SelectTools(intent.Action);
             if (selectedTools.Count == 0)
                 return Block("local_executor", "required_tool_unavailable", "required_tool_unavailable", $"required tool unavailable for {FormatAction(intent.Action)}");
@@ -128,6 +132,48 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
         {
             return Block("local_executor", "execution_error", "execution_error", ex.Message);
         }
+    }
+
+    private async Task<NpcLocalExecutorResult> ExecuteMechanicalMoveAsync(
+        NpcLocalActionIntent intent,
+        CancellationToken ct)
+    {
+        const string toolName = "stardew_navigate_to_tile";
+        if (!_tools.TryGetValue(toolName, out var tool))
+        {
+            return Block(
+                toolName,
+                "required_tool_unavailable:stardew_navigate_to_tile",
+                "required_tool_unavailable",
+                "required tool unavailable for mechanical move");
+        }
+
+        var target = intent.Target!;
+        var parameters = CreateMechanicalMoveParameters(tool.ParametersType, target, intent);
+        ToolResult result;
+        try
+        {
+            result = await tool.ExecuteAsync(parameters, ct);
+        }
+        catch (Exception ex)
+        {
+            return Block(toolName, "tool_execution_exception", "tool_execution_exception", ex.Message);
+        }
+
+        if (!result.Success)
+            return Block(toolName, result.Content, "tool_failed", result.Content);
+
+        var evidence = ReadToolEvidence(result.Content);
+        var shortResult = evidence.Status ?? "completed";
+        return new NpcLocalExecutorResult(
+            toolName,
+            "completed",
+            shortResult,
+            $"local_executor_completed:{toolName}",
+            BuildMemorySummary(toolName, shortResult, evidence.CommandId),
+            evidence.CommandId,
+            ExecutorMode: "host_deterministic",
+            TargetSource: target.Source);
     }
 
     private async Task<NpcLocalExecutorResult> TryRunModelToolCallAsync(
@@ -294,6 +340,19 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
         {
             case NpcLocalActionKind.Move:
                 AddIfNotBlank(values, "destinationId", intent.DestinationId);
+                if (intent.Target is not null)
+                {
+                    values["target"] = new Dictionary<string, object?>
+                    {
+                        ["locationName"] = intent.Target.LocationName,
+                        ["x"] = intent.Target.X,
+                        ["y"] = intent.Target.Y,
+                        ["facingDirection"] = intent.Target.FacingDirection,
+                        ["source"] = intent.Target.Source
+                    }.Where(pair => pair.Value is not null)
+                        .ToDictionary(pair => pair.Key, pair => pair.Value);
+                }
+
                 break;
             case NpcLocalActionKind.Observe:
                 AddIfNotBlank(values, "observeTarget", intent.ObserveTarget);
@@ -316,6 +375,30 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
     {
         if (!string.IsNullOrWhiteSpace(value))
             values[key] = value;
+    }
+
+    private static object CreateMechanicalMoveParameters(
+        Type parametersType,
+        NpcLocalMoveTargetIntent target,
+        NpcLocalActionIntent intent)
+    {
+        var parameters = Activator.CreateInstance(parametersType)
+            ?? throw new InvalidOperationException($"Failed to create parameters for {parametersType.Name}.");
+        SetProperty(parameters, "LocationName", target.LocationName);
+        SetProperty(parameters, "X", target.X);
+        SetProperty(parameters, "Y", target.Y);
+        SetProperty(parameters, "FacingDirection", target.FacingDirection);
+        SetProperty(parameters, "Reason", intent.Reason);
+        return parameters;
+    }
+
+    private static void SetProperty(object target, string propertyName, object? value)
+    {
+        var property = target.GetType().GetProperty(propertyName);
+        if (property is null || !property.CanWrite)
+            return;
+
+        property.SetValue(target, value);
     }
 
     private static ToolDefinition BuildToolDefinition(ITool tool)

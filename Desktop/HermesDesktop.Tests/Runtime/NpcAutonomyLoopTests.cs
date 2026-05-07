@@ -219,6 +219,10 @@ public class NpcAutonomyLoopTests
         StringAssert.Contains(agent.LastMessage, "\"taskUpdate\"");
         StringAssert.Contains(agent.LastMessage, "只输出一个 JSON object");
         StringAssert.Contains(agent.LastMessage, "\"action\"");
+        StringAssert.Contains(agent.LastMessage, "语义移动用 destinationId");
+        StringAssert.Contains(agent.LastMessage, "机械坐标移动用完整 target(locationName,x,y,source)");
+        StringAssert.Contains(agent.LastMessage, "来自已披露地图 skill");
+        StringAssert.Contains(agent.LastMessage, "executor-only stardew_navigate_to_tile");
         Assert.IsFalse(
             agent.LastMessage.Contains("allowedActions", StringComparison.Ordinal),
             "The parent model should not echo host-owned action whitelist fields.");
@@ -982,6 +986,77 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
+    public async Task RunOneTickAsync_WithMechanicalMoveIntent_WritesStructuredTargetSource()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-target-source-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            ns.EnsureDirectories();
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var parentContract =
+                """
+                {
+                  "action": "move",
+                  "reason": "go to the beach",
+                  "target": {
+                    "locationName": "Beach",
+                    "x": 20,
+                    "y": 35,
+                    "source": "map-skill:stardew.navigation.poi.beach.shoreline"
+                  }
+                }
+                """;
+            var localExecutor = new FakeLocalExecutorRunner(new NpcLocalExecutorResult(
+                Target: "stardew_navigate_to_tile",
+                Stage: "completed",
+                Result: "queued",
+                DecisionResponse: "local_executor_completed:stardew_navigate_to_tile",
+                MemorySummary: "navigating to Beach tile 20,35",
+                CommandId: "cmd-nav-1",
+                ExecutorMode: "host_deterministic",
+                TargetSource: "map-skill:stardew.navigation.poi.beach.shoreline"));
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation(
+                        "haley",
+                        "stardew-valley",
+                        DateTime.UtcNow,
+                        "Haley has a disclosed beach target.",
+                        ["location=Town"])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                new FakeAgent(() => { }, parentContract),
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                localExecutorRunner: localExecutor,
+                traceIdFactory: () => "trace-target-source");
+
+            await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.AreEqual(1, localExecutor.CallCount);
+            Assert.IsNotNull(localExecutor.LastIntent?.Target);
+            Assert.AreEqual("Beach", localExecutor.LastIntent.Target.LocationName);
+            Assert.AreEqual("map-skill:stardew.navigation.poi.beach.shoreline", localExecutor.LastIntent.Target.Source);
+
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertLogRecord(records, "local_executor", "stardew_navigate_to_tile", "completed", "queued", "cmd-nav-1");
+            AssertLogRecordExecutorMode(records, "local_executor", "stardew_navigate_to_tile", "host_deterministic");
+            AssertLogRecordTargetSource(
+                records,
+                "local_executor",
+                "stardew_navigate_to_tile",
+                "map-skill:stardew.navigation.poi.beach.shoreline");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task RunOneTickAsync_WithUnknownTaskUpdate_DoesNotCreateTodo()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-unknown-task-update-tests", Guid.NewGuid().ToString("N"));
@@ -1159,6 +1234,20 @@ public class NpcAutonomyLoopTests
             record.TryGetProperty("executorMode", out var modeProperty) &&
             modeProperty.GetString() == executorMode),
             $"Missing {actionType} record target={target}, executorMode={executorMode}.");
+    }
+
+    private static void AssertLogRecordTargetSource(
+        IReadOnlyList<JsonElement> records,
+        string actionType,
+        string target,
+        string targetSource)
+    {
+        Assert.IsTrue(records.Any(record =>
+            record.GetProperty("actionType").GetString() == actionType &&
+            record.GetProperty("target").GetString() == target &&
+            record.TryGetProperty("targetSource", out var sourceProperty) &&
+            sourceProperty.GetString() == targetSource),
+            $"Missing {actionType} record target={target}, targetSource={targetSource}.");
     }
 
     private sealed class FakeGameAdapter : IGameAdapter

@@ -29,6 +29,37 @@ public sealed class NpcLocalActionIntentTests
     }
 
     [TestMethod]
+    public void TryParse_WhenMoveHasMechanicalTarget_AcceptsContract()
+    {
+        var ok = NpcLocalActionIntent.TryParse(
+            """
+            {
+              "action": "move",
+              "reason": "go to the beach",
+              "target": {
+                "locationName": "Beach",
+                "x": 20,
+                "y": 35,
+                "facingDirection": 2,
+                "source": "map-skill:stardew.navigation.poi.beach.shoreline"
+              }
+            }
+            """,
+            out var intent,
+            out var error);
+
+        Assert.IsTrue(ok, error);
+        Assert.IsNotNull(intent);
+        Assert.AreEqual(NpcLocalActionKind.Move, intent.Action);
+        Assert.IsNotNull(intent.Target);
+        Assert.AreEqual("Beach", intent.Target.LocationName);
+        Assert.AreEqual(20, intent.Target.X);
+        Assert.AreEqual(35, intent.Target.Y);
+        Assert.AreEqual(2, intent.Target.FacingDirection);
+        Assert.AreEqual("map-skill:stardew.navigation.poi.beach.shoreline", intent.Target.Source);
+    }
+
+    [TestMethod]
     public void TryParse_WhenWaitHasReason_AcceptsContract()
     {
         var ok = NpcLocalActionIntent.TryParse(
@@ -109,7 +140,11 @@ public sealed class NpcLocalActionIntentTests
 
     [DataTestMethod]
     [DataRow("not json", "intent_contract_invalid")]
-    [DataRow("""{"action":"move","reason":"go"}""", "destinationId_required")]
+    [DataRow("""{"action":"move","reason":"go"}""", "move_target_required")]
+    [DataRow("""{"action":"move","reason":"go","target":{"x":20,"y":35,"source":"map-skill:beach"}}""", "target_location_required")]
+    [DataRow("""{"action":"move","reason":"go","target":{"locationName":"Beach","y":35,"source":"map-skill:beach"}}""", "target_x_required")]
+    [DataRow("""{"action":"move","reason":"go","target":{"locationName":"Beach","x":20,"source":"map-skill:beach"}}""", "target_y_required")]
+    [DataRow("""{"action":"move","reason":"go","target":{"locationName":"Beach","x":20,"y":35}}""", "target_source_required")]
     [DataRow("""{"action":"gift","reason":"give flowers"}""", "action_not_allowed")]
     [DataRow("""{"action":"wait","reason":"wait","speech":{"shouldSpeak":true}}""", "speech_text_required")]
     [DataRow("""{"action":"wait","reason":"wait","taskUpdate":{"taskId":"1","status":"done"}}""", "task_update_status_not_allowed")]

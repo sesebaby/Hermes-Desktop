@@ -106,15 +106,9 @@ public sealed class StardewAutonomyTickDebugServiceTests
         Assert.AreEqual("local_executor_completed:wait", result.DecisionResponse);
         Assert.AreEqual("haley", queries.LastNpcId);
 
-        CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "memory");
-        CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "session_search");
-        CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "skills_list");
-        CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "skill_invoke");
-        CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "stardew_status");
-        CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "stardew_speak");
-        CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "stardew_open_private_chat");
-        CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "mcp_dynamic_test");
+        Assert.AreEqual(0, chatClient.ToolNames.Count, "Parent autonomy lane must decide intent without direct tool calls.");
         CollectionAssert.DoesNotContain(chatClient.ToolNames.ToArray(), "stardew_move");
+        CollectionAssert.DoesNotContain(chatClient.ToolNames.ToArray(), "stardew_navigate_to_tile");
         CollectionAssert.DoesNotContain(chatClient.ToolNames.ToArray(), "stardew_task_status");
 
         Assert.IsTrue(chatClient.SystemMessages.Any(message =>
@@ -198,7 +192,13 @@ public sealed class StardewAutonomyTickDebugServiceTests
         StringAssert.Contains(systemPrompt, "### stardew-navigation");
         StringAssert.Contains(systemPrompt, "`stardew_move(destination, reason)`");
         StringAssert.Contains(systemPrompt, "destination=<destinationId 精确值>");
+        StringAssert.Contains(systemPrompt, "target(locationName,x,y,source)");
+        StringAssert.Contains(systemPrompt, "stardew_navigate_to_tile");
+        StringAssert.Contains(systemPrompt, "executor-only");
         StringAssert.Contains(systemPrompt, "destinationId");
+        Assert.IsFalse(
+            chatClient.ToolNames.Contains("stardew_navigate_to_tile", StringComparer.OrdinalIgnoreCase),
+            "Mechanical tile navigation must be described as an executor-only contract, not exposed as a parent tool.");
         Assert.IsFalse(
             systemPrompt.Contains("stardew-world test guidance", StringComparison.Ordinal),
             "Repo-backed prompt supplement coverage must use the real skills/gaming root, not fixture-only text.");
@@ -697,6 +697,11 @@ public sealed class StardewAutonomyTickDebugServiceTests
     public async Task RunOneTickAsync_WithPlaceCandidateButNoMoveToolCall_DoesNotMove()
     {
         var commands = new FakeCommandService();
+        var delegationChatClient = new ToolSnapshotChatClient(
+            new StreamEvent.ToolUseComplete(
+                "call-observe",
+                "stardew_status",
+                Json("{}")));
         var chatClient = new ToolSnapshotChatClient(
             """
             {
@@ -737,15 +742,17 @@ public sealed class StardewAutonomyTickDebugServiceTests
             includeMemory: true,
             includeUser: true,
             maxToolIterations: 2,
-            runtimeRoot: _tempDir);
+            runtimeRoot: _tempDir,
+            delegationChatClient: delegationChatClient);
 
         var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
 
         Assert.IsTrue(result.Success, result.FailureReason);
-        Assert.AreEqual("local_executor_completed:observe", result.DecisionResponse);
+        Assert.AreEqual("local_executor_completed:stardew_status", result.DecisionResponse);
         Assert.IsTrue(
             chatClient.UserMessages.Any(message => message.Contains("destination[0]=label=Bedroom mirror", StringComparison.Ordinal)),
             "The candidate should be visible to the model, not converted into a host-side movement.");
+        CollectionAssert.Contains(delegationChatClient.ToolNames.ToArray(), "stardew_status");
         Assert.IsNull(commands.LastAction, "A placeCandidate fact must not force host-side movement without an agent tool call.");
     }
 
@@ -1022,7 +1029,19 @@ public sealed class StardewAutonomyTickDebugServiceTests
         public List<string> UserMessages { get; } = new();
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
-            => Task.FromResult(_response);
+        {
+            ToolNames.Clear();
+            SystemMessages.Clear();
+            SystemMessages.AddRange(messages
+                .Where(message => string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase))
+                .Select(message => message.Content));
+            UserMessages.Clear();
+            UserMessages.AddRange(messages
+                .Where(message => string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase))
+                .Select(message => message.Content));
+
+            return Task.FromResult(_response);
+        }
 
         public Task<ChatResponse> CompleteWithToolsAsync(
             IEnumerable<Message> messages,
@@ -1062,15 +1081,18 @@ public sealed class StardewAutonomyTickDebugServiceTests
             IEnumerable<ToolDefinition>? tools = null,
             [EnumeratorCancellation] CancellationToken ct = default)
         {
-            ToolNames.Clear();
-            ToolNames.AddRange((tools ?? []).Select(tool => tool.Name));
-            SystemMessages.Clear();
-            if (!string.IsNullOrWhiteSpace(systemPrompt))
-                SystemMessages.Add(systemPrompt);
-            UserMessages.Clear();
-            UserMessages.AddRange(messages
-                .Where(message => string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase))
-                .Select(message => message.Content));
+            if (_streamEvents.Count > 0)
+            {
+                ToolNames.Clear();
+                ToolNames.AddRange((tools ?? []).Select(tool => tool.Name));
+                SystemMessages.Clear();
+                if (!string.IsNullOrWhiteSpace(systemPrompt))
+                    SystemMessages.Add(systemPrompt);
+                UserMessages.Clear();
+                UserMessages.AddRange(messages
+                    .Where(message => string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase))
+                    .Select(message => message.Content));
+            }
 
             while (_streamEvents.Count > 0)
             {

@@ -20,6 +20,7 @@ public sealed record NpcLocalActionIntent(
     string? WaitReason = null,
     NpcLocalSpeechIntent? Speech = null,
     NpcLocalTaskUpdateIntent? TaskUpdate = null,
+    NpcLocalMoveTargetIntent? Target = null,
     bool Escalate = false)
 {
     private static readonly HashSet<string> AllowedActions = new(StringComparer.OrdinalIgnoreCase)
@@ -89,9 +90,14 @@ public sealed record NpcLocalActionIntent(
         }
 
         var destinationId = ReadString(root, "destinationId");
-        if (action is NpcLocalActionKind.Move && string.IsNullOrWhiteSpace(destinationId))
+        if (!TryReadMoveTarget(root, out var target, out error))
+            return false;
+
+        if (action is NpcLocalActionKind.Move &&
+            string.IsNullOrWhiteSpace(destinationId) &&
+            target is null)
         {
-            error = "destinationId_required";
+            error = "move_target_required";
             return false;
         }
 
@@ -117,7 +123,62 @@ public sealed record NpcLocalActionIntent(
             ReadString(root, "waitReason"),
             speech,
             taskUpdate,
+            target,
             escalate);
+        return true;
+    }
+
+    private static bool TryReadMoveTarget(JsonElement root, out NpcLocalMoveTargetIntent? target, out string error)
+    {
+        target = null;
+        error = "";
+        if (!root.TryGetProperty("target", out var element) ||
+            element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return true;
+        }
+
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            error = "target_contract_invalid";
+            return false;
+        }
+
+        var locationName = ReadString(element, "locationName");
+        if (string.IsNullOrWhiteSpace(locationName))
+        {
+            error = "target_location_required";
+            return false;
+        }
+
+        if (!TryReadInt(element, "x", out var x))
+        {
+            error = "target_x_required";
+            return false;
+        }
+
+        if (!TryReadInt(element, "y", out var y))
+        {
+            error = "target_y_required";
+            return false;
+        }
+
+        var source = ReadString(element, "source");
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            error = "target_source_required";
+            return false;
+        }
+
+        var facingDirection = TryReadInt(element, "facingDirection", out var facing)
+            ? facing
+            : (int?)null;
+        target = new NpcLocalMoveTargetIntent(
+            locationName.Trim(),
+            x,
+            y,
+            source.Trim(),
+            facingDirection);
         return true;
     }
 
@@ -226,6 +287,14 @@ public sealed record NpcLocalActionIntent(
             ? value.GetString()
             : null;
 
+    private static bool TryReadInt(JsonElement element, string propertyName, out int value)
+    {
+        value = default;
+        return element.TryGetProperty(propertyName, out var property) &&
+               property.ValueKind == JsonValueKind.Number &&
+               property.TryGetInt32(out value);
+    }
+
     private static bool ReadBool(JsonElement element, string propertyName)
         => element.TryGetProperty(propertyName, out var value) &&
            value.ValueKind == JsonValueKind.True;
@@ -240,3 +309,10 @@ public sealed record NpcLocalTaskUpdateIntent(
     string TaskId,
     string Status,
     string? Reason);
+
+public sealed record NpcLocalMoveTargetIntent(
+    string LocationName,
+    int X,
+    int Y,
+    string Source,
+    int? FacingDirection = null);

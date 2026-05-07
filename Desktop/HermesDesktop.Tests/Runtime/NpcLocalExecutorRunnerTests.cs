@@ -62,6 +62,60 @@ public sealed class NpcLocalExecutorRunnerTests
     }
 
     [TestMethod]
+    public async Task ExecuteAsync_WithMechanicalTargetMove_HostDeterministicExecutesNavigateToTile()
+    {
+        var chatClient = new RecordingChatClient(
+            [
+                new StreamEvent.ToolUseComplete(
+                    "call-move",
+                    "stardew_navigate_to_tile",
+                    Json("""{"locationName":"Town","x":1,"y":1,"reason":"rewritten"}"""))
+            ]);
+        var moveTool = new RecordingTool(
+            "stardew_move",
+            typeof(MoveParameters),
+            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-move-legacy","status":"queued"}"""));
+        var navigateTool = new RecordingTool(
+            "stardew_navigate_to_tile",
+            typeof(NavigateToTileParameters),
+            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-nav-1","status":"queued"}"""));
+        var runner = new NpcLocalExecutorRunner(chatClient, [moveTool, navigateTool]);
+        var intent = new NpcLocalActionIntent(
+            NpcLocalActionKind.Move,
+            "go to the beach",
+            Target: new NpcLocalMoveTargetIntent(
+                "Beach",
+                20,
+                35,
+                "map-skill:stardew.navigation.poi.beach.shoreline",
+                FacingDirection: 2));
+
+        var result = await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            intent,
+            [CreateObservationFact("Haley can navigate to the beach.")],
+            "trace-mechanical-move",
+            CancellationToken.None);
+
+        Assert.AreEqual(0, chatClient.StreamCalls);
+        Assert.AreEqual(0, moveTool.ExecuteCalls);
+        Assert.AreEqual(1, navigateTool.ExecuteCalls);
+        var parameters = (NavigateToTileParameters)navigateTool.LastParameters!;
+        Assert.AreEqual("Beach", parameters.LocationName);
+        Assert.AreEqual(20, parameters.X);
+        Assert.AreEqual(35, parameters.Y);
+        Assert.AreEqual(2, parameters.FacingDirection);
+        Assert.AreEqual("go to the beach", parameters.Reason);
+        Assert.AreEqual("stardew_navigate_to_tile", result.Target);
+        Assert.AreEqual("completed", result.Stage);
+        Assert.AreEqual("queued", result.Result);
+        Assert.AreEqual("cmd-nav-1", result.CommandId);
+        Assert.AreEqual("host_deterministic", result.ExecutorMode);
+        Assert.AreEqual("local_executor_completed:stardew_navigate_to_tile", result.DecisionResponse);
+        Assert.AreEqual("map-skill:stardew.navigation.poi.beach.shoreline", result.TargetSource);
+    }
+
+    [TestMethod]
     public async Task ExecuteAsync_WithTaskStatusIntent_ExposesOnlyTaskStatusTool()
     {
         var chatClient = new RecordingChatClient(
@@ -489,6 +543,21 @@ public sealed class NpcLocalExecutorRunnerTests
     private sealed class TaskStatusParameters
     {
         public required string CommandId { get; init; }
+    }
+
+    private sealed class NavigateToTileParameters
+    {
+        public required string LocationName { get; init; }
+
+        public required int X { get; init; }
+
+        public required int Y { get; init; }
+
+        public int? FacingDirection { get; init; }
+
+        public string? Reason { get; init; }
+
+        public string? Thought { get; init; }
     }
 
     private sealed class NoParameters

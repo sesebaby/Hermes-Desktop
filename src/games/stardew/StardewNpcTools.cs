@@ -13,6 +13,7 @@ public static class StardewNpcToolFactory
     {
         "stardew_status",
         "stardew_move",
+        "stardew_navigate_to_tile",
         "stardew_task_status"
     };
 
@@ -64,26 +65,30 @@ public static class StardewNpcToolFactory
         ILogger? logger = null,
         Func<DateTime>? nowUtc = null,
         TimeSpan? actionTimeout = null)
-        => CreateDefault(
-                adapter,
-                descriptor,
-                traceIdFactory,
-                idempotencyKeyFactory,
-                maxStatusPolls,
-                runtimeDriver,
-                worldCoordination,
-                recentActivityProvider: null,
-                logger,
-                nowUtc,
-                actionTimeout)
-            .Where(IsLocalExecutorTool)
-            .ToArray();
+    {
+        traceIdFactory ??= () => $"trace_{descriptor.NpcId}_{Guid.NewGuid():N}";
+        idempotencyKeyFactory ??= () => $"idem_{descriptor.NpcId}_{Guid.NewGuid():N}";
+        var runtimeActions = new StardewRuntimeActionController(
+            runtimeDriver,
+            worldCoordination,
+            nowUtc,
+            actionTimeout);
+
+        return
+        [
+            new StardewStatusTool(adapter.Queries, descriptor),
+            new StardewMoveTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
+            new StardewNavigateToTileTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
+            new StardewTaskStatusTool(adapter.Commands)
+        ];
+    }
 
     public static string LocalExecutorToolFingerprint()
         => NpcToolSurface.FromTools(
             [
                 new ToolFingerprintProbe("stardew_status"),
                 new ToolFingerprintProbe("stardew_move"),
+                new ToolFingerprintProbe("stardew_navigate_to_tile"),
                 new ToolFingerprintProbe("stardew_task_status")
             ])
             .Fingerprint;
@@ -408,6 +413,118 @@ public sealed class StardewMoveTool : ITool, IToolSchemaProvider
             traceId,
             _idempotencyKeyFactory(),
             new GameActionTarget("destination"),
+            p.Reason,
+            payload,
+            BodyBinding: _descriptor.EffectiveBodyBinding);
+
+        var preparedAction = await _runtimeActions.TryBeginAsync(action, ct);
+        if (preparedAction?.BlockedResult is not null)
+        {
+            return ToolResult.Ok(StardewNpcToolJson.Serialize(new StardewNpcActionToolResult(
+                preparedAction.BlockedResult.Accepted,
+                preparedAction.BlockedResult.CommandId,
+                preparedAction.BlockedResult.Status,
+                preparedAction.BlockedResult.FailureReason,
+                preparedAction.BlockedResult.TraceId,
+                FinalStatus: null,
+                StatusPolls: [])));
+        }
+
+        var commandResult = await _commands.SubmitAsync(action, ct);
+        await _runtimeActions.RecordSubmitResultAsync(preparedAction, commandResult, ct);
+        var statusPolls = await PollUntilTerminalAsync(commandResult, ct);
+        var finalStatus = statusPolls.Count > 0 ? statusPolls[^1] : null;
+
+        return ToolResult.Ok(StardewNpcToolJson.Serialize(new StardewNpcActionToolResult(
+            commandResult.Accepted,
+            commandResult.CommandId,
+            commandResult.Status,
+            commandResult.FailureReason,
+            commandResult.TraceId,
+            finalStatus,
+            statusPolls)));
+    }
+
+    private async Task<IReadOnlyList<GameCommandStatus>> PollUntilTerminalAsync(GameCommandResult commandResult, CancellationToken ct)
+    {
+        if (!commandResult.Accepted ||
+            string.IsNullOrWhiteSpace(commandResult.CommandId) ||
+            StardewRuntimeActionController.IsTerminalStatus(commandResult.Status))
+        {
+            return [];
+        }
+
+        var statuses = new List<GameCommandStatus>();
+        for (var i = 0; i < _maxStatusPolls; i++)
+        {
+            var status = await _commands.GetStatusAsync(commandResult.CommandId, ct);
+            statuses.Add(status);
+            await _runtimeActions.RecordStatusAsync(status, ct);
+
+            if (StardewRuntimeActionController.IsTerminalStatus(status.Status))
+                break;
+        }
+
+        return statuses;
+    }
+}
+
+public sealed class StardewNavigateToTileTool : ITool, IToolSchemaProvider
+{
+    private readonly IGameCommandService _commands;
+    private readonly NpcRuntimeDescriptor _descriptor;
+    private readonly Func<string> _traceIdFactory;
+    private readonly Func<string> _idempotencyKeyFactory;
+    private readonly int _maxStatusPolls;
+    private readonly StardewRuntimeActionController _runtimeActions;
+
+    internal StardewNavigateToTileTool(
+        IGameCommandService commands,
+        NpcRuntimeDescriptor descriptor,
+        Func<string> traceIdFactory,
+        Func<string> idempotencyKeyFactory,
+        int maxStatusPolls,
+        StardewRuntimeActionController runtimeActions)
+    {
+        _commands = commands;
+        _descriptor = descriptor;
+        _traceIdFactory = traceIdFactory;
+        _idempotencyKeyFactory = idempotencyKeyFactory;
+        _maxStatusPolls = Math.Max(0, maxStatusPolls);
+        _runtimeActions = runtimeActions;
+    }
+
+    public string Name => "stardew_navigate_to_tile";
+
+    public string Description => "Executor-only mechanical navigation to a concrete Stardew location tile selected by the parent model from disclosed map skill facts. Do not expose this tool to the parent autonomy lane.";
+
+    public Type ParametersType => typeof(StardewNavigateToTileToolParameters);
+
+    public JsonElement GetParameterSchema() => StardewNpcToolSchemas.NavigateToTile();
+
+    public async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+    {
+        var p = (StardewNavigateToTileToolParameters)parameters;
+        if (string.IsNullOrWhiteSpace(p.LocationName))
+            return ToolResult.Fail("locationName is required.");
+
+        var traceId = _traceIdFactory();
+        var payload = new JsonObject();
+        if (p.FacingDirection is not null)
+            payload["facingDirection"] = p.FacingDirection.Value;
+        if (!string.IsNullOrWhiteSpace(p.Thought))
+            payload["thought"] = p.Thought;
+
+        var action = new GameAction(
+            _descriptor.NpcId,
+            _descriptor.GameId,
+            GameActionType.Move,
+            traceId,
+            _idempotencyKeyFactory(),
+            new GameActionTarget(
+                "tile",
+                p.LocationName.Trim(),
+                new GameTile(p.X, p.Y)),
             p.Reason,
             payload,
             BodyBinding: _descriptor.EffectiveBodyBinding);
@@ -916,6 +1033,21 @@ public sealed class StardewMoveToolParameters
     public string? Thought { get; init; }
 }
 
+public sealed class StardewNavigateToTileToolParameters
+{
+    public required string LocationName { get; init; }
+
+    public required int X { get; init; }
+
+    public required int Y { get; init; }
+
+    public int? FacingDirection { get; init; }
+
+    public string? Reason { get; init; }
+
+    public string? Thought { get; init; }
+}
+
 public sealed class StardewSpeakToolParameters
 {
     public required string Text { get; init; }
@@ -976,6 +1108,19 @@ internal static class StardewNpcToolSchemas
                 ["thought"] = new { type = "string", description = "Optional short inner thought shown as a non-blocking overhead bubble when movement starts. Keep it immersive and under one sentence." }
             },
             ["destination"]);
+
+    public static JsonElement NavigateToTile()
+        => Schema(
+            new Dictionary<string, object>
+            {
+                ["locationName"] = new { type = "string", description = "Exact Stardew location/map name selected by the parent model from disclosed map skill facts." },
+                ["x"] = new { type = "integer", description = "Target tile X coordinate copied exactly from the parent intent." },
+                ["y"] = new { type = "integer", description = "Target tile Y coordinate copied exactly from the parent intent." },
+                ["facingDirection"] = new { type = "integer", description = "Optional Stardew facing direction copied from the parent intent when supplied." },
+                ["reason"] = new { type = "string", description = "Short reason from the parent intent." },
+                ["thought"] = new { type = "string", description = "Optional short inner thought shown as a non-blocking overhead bubble when movement starts." }
+            },
+            ["locationName", "x", "y"]);
 
     public static JsonElement Speak()
         => Schema(
