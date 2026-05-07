@@ -95,6 +95,32 @@ public sealed class BridgeMovementPathProbeTests
     }
 
     [TestMethod]
+    public void TryBuildRouteFromBoundaryLanding_WhenEscapeCannotSpawnButIsRouteable_UsesInteriorEscapeTile()
+    {
+        var boundaryLanding = new TileDto(38, 0);
+        var escapeTile = new TileDto(38, 1);
+        var finalTarget = new TileDto(32, 34);
+
+        var result = BridgeMovementPathProbe.TryBuildRouteFromBoundaryLanding(
+            boundaryLanding,
+            finalTarget,
+            tile => tile == finalTarget
+                ? BridgeTileSafetyCheck.Safe
+                : BridgeTileSafetyCheck.Blocked("target_can_spawn_false", "can_spawn_character_here_false"),
+            routeStart => routeStart == escapeTile
+                ? BridgeMovementPathProbe.ToSchedulePath(new[] { new TileDto(37, 1), finalTarget })
+                : BridgeMovementPathProbe.ToSchedulePath(Array.Empty<TileDto>()),
+            _ => BridgeTileSafetyCheck.Safe);
+
+        Assert.IsNotNull(result);
+        Assert.AreEqual(BridgeRouteProbeStatus.RouteValid, result!.Route.Status);
+        CollectionAssert.AreEqual(
+            new[] { escapeTile, new TileDto(37, 1), finalTarget },
+            result.Route.Route.ToArray(),
+            "Boundary escape is a movement step, not a final stand/spawn target.");
+    }
+
+    [TestMethod]
     public void ProbeReportsFirstUnsafeRouteStepWithStepFailureKind()
     {
         var blockedStep = new TileDto(7, 7);

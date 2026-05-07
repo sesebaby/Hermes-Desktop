@@ -144,7 +144,7 @@ internal static class BridgeMovementPathProbe
 
         foreach (var escapeTile in EnumerateBoundaryEscapeTiles(boundaryLanding))
         {
-            var escapeSafety = targetAffordanceCheck(escapeTile);
+            var escapeSafety = routeStepSafetyCheck(escapeTile);
             if (!escapeSafety.IsSafe)
                 continue;
 
