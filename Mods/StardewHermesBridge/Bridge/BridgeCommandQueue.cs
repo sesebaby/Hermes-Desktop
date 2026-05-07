@@ -495,7 +495,7 @@ public sealed class BridgeCommandQueue
             return HandleAwaitingWarp(command, npc);
 
         if (command.IsReplanningAfterWarp)
-            return command.ToStatusData();
+            return HandlePostWarpReplan(command, npc, currentLocation, currentLocationName, currentTile, targetLocation);
 
         if (!ReferenceEquals(currentLocation, targetLocation))
         {
@@ -784,6 +784,72 @@ public sealed class BridgeCommandQueue
         }
 
         _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"awaiting_warp;nextLocation={command.ExpectedNextLocationName};ticks={Game1.ticks}");
+        return command.ToStatusData();
+    }
+
+    private TaskStatusData HandlePostWarpReplan(
+        BridgeMoveCommand command,
+        NPC npc,
+        GameLocation currentLocation,
+        string currentLocationName,
+        TileDto currentTile,
+        GameLocation targetLocation)
+    {
+        command.SetPhase("replanning_after_warp", currentLocationName, incrementRouteRevision: true);
+        if (ReferenceEquals(currentLocation, targetLocation))
+        {
+            var finalTarget = command.FinalTarget?.Tile ?? command.TargetTile;
+            var finalProbe = ProbeRoute(npc, currentTile, currentLocation, finalTarget);
+            command.RecordRouteProbe(ToRouteProbeData(
+                "same_location",
+                finalProbe,
+                currentLocationName,
+                currentTile,
+                command.LocationName,
+                finalTarget));
+            if (!command.TryStartPostWarpFinalTargetSegment(currentLocationName, finalProbe, out var failureCode))
+            {
+                command.Fail(failureCode ?? "target_tile_unreachable");
+                _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", command.BlockedReason);
+                return command.ToStatusData();
+            }
+
+            _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"post_warp_final_segment_started;pathSteps={command.PathStepsRemaining}");
+            return command.ToStatusData();
+        }
+
+        var routeProbe = ProbeCrossLocationRoute(
+            npc,
+            currentLocationName,
+            currentTile,
+            currentLocation,
+            command.LocationName,
+            targetLocation,
+            command.FinalTarget?.Tile ?? command.TargetTile);
+        command.RecordRouteProbe(routeProbe);
+        if (!command.TryStartCrossMapSegment(routeProbe, out var crossFailureCode))
+        {
+            command.Fail(crossFailureCode ?? "cross_location_route_unavailable");
+            _logger.Write(
+                "task_failed",
+                command.NpcId,
+                "move",
+                command.TraceId,
+                command.CommandId,
+                "failed",
+                FormatRouteProbeLogDetail(routeProbe));
+            return command.ToStatusData();
+        }
+
+        StopNpcMotion(npc);
+        _logger.Write(
+            "task_running",
+            command.NpcId,
+            "move",
+            command.TraceId,
+            command.CommandId,
+            "running",
+            $"post_warp_cross_map_segment_started;{FormatRouteProbeLogDetail(routeProbe)}");
         return command.ToStatusData();
     }
 
@@ -1389,6 +1455,38 @@ public sealed class BridgeMoveCommand
         SetPhase("executing_segment", CurrentSegment.LocationName, incrementRouteRevision: true);
         ReplaceSchedulePath(routeProbe.Route);
         Start();
+        return true;
+    }
+
+    internal bool TryStartPostWarpFinalTargetSegment(
+        string currentLocationName,
+        BridgeRouteProbeResult probe,
+        out string? failureCode)
+    {
+        failureCode = null;
+        var finalTarget = FinalTarget;
+        if (finalTarget is null)
+        {
+            failureCode = "final_target_missing";
+            return false;
+        }
+
+        if (probe.Status != BridgeRouteProbeStatus.RouteValid)
+        {
+            failureCode = probe.FailureKind ?? "target_tile_unreachable";
+            return false;
+        }
+
+        CurrentSegment = new BridgeMoveSegmentData(
+            currentLocationName,
+            finalTarget.Tile,
+            "final_target_tile",
+            null);
+        TargetTile = finalTarget.Tile;
+        FacingDirection = finalTarget.FacingDirection;
+        CrossMapPhase = "executing_segment";
+        SetPhase("executing_segment", currentLocationName, incrementRouteRevision: true);
+        ReplaceSchedulePath(probe.Route);
         return true;
     }
 

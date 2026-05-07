@@ -125,6 +125,95 @@ public sealed class BridgeCrossMapNavigationStateTests
             command.BlockedReason);
     }
 
+    [TestMethod]
+    public void StartPostWarpFinalSegment_UsesSavedFinalTargetInsteadOfPreviousWarpTile()
+    {
+        var command = CreateRunningCrossMapCommand();
+        command.BeginAwaitingWarp(currentTick: 100, timeoutTicks: 60);
+        command.TryCompleteAwaitingWarp(currentLocationName: "Beach");
+
+        var started = command.TryStartPostWarpFinalTargetSegment(
+            "Beach",
+            new BridgeRouteProbeResult(
+                BridgeRouteProbeStatus.RouteValid,
+                new[] { new TileDto(21, 35), new TileDto(20, 35) },
+                2,
+                null,
+                null,
+                null),
+            out var failureCode);
+
+        Assert.IsTrue(started);
+        Assert.IsNull(failureCode);
+        Assert.AreEqual("running", command.Status);
+        Assert.AreEqual("executing_segment", command.Phase);
+        Assert.AreEqual("executing_segment", command.CrossMapPhase);
+        Assert.AreEqual("Beach", command.CurrentLocationName);
+        Assert.IsNotNull(command.CurrentSegment);
+        Assert.AreEqual("Beach", command.CurrentSegment!.LocationName);
+        Assert.AreEqual("final_target_tile", command.CurrentSegment.TargetKind);
+        Assert.IsNull(command.CurrentSegment.NextLocationName);
+        Assert.AreEqual(20, command.CurrentSegment.TargetTile?.X);
+        Assert.AreEqual(35, command.CurrentSegment.TargetTile?.Y);
+        Assert.AreEqual(20, command.TargetTile.X);
+        Assert.AreEqual(35, command.TargetTile.Y);
+        Assert.AreEqual("Beach", command.FinalTarget?.LocationName);
+    }
+
+    [TestMethod]
+    public void StartNextCrossMapSegment_AfterWarp_KeepsOriginalFinalTarget()
+    {
+        var command = new BridgeMoveCommand(
+            "cmd-2",
+            "trace-1",
+            "Haley",
+            "IslandSouth",
+            new TileDto(10, 20),
+            2,
+            null);
+        var firstProbe = new RouteProbeData(
+            "cross_location",
+            "route_found",
+            "Town",
+            new TileDto(80, 93),
+            "IslandSouth",
+            new TileDto(10, 20),
+            new[] { new TileDto(80, 94) },
+            new RouteProbeSegmentData(
+                "Town",
+                new TileDto(80, 94),
+                "warp_to_next_location",
+                "Beach"));
+        command.RecordRouteProbe(firstProbe);
+        command.StartCrossMapSegment(firstProbe);
+        command.BeginAwaitingWarp(currentTick: 100, timeoutTicks: 60);
+        command.TryCompleteAwaitingWarp(currentLocationName: "Beach");
+
+        var secondProbe = new RouteProbeData(
+            "cross_location",
+            "route_found",
+            "Beach",
+            new TileDto(20, 35),
+            "IslandSouth",
+            new TileDto(10, 20),
+            new[] { new TileDto(100, 30) },
+            new RouteProbeSegmentData(
+                "Beach",
+                new TileDto(100, 30),
+                "warp_to_next_location",
+                "IslandSouth"));
+
+        command.StartCrossMapSegment(secondProbe);
+
+        Assert.AreEqual("IslandSouth", command.FinalTarget?.LocationName);
+        Assert.AreEqual(10, command.FinalTarget?.Tile.X);
+        Assert.AreEqual(20, command.FinalTarget?.Tile.Y);
+        Assert.AreEqual("Beach", command.CurrentSegment?.LocationName);
+        Assert.AreEqual("IslandSouth", command.CurrentSegment?.NextLocationName);
+        Assert.AreEqual(100, command.TargetTile.X);
+        Assert.AreEqual(30, command.TargetTile.Y);
+    }
+
     private static BridgeMoveCommand CreateRunningCrossMapCommand()
     {
         var command = new BridgeMoveCommand(
