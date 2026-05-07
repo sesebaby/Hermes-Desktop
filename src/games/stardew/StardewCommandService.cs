@@ -285,7 +285,8 @@ public sealed class StardewCommandService : IGameCommandService
                     response.Data.CurrentSegment.LocationName,
                     ToGameTile(response.Data.CurrentSegment.TargetTile),
                     response.Data.CurrentSegment.TargetKind,
-                    response.Data.CurrentSegment.NextLocationName),
+                    response.Data.CurrentSegment.NextLocationName,
+                    ToGameTile(response.Data.CurrentSegment.WarpTriggerTile)),
             response.Data.LastFailureCode);
     }
 
@@ -306,7 +307,8 @@ public sealed class StardewCommandService : IGameCommandService
                         data.NextSegment.LocationName,
                         ToGameTile(data.NextSegment.StandTile),
                         data.NextSegment.TargetKind,
-                        data.NextSegment.NextLocationName),
+                        data.NextSegment.NextLocationName,
+                        ToGameTile(data.NextSegment.WarpTriggerTile)),
                 data.FailureCode,
                 data.FailureDetail);
 

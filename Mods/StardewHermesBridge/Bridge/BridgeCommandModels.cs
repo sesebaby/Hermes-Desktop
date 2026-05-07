@@ -111,7 +111,8 @@ public sealed record BridgeMoveSegmentData(
     string LocationName,
     TileDto? TargetTile,
     string TargetKind,
-    string? NextLocationName = null);
+    string? NextLocationName = null,
+    TileDto? WarpTriggerTile = null);
 
 public sealed record RouteProbeData(
     string Mode,
@@ -129,7 +130,8 @@ public sealed record RouteProbeSegmentData(
     string LocationName,
     TileDto? StandTile,
     string TargetKind,
-    string? NextLocationName = null);
+    string? NextLocationName = null,
+    TileDto? WarpTriggerTile = null);
 
 public sealed record StatusQuery(string? NpcId);
 

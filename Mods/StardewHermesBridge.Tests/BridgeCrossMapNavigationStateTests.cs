@@ -68,6 +68,66 @@ public sealed class BridgeCrossMapNavigationStateTests
     }
 
     [TestMethod]
+    public void StartCrossMapSegment_WithWarpApproachTile_PreservesSeparateTriggerTile()
+    {
+        var command = new BridgeMoveCommand(
+            "cmd-approach",
+            "trace-approach",
+            "Haley",
+            "Beach",
+            new TileDto(20, 35),
+            2,
+            null);
+        var approachTile = new TileDto(80, 93);
+        var warpTile = new TileDto(80, 94);
+        var routeProbe = new RouteProbeData(
+            "cross_location",
+            "route_found",
+            "Town",
+            new TileDto(20, 89),
+            "Beach",
+            new TileDto(20, 35),
+            new[] { new TileDto(21, 89), approachTile },
+            new RouteProbeSegmentData(
+                "Town",
+                approachTile,
+                "warp_to_next_location",
+                "Beach",
+                warpTile));
+
+        command.RecordRouteProbe(routeProbe);
+        command.StartCrossMapSegment(routeProbe);
+
+        Assert.IsNotNull(command.CurrentSegment);
+        Assert.AreEqual(approachTile, command.CurrentSegment!.TargetTile);
+        Assert.AreEqual(warpTile, command.CurrentSegment.WarpTriggerTile);
+        Assert.AreEqual(approachTile, command.TargetTile);
+
+        var status = command.ToStatusData();
+        Assert.IsNotNull(status.CurrentSegment);
+        Assert.AreEqual(approachTile, status.CurrentSegment!.TargetTile);
+        Assert.AreEqual(warpTile, status.CurrentSegment.WarpTriggerTile);
+    }
+
+    [TestMethod]
+    public void VanillaNpcWarpTransition_UsesFullTileOffsetForWarpCollisionProbe()
+    {
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(
+            commandQueue,
+            "OffsetByTile(npc.GetBoundingBox(), direction)",
+            "A warp approach tile must probe a full tile ahead, not the NPC's speed-sized nextPosition rectangle.");
+        StringAssert.Contains(
+            commandQueue,
+            "boundingBox.Y + tileSize",
+            "Downward Town-to-Beach approach should collide with the actual warp tile one tile below the stand tile.");
+        Assert.IsFalse(
+            commandQueue.Contains("return npc.nextPosition(direction);", StringComparison.Ordinal),
+            "Speed-sized nextPosition can miss the warp tile when NPC speed is zero or small.");
+    }
+
+    [TestMethod]
     public void BeginAwaitingWarp_KeepsCommandRunningAndFailsWithStableTimeoutCode()
     {
         var command = CreateRunningCrossMapCommand();
@@ -319,5 +379,21 @@ public sealed class BridgeCrossMapNavigationStateTests
         command.RecordRouteProbe(routeProbe);
         command.StartCrossMapSegment(routeProbe);
         return command;
+    }
+
+    private static string ReadRepositoryFile(params string[] relativePath)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(new[] { directory.FullName }.Concat(relativePath).ToArray());
+            if (File.Exists(candidate))
+                return File.ReadAllText(candidate);
+
+            directory = directory.Parent;
+        }
+
+        Assert.Fail($"Could not find repository file: {Path.Combine(relativePath)}");
+        return string.Empty;
     }
 }

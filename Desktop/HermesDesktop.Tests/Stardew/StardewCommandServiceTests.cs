@@ -203,7 +203,8 @@ public class StardewCommandServiceTests
                 "locationName": "Town",
                 "targetTile": { "x": 43, "y": 17 },
                 "targetKind": "warp_to_next_location",
-                "nextLocationName": "Beach"
+                "nextLocationName": "Beach",
+                "warpTriggerTile": { "x": 43, "y": 18 }
               },
               "lastFailureCode": null,
               "routeProbe": {
@@ -221,7 +222,8 @@ public class StardewCommandServiceTests
                   "locationName": "Town",
                   "standTile": { "x": 43, "y": 17 },
                   "targetKind": "warp_to_next_location",
-                  "nextLocationName": "Beach"
+                  "nextLocationName": "Beach",
+                  "warpTriggerTile": { "x": 43, "y": 18 }
                 }
               }
             }
@@ -260,6 +262,8 @@ public class StardewCommandServiceTests
         Assert.AreEqual(17, status.CurrentSegment.TargetTile?.Y);
         Assert.AreEqual("warp_to_next_location", status.CurrentSegment.TargetKind);
         Assert.AreEqual("Beach", status.CurrentSegment.NextLocationName);
+        Assert.AreEqual(43, status.CurrentSegment.WarpTriggerTile?.X);
+        Assert.AreEqual(18, status.CurrentSegment.WarpTriggerTile?.Y);
         Assert.IsNull(status.LastFailureCode);
         Assert.IsNotNull(status.RouteProbe);
         Assert.AreEqual("cross_location", status.RouteProbe.Mode);
@@ -273,6 +277,8 @@ public class StardewCommandServiceTests
         Assert.AreEqual(43, status.RouteProbe.NextSegment.StandTile?.X);
         Assert.AreEqual("warp_to_next_location", status.RouteProbe.NextSegment.TargetKind);
         Assert.AreEqual("Beach", status.RouteProbe.NextSegment.NextLocationName);
+        Assert.AreEqual(43, status.RouteProbe.NextSegment.WarpTriggerTile?.X);
+        Assert.AreEqual(18, status.RouteProbe.NextSegment.WarpTriggerTile?.Y);
         Assert.AreEqual(StardewBridgeRoutes.TaskStatus, client.LastRoute);
     }
 

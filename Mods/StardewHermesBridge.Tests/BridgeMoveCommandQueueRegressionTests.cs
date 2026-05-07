@@ -58,12 +58,38 @@ public sealed class BridgeMoveCommandQueueRegressionTests
                 "Town",
                 new StardewHermesBridge.Bridge.TileDto(80, 94),
                 "warp_to_next_location",
-                "Beach"));
+                "Beach",
+                new StardewHermesBridge.Bridge.TileDto(80, 94)));
 
         var detail = StardewHermesBridge.Bridge.BridgeCommandQueue.FormatRouteProbeLogDetail(probe);
 
         Assert.AreEqual(
             "routeProbeStatus=route_found;mode=cross_location;from=Town:50,66;target=Beach:32,34;next=Town:80,94->Beach(warp_to_next_location);routeSteps=1;failure=-",
+            detail);
+    }
+
+    [TestMethod]
+    public void FormatRouteProbeLogDetail_WithWarpApproachTile_IncludesTriggerTile()
+    {
+        var probe = new StardewHermesBridge.Bridge.RouteProbeData(
+            "cross_location",
+            "route_found",
+            "Town",
+            new StardewHermesBridge.Bridge.TileDto(20, 89),
+            "Beach",
+            new StardewHermesBridge.Bridge.TileDto(20, 35),
+            new[] { new StardewHermesBridge.Bridge.TileDto(80, 93) },
+            new StardewHermesBridge.Bridge.RouteProbeSegmentData(
+                "Town",
+                new StardewHermesBridge.Bridge.TileDto(80, 93),
+                "warp_to_next_location",
+                "Beach",
+                new StardewHermesBridge.Bridge.TileDto(80, 94)));
+
+        var detail = StardewHermesBridge.Bridge.BridgeCommandQueue.FormatRouteProbeLogDetail(probe);
+
+        Assert.AreEqual(
+            "routeProbeStatus=route_found;mode=cross_location;from=Town:20,89;target=Beach:20,35;next=Town:80,93->Beach(warp_to_next_location;trigger=80,94);routeSteps=1;failure=-",
             detail);
     }
 

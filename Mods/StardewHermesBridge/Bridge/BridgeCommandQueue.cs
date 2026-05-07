@@ -883,7 +883,11 @@ public sealed class BridgeCommandQueue
         if (command.CurrentSegment?.TargetTile is null || npc.currentLocation is null)
             return false;
 
-        var triggered = VanillaNpcWarpTransition.TryTrigger(npc, npc.currentLocation, command.CurrentSegment.TargetTile);
+        var triggered = VanillaNpcWarpTransition.TryTrigger(
+            npc,
+            npc.currentLocation,
+            command.CurrentSegment.TargetTile,
+            command.CurrentSegment.WarpTriggerTile);
         command.MarkWarpTransitionAttempted(npc.currentLocation?.NameOrUniqueName ?? npc.currentLocation?.Name);
         return triggered;
     }
@@ -925,17 +929,11 @@ public sealed class BridgeCommandQueue
                 var warpPoint = currentLocation.getWarpPointTo(nextLocationName);
                 return warpPoint == Point.Zero ? null : new TileDto(warpPoint.X, warpPoint.Y);
             },
-            () =>
-            {
-                var warpPoint = currentLocation.getWarpPointTo(locationRoute?[1] ?? targetLocation.NameOrUniqueName ?? targetLocation.Name);
-                return warpPoint == Point.Zero
-                    ? new Stack<TileDto>()
-                    : BridgeMovementPathProbe.FindSchedulePath(
-                        npc,
-                        currentLocation,
-                        currentTile,
-                        new TileDto(warpPoint.X, warpPoint.Y));
-            },
+            routeTarget => BridgeMovementPathProbe.FindSchedulePath(
+                npc,
+                currentLocation,
+                currentTile,
+                routeTarget),
             tile => BridgeMovementPathProbe.CheckRouteStepSafety(currentLocation, tile));
     }
 
@@ -1006,9 +1004,18 @@ public sealed class BridgeCommandQueue
             return "-";
 
         var from = FormatLocationTile(segment.LocationName, segment.StandTile);
+        var targetKind = ValueOrDash(segment.TargetKind);
+        if (segment.WarpTriggerTile is not null &&
+            (segment.StandTile is null ||
+             segment.WarpTriggerTile.X != segment.StandTile.X ||
+             segment.WarpTriggerTile.Y != segment.StandTile.Y))
+        {
+            targetKind += $";trigger={segment.WarpTriggerTile.X},{segment.WarpTriggerTile.Y}";
+        }
+
         return string.IsNullOrWhiteSpace(segment.NextLocationName)
-            ? $"{from}({ValueOrDash(segment.TargetKind)})"
-            : $"{from}->{segment.NextLocationName}({ValueOrDash(segment.TargetKind)})";
+            ? $"{from}({targetKind})"
+            : $"{from}->{segment.NextLocationName}({targetKind})";
     }
 
     private static string ValueOrDash(string? value)
@@ -1480,7 +1487,8 @@ public sealed class BridgeMoveCommand
             routeProbe.NextSegment.LocationName,
             routeProbe.NextSegment.StandTile,
             routeProbe.NextSegment.TargetKind,
-            routeProbe.NextSegment.NextLocationName);
+            routeProbe.NextSegment.NextLocationName,
+            routeProbe.NextSegment.WarpTriggerTile);
         TargetTile = routeProbe.NextSegment.StandTile;
         CrossMapPhase = "executing_segment";
         SetPhase("executing_segment", CurrentSegment.LocationName, incrementRouteRevision: true);
@@ -1528,6 +1536,7 @@ public sealed class BridgeMoveCommand
             currentLocationName,
             segmentTarget,
             "final_target_tile",
+            null,
             null);
         TargetTile = segmentTarget;
         FacingDirection = resolvedFacingDirection ?? finalTarget.FacingDirection;
@@ -1658,13 +1667,50 @@ public sealed class BridgeMoveCommand
 
 internal static class VanillaNpcWarpTransition
 {
-    public static bool TryTrigger(NPC npc, GameLocation location, TileDto segmentTargetTile)
+    public static bool TryTrigger(NPC npc, GameLocation location, TileDto segmentTargetTile, TileDto? warpTriggerTile = null)
     {
+        var triggerPosition = GetTriggerPosition(npc, segmentTargetTile, warpTriggerTile);
         var controller = new PathFindController(
             new Stack<Point>(new[] { new Point(segmentTargetTile.X, segmentTargetTile.Y) }),
             npc,
             location);
-        controller.handleWarps(npc.GetBoundingBox());
+        controller.handleWarps(triggerPosition);
         return !ReferenceEquals(npc.currentLocation, location);
+    }
+
+    private static Rectangle GetTriggerPosition(NPC npc, TileDto segmentTargetTile, TileDto? warpTriggerTile)
+    {
+        if (warpTriggerTile is null ||
+            (warpTriggerTile.X == segmentTargetTile.X && warpTriggerTile.Y == segmentTargetTile.Y))
+        {
+            return npc.GetBoundingBox();
+        }
+
+        var direction = GetDirectionToTrigger(segmentTargetTile, warpTriggerTile);
+        npc.faceDirection(direction);
+        return OffsetByTile(npc.GetBoundingBox(), direction);
+    }
+
+    internal static Rectangle OffsetByTile(Rectangle boundingBox, int direction)
+    {
+        var tileSize = Game1.tileSize;
+        return direction switch
+        {
+            0 => new Rectangle(boundingBox.X, boundingBox.Y - tileSize, boundingBox.Width, boundingBox.Height),
+            1 => new Rectangle(boundingBox.X + tileSize, boundingBox.Y, boundingBox.Width, boundingBox.Height),
+            2 => new Rectangle(boundingBox.X, boundingBox.Y + tileSize, boundingBox.Width, boundingBox.Height),
+            3 => new Rectangle(boundingBox.X - tileSize, boundingBox.Y, boundingBox.Width, boundingBox.Height),
+            _ => boundingBox
+        };
+    }
+
+    private static int GetDirectionToTrigger(TileDto segmentTargetTile, TileDto warpTriggerTile)
+    {
+        var dx = warpTriggerTile.X - segmentTargetTile.X;
+        var dy = warpTriggerTile.Y - segmentTargetTile.Y;
+        if (Math.Abs(dx) >= Math.Abs(dy))
+            return dx > 0 ? 1 : 3;
+
+        return dy > 0 ? 2 : 0;
     }
 }

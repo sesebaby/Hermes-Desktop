@@ -72,7 +72,8 @@ public sealed record GameMoveSegment(
     string LocationName,
     GameTile? TargetTile,
     string TargetKind,
-    string? NextLocationName = null);
+    string? NextLocationName = null,
+    GameTile? WarpTriggerTile = null);
 
 public sealed record GameRouteProbe(
     string Mode,
@@ -90,4 +91,5 @@ public sealed record GameRouteProbeSegment(
     string LocationName,
     GameTile? StandTile,
     string TargetKind,
-    string? NextLocationName = null);
+    string? NextLocationName = null,
+    GameTile? WarpTriggerTile = null);

@@ -195,6 +195,47 @@ public sealed class BridgeMovementPathProbeTests
     }
 
     [TestMethod]
+    public void BuildCrossLocationRouteProbe_WhenWarpTilePathEmpty_UsesReachableWarpApproachTile()
+    {
+        var currentTile = new TileDto(20, 89);
+        var warpTile = new TileDto(80, 94);
+        var approachTile = new TileDto(80, 93);
+        var routeToApproach = new[] { new TileDto(21, 89), approachTile };
+        var probedTargets = new List<TileDto>();
+
+        var result = BridgeMovementPathProbe.BuildCrossLocationRouteProbe(
+            "Town",
+            currentTile,
+            "Beach",
+            new TileDto(20, 35),
+            new[] { "Town", "Beach" },
+            nextLocationName => nextLocationName == "Beach" ? warpTile : null,
+            target =>
+            {
+                probedTargets.Add(target);
+                return target == approachTile
+                    ? BridgeMovementPathProbe.ToSchedulePath(routeToApproach)
+                    : BridgeMovementPathProbe.ToSchedulePath(Array.Empty<TileDto>());
+            },
+            _ => BridgeTileSafetyCheck.Safe);
+
+        Assert.AreEqual("cross_location", result.Mode);
+        Assert.AreEqual("route_found", result.Status);
+        CollectionAssert.AreEqual(routeToApproach, result.Route.ToArray());
+        CollectionAssert.AreEqual(
+            new[] { warpTile, new TileDto(81, 94), new TileDto(79, 94), new TileDto(80, 95), approachTile },
+            probedTargets.Take(5).ToArray(),
+            "The probe should try the real warp tile first, then bounded arrival candidates around it.");
+        Assert.IsNotNull(result.NextSegment);
+        Assert.AreEqual("Town", result.NextSegment!.LocationName);
+        Assert.AreEqual(approachTile, result.NextSegment.StandTile);
+        Assert.AreEqual(warpTile, result.NextSegment.WarpTriggerTile);
+        Assert.AreEqual("warp_to_next_location", result.NextSegment.TargetKind);
+        Assert.AreEqual("Beach", result.NextSegment.NextLocationName);
+        Assert.IsNull(result.FailureCode);
+    }
+
+    [TestMethod]
     public void BuildCrossLocationRouteProbe_TrustsClosedIntermediateScheduleSteps()
     {
         var currentTile = new TileDto(8, 6);
@@ -248,7 +289,7 @@ public sealed class BridgeMovementPathProbeTests
     {
         var result = BridgeMovementPathProbe.BuildCrossLocationRouteProbe(
             "Town",
-            new TileDto(80, 93),
+            new TileDto(20, 89),
             "Beach",
             new TileDto(20, 35),
             new[] { "Town", "Beach" },

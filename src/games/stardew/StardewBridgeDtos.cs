@@ -151,7 +151,8 @@ public sealed record StardewMoveSegmentData(
     [property: JsonPropertyName("locationName")] string LocationName,
     [property: JsonPropertyName("targetTile")] StardewTile? TargetTile,
     [property: JsonPropertyName("targetKind")] string TargetKind,
-    [property: JsonPropertyName("nextLocationName")] string? NextLocationName = null);
+    [property: JsonPropertyName("nextLocationName")] string? NextLocationName = null,
+    [property: JsonPropertyName("warpTriggerTile")] StardewTile? WarpTriggerTile = null);
 
 public sealed record StardewRouteProbeData(
     [property: JsonPropertyName("mode")] string Mode,
@@ -169,7 +170,8 @@ public sealed record StardewRouteProbeSegmentData(
     [property: JsonPropertyName("locationName")] string LocationName,
     [property: JsonPropertyName("standTile")] StardewTile? StandTile,
     [property: JsonPropertyName("targetKind")] string TargetKind,
-    [property: JsonPropertyName("nextLocationName")] string? NextLocationName = null);
+    [property: JsonPropertyName("nextLocationName")] string? NextLocationName = null,
+    [property: JsonPropertyName("warpTriggerTile")] StardewTile? WarpTriggerTile = null);
 
 public sealed record StardewStatusQuery(
     [property: JsonPropertyName("npcId")] string? NpcId);
