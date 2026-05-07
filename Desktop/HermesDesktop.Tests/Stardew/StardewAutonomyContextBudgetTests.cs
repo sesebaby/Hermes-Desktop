@@ -828,7 +828,7 @@ public class StardewAutonomyContextBudgetTests
         Assert.IsFalse(beachRegion.Contains("target(locationName", StringComparison.Ordinal));
         Assert.IsFalse(townRegion.Contains("target(locationName", StringComparison.Ordinal));
 
-        StringAssert.Contains(beachPoi, "target(locationName=Beach,x=20,y=35,source=map-skill:stardew.navigation.poi.beach-shoreline)");
+        StringAssert.Contains(beachPoi, "target(locationName=Beach,x=32,y=34,source=map-skill:stardew.navigation.poi.beach-shoreline)");
         StringAssert.Contains(townPoi, "target(locationName=Town,x=42,y=17,source=map-skill:stardew.navigation.poi.town-square)");
     }
 

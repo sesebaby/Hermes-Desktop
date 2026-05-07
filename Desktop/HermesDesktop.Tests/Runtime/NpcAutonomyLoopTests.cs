@@ -995,8 +995,8 @@ public class NpcAutonomyLoopTests
                   "reason": "go to the beach",
                   "target": {
                     "locationName": "Beach",
-                    "x": 20,
-                    "y": 35,
+                    "x": 32,
+                    "y": 34,
                     "source": "map-skill:stardew.navigation.poi.beach.shoreline"
                   }
                 }
@@ -1006,7 +1006,7 @@ public class NpcAutonomyLoopTests
                 Stage: "completed",
                 Result: "queued",
                 DecisionResponse: "local_executor_completed:stardew_navigate_to_tile",
-                MemorySummary: "navigating to Beach tile 20,35",
+                MemorySummary: "navigating to Beach tile 32,34",
                 CommandId: "cmd-nav-1",
                 ExecutorMode: "host_deterministic",
                 TargetSource: "map-skill:stardew.navigation.poi.beach.shoreline"));

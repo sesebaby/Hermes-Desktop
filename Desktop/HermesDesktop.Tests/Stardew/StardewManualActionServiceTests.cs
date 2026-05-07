@@ -192,8 +192,8 @@ public sealed class StardewManualActionServiceTests
         Assert.AreEqual("tile", commandService.LastAction.Target.Kind);
         Assert.AreEqual("Beach", commandService.LastAction.Target.LocationName);
         Assert.IsNotNull(commandService.LastAction.Target.Tile);
-        Assert.AreEqual(20, commandService.LastAction.Target.Tile.X);
-        Assert.AreEqual(35, commandService.LastAction.Target.Tile.Y);
+        Assert.AreEqual(32, commandService.LastAction.Target.Tile.X);
+        Assert.AreEqual(34, commandService.LastAction.Target.Tile.Y);
         Assert.AreEqual(2, (int?)commandService.LastAction.Payload?["facingDirection"]);
         Assert.IsFalse(commandService.LastAction.Payload?.ContainsKey("destinationId") is true);
     }

@@ -4,7 +4,7 @@ Use this when the intent is "go to the beach", "walk by the ocean", "shoreline",
 
 ## Mechanical Target
 
-`target(locationName=Beach,x=20,y=35,source=map-skill:stardew.navigation.poi.beach-shoreline)`
+`target(locationName=Beach,x=32,y=34,source=map-skill:stardew.navigation.poi.beach-shoreline)`
 
 ## Use
 

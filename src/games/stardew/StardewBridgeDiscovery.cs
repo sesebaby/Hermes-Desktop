@@ -139,8 +139,8 @@ public sealed class StardewNpcDebugActionService
     private const string HaleySmapiName = "Haley";
     private const string HaleyDisplayName = "Haley";
     private const string BeachShorelineLocationName = "Beach";
-    private const int BeachShorelineTileX = 20;
-    private const int BeachShorelineTileY = 35;
+    private const int BeachShorelineTileX = 32;
+    private const int BeachShorelineTileY = 34;
     private const int BeachShorelineFacingDirection = 2;
 
     private readonly IStardewBridgeDiscovery _discovery;
