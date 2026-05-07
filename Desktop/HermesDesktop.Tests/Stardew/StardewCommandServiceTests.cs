@@ -427,6 +427,40 @@ public class StardewCommandServiceTests
     }
 
     [TestMethod]
+    public async Task SubmitAsync_Speak_WithBodyBindingTarget_PostsTargetEntityId()
+    {
+        var client = new FakeSmapiClient();
+        client.SpeakResponse = new StardewBridgeResponse<StardewSpeakData>(
+            true,
+            "trace-speak",
+            "req-speak",
+            null,
+            StardewCommandStatuses.Completed,
+            new StardewSpeakData("Haley", "Hi there.", "manual_debug", true),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.Speak,
+            "trace-speak",
+            "idem-speak",
+            new GameActionTarget("player"),
+            Payload: new JsonObject
+            {
+                ["text"] = "Hi there.",
+                ["channel"] = "manual_debug"
+            },
+            BodyBinding: new NpcBodyBinding("haley", "Haley", "Haley", "海莉", "stardew"));
+
+        await service.SubmitAsync(action, CancellationToken.None);
+
+        var envelope = (StardewBridgeEnvelope<StardewSpeakRequest>)client.LastEnvelope!;
+        Assert.AreEqual("Haley", envelope.NpcId);
+    }
+
+    [TestMethod]
     public async Task SubmitAsync_OpenPrivateChat_PostsTypedEnvelopeToActionOpenPrivateChatRoute()
     {
         var client = new FakeSmapiClient();
@@ -556,6 +590,36 @@ public class StardewCommandServiceTests
     }
 
     [TestMethod]
+    public async Task SubmitAsync_DebugReposition_WithBodyBindingTarget_PostsTargetEntityId()
+    {
+        var client = new FakeSmapiClient();
+        client.DebugRepositionResponse = new StardewBridgeResponse<StardewDebugRepositionData>(
+            true,
+            "trace-debug",
+            "req-debug",
+            null,
+            StardewCommandStatuses.Completed,
+            new StardewDebugRepositionData("Haley", "HaleyHouse", new StardewTile(8, 7), "Town", new StardewTile(50, 66), 2, true),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.DebugReposition,
+            "trace-debug",
+            "idem-debug",
+            new GameActionTarget("debug_reposition"),
+            Payload: new JsonObject { ["target"] = "town" },
+            BodyBinding: new NpcBodyBinding("haley", "Haley", "Haley", "海莉", "stardew"));
+
+        await service.SubmitAsync(action, CancellationToken.None);
+
+        var envelope = (StardewBridgeEnvelope<StardewDebugRepositionRequest>)client.LastEnvelope!;
+        Assert.AreEqual("Haley", envelope.NpcId);
+    }
+
+    [TestMethod]
     public async Task SubmitAsync_OpenPrivateChat_RetryableBridgeErrorIsPreserved()
     {
         var client = new FakeSmapiClient();
@@ -635,6 +699,7 @@ public class StardewCommandServiceTests
         public StardewBridgeResponse<StardewTaskStatusData>? LookupResponse { get; set; }
         public StardewBridgeResponse<StardewSpeakData>? SpeakResponse { get; set; }
         public StardewBridgeResponse<StardewOpenPrivateChatData>? OpenPrivateChatResponse { get; set; }
+        public StardewBridgeResponse<StardewDebugRepositionData>? DebugRepositionResponse { get; set; }
 
         public Task<StardewBridgeResponse<TData>> SendAsync<TPayload, TData>(
             string route,
@@ -652,6 +717,7 @@ public class StardewCommandServiceTests
                 StardewBridgeRoutes.TaskCancel => StatusResponse ?? throw new InvalidOperationException("No cancel response configured."),
                 StardewBridgeRoutes.ActionSpeak => SpeakResponse ?? throw new InvalidOperationException("No speak response configured."),
                 StardewBridgeRoutes.ActionOpenPrivateChat => OpenPrivateChatResponse ?? throw new InvalidOperationException("No open private chat response configured."),
+                StardewBridgeRoutes.DebugNpcReposition => DebugRepositionResponse ?? throw new InvalidOperationException("No debug reposition response configured."),
                 _ => throw new InvalidOperationException($"Unexpected route {route}.")
             };
 

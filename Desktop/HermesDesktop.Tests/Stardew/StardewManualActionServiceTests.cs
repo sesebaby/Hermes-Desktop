@@ -94,6 +94,26 @@ public sealed class StardewManualActionServiceTests
     }
 
     [TestMethod]
+    public async Task SpeakAsync_WithBodyBinding_SubmitsTargetEntityIdToBridgeAction()
+    {
+        var discovery = new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+            new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token-2" },
+            DateTimeOffset.Parse("2026-04-29T08:00:00Z"),
+            456,
+            "save-9"));
+        var commandService = new FakeGameCommandService();
+        var service = new StardewNpcDebugActionService(discovery, _ => commandService);
+        var bodyBinding = new NpcBodyBinding("haley", "Haley", "Haley", "海莉", "stardew");
+
+        var result = await service.SpeakAsync(bodyBinding, "Hello from Hermes.", CancellationToken.None);
+
+        Assert.IsTrue(result.Accepted);
+        Assert.IsNotNull(commandService.LastAction);
+        Assert.AreEqual("haley", commandService.LastAction.NpcId);
+        Assert.AreEqual("Haley", commandService.LastAction.BodyBinding?.TargetEntityId);
+    }
+
+    [TestMethod]
     public async Task SpeakAsync_MissingSaveIdInDiscoveryFailsInsteadOfGuessingManualDebug()
     {
         var discovery = new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
@@ -129,6 +149,27 @@ public sealed class StardewManualActionServiceTests
         Assert.AreEqual("stardew-valley", commandService.LastAction.GameId);
         Assert.AreEqual("debug_reposition", commandService.LastAction.Target.Kind);
         Assert.AreEqual("town", commandService.LastAction.Payload?["target"]?.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task RepositionToTownAsync_WithBodyBinding_SubmitsTargetEntityIdToBridgeAction()
+    {
+        var discovery = new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+            new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token-2" },
+            DateTimeOffset.Parse("2026-04-29T08:00:00Z"),
+            456,
+            "save-9"));
+        var commandService = new FakeGameCommandService();
+        var service = new StardewNpcDebugActionService(discovery, _ => commandService);
+        var bodyBinding = new NpcBodyBinding("haley", "Haley", "Haley", "海莉", "stardew");
+
+        var result = await service.RepositionToTownAsync(bodyBinding, CancellationToken.None);
+
+        Assert.IsTrue(result.Accepted);
+        Assert.IsNotNull(commandService.LastAction);
+        Assert.AreEqual(GameActionType.DebugReposition, commandService.LastAction.Type);
+        Assert.AreEqual("haley", commandService.LastAction.NpcId);
+        Assert.AreEqual("Haley", commandService.LastAction.BodyBinding?.TargetEntityId);
     }
 
     [TestMethod]

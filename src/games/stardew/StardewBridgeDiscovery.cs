@@ -153,9 +153,13 @@ public sealed class StardewNpcDebugActionService
     }
 
     public async Task<GameCommandResult> SpeakAsync(string npcId, string text, CancellationToken ct)
+        => await SpeakAsync(NpcBodyBinding.FromLogicalId(npcId, "stardew"), text, ct);
+
+    public async Task<GameCommandResult> SpeakAsync(NpcBodyBinding bodyBinding, string text, CancellationToken ct)
     {
         var traceId = $"trace_manual_speak_{Guid.NewGuid():N}";
-        if (string.IsNullOrWhiteSpace(npcId) || string.IsNullOrWhiteSpace(text))
+        ArgumentNullException.ThrowIfNull(bodyBinding);
+        if (string.IsNullOrWhiteSpace(bodyBinding.NpcId) || string.IsNullOrWhiteSpace(text))
             return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.InvalidTarget, traceId);
 
         if (!_discovery.TryReadLatest(out var snapshot, out var failureReason) || snapshot is null)
@@ -170,14 +174,15 @@ public sealed class StardewNpcDebugActionService
             ["channel"] = "manual_debug"
         };
         var action = new GameAction(
-            npcId,
+            bodyBinding.NpcId,
             "stardew-valley",
             GameActionType.Speak,
             traceId,
-            $"manual_speak_{npcId}_{Guid.NewGuid():N}",
+            $"manual_speak_{bodyBinding.NpcId}_{Guid.NewGuid():N}",
             new GameActionTarget("player"),
             "manual desktop debug speak",
-            payload);
+            payload,
+            BodyBinding: bodyBinding);
 
         try
         {
@@ -190,9 +195,13 @@ public sealed class StardewNpcDebugActionService
     }
 
     public async Task<GameCommandResult> RepositionToTownAsync(string npcId, CancellationToken ct)
+        => await RepositionToTownAsync(NpcBodyBinding.FromLogicalId(npcId, "stardew"), ct);
+
+    public async Task<GameCommandResult> RepositionToTownAsync(NpcBodyBinding bodyBinding, CancellationToken ct)
     {
         var traceId = $"trace_manual_reposition_{Guid.NewGuid():N}";
-        if (string.IsNullOrWhiteSpace(npcId))
+        ArgumentNullException.ThrowIfNull(bodyBinding);
+        if (string.IsNullOrWhiteSpace(bodyBinding.NpcId))
             return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.InvalidTarget, traceId);
 
         if (!_discovery.TryReadLatest(out var snapshot, out var failureReason) || snapshot is null)
@@ -206,14 +215,15 @@ public sealed class StardewNpcDebugActionService
             ["target"] = "town"
         };
         var action = new GameAction(
-            npcId,
+            bodyBinding.NpcId,
             "stardew-valley",
             GameActionType.DebugReposition,
             traceId,
-            $"manual_reposition_{npcId}_{Guid.NewGuid():N}",
+            $"manual_reposition_{bodyBinding.NpcId}_{Guid.NewGuid():N}",
             new GameActionTarget("debug_reposition"),
             "manual desktop debug reposition to town",
-            payload);
+            payload,
+            BodyBinding: bodyBinding);
 
         try
         {

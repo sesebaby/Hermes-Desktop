@@ -117,6 +117,7 @@ public sealed class NpcDeveloperInspectorServiceTests
             "bridge-key",
             1,
             0,
+            descriptor.EffectiveBodyBinding,
             null,
             NpcRuntimeControllerSnapshot.Empty);
         var service = new NpcDeveloperInspectorService(
@@ -182,6 +183,7 @@ public sealed class NpcDeveloperInspectorServiceTests
             null,
             0,
             0,
+            descriptor.EffectiveBodyBinding,
             null,
             NpcRuntimeControllerSnapshot.Empty);
         var service = new NpcDeveloperInspectorService(
@@ -226,6 +228,7 @@ public sealed class NpcDeveloperInspectorServiceTests
             null,
             0,
             0,
+            descriptor.EffectiveBodyBinding,
             null,
             NpcRuntimeControllerSnapshot.Empty);
         var npcNamespace = new NpcNamespace(_tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
@@ -400,6 +403,7 @@ public sealed class NpcDeveloperInspectorServiceTests
             "bridge-key",
             1,
             0,
+            descriptor.EffectiveBodyBinding,
             null,
             NpcRuntimeControllerSnapshot.Empty);
 

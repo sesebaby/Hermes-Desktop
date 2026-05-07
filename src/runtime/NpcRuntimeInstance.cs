@@ -391,6 +391,7 @@ public sealed class NpcRuntimeInstance
                 _currentBridgeKey,
                 _currentAutonomyHandleGeneration,
                 _autonomyRestartCount,
+                Descriptor.EffectiveBodyBinding,
                 _activePrivateChatSessionLease,
                 new NpcRuntimeControllerSnapshot(
                     _eventCursor,

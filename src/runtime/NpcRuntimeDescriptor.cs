@@ -123,5 +123,6 @@ public sealed record NpcRuntimeSnapshot(
     string? CurrentBridgeKey,
     int CurrentAutonomyHandleGeneration,
     int AutonomyRestartCount,
+    NpcBodyBinding? BodyBinding,
     NpcRuntimeSessionLeaseSnapshot? ActivePrivateChatSessionLease,
     NpcRuntimeControllerSnapshot Controller);

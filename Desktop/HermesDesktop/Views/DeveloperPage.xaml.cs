@@ -203,7 +203,7 @@ public sealed partial class DeveloperPage : Page
     {
         await ExecuteDebugCommandAsync(
             ResourceLoader.GetString("DeveloperDebugRepositionActionName"),
-            ct => _stardewNpcDebugActions!.RepositionToTownAsync(_currentSnapshot!.NpcId, ct));
+            ct => _stardewNpcDebugActions!.RepositionToTownAsync(_currentSnapshot!.BodyBinding!, ct));
     }
 
     private async void DebugSpeak_Click(object sender, RoutedEventArgs e)
@@ -211,7 +211,7 @@ public sealed partial class DeveloperPage : Page
         await ExecuteDebugCommandAsync(
             ResourceLoader.GetString("DeveloperDebugSpeakActionName"),
             ct => _stardewNpcDebugActions!.SpeakAsync(
-                _currentSnapshot!.NpcId,
+                _currentSnapshot!.BodyBinding!,
                 ResourceLoader.GetString("DeveloperDebugSpeakText"),
                 ct));
     }

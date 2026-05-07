@@ -1,3 +1,4 @@
+using Hermes.Agent.Game;
 using Hermes.Agent.Runtime;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -26,6 +27,25 @@ public sealed class NpcRuntimeInstanceTests
 
         second.Dispose();
         Assert.IsNull(instance.Snapshot().ActivePrivateChatSessionLease);
+    }
+
+    [TestMethod]
+    public async Task Snapshot_IncludesDescriptorBodyBinding()
+    {
+        var descriptor = CreateDescriptor("haley") with
+        {
+            BodyBinding = new NpcBodyBinding("haley", "Haley", "Haley", "海莉", "stardew")
+        };
+        var instance = new NpcRuntimeInstance(
+            descriptor,
+            new NpcNamespace(Path.Combine(Path.GetTempPath(), "hermes-runtime-instance-tests", Guid.NewGuid().ToString("N")), descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId));
+        await instance.StartAsync(CancellationToken.None);
+
+        var snapshot = instance.Snapshot();
+
+        Assert.IsNotNull(snapshot.BodyBinding);
+        Assert.AreEqual("haley", snapshot.BodyBinding!.NpcId);
+        Assert.AreEqual("Haley", snapshot.BodyBinding.TargetEntityId);
     }
 
     [TestMethod]
