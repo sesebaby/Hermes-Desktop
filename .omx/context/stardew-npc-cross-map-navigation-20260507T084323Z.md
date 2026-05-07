@@ -36,3 +36,25 @@
   - `src/game/core/GameAction.cs`
   - `src/games/stardew/StardewCommandService.cs`
   - `Desktop/HermesDesktop.Tests/Stardew/StardewCommandServiceTests.cs`
+
+## Phase 0.5 Transition Evidence
+
+- local primary evidence source: `D:\Stardew Valley\Stardew Valley.v1.6.15\Stardew Valley.dll`, inspected with `ilspycmd 9.1.0.7988` and reflection.
+- relevant signatures:
+  - `StardewValley.Pathfinding.WarpPathfindingCache.GetLocationRoute(string startingLocation, string endingLocation, StardewValley.Gender gender) -> string[]`.
+  - `GameLocation.getWarpPointTo(string location, Character character = null) -> Point`.
+  - `PathFindController.findPathForNPCSchedules(Point, Point, GameLocation, int, Character) -> Stack<Point>`.
+- relevant vanilla behavior:
+  - `NPC.pathfindToNextScheduleLocation(...)` builds schedule routes as location route + per-location `getWarpPointTo(...)` + per-map `PathFindController.findPathForNPCSchedules(...)`.
+  - `PathFindController.moveCharacter(...)` calls `handleWarps(character.nextPosition(character.getDirection()))` during movement when `NPCSchedule` is true.
+  - `PathFindController.handleWarps(...)` uses `GameLocation.isCollidingWithWarpOrDoor(...)`, resolves destination adjustments, then calls vanilla `Game1.warpCharacter(...)` and trims the remaining path stack.
+  - `PathFindController.moveCharacter(...)` clears `NPC.DirectionsToNewLocation` only when the schedule path ends, not before entering each warp.
+- conclusion:
+  - Lane A (`Bridge stepper + pure natural warp wait`) is not supported by current evidence. Bridge-owned `npc.Position += velocity` plus controller cleanup does not invoke `PathFindController.handleWarps(...)`; after Phase 1 reaches the warp tile, passive waiting is expected to time out.
+  - Phase 2 should use Lane B: after Bridge-owned walking reaches the actual warp/door tile, call a tightly scoped vanilla transition hook that runs Stardew's own warp collision handling and then report `awaiting_warp`/`replanning_after_warp` based on the observed `npc.currentLocation`.
+  - This is not counted as natural navigation completion by itself: it only advances the location transition after the NPC physically reaches the warp tile, preserves final target state, and still requires replanning/final segment completion in later phases.
+- constraints for Phase 2 implementation:
+  - Do not call `Game1.warpCharacter(...)` directly from Bridge code.
+  - Do not assign `npc.controller = new PathFindController(...)`.
+  - Do not mark the command completed immediately after transition; only move to `replanning_after_warp`.
+  - Add regression tests proving direct `Game1.warpCharacter` and `npc.controller = new PathFindController` remain absent from the Bridge move path.
