@@ -978,15 +978,21 @@ public sealed class BridgeCommandQueue
         var from = FormatLocationTile(routeProbe.CurrentLocationName, routeProbe.CurrentTile);
         var target = FormatLocationTile(routeProbe.TargetLocationName, routeProbe.TargetTile);
         var next = FormatNextSegment(routeProbe.NextSegment);
-        return string.Join(
-            ";",
+        var parts = new List<string>
+        {
             $"routeProbeStatus={ValueOrDash(routeProbe.Status)}",
             $"mode={ValueOrDash(routeProbe.Mode)}",
             $"from={from}",
             $"target={target}",
             $"next={next}",
             $"routeSteps={routeProbe.Route.Count}",
-            $"failure={ValueOrDash(routeProbe.FailureCode)}");
+            $"failure={ValueOrDash(routeProbe.FailureCode)}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(routeProbe.FailureDetail))
+            parts.Add($"failureDetail={routeProbe.FailureDetail}");
+
+        return string.Join(";", parts);
     }
 
     private static string FormatLocationTile(string? locationName, TileDto? tile)

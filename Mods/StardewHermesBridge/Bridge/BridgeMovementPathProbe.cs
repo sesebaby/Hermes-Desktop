@@ -182,7 +182,7 @@ internal static class BridgeMovementPathProbe
                 targetLocationName,
                 targetTile,
                 ToCrossLocationSegmentFailureCode(probe),
-                probe.FailureDetail,
+                FormatProbeFailureDetail(probe),
                 probe.Route);
         }
 
@@ -258,9 +258,9 @@ internal static class BridgeMovementPathProbe
     {
         if (tile.X < 0 || tile.Y < 0)
             return BridgeTileSafetyCheck.Blocked("step_tile_open_false", "negative_tile");
-        if (!isTileLocationOpen)
-            return BridgeTileSafetyCheck.Blocked("step_tile_open_false", "tile_location_open_false");
 
+        // Schedule pathfinding has already applied NPC route passability. Generic
+        // tile-open checks can reject legitimate indoor schedule steps.
         return BridgeTileSafetyCheck.Safe;
     }
 
@@ -427,6 +427,20 @@ internal static class BridgeMovementPathProbe
         => probe.Status == BridgeRouteProbeStatus.TargetUnsafe
             ? "target_tile_unreachable"
             : "segment_path_unreachable";
+
+    private static string? FormatProbeFailureDetail(BridgeRouteProbeResult probe)
+    {
+        if (probe.FailureKind is null && probe.FailureDetail is null)
+            return null;
+
+        var detail = probe.FailureKind ?? "-";
+        if (probe.FailingTile is not null)
+            detail += $":{probe.FailingTile.X},{probe.FailingTile.Y}";
+        if (!string.IsNullOrWhiteSpace(probe.FailureDetail))
+            detail += $":{probe.FailureDetail}";
+
+        return detail;
+    }
 }
 
 internal sealed class ScopedTerrainFeatureRemoval : IDisposable

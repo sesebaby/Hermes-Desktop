@@ -68,6 +68,27 @@ public sealed class BridgeMoveCommandQueueRegressionTests
     }
 
     [TestMethod]
+    public void FormatRouteProbeLogDetail_WithCrossLocationFailure_IncludesFailureDetail()
+    {
+        var probe = new StardewHermesBridge.Bridge.RouteProbeData(
+            "cross_location",
+            "segment_path_unreachable",
+            "HaleyHouse",
+            new StardewHermesBridge.Bridge.TileDto(8, 6),
+            "Beach",
+            new StardewHermesBridge.Bridge.TileDto(20, 35),
+            new[] { new StardewHermesBridge.Bridge.TileDto(8, 7), new StardewHermesBridge.Bridge.TileDto(7, 20) },
+            FailureCode: "segment_path_unreachable",
+            FailureDetail: "step_tile_open_false:7,20:tile_location_open_false");
+
+        var detail = StardewHermesBridge.Bridge.BridgeCommandQueue.FormatRouteProbeLogDetail(probe);
+
+        Assert.AreEqual(
+            "routeProbeStatus=segment_path_unreachable;mode=cross_location;from=HaleyHouse:8,6;target=Beach:20,35;next=-;routeSteps=2;failure=segment_path_unreachable;failureDetail=step_tile_open_false:7,20:tile_location_open_false",
+            detail);
+    }
+
+    [TestMethod]
     public void StatusQueryExposesShortSafeMoveCandidates()
     {
         var models = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandModels.cs");

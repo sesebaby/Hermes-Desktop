@@ -103,6 +103,18 @@ public sealed class BridgeMovementPathProbeTests
     }
 
     [TestMethod]
+    public void CheckRouteStepSafety_WhenScheduleStepTileLocationIsClosed_TrustsSchedulePath()
+    {
+        var result = BridgeMovementPathProbe.CheckRouteStepSafety(
+            new TileDto(7, 20),
+            isTileLocationOpen: false);
+
+        Assert.IsTrue(
+            result.IsSafe,
+            "Stardew schedule pathfinding has already applied NPC schedule passability; Bridge must not reject returned intermediate steps with generic tile-open checks.");
+    }
+
+    [TestMethod]
     public void EnumerateArrivalFallbackCandidates_SearchesBeyondImmediateNeighbors()
     {
         var target = new TileDto(10, 12);
@@ -183,6 +195,36 @@ public sealed class BridgeMovementPathProbeTests
     }
 
     [TestMethod]
+    public void BuildCrossLocationRouteProbe_TrustsClosedIntermediateScheduleSteps()
+    {
+        var currentTile = new TileDto(8, 6);
+        var blockedStep = new TileDto(7, 20);
+        var warpTile = new TileDto(6, 23);
+        var routeToWarp = new[] { new TileDto(8, 7), blockedStep, warpTile };
+
+        var result = BridgeMovementPathProbe.BuildCrossLocationRouteProbe(
+            "HaleyHouse",
+            currentTile,
+            "Beach",
+            new TileDto(20, 35),
+            new[] { "HaleyHouse", "Town", "Beach" },
+            nextLocationName => nextLocationName == "Town" ? warpTile : null,
+            () => BridgeMovementPathProbe.ToSchedulePath(routeToWarp),
+            tile => BridgeMovementPathProbe.CheckRouteStepSafety(
+                tile,
+                isTileLocationOpen: tile != blockedStep && tile != warpTile));
+
+        Assert.AreEqual("cross_location", result.Mode);
+        Assert.AreEqual("route_found", result.Status);
+        CollectionAssert.AreEqual(routeToWarp, result.Route.ToArray());
+        Assert.IsNotNull(result.NextSegment);
+        Assert.AreEqual(warpTile, result.NextSegment!.StandTile);
+        Assert.AreEqual("warp_to_next_location", result.NextSegment.TargetKind);
+        Assert.AreEqual("Town", result.NextSegment.NextLocationName);
+        Assert.IsNull(result.FailureCode);
+    }
+
+    [TestMethod]
     public void BuildCrossLocationRouteProbe_WhenWarpPointMissing_ReturnsStableFailure()
     {
         var result = BridgeMovementPathProbe.BuildCrossLocationRouteProbe(
@@ -217,6 +259,31 @@ public sealed class BridgeMovementPathProbeTests
         Assert.AreEqual("cross_location", result.Mode);
         Assert.AreEqual("segment_path_unreachable", result.Status);
         Assert.AreEqual("segment_path_unreachable", result.FailureCode);
+        Assert.IsNull(result.NextSegment);
+    }
+
+    [TestMethod]
+    public void BuildCrossLocationRouteProbe_WhenIntermediateStepUnsafe_ReportsFailingTileDetail()
+    {
+        var blockedStep = new TileDto(7, 20);
+        var result = BridgeMovementPathProbe.BuildCrossLocationRouteProbe(
+            "HaleyHouse",
+            new TileDto(8, 6),
+            "Beach",
+            new TileDto(20, 35),
+            new[] { "HaleyHouse", "Town", "Beach" },
+            nextLocationName => nextLocationName == "Town" ? new TileDto(6, 23) : null,
+            () => BridgeMovementPathProbe.ToSchedulePath(new[] { new TileDto(8, 7), blockedStep, new TileDto(6, 23) }),
+            tile => tile == blockedStep
+                ? BridgeTileSafetyCheck.Blocked("step_tile_open_false", "tile_location_open_false")
+                : BridgeTileSafetyCheck.Safe);
+
+        Assert.AreEqual("cross_location", result.Mode);
+        Assert.AreEqual("segment_path_unreachable", result.Status);
+        Assert.AreEqual("segment_path_unreachable", result.FailureCode);
+        Assert.AreEqual(
+            "step_tile_open_false:7,20:tile_location_open_false",
+            result.FailureDetail);
         Assert.IsNull(result.NextSegment);
     }
 }
