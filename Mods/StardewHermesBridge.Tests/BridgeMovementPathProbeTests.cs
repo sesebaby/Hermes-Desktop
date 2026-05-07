@@ -154,6 +154,35 @@ public sealed class BridgeMovementPathProbeTests
     }
 
     [TestMethod]
+    public void BuildCrossLocationRouteProbe_AllowsClosedWarpTileWhenScheduleRouteReachesWarp()
+    {
+        var currentTile = new TileDto(8, 6);
+        var warpTile = new TileDto(6, 23);
+        var routeToWarp = new[] { new TileDto(8, 7), new TileDto(7, 20), warpTile };
+
+        var result = BridgeMovementPathProbe.BuildCrossLocationRouteProbe(
+            "HaleyHouse",
+            currentTile,
+            "Beach",
+            new TileDto(20, 35),
+            new[] { "HaleyHouse", "Town", "Beach" },
+            nextLocationName => nextLocationName == "Town" ? warpTile : null,
+            () => BridgeMovementPathProbe.ToSchedulePath(routeToWarp),
+            tile => tile == warpTile
+                ? BridgeTileSafetyCheck.Blocked("step_tile_open_false", "tile_location_open_false")
+                : BridgeTileSafetyCheck.Safe);
+
+        Assert.AreEqual("cross_location", result.Mode);
+        Assert.AreEqual("route_found", result.Status);
+        CollectionAssert.AreEqual(routeToWarp, result.Route.ToArray());
+        Assert.IsNotNull(result.NextSegment);
+        Assert.AreEqual(warpTile, result.NextSegment!.StandTile);
+        Assert.AreEqual("warp_to_next_location", result.NextSegment.TargetKind);
+        Assert.AreEqual("Town", result.NextSegment.NextLocationName);
+        Assert.IsNull(result.FailureCode);
+    }
+
+    [TestMethod]
     public void BuildCrossLocationRouteProbe_WhenWarpPointMissing_ReturnsStableFailure()
     {
         var result = BridgeMovementPathProbe.BuildCrossLocationRouteProbe(

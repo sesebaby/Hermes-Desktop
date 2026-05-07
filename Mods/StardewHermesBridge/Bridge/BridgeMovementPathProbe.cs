@@ -170,7 +170,9 @@ internal static class BridgeMovementPathProbe
             warpTile,
             _ => BridgeTileSafetyCheck.Safe,
             schedulePathFactory,
-            routeStepSafetyCheck);
+            tile => SameTile(tile, warpTile)
+                ? BridgeTileSafetyCheck.Safe
+                : routeStepSafetyCheck(tile));
 
         if (probe.Status != BridgeRouteProbeStatus.RouteValid)
         {
