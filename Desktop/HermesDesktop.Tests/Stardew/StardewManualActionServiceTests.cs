@@ -109,6 +109,41 @@ public sealed class StardewManualActionServiceTests
         Assert.AreEqual(StardewBridgeErrorCodes.BridgeStaleDiscovery, result.FailureReason);
     }
 
+    [TestMethod]
+    public async Task RepositionToTownAsync_WithValidDiscovery_SubmitsDebugRepositionAction()
+    {
+        var discovery = new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+            new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token-2" },
+            DateTimeOffset.Parse("2026-04-29T08:00:00Z"),
+            456,
+            "save-9"));
+        var commandService = new FakeGameCommandService();
+        var service = new StardewNpcDebugActionService(discovery, _ => commandService);
+
+        var result = await service.RepositionToTownAsync("haley", CancellationToken.None);
+
+        Assert.IsTrue(result.Accepted);
+        Assert.IsNotNull(commandService.LastAction);
+        Assert.AreEqual(GameActionType.DebugReposition, commandService.LastAction.Type);
+        Assert.AreEqual("haley", commandService.LastAction.NpcId);
+        Assert.AreEqual("stardew-valley", commandService.LastAction.GameId);
+        Assert.AreEqual("debug_reposition", commandService.LastAction.Target.Kind);
+        Assert.AreEqual("town", commandService.LastAction.Payload?["target"]?.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task RepositionToTownAsync_WhenBridgeUnavailable_ReturnsDiscoveryFailure()
+    {
+        var service = new StardewNpcDebugActionService(
+            new FakeDiscovery(null),
+            _ => throw new AssertFailedException("Factory should not run without bridge discovery."));
+
+        var result = await service.RepositionToTownAsync("haley", CancellationToken.None);
+
+        Assert.IsFalse(result.Accepted);
+        Assert.AreEqual("missing", result.FailureReason);
+    }
+
     private sealed class FakeDiscovery : IStardewBridgeDiscovery
     {
         private readonly StardewBridgeDiscoverySnapshot? _snapshot;

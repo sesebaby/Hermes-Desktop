@@ -6,7 +6,8 @@ public enum GameActionType
 {
     Move,
     Speak,
-    OpenPrivateChat
+    OpenPrivateChat,
+    DebugReposition
 }
 
 public sealed record GameAction(

@@ -348,36 +348,6 @@
                         </ListView>
                     </Grid>
                 </Border>
-
-                <!-- Debug controls -->
-                <Border Style="{StaticResource SurfaceCardStyle}">
-                    <StackPanel Spacing="8">
-                        <TextBlock x:Uid="AgentRuntimeDebugTitle" FontSize="16" FontWeight="SemiBold"
-                                   Foreground="{StaticResource AppAccentTextBrush}"/>
-                        <TextBlock x:Uid="AgentRuntimeDebugDescription" FontSize="12" TextWrapping="Wrap"
-                                   Foreground="{StaticResource AppTextSecondaryBrush}"/>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="AgentRuntimeHaleySpeakButton" x:Uid="AgentRuntimeHaleySpeakButton"
-                                    Click="NpcSpeakHaley_Click"
-                                    AutomationProperties.AutomationId="AgentRuntimeHaleySpeakButton"
-                                    FontSize="11" Padding="10,4"
-                                    Background="{StaticResource AppAccentGradientBrush}" Foreground="#16110D"/>
-                            <Button x:Name="AgentRuntimePennySpeakButton" x:Uid="AgentRuntimePennySpeakButton"
-                                    Click="NpcSpeakPenny_Click"
-                                    AutomationProperties.AutomationId="AgentRuntimePennySpeakButton"
-                                    FontSize="11" Padding="10,4"
-                                    Background="{StaticResource AppAccentGradientBrush}" Foreground="#16110D"/>
-                            <Button x:Name="AgentRuntimeHaleyTickButton" x:Uid="AgentRuntimeHaleyTickButton"
-                                    Click="NpcTickHaley_Click"
-                                    AutomationProperties.AutomationId="AgentRuntimeHaleyTickButton"
-                                    FontSize="11" Padding="10,4"
-                                    Background="{StaticResource AppInsetBrush}" BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White"/>
-                        </StackPanel>
-                        <TextBlock x:Name="AgentRuntimeManualActionResult" x:Uid="AgentRuntimeManualActionInitial"
-                                   FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource AppTextSecondaryBrush}"
-                                   AutomationProperties.LiveSetting="Polite"/>
-                    </StackPanel>
-                </Border>
             </StackPanel>
         </ScrollViewer>
     </Grid>

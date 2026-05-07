@@ -68,6 +68,17 @@ public sealed record OpenPrivateChatPayload(string? Prompt, string? Conversation
 
 public sealed record OpenPrivateChatData(string NpcId, bool Opened, string? ThreadId = null, string? OpenState = null);
 
+public sealed record DebugRepositionPayload(string? Target);
+
+public sealed record DebugRepositionData(
+    string NpcId,
+    string? FromLocationName,
+    TileDto? FromTile,
+    string TargetLocationName,
+    TileDto? TargetTile,
+    int? FacingDirection,
+    bool DebugTeleport);
+
 public sealed record TaskStatusData(
     string CommandId,
     string TraceId,

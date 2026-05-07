@@ -4,6 +4,7 @@ using Hermes.Agent.Core;
 using Hermes.Agent.Runtime;
 using Hermes.Agent.Tasks;
 using Hermes.Agent.Transcript;
+using System.IO.Compression;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 [TestClass]
@@ -268,6 +269,107 @@ public sealed class NpcDeveloperInspectorServiceTests
         Assert.AreEqual("来自运行时的待办", view.Todos[0].Content);
     }
 
+    [TestMethod]
+    public async Task InspectAsync_WithTraceFilter_FiltersByEventKindCommandIdErrorAndKeyword()
+    {
+        var descriptor = CreateDescriptor();
+        var npcNamespace = new NpcNamespace(_tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+        npcNamespace.EnsureDirectories();
+        await File.WriteAllLinesAsync(
+            Path.Combine(npcNamespace.ActivityPath, "runtime.jsonl"),
+            [
+                """{"timestampUtc":"2026-05-07T02:00:00Z","traceId":"trace-a","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"local_executor","target":"stardew_move","stage":"completed","result":"Beach route probe failed","commandId":"cmd-1","error":"route_miss"}""",
+                """{"timestampUtc":"2026-05-07T02:00:01Z","traceId":"trace-a","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"diagnostic","target":"local_executor","stage":"selected","result":"action=wait","commandId":"cmd-2"}""",
+                """{"timestampUtc":"2026-05-07T02:00:02Z","traceId":"trace-b","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"local_executor","target":"stardew_move","stage":"completed","result":"Town route probe failed","commandId":"cmd-1","error":"route_miss"}"""
+            ]);
+        var service = new NpcDeveloperInspectorService(
+            new NpcDeveloperInspectorOptions { RuntimeLogMaxLines = 20 },
+            TestInspectorText.Instance);
+        var snapshot = CreateSnapshot(descriptor, "trace-a");
+        var request = new NpcDeveloperInspectorRequest(
+            new NpcDeveloperTraceFilter(
+                TraceId: "trace-a",
+                EventType: "local_executor",
+                CommandId: "cmd-1",
+                ErrorCode: "route_miss",
+                Keyword: "Beach"));
+
+        var view = await service.InspectAsync(snapshot, _tempDir, request, CancellationToken.None);
+
+        Assert.AreEqual(1, view.TraceEvents.Count);
+        Assert.AreEqual("cmd-1", view.TraceEvents[0].CommandId);
+        Assert.AreEqual("route_miss", view.TraceEvents[0].Error);
+        StringAssert.Contains(view.TraceEvents[0].Result, "Beach");
+    }
+
+    [TestMethod]
+    public async Task InspectAsync_WithContextInjectionEvents_ProjectsContextDiffBlocks()
+    {
+        var descriptor = CreateDescriptor();
+        var npcNamespace = new NpcNamespace(_tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+        npcNamespace.EnsureDirectories();
+        await File.WriteAllLinesAsync(
+            Path.Combine(npcNamespace.ActivityPath, "runtime.jsonl"),
+            [
+                """{"timestampUtc":"2026-05-07T02:00:00Z","traceId":"trace-a","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"diagnostic","target":"context_injection","stage":"block","result":"block=memory;charsBefore=400;charsAfter=120;tokens=30;hash=abc123;trimmed=true;preview=Beach memory"}"""
+            ]);
+        var service = new NpcDeveloperInspectorService(
+            new NpcDeveloperInspectorOptions { RuntimeLogMaxLines = 20 },
+            TestInspectorText.Instance);
+
+        var view = await service.InspectAsync(CreateSnapshot(descriptor, "trace-a"), _tempDir, CancellationToken.None);
+
+        Assert.AreEqual(1, view.ContextBlocks.Count);
+        Assert.AreEqual("memory", view.ContextBlocks[0].Name);
+        Assert.AreEqual(400, view.ContextBlocks[0].CharactersBefore);
+        Assert.AreEqual(120, view.ContextBlocks[0].CharactersAfter);
+        Assert.AreEqual(30, view.ContextBlocks[0].EstimatedTokens);
+        Assert.IsTrue(view.ContextBlocks[0].Trimmed);
+        Assert.AreEqual("abc123", view.ContextBlocks[0].Hash);
+        Assert.AreEqual("Beach memory", view.ContextBlocks[0].Preview);
+    }
+
+    [TestMethod]
+    public async Task ExportDiagnosticsAsync_WritesRedactedZipWithoutFullIdentityDocuments()
+    {
+        var descriptor = CreateDescriptor();
+        var npcNamespace = new NpcNamespace(_tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+        npcNamespace.EnsureDirectories();
+        await File.WriteAllTextAsync(npcNamespace.SoulFilePath, "SOUL secret should not be exported.");
+        await File.WriteAllLinesAsync(
+            Path.Combine(npcNamespace.ActivityPath, "runtime.jsonl"),
+            ["""{"timestampUtc":"2026-05-07T02:00:00Z","traceId":"trace-a","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"local_executor","target":"stardew_move","stage":"completed","result":"ok","commandId":"cmd-1"}"""]);
+        Directory.CreateDirectory(Path.Combine(_tempDir, "logs"));
+        await File.WriteAllTextAsync(
+            Path.Combine(_tempDir, "logs", "hermes.log"),
+            "Authorization: Bearer should-not-leak\napiKey=should-not-leak\nconnectionString=should-not-leak");
+        await File.WriteAllTextAsync(
+            Path.Combine(_tempDir, "stardew-bridge.json"),
+            """{"host":"127.0.0.1","bridgeToken":"should-not-leak","password":"should-not-leak"}""");
+        var service = new NpcDeveloperInspectorService(
+            new NpcDeveloperInspectorOptions { RuntimeLogMaxLines = 20 },
+            TestInspectorText.Instance);
+
+        var export = await service.ExportDiagnosticsAsync(CreateSnapshot(descriptor, "trace-a"), _tempDir, null, CancellationToken.None);
+
+        Assert.IsTrue(File.Exists(export.ZipPath));
+        StringAssert.Contains(export.ZipPath, Path.Combine(_tempDir, "diagnostics"));
+        using var archive = ZipFile.OpenRead(export.ZipPath);
+        var combined = string.Join(
+            "\n",
+            archive.Entries.Select(entry =>
+            {
+                using var stream = entry.Open();
+                using var reader = new StreamReader(stream);
+                return reader.ReadToEnd();
+            }));
+        Assert.IsFalse(combined.Contains("should-not-leak", StringComparison.Ordinal));
+        Assert.IsFalse(combined.Contains("SOUL secret", StringComparison.Ordinal));
+        StringAssert.Contains(combined, "[redacted]");
+        Assert.IsNotNull(archive.GetEntry("documents-summary.json"));
+        Assert.IsNotNull(archive.GetEntry("bridge-discovery.redacted.json"));
+    }
+
     private static NpcRuntimeDescriptor CreateDescriptor()
         => new(
             "haley",
@@ -278,6 +380,28 @@ public sealed class NpcDeveloperInspectorServiceTests
             "stardew",
             "pack-root",
             "npc-session");
+
+    private static NpcRuntimeSnapshot CreateSnapshot(NpcRuntimeDescriptor descriptor, string? traceId)
+        => new(
+            descriptor.NpcId,
+            descriptor.DisplayName,
+            descriptor.GameId,
+            descriptor.SaveId,
+            descriptor.ProfileId,
+            descriptor.SessionId,
+            NpcRuntimeState.Running,
+            traceId,
+            null,
+            0,
+            1,
+            NpcAutonomyLoopState.Running,
+            null,
+            DateTime.UtcNow,
+            "bridge-key",
+            1,
+            0,
+            null,
+            NpcRuntimeControllerSnapshot.Empty);
 
     private sealed class StaticTranscriptReader : INpcDeveloperTranscriptReader
     {

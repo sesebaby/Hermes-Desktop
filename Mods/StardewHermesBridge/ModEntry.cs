@@ -68,7 +68,7 @@ public sealed class ModEntry : Mod
         _dialogueFlow = new NpcDialogueFlowService();
         _menuGuard = new NpcDialogueMenuGuard();
         _originalDialogueStarter = new NpcOriginalDialogueStarter(helper);
-        _testTeleportCommand = new TestTeleportCommand(helper, Monitor);
+        _testTeleportCommand = new TestTeleportCommand(helper, Monitor, _bridgeLogger);
 
         helper.Events.GameLoop.GameLaunched += OnGameLaunched;
         helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;

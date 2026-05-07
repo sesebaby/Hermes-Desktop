@@ -1,7 +1,6 @@
 using System;
 using System.Globalization;
 using System.Linq;
-using Hermes.Agent.Games.Stardew;
 using HermesDesktop.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
@@ -22,8 +21,6 @@ public sealed partial class AgentPage : Page
     private readonly SoulRegistry _soulRegistry = App.Services.GetRequiredService<SoulRegistry>();
     private readonly AgentProfileManager _profileManager = App.Services.GetRequiredService<AgentProfileManager>();
     private readonly NpcRuntimeWorkspaceService? _npcRuntimeWorkspaceService = App.Services.GetService<NpcRuntimeWorkspaceService>();
-    private readonly StardewNpcDebugActionService? _stardewNpcDebugActions = App.Services.GetService<StardewNpcDebugActionService>();
-    private readonly StardewAutonomyTickDebugService? _stardewAutonomyTickDebug = App.Services.GetService<StardewAutonomyTickDebugService>();
 
     private string _activeTab = "agents";
     private SoulTemplate? _selectedSoul;
@@ -272,130 +269,6 @@ public sealed partial class AgentPage : Page
     private void OpenNpcRuntimeLogs_Click(object sender, RoutedEventArgs e) => _npcRuntimeWorkspaceService?.OpenRuntimeDirectory();
 
     private void OpenDeveloperInspector_Click(object sender, RoutedEventArgs e) => MainWindow.ActiveShell?.NavigateToDeveloperNpcInspector();
-
-    private async void NpcSpeakHaley_Click(object sender, RoutedEventArgs e)
-        => await SpeakNpcAsync("Haley", ResourceLoader.GetString("DashNpcRuntimeDebugHaleySpeakText"));
-
-    private async void NpcSpeakPenny_Click(object sender, RoutedEventArgs e)
-        => await SpeakNpcAsync("Penny", ResourceLoader.GetString("DashNpcRuntimeDebugPennySpeakText"));
-
-    private async void NpcTickHaley_Click(object sender, RoutedEventArgs e)
-        => await RunNpcTickAsync("haley");
-
-    private async System.Threading.Tasks.Task SpeakNpcAsync(string npcId, string text)
-    {
-        if (_stardewNpcDebugActions is null)
-        {
-            AgentRuntimeManualActionResult.Text = ResourceLoader.GetString("DashNpcRuntimeDebugActionsUnavailable");
-            return;
-        }
-
-        SetRuntimeDebugButtonsEnabled(false);
-        AgentRuntimeManualActionResult.Text = string.Format(
-            CultureInfo.CurrentCulture,
-            ResourceLoader.GetString("DashNpcRuntimeSendingDebugDialogueFormat"),
-            npcId);
-        AgentRuntimeManualActionResult.Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"];
-
-        try
-        {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
-            var result = await _stardewNpcDebugActions.SpeakAsync(npcId, text, cts.Token);
-            if (result.Accepted)
-            {
-                AgentRuntimeManualActionResult.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    ResourceLoader.GetString("DashNpcRuntimeDebugDialogueSentFormat"),
-                    npcId);
-                AgentRuntimeManualActionResult.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 34, 197, 94));
-            }
-            else
-            {
-                AgentRuntimeManualActionResult.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    ResourceLoader.GetString("DashNpcRuntimeDebugDialogueFailedFormat"),
-                    npcId,
-                    result.FailureReason ?? "unknown_error");
-                AgentRuntimeManualActionResult.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 68, 68));
-            }
-
-            RefreshRuntime();
-        }
-        catch (Exception ex)
-        {
-            AgentRuntimeManualActionResult.Text = string.Format(
-                CultureInfo.CurrentCulture,
-                ResourceLoader.GetString("DashNpcRuntimeDebugDialogueFailedFormat"),
-                npcId,
-                ex.Message);
-            AgentRuntimeManualActionResult.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 68, 68));
-        }
-        finally
-        {
-            SetRuntimeDebugButtonsEnabled(true);
-        }
-    }
-
-    private async System.Threading.Tasks.Task RunNpcTickAsync(string npcId)
-    {
-        if (_stardewAutonomyTickDebug is null)
-        {
-            AgentRuntimeManualActionResult.Text = ResourceLoader.GetString("DashNpcRuntimeTickDebugUnavailable");
-            return;
-        }
-
-        SetRuntimeDebugButtonsEnabled(false);
-        AgentRuntimeManualActionResult.Text = string.Format(
-            CultureInfo.CurrentCulture,
-            ResourceLoader.GetString("DashNpcRuntimeRunningTickFormat"),
-            npcId);
-        AgentRuntimeManualActionResult.Foreground = (Brush)Application.Current.Resources["AppTextSecondaryBrush"];
-
-        try
-        {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
-            var result = await _stardewAutonomyTickDebug.RunOneTickAsync(npcId, cts.Token);
-            if (result.Success)
-            {
-                AgentRuntimeManualActionResult.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    ResourceLoader.GetString("DashNpcRuntimeTickCompletedFormat"),
-                    result.TraceId,
-                    result.ObservationFacts,
-                    result.EventFacts);
-                AgentRuntimeManualActionResult.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 34, 197, 94));
-            }
-            else
-            {
-                AgentRuntimeManualActionResult.Text = string.Format(
-                    CultureInfo.CurrentCulture,
-                    ResourceLoader.GetString("DashNpcRuntimeTickFailedFormat"),
-                    result.FailureReason ?? "unknown_error");
-                AgentRuntimeManualActionResult.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 68, 68));
-            }
-
-            RefreshRuntime();
-        }
-        catch (Exception ex)
-        {
-            AgentRuntimeManualActionResult.Text = string.Format(
-                CultureInfo.CurrentCulture,
-                ResourceLoader.GetString("DashNpcRuntimeTickFailedFormat"),
-                ex.Message);
-            AgentRuntimeManualActionResult.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 68, 68));
-        }
-        finally
-        {
-            SetRuntimeDebugButtonsEnabled(true);
-        }
-    }
-
-    private void SetRuntimeDebugButtonsEnabled(bool isEnabled)
-    {
-        AgentRuntimeHaleySpeakButton.IsEnabled = isEnabled;
-        AgentRuntimePennySpeakButton.IsEnabled = isEnabled;
-        AgentRuntimeHaleyTickButton.IsEnabled = isEnabled;
-    }
 }
 
 // Shared display model

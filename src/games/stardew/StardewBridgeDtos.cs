@@ -106,6 +106,18 @@ public sealed record StardewOpenPrivateChatData(
     [property: JsonPropertyName("threadId")] string? ThreadId = null,
     [property: JsonPropertyName("openState")] string? OpenState = null);
 
+public sealed record StardewDebugRepositionRequest(
+    [property: JsonPropertyName("target")] string? Target);
+
+public sealed record StardewDebugRepositionData(
+    [property: JsonPropertyName("npcId")] string NpcId,
+    [property: JsonPropertyName("fromLocationName")] string? FromLocationName,
+    [property: JsonPropertyName("fromTile")] StardewTile? FromTile,
+    [property: JsonPropertyName("targetLocationName")] string TargetLocationName,
+    [property: JsonPropertyName("targetTile")] StardewTile? TargetTile,
+    [property: JsonPropertyName("facingDirection")] int? FacingDirection,
+    [property: JsonPropertyName("debugTeleport")] bool DebugTeleport);
+
 public sealed record StardewTaskStatusData(
     [property: JsonPropertyName("commandId")] string CommandId,
     [property: JsonPropertyName("npcId")] string NpcId,

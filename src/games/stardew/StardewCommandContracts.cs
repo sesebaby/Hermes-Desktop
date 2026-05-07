@@ -17,6 +17,7 @@ public static class StardewBridgeRoutes
     public const string TaskCancel = "/task/cancel";
     public const string ActionSpeak = "/action/speak";
     public const string ActionOpenPrivateChat = "/action/open_private_chat";
+    public const string DebugNpcReposition = "/debug/npc/reposition";
 }
 
 public static class StardewCommandStatuses
@@ -41,6 +42,8 @@ public static class StardewBridgeErrorCodes
     public const string MenuBlocked = "menu_blocked";
     public const string DayTransition = "day_transition";
     public const string InvalidTarget = "invalid_target";
+    public const string LocationNotFound = "location_not_found";
+    public const string TargetBlocked = "target_blocked";
     public const string PathBlocked = "path_blocked";
     public const string PathUnreachable = "path_unreachable";
     public const string InvalidState = "invalid_state";

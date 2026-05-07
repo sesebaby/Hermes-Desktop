@@ -1,6 +1,8 @@
 namespace StardewHermesBridge.Commands;
 
 using Microsoft.Xna.Framework;
+using StardewHermesBridge.Bridge;
+using StardewHermesBridge.Logging;
 using StardewModdingAPI;
 using StardewValley;
 
@@ -12,28 +14,37 @@ public static class TestTeleportTargetResolver
 
 public sealed class TestTeleportCommand
 {
+    private const string TeleportUsage = "teleport <海莉|haley|潘妮|penny>";
+    private const string NpcTownUsage = "npc_town <海莉|haley|潘妮|penny>";
+
+    private readonly SmapiBridgeLogger _bridgeLogger;
     private readonly IMonitor _monitor;
 
-    public TestTeleportCommand(IModHelper helper, IMonitor monitor)
+    public TestTeleportCommand(IModHelper helper, IMonitor monitor, SmapiBridgeLogger bridgeLogger)
     {
         _monitor = monitor;
+        _bridgeLogger = bridgeLogger;
         helper.ConsoleCommands.Add(
             "teleport",
-            "Test command: teleport <海莉|haley|潘妮|penny>",
-            Handle);
+            $"Test command: {TeleportUsage}",
+            HandleTeleport);
+        helper.ConsoleCommands.Add(
+            "npc_town",
+            $"Debug command: {NpcTownUsage}",
+            HandleNpcTown);
     }
 
-    private void Handle(string command, string[] args)
+    private void HandleTeleport(string command, string[] args)
     {
         if (!Context.IsWorldReady || Game1.player is null)
         {
-            _monitor.Log("World is not ready. Load a save before using: teleport <海莉|haley|潘妮|penny>", LogLevel.Warn);
+            _monitor.Log($"World is not ready. Load a save before using: {TeleportUsage}", LogLevel.Warn);
             return;
         }
 
         if (args.Length != 1 || !TestTeleportTargetResolver.TryResolve(args[0], out var npcName))
         {
-            _monitor.Log("Usage: teleport <海莉|haley|潘妮|penny>", LogLevel.Info);
+            _monitor.Log($"Usage: {TeleportUsage}", LogLevel.Info);
             return;
         }
 
@@ -54,6 +65,28 @@ public sealed class TestTeleportCommand
 
         Game1.warpFarmer(npc.currentLocation.Name, targetTile.Value.X, targetTile.Value.Y, false);
         _monitor.Log($"Teleported player near {npcName}.", LogLevel.Info);
+    }
+
+    private void HandleNpcTown(string command, string[] args)
+    {
+        if (args.Length != 1)
+        {
+            _monitor.Log($"Usage: {NpcTownUsage}", LogLevel.Info);
+            return;
+        }
+
+        var result = BridgeNpcDebugRepositioner.RepositionToTown(args[0], _bridgeLogger);
+        if (!result.Ok)
+        {
+            _monitor.Log(
+                $"debug_npc_reposition failed: {result.ErrorCode ?? "unknown_error"} ({result.ErrorMessage ?? "no detail"})",
+                LogLevel.Warn);
+            return;
+        }
+
+        _monitor.Log(
+            $"debug_npc_reposition completed: {result.NpcId} -> {result.TargetLocationName} {result.TargetTile?.X},{result.TargetTile?.Y}",
+            LogLevel.Info);
     }
 
     private static Point? FindOpenTileNear(GameLocation location, int npcTileX, int npcTileY)

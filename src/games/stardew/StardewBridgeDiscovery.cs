@@ -188,6 +188,42 @@ public sealed class StardewNpcDebugActionService
             return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.BridgeUnavailable, traceId);
         }
     }
+
+    public async Task<GameCommandResult> RepositionToTownAsync(string npcId, CancellationToken ct)
+    {
+        var traceId = $"trace_manual_reposition_{Guid.NewGuid():N}";
+        if (string.IsNullOrWhiteSpace(npcId))
+            return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.InvalidTarget, traceId);
+
+        if (!_discovery.TryReadLatest(out var snapshot, out var failureReason) || snapshot is null)
+            return new GameCommandResult(false, "", StardewCommandStatuses.Failed, failureReason ?? StardewBridgeErrorCodes.BridgeUnavailable, traceId);
+
+        if (!StardewBridgeRuntimeIdentity.TryGetSaveId(snapshot, out _))
+            return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.BridgeStaleDiscovery, traceId);
+
+        var payload = new System.Text.Json.Nodes.JsonObject
+        {
+            ["target"] = "town"
+        };
+        var action = new GameAction(
+            npcId,
+            "stardew-valley",
+            GameActionType.DebugReposition,
+            traceId,
+            $"manual_reposition_{npcId}_{Guid.NewGuid():N}",
+            new GameActionTarget("debug_reposition"),
+            "manual desktop debug reposition to town",
+            payload);
+
+        try
+        {
+            return await _commandServiceFactory(snapshot).SubmitAsync(action, ct);
+        }
+        catch
+        {
+            return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.BridgeUnavailable, traceId);
+        }
+    }
 }
 
 internal static class StardewBridgeRuntimeIdentity

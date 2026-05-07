@@ -21,6 +21,9 @@ public sealed class StardewCommandService : IGameCommandService
         if (action.Type == GameActionType.OpenPrivateChat)
             return await SubmitOpenPrivateChatAsync(action, ct);
 
+        if (action.Type == GameActionType.DebugReposition)
+            return await SubmitDebugRepositionAsync(action, ct);
+
         if (action.Type != GameActionType.Move)
             return new GameCommandResult(false, "", StardewCommandStatuses.Failed, "unsupported_action", action.TraceId);
 
@@ -82,6 +85,28 @@ public sealed class StardewCommandService : IGameCommandService
 
         if (response.Ok && !IsAcceptedOpenPrivateChat(response.Data))
             return new GameCommandResult(false, response.CommandId ?? "", StardewCommandStatuses.Failed, "open_private_chat_not_opened", action.TraceId);
+
+        return ToCommandResult(response, action.TraceId);
+    }
+
+    private async Task<GameCommandResult> SubmitDebugRepositionAsync(GameAction action, CancellationToken ct)
+    {
+        var target = action.Payload?["target"]?.ToString();
+        if (string.IsNullOrWhiteSpace(target))
+            target = "town";
+
+        var envelope = new StardewBridgeEnvelope<StardewDebugRepositionRequest>(
+            $"req_{Guid.NewGuid():N}",
+            action.TraceId,
+            ResolveNpcId(action),
+            _saveId,
+            action.IdempotencyKey,
+            new StardewDebugRepositionRequest(target));
+
+        var response = await _client.SendAsync<StardewDebugRepositionRequest, StardewDebugRepositionData>(
+            StardewBridgeRoutes.DebugNpcReposition,
+            envelope,
+            ct);
 
         return ToCommandResult(response, action.TraceId);
     }

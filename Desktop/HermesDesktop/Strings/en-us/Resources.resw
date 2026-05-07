@@ -1315,7 +1315,7 @@
     <value>NPC Runtime</value>
   </data>
   <data name="AgentRuntimeHeaderSubtitle.Text" xml:space="preserve">
-    <value>Runtime state, bridge health, traces, and debug actions for Stardew NPC agents.</value>
+    <value>Runtime state, bridge health, and recent traces for Stardew NPC agents. Controlled debug actions are now in the developer inspector.</value>
   </data>
   <data name="AgentRuntimeOpenLogsButton.Content" xml:space="preserve">
     <value>Open Logs</value>
@@ -1349,33 +1349,6 @@
   </data>
   <data name="AgentNpcRuntimeList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>NPC runtime list</value>
-  </data>
-  <data name="AgentRuntimeDebugTitle.Text" xml:space="preserve">
-    <value>Debug Actions</value>
-  </data>
-  <data name="AgentRuntimeDebugDescription.Text" xml:space="preserve">
-    <value>Use these controls only for runtime diagnosis. Normal NPC decisions still happen inside the agent loop.</value>
-  </data>
-  <data name="AgentRuntimeHaleySpeakButton.Content" xml:space="preserve">
-    <value>Debug Haley Speak</value>
-  </data>
-  <data name="AgentRuntimeHaleySpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Send a debug Haley speech command</value>
-  </data>
-  <data name="AgentRuntimePennySpeakButton.Content" xml:space="preserve">
-    <value>Debug Penny Speak</value>
-  </data>
-  <data name="AgentRuntimePennySpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Send a debug Penny speech command</value>
-  </data>
-  <data name="AgentRuntimeHaleyTickButton.Content" xml:space="preserve">
-    <value>Run Haley Tick</value>
-  </data>
-  <data name="AgentRuntimeHaleyTickButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Run one Haley autonomy tick</value>
-  </data>
-  <data name="AgentRuntimeManualActionInitial.Text" xml:space="preserve">
-    <value>Normal path: clicking Haley in the game records completed dialogue facts only; Run Haley Tick lets the Desktop/core Haley runtime observe and decide the next step itself.</value>
   </data>
   <data name="AgentRuntimeUnavailable" xml:space="preserve">
     <value>NPC runtime workspace is not available in this build.</value>
@@ -1482,6 +1455,12 @@
   <data name="DeveloperDetailLogsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Show log paths and parse diagnostics</value>
   </data>
+  <data name="DeveloperDetailContextButton.Content" xml:space="preserve">
+    <value>Context Diff</value>
+  </data>
+  <data name="DeveloperDetailContextButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Show context injection differences</value>
+  </data>
   <data name="DeveloperModelReplyList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Model reply list</value>
   </data>
@@ -1493,6 +1472,9 @@
   </data>
   <data name="DeveloperTodoList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Task and todo list</value>
+  </data>
+  <data name="DeveloperContextBlockList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Context injection difference list</value>
   </data>
   <data name="DeveloperRuntimeUnavailable" xml:space="preserve">
     <value>The developer inspector is not available in this build.</value>
@@ -1517,6 +1499,198 @@
   </data>
   <data name="DeveloperNoTraceDiagnostics" xml:space="preserve">
     <value>No parse diagnostics.</value>
+  </data>
+  <data name="DeveloperControlledDebugTitle.Text" xml:space="preserve">
+    <value>Controlled Debug</value>
+  </data>
+  <data name="DeveloperControlledDebugDescription.Text" xml:space="preserve">
+    <value>These actions send explicit debug commands through the game bridge. Moving to town is a debug teleport, not natural movement evidence.</value>
+  </data>
+  <data name="DeveloperDebugRepositionButton.Content" xml:space="preserve">
+    <value>Move to Town</value>
+  </data>
+  <data name="DeveloperDebugRepositionButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Move the selected NPC to town</value>
+  </data>
+  <data name="DeveloperDebugTickButton.Content" xml:space="preserve">
+    <value>Run One Tick</value>
+  </data>
+  <data name="DeveloperDebugTickButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Run one autonomy tick for the selected NPC</value>
+  </data>
+  <data name="DeveloperDebugSpeakButton.Content" xml:space="preserve">
+    <value>Send Debug Line</value>
+  </data>
+  <data name="DeveloperDebugSpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Send a debug dialogue line for the selected NPC</value>
+  </data>
+  <data name="DeveloperDebugActionStatusInitial.Text" xml:space="preserve">
+    <value>Select an NPC to run controlled debug actions.</value>
+  </data>
+  <data name="DeveloperDebugActionResultInitial.Text" xml:space="preserve">
+    <value>No debug action has run yet.</value>
+  </data>
+  <data name="DeveloperTraceFilterTitle.Text" xml:space="preserve">
+    <value>Trace Filter and Export</value>
+  </data>
+  <data name="DeveloperTraceIdFilterBox.Header" xml:space="preserve">
+    <value>Trace id</value>
+  </data>
+  <data name="DeveloperTraceIdFilterBox.PlaceholderText" xml:space="preserve">
+    <value>trace...</value>
+  </data>
+  <data name="DeveloperTraceIdFilterBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Filter by trace id</value>
+  </data>
+  <data name="DeveloperEventTypeFilterBox.Header" xml:space="preserve">
+    <value>Event type</value>
+  </data>
+  <data name="DeveloperEventTypeFilterBox.PlaceholderText" xml:space="preserve">
+    <value>diagnostic</value>
+  </data>
+  <data name="DeveloperEventTypeFilterBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Filter by event type</value>
+  </data>
+  <data name="DeveloperCommandIdFilterBox.Header" xml:space="preserve">
+    <value>Command id</value>
+  </data>
+  <data name="DeveloperCommandIdFilterBox.PlaceholderText" xml:space="preserve">
+    <value>command...</value>
+  </data>
+  <data name="DeveloperCommandIdFilterBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Filter by command id</value>
+  </data>
+  <data name="DeveloperToolNameFilterBox.Header" xml:space="preserve">
+    <value>Tool name</value>
+  </data>
+  <data name="DeveloperToolNameFilterBox.PlaceholderText" xml:space="preserve">
+    <value>stardew...</value>
+  </data>
+  <data name="DeveloperToolNameFilterBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Filter by tool name</value>
+  </data>
+  <data name="DeveloperErrorCodeFilterBox.Header" xml:space="preserve">
+    <value>Error code</value>
+  </data>
+  <data name="DeveloperErrorCodeFilterBox.PlaceholderText" xml:space="preserve">
+    <value>bridge_unavailable</value>
+  </data>
+  <data name="DeveloperErrorCodeFilterBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Filter by error code</value>
+  </data>
+  <data name="DeveloperKeywordFilterBox.Header" xml:space="preserve">
+    <value>Keyword</value>
+  </data>
+  <data name="DeveloperKeywordFilterBox.PlaceholderText" xml:space="preserve">
+    <value>routeProbe / Beach</value>
+  </data>
+  <data name="DeveloperKeywordFilterBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Filter by keyword</value>
+  </data>
+  <data name="DeveloperApplyTraceFilterButton.Content" xml:space="preserve">
+    <value>Apply Filter</value>
+  </data>
+  <data name="DeveloperApplyTraceFilterButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Apply trace filters</value>
+  </data>
+  <data name="DeveloperClearTraceFilterButton.Content" xml:space="preserve">
+    <value>Clear Filter</value>
+  </data>
+  <data name="DeveloperClearTraceFilterButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Clear trace filters</value>
+  </data>
+  <data name="DeveloperExportDiagnosticsButton.Content" xml:space="preserve">
+    <value>Export Diagnostics</value>
+  </data>
+  <data name="DeveloperExportDiagnosticsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Export a redacted diagnostics package for the selected NPC</value>
+  </data>
+  <data name="DeveloperDiagnosticsExportInitial.Text" xml:space="preserve">
+    <value>Diagnostics packages are written to the local diagnostics folder with automatic redaction.</value>
+  </data>
+  <data name="DeveloperDebugRepositionActionName" xml:space="preserve">
+    <value>Move to Town</value>
+  </data>
+  <data name="DeveloperDebugTickActionName" xml:space="preserve">
+    <value>Run One Tick</value>
+  </data>
+  <data name="DeveloperDebugSpeakActionName" xml:space="preserve">
+    <value>Send Debug Line</value>
+  </data>
+  <data name="DeveloperDebugSpeakText" xml:space="preserve">
+    <value>This is a debug line sent from the developer inspector.</value>
+  </data>
+  <data name="DeveloperDebugActionRunningFormat" xml:space="preserve">
+    <value>Running "{0}" for {1}</value>
+  </data>
+  <data name="DeveloperDebugActionSuccessFormat" xml:space="preserve">
+    <value>"{0}" was submitted. commandId={1} traceId={2}</value>
+  </data>
+  <data name="DeveloperDebugActionFailedFormat" xml:space="preserve">
+    <value>"{0}" failed. Raw error code: {1}</value>
+  </data>
+  <data name="DeveloperDebugTickSuccessFormat" xml:space="preserve">
+    <value>One tick completed. traceId={0} observationFacts={1} eventFacts={2}</value>
+  </data>
+  <data name="DeveloperDebugNoSelection" xml:space="preserve">
+    <value>Select an active NPC first.</value>
+  </data>
+  <data name="DeveloperDebugBridgeUnavailable" xml:space="preserve">
+    <value>The bridge is not connected or the save identity is stale, so controlled actions are disabled.</value>
+  </data>
+  <data name="DeveloperDebugServiceUnavailable" xml:space="preserve">
+    <value>The matching debug service is not registered in this build.</value>
+  </data>
+  <data name="DeveloperDebugActionServiceUnavailable" xml:space="preserve">
+    <value>Reposition and debug speech services are unavailable; one-step wake is still available.</value>
+  </data>
+  <data name="DeveloperDebugTickServiceUnavailable" xml:space="preserve">
+    <value>One-step wake service is unavailable; reposition and debug speech are still available.</value>
+  </data>
+  <data name="DeveloperDebugActionInProgress" xml:space="preserve">
+    <value>A debug or export operation is already running.</value>
+  </data>
+  <data name="DeveloperDebugActionReady" xml:space="preserve">
+    <value>NPC selected and bridge ready. A confirmation appears before execution.</value>
+  </data>
+  <data name="DeveloperDebugConfirmTitle" xml:space="preserve">
+    <value>Confirm controlled debug action</value>
+  </data>
+  <data name="DeveloperDebugConfirmContentFormat" xml:space="preserve">
+    <value>About to run "{0}" for {1}. This changes game state for debugging only and does not prove natural behavior succeeded.</value>
+  </data>
+  <data name="DeveloperDebugConfirmPrimaryButton" xml:space="preserve">
+    <value>Run</value>
+  </data>
+  <data name="DeveloperDebugConfirmCancelButton" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="DeveloperDiagnosticsExportUnavailable" xml:space="preserve">
+    <value>No active NPC diagnostics are available to export.</value>
+  </data>
+  <data name="DeveloperDiagnosticsExportRunning" xml:space="preserve">
+    <value>Generating redacted diagnostics package...</value>
+  </data>
+  <data name="DeveloperDiagnosticsExportSuccessFormat" xml:space="preserve">
+    <value>Diagnostics package exported: {0}</value>
+  </data>
+  <data name="DeveloperDiagnosticsExportFailedFormat" xml:space="preserve">
+    <value>Diagnostics export failed: {0}</value>
+  </data>
+  <data name="DeveloperContextBlockEmptyState" xml:space="preserve">
+    <value>The current trace has no context injection difference records.</value>
+  </data>
+  <data name="DeveloperContextCharsBeforeLabel.Text" xml:space="preserve">
+    <value>chars before</value>
+  </data>
+  <data name="DeveloperContextCharsAfterLabel.Text" xml:space="preserve">
+    <value>chars after</value>
+  </data>
+  <data name="DeveloperContextTokensLabel.Text" xml:space="preserve">
+    <value>estimated tokens</value>
+  </data>
+  <data name="DeveloperContextTrimmedLabel.Text" xml:space="preserve">
+    <value>trimmed</value>
   </data>
   <data name="DeveloperInspectorFileMissing" xml:space="preserve">
     <value>File not found.</value>

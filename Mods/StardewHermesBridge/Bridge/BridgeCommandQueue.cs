@@ -261,6 +261,27 @@ public sealed class BridgeCommandQueue
         return completion.Task.WaitAsync(ct);
     }
 
+    public Task<BridgeResponse<DebugRepositionData>> RepositionNpcAsync(BridgeEnvelope<DebugRepositionPayload> envelope, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(envelope.NpcId))
+            return Task.FromResult(Error<DebugRepositionData>(envelope.TraceId, envelope.RequestId, "invalid_target", "npcId is required.", retryable: false));
+
+        if (!string.IsNullOrWhiteSpace(envelope.Payload.Target) &&
+            !string.Equals(envelope.Payload.Target, "town", StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(Error<DebugRepositionData>(
+                envelope.TraceId,
+                envelope.RequestId,
+                "invalid_target",
+                "Only target=town is supported.",
+                retryable: false));
+        }
+
+        var completion = new TaskCompletionSource<BridgeResponse<DebugRepositionData>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingUi.Enqueue(new BridgeDebugRepositionUiCommand(envelope, completion));
+        return completion.Task.WaitAsync(ct);
+    }
+
     private BridgeResponse<OpenPrivateChatData> ExecuteOpenPrivateChat(BridgeEnvelope<OpenPrivateChatPayload> envelope)
     {
         var npcId = envelope.NpcId;
@@ -354,6 +375,37 @@ public sealed class BridgeCommandQueue
             null,
             "completed",
             new OpenPrivateChatData(npc.Name, true, conversationId, "input_menu_opened"),
+            null,
+            new { });
+    }
+
+    private BridgeResponse<DebugRepositionData> ExecuteDebugReposition(BridgeEnvelope<DebugRepositionPayload> envelope)
+    {
+        var result = BridgeNpcDebugRepositioner.RepositionToTown(envelope.NpcId, _logger);
+        if (!result.Ok)
+        {
+            return Error<DebugRepositionData>(
+                envelope.TraceId,
+                envelope.RequestId,
+                result.ErrorCode ?? "debug_reposition_failed",
+                result.ErrorMessage ?? "Debug reposition failed.",
+                retryable: result.ErrorCode == "world_not_ready");
+        }
+
+        return new BridgeResponse<DebugRepositionData>(
+            true,
+            envelope.TraceId,
+            envelope.RequestId,
+            null,
+            "completed",
+            new DebugRepositionData(
+                result.NpcId,
+                result.FromLocationName,
+                result.FromTile,
+                result.TargetLocationName,
+                result.TargetTile,
+                result.FacingDirection,
+                DebugTeleport: true),
             null,
             new { });
     }
@@ -941,6 +993,35 @@ public sealed class BridgeCommandQueue
             {
                 _completion.TrySetException(ex);
                 return FailedUiStatus(_envelope.ToUntyped(), "open_private_chat", ex);
+            }
+        }
+    }
+
+    private sealed class BridgeDebugRepositionUiCommand : IBridgeUiCommand
+    {
+        private readonly BridgeEnvelope<DebugRepositionPayload> _envelope;
+        private readonly TaskCompletionSource<BridgeResponse<DebugRepositionData>> _completion;
+
+        public BridgeDebugRepositionUiCommand(
+            BridgeEnvelope<DebugRepositionPayload> envelope,
+            TaskCompletionSource<BridgeResponse<DebugRepositionData>> completion)
+        {
+            _envelope = envelope;
+            _completion = completion;
+        }
+
+        public TaskStatusData Execute(BridgeCommandQueue queue)
+        {
+            try
+            {
+                var response = queue.ExecuteDebugReposition(_envelope);
+                _completion.TrySetResult(response);
+                return ToUiStatus(_envelope.ToUntyped(), "debug_reposition", response);
+            }
+            catch (Exception ex)
+            {
+                _completion.TrySetException(ex);
+                return FailedUiStatus(_envelope.ToUntyped(), "debug_reposition", ex);
             }
         }
     }

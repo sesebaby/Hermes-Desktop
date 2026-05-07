@@ -170,6 +170,7 @@
             <Grid Grid.Column="1" RowSpacing="16">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="2*" />
                     <RowDefinition Height="3*" />
                 </Grid.RowDefinitions>
@@ -227,6 +228,184 @@
                 </Border>
 
                 <Grid Grid.Row="1" ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Style="{StaticResource SurfaceCardStyle}">
+                        <Grid RowSpacing="8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock
+                                x:Uid="DeveloperControlledDebugTitle"
+                                Style="{StaticResource SectionTitleTextStyle}" />
+                            <TextBlock
+                                x:Uid="DeveloperControlledDebugDescription"
+                                Grid.Row="1"
+                                Style="{StaticResource BodySecondaryTextStyle}"
+                                FontSize="12"
+                                TextWrapping="Wrap" />
+                            <StackPanel
+                                Grid.Row="2"
+                                Orientation="Horizontal"
+                                Spacing="8">
+                                <Button
+                                    x:Name="DebugRepositionButton"
+                                    x:Uid="DeveloperDebugRepositionButton"
+                                    AutomationProperties.AutomationId="DeveloperDebugRepositionButton"
+                                    Click="DebugReposition_Click"
+                                    Background="{StaticResource AppAccentGradientBrush}"
+                                    Foreground="#16110D"
+                                    Padding="10,6" />
+                                <Button
+                                    x:Name="DebugTickButton"
+                                    x:Uid="DeveloperDebugTickButton"
+                                    AutomationProperties.AutomationId="DeveloperDebugTickButton"
+                                    Click="DebugTick_Click"
+                                    Background="{StaticResource AppInsetBrush}"
+                                    BorderBrush="{StaticResource AppStrokeBrush}"
+                                    Foreground="White"
+                                    Padding="10,6" />
+                                <Button
+                                    x:Name="DebugSpeakButton"
+                                    x:Uid="DeveloperDebugSpeakButton"
+                                    AutomationProperties.AutomationId="DeveloperDebugSpeakButton"
+                                    Click="DebugSpeak_Click"
+                                    Background="{StaticResource AppInsetBrush}"
+                                    BorderBrush="{StaticResource AppStrokeBrush}"
+                                    Foreground="White"
+                                    Padding="10,6" />
+                            </StackPanel>
+                            <TextBlock
+                                x:Name="DebugActionStatusText"
+                                x:Uid="DeveloperDebugActionStatusInitial"
+                                Grid.Row="3"
+                                FontSize="12"
+                                Foreground="{StaticResource AppTextSecondaryBrush}"
+                                TextWrapping="Wrap" />
+                            <TextBlock
+                                x:Name="DebugActionResultText"
+                                x:Uid="DeveloperDebugActionResultInitial"
+                                Grid.Row="4"
+                                FontSize="12"
+                                Foreground="{StaticResource AppTextSecondaryBrush}"
+                                TextWrapping="Wrap"
+                                AutomationProperties.LiveSetting="Polite" />
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Column="1" Style="{StaticResource SurfaceCardStyle}">
+                        <Grid RowSpacing="8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock
+                                x:Uid="DeveloperTraceFilterTitle"
+                                Style="{StaticResource SectionTitleTextStyle}" />
+                            <Grid
+                                Grid.Row="1"
+                                ColumnSpacing="8"
+                                RowSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBox
+                                    x:Name="TraceIdFilterBox"
+                                    x:Uid="DeveloperTraceIdFilterBox"
+                                    AutomationProperties.AutomationId="DeveloperTraceIdFilterBox"
+                                    FontSize="12" />
+                                <TextBox
+                                    x:Name="EventTypeFilterBox"
+                                    x:Uid="DeveloperEventTypeFilterBox"
+                                    Grid.Column="1"
+                                    AutomationProperties.AutomationId="DeveloperEventTypeFilterBox"
+                                    FontSize="12" />
+                                <TextBox
+                                    x:Name="CommandIdFilterBox"
+                                    x:Uid="DeveloperCommandIdFilterBox"
+                                    Grid.Column="2"
+                                    AutomationProperties.AutomationId="DeveloperCommandIdFilterBox"
+                                    FontSize="12" />
+                                <TextBox
+                                    x:Name="ToolNameFilterBox"
+                                    x:Uid="DeveloperToolNameFilterBox"
+                                    Grid.Row="1"
+                                    AutomationProperties.AutomationId="DeveloperToolNameFilterBox"
+                                    FontSize="12" />
+                                <TextBox
+                                    x:Name="ErrorCodeFilterBox"
+                                    x:Uid="DeveloperErrorCodeFilterBox"
+                                    Grid.Row="1"
+                                    Grid.Column="1"
+                                    AutomationProperties.AutomationId="DeveloperErrorCodeFilterBox"
+                                    FontSize="12" />
+                                <TextBox
+                                    x:Name="KeywordFilterBox"
+                                    x:Uid="DeveloperKeywordFilterBox"
+                                    Grid.Row="1"
+                                    Grid.Column="2"
+                                    AutomationProperties.AutomationId="DeveloperKeywordFilterBox"
+                                    FontSize="12" />
+                            </Grid>
+                            <StackPanel
+                                Grid.Row="2"
+                                Orientation="Horizontal"
+                                Spacing="8">
+                                <Button
+                                    x:Name="ApplyTraceFilterButton"
+                                    x:Uid="DeveloperApplyTraceFilterButton"
+                                    AutomationProperties.AutomationId="DeveloperApplyTraceFilterButton"
+                                    Click="ApplyTraceFilter_Click"
+                                    Background="{StaticResource AppAccentGradientBrush}"
+                                    Foreground="#16110D"
+                                    Padding="10,6" />
+                                <Button
+                                    x:Name="ClearTraceFilterButton"
+                                    x:Uid="DeveloperClearTraceFilterButton"
+                                    AutomationProperties.AutomationId="DeveloperClearTraceFilterButton"
+                                    Click="ClearTraceFilter_Click"
+                                    Background="{StaticResource AppInsetBrush}"
+                                    BorderBrush="{StaticResource AppStrokeBrush}"
+                                    Foreground="White"
+                                    Padding="10,6" />
+                                <Button
+                                    x:Name="ExportDiagnosticsButton"
+                                    x:Uid="DeveloperExportDiagnosticsButton"
+                                    AutomationProperties.AutomationId="DeveloperExportDiagnosticsButton"
+                                    Click="ExportDiagnostics_Click"
+                                    Background="{StaticResource AppInsetBrush}"
+                                    BorderBrush="{StaticResource AppStrokeBrush}"
+                                    Foreground="White"
+                                    Padding="10,6" />
+                            </StackPanel>
+                            <TextBlock
+                                x:Name="DiagnosticsExportText"
+                                x:Uid="DeveloperDiagnosticsExportInitial"
+                                Grid.Row="3"
+                                FontSize="12"
+                                Foreground="{StaticResource AppTextSecondaryBrush}"
+                                TextWrapping="Wrap"
+                                AutomationProperties.LiveSetting="Polite" />
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <Grid Grid.Row="2" ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="*" />
@@ -296,7 +475,7 @@
                     </Border>
                 </Grid>
 
-                <Grid Grid.Row="2" ColumnSpacing="16">
+                <Grid Grid.Row="3" ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="2*" />
                         <ColumnDefinition Width="3*" />
@@ -409,6 +588,15 @@
                                     AutomationProperties.AutomationId="DeveloperDetailLogsButton"
                                     Click="DetailTab_Click"
                                     Tag="logs"
+                                    Background="{StaticResource AppInsetBrush}"
+                                    BorderBrush="{StaticResource AppStrokeBrush}"
+                                    Foreground="{StaticResource AppTextSecondaryBrush}" />
+                                <Button
+                                    x:Name="DetailContextButton"
+                                    x:Uid="DeveloperDetailContextButton"
+                                    AutomationProperties.AutomationId="DeveloperDetailContextButton"
+                                    Click="DetailTab_Click"
+                                    Tag="context"
                                     Background="{StaticResource AppInsetBrush}"
                                     BorderBrush="{StaticResource AppStrokeBrush}"
                                     Foreground="{StaticResource AppTextSecondaryBrush}" />
@@ -558,6 +746,74 @@
                                             TextWrapping="Wrap" />
                                     </StackPanel>
                                 </ScrollViewer>
+                                <ListView
+                                    x:Name="ContextBlockList"
+                                    x:Uid="DeveloperContextBlockList"
+                                    Background="Transparent"
+                                    SelectionMode="None"
+                                    Visibility="Collapsed">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="runtime:NpcDeveloperContextBlock">
+                                            <StackPanel Margin="0,8" Spacing="5">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock
+                                                        Text="{x:Bind Name}"
+                                                        FontFamily="Consolas"
+                                                        FontWeight="SemiBold"
+                                                        Foreground="{StaticResource AppAccentTextBrush}" />
+                                                    <TextBlock
+                                                        Text="{x:Bind Hash}"
+                                                        FontFamily="Consolas"
+                                                        FontSize="11"
+                                                        Foreground="{StaticResource AppTextSecondaryBrush}"
+                                                        TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock
+                                                        x:Uid="DeveloperContextCharsBeforeLabel"
+                                                        FontSize="11"
+                                                        Foreground="{StaticResource AppTextSecondaryBrush}" />
+                                                    <TextBlock
+                                                        Text="{x:Bind CharactersBefore}"
+                                                        FontFamily="Consolas"
+                                                        FontSize="11"
+                                                        Foreground="{StaticResource AppTextSecondaryBrush}" />
+                                                    <TextBlock
+                                                        x:Uid="DeveloperContextCharsAfterLabel"
+                                                        FontSize="11"
+                                                        Foreground="{StaticResource AppTextSecondaryBrush}" />
+                                                    <TextBlock
+                                                        Text="{x:Bind CharactersAfter}"
+                                                        FontFamily="Consolas"
+                                                        FontSize="11"
+                                                        Foreground="{StaticResource AppTextSecondaryBrush}" />
+                                                    <TextBlock
+                                                        x:Uid="DeveloperContextTokensLabel"
+                                                        FontSize="11"
+                                                        Foreground="{StaticResource AppTextSecondaryBrush}" />
+                                                    <TextBlock
+                                                        Text="{x:Bind EstimatedTokens}"
+                                                        FontFamily="Consolas"
+                                                        FontSize="11"
+                                                        Foreground="{StaticResource AppTextSecondaryBrush}" />
+                                                    <TextBlock
+                                                        x:Uid="DeveloperContextTrimmedLabel"
+                                                        FontSize="11"
+                                                        Foreground="{StaticResource AppTextSecondaryBrush}" />
+                                                    <TextBlock
+                                                        Text="{x:Bind Trimmed}"
+                                                        FontFamily="Consolas"
+                                                        FontSize="11"
+                                                        Foreground="{StaticResource AppTextSecondaryBrush}" />
+                                                </StackPanel>
+                                                <TextBlock
+                                                    Text="{x:Bind Preview}"
+                                                    FontSize="12"
+                                                    TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
                                 <TextBlock
                                     x:Name="DetailEmptyText"
                                     Style="{StaticResource BodySecondaryTextStyle}"

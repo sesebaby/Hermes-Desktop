@@ -134,6 +134,9 @@ public sealed class BridgeHttpHost
                 case "/action/open_private_chat":
                     await HandleOpenPrivateChatAsync(context, ct);
                     return;
+                case "/debug/npc/reposition":
+                    await HandleDebugNpcRepositionAsync(context, ct);
+                    return;
                 case "/query/status":
                     await HandleQueryStatusAsync(context, ct);
                     return;
@@ -209,6 +212,13 @@ public sealed class BridgeHttpHost
     {
         var envelope = await ReadJsonAsync<BridgeEnvelope<OpenPrivateChatPayload>>(context.Request, ct);
         var response = await _commands.OpenPrivateChatAsync(envelope, ct);
+        await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
+    }
+
+    private async Task HandleDebugNpcRepositionAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        var envelope = await ReadJsonAsync<BridgeEnvelope<DebugRepositionPayload>>(context.Request, ct);
+        var response = await _commands.RepositionNpcAsync(envelope, ct);
         await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
     }
 

@@ -138,11 +138,10 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
-    public async Task RunOneIterationAsync_AgentToolUsesDelegationClientWhenSupplied()
+    public async Task RunOneIterationAsync_AutonomyParentHasNoDirectAgentToolSurface()
     {
         var discovery = CreateDiscovery("save-42");
         var chatClient = new CountingChatClient("I will wait near the library.");
-        var delegationClient = new DelegationStreamingChatClient();
         var adapter = CreateAdapter("penny");
         var supervisor = new NpcRuntimeSupervisor();
         var service = CreateService(
@@ -150,8 +149,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             _ => adapter,
             chatClient,
             supervisor,
-            enabledNpcIds: ["penny"],
-            delegationChatClient: delegationClient);
+            enabledNpcIds: ["penny"]);
 
         await service.RunOneIterationAsync(CancellationToken.None);
 
@@ -175,18 +173,11 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                     chatClient,
                     NullLoggerFactory.Instance,
                     _skillManager,
-                    new NoopCronScheduler(),
-                    delegationClient),
+                    new NoopCronScheduler()),
                 ToolSurface: NpcToolSurface.FromTools([])),
             CancellationToken.None);
 
-        var result = await handle.AgentHandle.Agent.Tools["agent"].ExecuteAsync(
-            new AgentParameters { AgentType = "general", Task = "Summarize nearby context." },
-            CancellationToken.None);
-
-        Assert.IsTrue(result.Success);
-        Assert.AreEqual(1, delegationClient.StructuredStreamCalls);
-        Assert.IsTrue(delegationClient.LastSystemPrompt?.Contains("helpful assistant", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(handle.AgentHandle.Agent.Tools.ContainsKey("agent"));
     }
 
     [TestMethod]
@@ -1811,7 +1802,10 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         public int CompleteWithToolsCalls => _completeWithToolsCalls;
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
-            => Task.FromResult(_response);
+        {
+            Interlocked.Increment(ref _completeWithToolsCalls);
+            return Task.FromResult(_response);
+        }
 
         public Task<ChatResponse> CompleteWithToolsAsync(
             IEnumerable<Message> messages,
@@ -1893,7 +1887,12 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         }
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
-            => Task.FromResult(_response);
+        {
+            lock (_capturedRequests)
+                _capturedRequests.Add(string.Join("\n", messages.Select(message => message.Content)));
+
+            return Task.FromResult(_response);
+        }
 
         public Task<ChatResponse> CompleteWithToolsAsync(
             IEnumerable<Message> messages,
@@ -1934,8 +1933,12 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             _response = response;
         }
 
-        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
-            => Task.FromResult(_response);
+        public async Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+        {
+            _entered.TrySetResult(true);
+            await _release.Task.WaitAsync(ct);
+            return _response;
+        }
 
         public async Task<ChatResponse> CompleteWithToolsAsync(
             IEnumerable<Message> messages,
@@ -1985,19 +1988,25 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
 
         public int CompleteWithToolsCalls => Volatile.Read(ref _completeWithToolsCalls);
 
-        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
-            => Task.FromResult(_response);
+        public async Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+        {
+            var callNumber = RecordCall(messages);
+
+            if (callNumber == 1)
+            {
+                _firstEntered.TrySetResult(true);
+                await _firstRelease.Task.WaitAsync(ct);
+            }
+
+            return _response;
+        }
 
         public async Task<ChatResponse> CompleteWithToolsAsync(
             IEnumerable<Message> messages,
             IEnumerable<ToolDefinition> tools,
             CancellationToken ct)
         {
-            var callNumber = Interlocked.Increment(ref _completeWithToolsCalls);
-            lock (_capturedRequests)
-            {
-                _capturedRequests.Add(string.Join("\n", messages.Select(message => message.Content)));
-            }
+            var callNumber = RecordCall(messages);
 
             if (callNumber == 1)
             {
@@ -2006,6 +2015,17 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             }
 
             return new ChatResponse { Content = _response, FinishReason = "stop" };
+        }
+
+        private int RecordCall(IEnumerable<Message> messages)
+        {
+            var callNumber = Interlocked.Increment(ref _completeWithToolsCalls);
+            lock (_capturedRequests)
+            {
+                _capturedRequests.Add(string.Join("\n", messages.Select(message => message.Content)));
+            }
+
+            return callNumber;
         }
 
         public Task WaitUntilFirstCallEnteredAsync(CancellationToken ct)

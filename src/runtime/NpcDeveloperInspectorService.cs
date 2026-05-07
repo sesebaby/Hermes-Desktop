@@ -1,6 +1,9 @@
 namespace Hermes.Agent.Runtime;
 
+using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Search;
@@ -29,9 +32,16 @@ public sealed class NpcDeveloperInspectorService
         _todoReader = todoReader ?? EmptyNpcDeveloperTodoReader.Instance;
     }
 
+    public Task<NpcDeveloperInspectorView> InspectAsync(
+        NpcRuntimeSnapshot snapshot,
+        string runtimeRoot,
+        CancellationToken ct)
+        => InspectAsync(snapshot, runtimeRoot, null, ct);
+
     public async Task<NpcDeveloperInspectorView> InspectAsync(
         NpcRuntimeSnapshot snapshot,
         string runtimeRoot,
+        NpcDeveloperInspectorRequest? request,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -43,9 +53,10 @@ public sealed class NpcDeveloperInspectorService
             snapshot.SaveId,
             snapshot.NpcId,
             snapshot.ProfileId);
+        request ??= NpcDeveloperInspectorRequest.Empty;
         var documents = await LoadDocumentsAsync(npcNamespace, ct);
         var tracePath = Path.Combine(npcNamespace.ActivityPath, "runtime.jsonl");
-        var trace = await Task.Run(() => LoadTrace(tracePath, snapshot.NpcId, snapshot.LastTraceId, ct), ct);
+        var trace = await Task.Run(() => LoadTrace(tracePath, snapshot.NpcId, snapshot.LastTraceId, request.TraceFilter, ct), ct);
         var transcript = await LoadTranscriptAsync(npcNamespace, snapshot.SessionId, ct);
         var todos = LoadTodos(snapshot.SessionId);
 
@@ -67,6 +78,7 @@ public sealed class NpcDeveloperInspectorService
             trace.Events,
             trace.Diagnostics,
             trace.EmptyState,
+            trace.ContextBlocks,
             transcript.ModelReplies,
             transcript.ToolCalls,
             transcript.Delegations,
@@ -75,6 +87,95 @@ public sealed class NpcDeveloperInspectorService
             transcript.DelegationEmptyState,
             todos.Todos,
             todos.EmptyState);
+    }
+
+    public async Task<NpcDeveloperDiagnosticsExport> ExportDiagnosticsAsync(
+        NpcRuntimeSnapshot snapshot,
+        string runtimeRoot,
+        NpcDeveloperInspectorRequest? request,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentException.ThrowIfNullOrWhiteSpace(runtimeRoot);
+
+        var view = await InspectAsync(snapshot, runtimeRoot, request, ct);
+        var diagnosticsRoot = Path.Combine(runtimeRoot, "diagnostics");
+        Directory.CreateDirectory(diagnosticsRoot);
+        var fileName = string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "npc-diagnostics-{0}-{1:yyyyMMdd-HHmmss}.zip",
+            SanitizeFileName(snapshot.NpcId),
+            DateTime.Now);
+        var zipPath = Path.Combine(diagnosticsRoot, fileName);
+        if (File.Exists(zipPath))
+            File.Delete(zipPath);
+
+        using var archive = ZipFile.Open(zipPath, ZipArchiveMode.Create);
+        AddTextEntry(archive, "README.txt", BuildDiagnosticsReadme(view));
+        AddJsonEntry(archive, "runtime-summary.json", new
+        {
+            view.NpcId,
+            view.DisplayName,
+            view.GameId,
+            view.SaveId,
+            view.ProfileId,
+            view.SessionId,
+            view.State,
+            view.LastTraceId,
+            view.LastError,
+            view.RuntimePath,
+            view.RuntimeLogPath
+        });
+        AddJsonEntry(archive, "documents-summary.json", view.Documents.Select(document => new
+        {
+            document.Name,
+            document.Path,
+            document.Exists,
+            document.Status,
+            document.IsTruncated,
+            ContentExported = false
+        }));
+        AddJsonEntry(archive, "trace-events.json", view.TraceEvents);
+        AddJsonEntry(archive, "context-blocks.json", view.ContextBlocks);
+        AddJsonEntry(archive, "transcript-summary.json", new
+        {
+            ModelReplies = view.ModelReplies.Select(reply => new
+            {
+                reply.TimestampUtc,
+                ContentPreview = Truncate(RedactSensitiveText(reply.Content), 500),
+                ReasoningPreview = Truncate(RedactSensitiveText(reply.Reasoning), 500)
+            }),
+            ToolCalls = view.ToolCalls.Select(call => new
+            {
+                call.Id,
+                call.Name,
+                ArgumentsPreview = Truncate(RedactSensitiveText(call.Arguments), 500),
+                ResultPreview = Truncate(RedactSensitiveText(call.Result), 500),
+                call.ResultTimestampUtc
+            }),
+            Delegations = view.Delegations.Select(delegation => new
+            {
+                delegation.ToolCallId,
+                RequestPreview = Truncate(RedactSensitiveText(delegation.Request), 500),
+                ResultPreview = Truncate(RedactSensitiveText(delegation.Result), 500)
+            }),
+            Todos = view.Todos
+        });
+
+        AddFileTailEntry(archive, "logs/hermes-tail.log", Path.Combine(runtimeRoot, "logs", "hermes.log"), 240, ct);
+        AddFileTailEntry(
+            archive,
+            "logs/smapi-tail.log",
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "StardewValley", "ErrorLogs", "SMAPI-latest.txt"),
+            240,
+            ct);
+        AddFileEntryIfExists(
+            archive,
+            "bridge-discovery.redacted.json",
+            Path.Combine(runtimeRoot, "stardew-bridge.json"),
+            ct);
+
+        return new NpcDeveloperDiagnosticsExport(zipPath);
     }
 
     private async Task<IReadOnlyList<NpcDeveloperDocument>> LoadDocumentsAsync(NpcNamespace npcNamespace, CancellationToken ct)
@@ -126,11 +227,12 @@ public sealed class NpcDeveloperInspectorService
         string path,
         string npcId,
         string? preferredTraceId,
+        NpcDeveloperTraceFilter? filter,
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         if (!File.Exists(path))
-            return new TraceProjection([], [], _text.TraceLogMissing);
+            return new TraceProjection([], [], [], _text.TraceLogMissing);
 
         var tail = ReadTailLines(path, RuntimeLogMaxLines, ct);
         var records = new List<NpcRuntimeLogRecord>();
@@ -163,21 +265,34 @@ public sealed class NpcDeveloperInspectorService
         }
 
         if (records.Count == 0)
-            return new TraceProjection([], diagnostics, _text.TraceEmptyForNpc);
+            return new TraceProjection([], diagnostics, [], _text.TraceEmptyForNpc);
 
-        var traceId = string.IsNullOrWhiteSpace(preferredTraceId)
+        var hasFilter = HasTraceFilter(filter);
+        var traceId = !string.IsNullOrWhiteSpace(filter?.TraceId)
+            ? filter.TraceId
+            : string.IsNullOrWhiteSpace(preferredTraceId)
             ? records.OrderByDescending(record => record.TimestampUtc).First().TraceId
             : preferredTraceId;
-        var selected = records
-            .Where(record => string.Equals(record.TraceId, traceId, StringComparison.OrdinalIgnoreCase))
+        var selectedRecords = records
+            .Where(record => hasFilter && string.IsNullOrWhiteSpace(filter?.TraceId)
+                ? true
+                : string.Equals(record.TraceId, traceId, StringComparison.OrdinalIgnoreCase))
+            .Where(record => MatchesTraceFilter(record, filter))
             .OrderBy(record => record.TimestampUtc)
+            .ToArray();
+        var selected = selectedRecords
             .Select(ToTraceEvent)
+            .ToArray();
+        var contextBlocks = selectedRecords
+            .Select(TryProjectContextBlock)
+            .Where(block => block is not null)
+            .Cast<NpcDeveloperContextBlock>()
             .ToArray();
 
         if (selected.Length == 0)
-            return new TraceProjection([], diagnostics, _text.TraceSelectionMissing);
+            return new TraceProjection([], diagnostics, contextBlocks, _text.TraceSelectionMissing);
 
-        return new TraceProjection(selected, diagnostics, "");
+        return new TraceProjection(selected, diagnostics, contextBlocks, "");
     }
 
     private async Task<TranscriptProjection> LoadTranscriptAsync(NpcNamespace npcNamespace, string sessionId, CancellationToken ct)
@@ -247,6 +362,111 @@ public sealed class NpcDeveloperInspectorService
             .ToArray();
         return new TodoProjection(todos, todos.Length == 0 ? _text.TodoEmpty : "");
     }
+
+    private static bool HasTraceFilter(NpcDeveloperTraceFilter? filter)
+        => filter is not null &&
+           (!string.IsNullOrWhiteSpace(filter.NpcId) ||
+            !string.IsNullOrWhiteSpace(filter.TraceId) ||
+            !string.IsNullOrWhiteSpace(filter.EventType) ||
+            !string.IsNullOrWhiteSpace(filter.CommandId) ||
+            !string.IsNullOrWhiteSpace(filter.ToolName) ||
+            !string.IsNullOrWhiteSpace(filter.ErrorCode) ||
+            !string.IsNullOrWhiteSpace(filter.Keyword));
+
+    private static bool MatchesTraceFilter(NpcRuntimeLogRecord record, NpcDeveloperTraceFilter? filter)
+    {
+        if (filter is null)
+            return true;
+
+        if (!MatchesText(record.NpcId, filter.NpcId))
+            return false;
+        if (!MatchesText(record.TraceId, filter.TraceId))
+            return false;
+        if (!MatchesText(record.ActionType, filter.EventType))
+            return false;
+        if (!MatchesText(record.CommandId, filter.CommandId))
+            return false;
+        if (!MatchesText(record.Target, filter.ToolName))
+            return false;
+        if (!MatchesText(record.Error, filter.ErrorCode))
+            return false;
+
+        if (string.IsNullOrWhiteSpace(filter.Keyword))
+            return true;
+
+        var keyword = filter.Keyword.Trim();
+        return Contains(record.Result, keyword) ||
+               Contains(record.Target, keyword) ||
+               Contains(record.Stage, keyword) ||
+               Contains(record.CommandId, keyword) ||
+               Contains(record.Error, keyword) ||
+               Contains(record.ExecutorMode, keyword) ||
+               Contains(record.TargetSource, keyword);
+    }
+
+    private static bool MatchesText(string? value, string? expected)
+        => string.IsNullOrWhiteSpace(expected) ||
+           (!string.IsNullOrWhiteSpace(value) &&
+            value.Contains(expected.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private static bool Contains(string? value, string keyword)
+        => !string.IsNullOrWhiteSpace(value) &&
+           value.Contains(keyword, StringComparison.OrdinalIgnoreCase);
+
+    private static NpcDeveloperContextBlock? TryProjectContextBlock(NpcRuntimeLogRecord record)
+    {
+        if (!string.Equals(record.ActionType, "diagnostic", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(record.Target, "context_injection", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var fields = ParseKeyValueResult(record.Result);
+        var name = GetField(fields, "block", "name");
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+
+        return new NpcDeveloperContextBlock(
+            name,
+            ReadInt(fields, "charsBefore"),
+            ReadInt(fields, "charsAfter"),
+            ReadInt(fields, "tokens"),
+            string.Equals(GetField(fields, "trimmed", "isTrimmed"), "true", StringComparison.OrdinalIgnoreCase),
+            GetField(fields, "hash") ?? "",
+            GetField(fields, "preview") ?? "");
+    }
+
+    private static Dictionary<string, string> ParseKeyValueResult(string value)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var separator = part.IndexOf('=');
+            if (separator <= 0)
+                continue;
+
+            result[part[..separator].Trim()] = part[(separator + 1)..].Trim();
+        }
+
+        return result;
+    }
+
+    private static string? GetField(IReadOnlyDictionary<string, string> fields, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (fields.TryGetValue(name, out var value))
+                return value;
+        }
+
+        return null;
+    }
+
+    private static int ReadInt(IReadOnlyDictionary<string, string> fields, string name)
+        => fields.TryGetValue(name, out var value) &&
+           int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : 0;
 
     private NpcDeveloperTraceEvent ToTraceEvent(NpcRuntimeLogRecord record)
         => new(
@@ -341,6 +561,89 @@ public sealed class NpcDeveloperInspectorService
         return new TailLines(lines.ToArray(), Math.Max(1, total - lines.Count + 1));
     }
 
+    private static void AddJsonEntry(ZipArchive archive, string entryName, object value)
+        => AddTextEntry(
+            archive,
+            entryName,
+            RedactSensitiveText(JsonSerializer.Serialize(value, DiagnosticsJsonOptions)));
+
+    private static void AddTextEntry(ZipArchive archive, string entryName, string content)
+    {
+        var entry = archive.CreateEntry(entryName);
+        using var stream = entry.Open();
+        using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        writer.Write(RedactSensitiveText(content));
+    }
+
+    private static void AddFileTailEntry(
+        ZipArchive archive,
+        string entryName,
+        string path,
+        int maxLines,
+        CancellationToken ct)
+    {
+        if (!File.Exists(path))
+        {
+            AddTextEntry(archive, entryName, $"missing: {path}");
+            return;
+        }
+
+        var tail = ReadTailLines(path, maxLines, ct);
+        AddTextEntry(archive, entryName, string.Join(Environment.NewLine, tail.Lines));
+    }
+
+    private static void AddFileEntryIfExists(ZipArchive archive, string entryName, string path, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!File.Exists(path))
+        {
+            AddTextEntry(archive, entryName, $"missing: {path}");
+            return;
+        }
+
+        AddTextEntry(archive, entryName, File.ReadAllText(path));
+    }
+
+    private static string BuildDiagnosticsReadme(NpcDeveloperInspectorView view)
+        => $"""
+           Hermes NPC diagnostics package
+
+           NPC: {view.DisplayName} ({view.NpcId})
+           Session: {view.SessionId}
+           Trace: {view.LastTraceId}
+
+           This package contains runtime summaries, selected trace rows, transcript previews, log tails, and redacted bridge discovery.
+           Full SOUL.md, MEMORY.md, and USER.md contents are intentionally excluded by default.
+           """;
+
+    private static string RedactSensitiveText(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return value;
+
+        var redacted = SensitiveKeyRegex.Replace(value, match =>
+        {
+            var prefix = match.Groups["prefix"].Value;
+            var quote = match.Groups["quote"].Value;
+            return $"{prefix}{quote}[redacted]{quote}";
+        });
+        redacted = AuthorizationRegex.Replace(redacted, "${prefix}[redacted]");
+        return redacted;
+    }
+
+    private static string SanitizeFileName(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var builder = new StringBuilder(value.Length);
+        foreach (var ch in value)
+            builder.Append(invalid.Contains(ch) ? '-' : ch);
+
+        return builder.Length == 0 ? "npc" : builder.ToString();
+    }
+
+    private static string Truncate(string value, int maxLength)
+        => value.Length <= maxLength ? value : value[..maxLength];
+
     private int PreviewCharacterLimit => Math.Max(1, _options.PreviewCharacterLimit ?? DefaultPreviewCharacterLimit);
 
     private int RuntimeLogMaxLines => Math.Max(1, _options.RuntimeLogMaxLines ?? DefaultRuntimeLogMaxLines);
@@ -350,9 +653,23 @@ public sealed class NpcDeveloperInspectorService
         PropertyNameCaseInsensitive = true
     };
 
+    private static readonly JsonSerializerOptions DiagnosticsJsonOptions = new()
+    {
+        WriteIndented = true
+    };
+
+    private static readonly Regex SensitiveKeyRegex = new(
+        @"(?<prefix>(?:""?(?:bridgeToken|authorization|apiKey|apikey|secret|password|token|connectionString)""?)\s*[:=]\s*)(?<quote>""?)(?<value>[^"",}\r\n]+)(?<quote2>""?)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex AuthorizationRegex = new(
+        @"(?<prefix>Authorization\s*:\s*)(?:Bearer\s+)?[^\r\n]+",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private sealed record TraceProjection(
         IReadOnlyList<NpcDeveloperTraceEvent> Events,
         IReadOnlyList<string> Diagnostics,
+        IReadOnlyList<NpcDeveloperContextBlock> ContextBlocks,
         string EmptyState);
 
     private sealed record TranscriptProjection(
@@ -378,6 +695,23 @@ public sealed record NpcDeveloperInspectorOptions
 
     public int? RuntimeLogMaxLines { get; init; }
 }
+
+public sealed record NpcDeveloperInspectorRequest(
+    NpcDeveloperTraceFilter? TraceFilter = null)
+{
+    public static NpcDeveloperInspectorRequest Empty { get; } = new();
+}
+
+public sealed record NpcDeveloperTraceFilter(
+    string? NpcId = null,
+    string? TraceId = null,
+    string? EventType = null,
+    string? CommandId = null,
+    string? ToolName = null,
+    string? ErrorCode = null,
+    string? Keyword = null);
+
+public sealed record NpcDeveloperDiagnosticsExport(string ZipPath);
 
 public interface INpcDeveloperTranscriptReader
 {
@@ -501,6 +835,7 @@ public sealed record NpcDeveloperInspectorView(
     IReadOnlyList<NpcDeveloperTraceEvent> TraceEvents,
     IReadOnlyList<string> TraceDiagnostics,
     string TraceEmptyState,
+    IReadOnlyList<NpcDeveloperContextBlock> ContextBlocks,
     IReadOnlyList<NpcDeveloperModelReply> ModelReplies,
     IReadOnlyList<NpcDeveloperToolCall> ToolCalls,
     IReadOnlyList<NpcDeveloperDelegation> Delegations,
@@ -533,6 +868,15 @@ public sealed record NpcDeveloperTraceEvent(
 {
     public string TimestampText => TimestampUtc.ToLocalTime().ToString("T", System.Globalization.CultureInfo.CurrentCulture);
 }
+
+public sealed record NpcDeveloperContextBlock(
+    string Name,
+    int CharactersBefore,
+    int CharactersAfter,
+    int EstimatedTokens,
+    bool Trimmed,
+    string Hash,
+    string Preview);
 
 public sealed record NpcDeveloperModelReply(
     DateTime TimestampUtc,

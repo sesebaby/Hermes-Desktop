@@ -1303,7 +1303,7 @@
     <value>NPC 运行时</value>
   </data>
   <data name="AgentRuntimeHeaderSubtitle.Text" xml:space="preserve">
-    <value>查看星露谷 NPC 智能体的运行状态、桥接健康、追踪和调试动作。</value>
+    <value>查看星露谷 NPC 智能体的运行状态、桥接健康和最近追踪；受控调试动作已集中到开发者观察台。</value>
   </data>
   <data name="AgentRuntimeOpenLogsButton.Content" xml:space="preserve">
     <value>打开日志</value>
@@ -1337,33 +1337,6 @@
   </data>
   <data name="AgentNpcRuntimeList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>NPC 运行时列表</value>
-  </data>
-  <data name="AgentRuntimeDebugTitle.Text" xml:space="preserve">
-    <value>调试动作</value>
-  </data>
-  <data name="AgentRuntimeDebugDescription.Text" xml:space="preserve">
-    <value>这些按钮只用于运行时诊断。正常 NPC 决策仍然发生在 agent 循环内部。</value>
-  </data>
-  <data name="AgentRuntimeHaleySpeakButton.Content" xml:space="preserve">
-    <value>调试海莉说话</value>
-  </data>
-  <data name="AgentRuntimeHaleySpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>发送 Haley 调试说话命令</value>
-  </data>
-  <data name="AgentRuntimePennySpeakButton.Content" xml:space="preserve">
-    <value>调试潘妮说话</value>
-  </data>
-  <data name="AgentRuntimePennySpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>发送 Penny 调试说话命令</value>
-  </data>
-  <data name="AgentRuntimeHaleyTickButton.Content" xml:space="preserve">
-    <value>运行海莉单轮自主循环</value>
-  </data>
-  <data name="AgentRuntimeHaleyTickButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>运行一次海莉自主循环</value>
-  </data>
-  <data name="AgentRuntimeManualActionInitial.Text" xml:space="preserve">
-    <value>正常路径：在游戏中点击海莉只记录已完成的对话事实；运行单轮自主循环会让桌面端里的海莉运行时自己观察并决定下一步。</value>
   </data>
   <data name="DeveloperPageEyebrow.Text" xml:space="preserve">
     <value>开发者</value>
@@ -1467,6 +1440,12 @@
   <data name="DeveloperDetailLogsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>显示日志路径与解析诊断</value>
   </data>
+  <data name="DeveloperDetailContextButton.Content" xml:space="preserve">
+    <value>上下文差异</value>
+  </data>
+  <data name="DeveloperDetailContextButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>显示上下文注入差异</value>
+  </data>
   <data name="DeveloperModelReplyList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>模型回复列表</value>
   </data>
@@ -1478,6 +1457,9 @@
   </data>
   <data name="DeveloperTodoList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>任务与待办列表</value>
+  </data>
+  <data name="DeveloperContextBlockList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>上下文注入差异列表</value>
   </data>
   <data name="DeveloperRuntimeUnavailable" xml:space="preserve">
     <value>当前构建不支持开发者观察台。</value>
@@ -1502,6 +1484,198 @@
   </data>
   <data name="DeveloperNoTraceDiagnostics" xml:space="preserve">
     <value>没有解析诊断。</value>
+  </data>
+  <data name="DeveloperControlledDebugTitle.Text" xml:space="preserve">
+    <value>受控调试</value>
+  </data>
+  <data name="DeveloperControlledDebugDescription.Text" xml:space="preserve">
+    <value>这些动作会向游戏桥接层发送显式调试命令；放置到镇上是调试传送，不计入自然移动验收。</value>
+  </data>
+  <data name="DeveloperDebugRepositionButton.Content" xml:space="preserve">
+    <value>放到镇上</value>
+  </data>
+  <data name="DeveloperDebugRepositionButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>将选中 NPC 放到镇上</value>
+  </data>
+  <data name="DeveloperDebugTickButton.Content" xml:space="preserve">
+    <value>单步唤醒</value>
+  </data>
+  <data name="DeveloperDebugTickButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>运行选中 NPC 的一次自主循环</value>
+  </data>
+  <data name="DeveloperDebugSpeakButton.Content" xml:space="preserve">
+    <value>发送调试台词</value>
+  </data>
+  <data name="DeveloperDebugSpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>让选中 NPC 发送一条调试台词</value>
+  </data>
+  <data name="DeveloperDebugActionStatusInitial.Text" xml:space="preserve">
+    <value>选择 NPC 后可执行受控调试动作。</value>
+  </data>
+  <data name="DeveloperDebugActionResultInitial.Text" xml:space="preserve">
+    <value>尚未执行调试动作。</value>
+  </data>
+  <data name="DeveloperTraceFilterTitle.Text" xml:space="preserve">
+    <value>追踪筛选与导出</value>
+  </data>
+  <data name="DeveloperTraceIdFilterBox.Header" xml:space="preserve">
+    <value>追踪 id</value>
+  </data>
+  <data name="DeveloperTraceIdFilterBox.PlaceholderText" xml:space="preserve">
+    <value>trace...</value>
+  </data>
+  <data name="DeveloperTraceIdFilterBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>按追踪 id 筛选</value>
+  </data>
+  <data name="DeveloperEventTypeFilterBox.Header" xml:space="preserve">
+    <value>事件类型</value>
+  </data>
+  <data name="DeveloperEventTypeFilterBox.PlaceholderText" xml:space="preserve">
+    <value>diagnostic</value>
+  </data>
+  <data name="DeveloperEventTypeFilterBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>按事件类型筛选</value>
+  </data>
+  <data name="DeveloperCommandIdFilterBox.Header" xml:space="preserve">
+    <value>命令 id</value>
+  </data>
+  <data name="DeveloperCommandIdFilterBox.PlaceholderText" xml:space="preserve">
+    <value>command...</value>
+  </data>
+  <data name="DeveloperCommandIdFilterBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>按命令 id 筛选</value>
+  </data>
+  <data name="DeveloperToolNameFilterBox.Header" xml:space="preserve">
+    <value>工具名</value>
+  </data>
+  <data name="DeveloperToolNameFilterBox.PlaceholderText" xml:space="preserve">
+    <value>stardew...</value>
+  </data>
+  <data name="DeveloperToolNameFilterBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>按工具名筛选</value>
+  </data>
+  <data name="DeveloperErrorCodeFilterBox.Header" xml:space="preserve">
+    <value>错误码</value>
+  </data>
+  <data name="DeveloperErrorCodeFilterBox.PlaceholderText" xml:space="preserve">
+    <value>bridge_unavailable</value>
+  </data>
+  <data name="DeveloperErrorCodeFilterBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>按错误码筛选</value>
+  </data>
+  <data name="DeveloperKeywordFilterBox.Header" xml:space="preserve">
+    <value>关键词</value>
+  </data>
+  <data name="DeveloperKeywordFilterBox.PlaceholderText" xml:space="preserve">
+    <value>routeProbe / Beach</value>
+  </data>
+  <data name="DeveloperKeywordFilterBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>按文本关键词筛选</value>
+  </data>
+  <data name="DeveloperApplyTraceFilterButton.Content" xml:space="preserve">
+    <value>应用筛选</value>
+  </data>
+  <data name="DeveloperApplyTraceFilterButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>应用追踪筛选条件</value>
+  </data>
+  <data name="DeveloperClearTraceFilterButton.Content" xml:space="preserve">
+    <value>清除筛选</value>
+  </data>
+  <data name="DeveloperClearTraceFilterButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>清除追踪筛选条件</value>
+  </data>
+  <data name="DeveloperExportDiagnosticsButton.Content" xml:space="preserve">
+    <value>导出诊断包</value>
+  </data>
+  <data name="DeveloperExportDiagnosticsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>导出选中 NPC 的脱敏诊断包</value>
+  </data>
+  <data name="DeveloperDiagnosticsExportInitial.Text" xml:space="preserve">
+    <value>诊断包会导出到本地 diagnostics 目录并自动脱敏。</value>
+  </data>
+  <data name="DeveloperDebugRepositionActionName" xml:space="preserve">
+    <value>放到镇上</value>
+  </data>
+  <data name="DeveloperDebugTickActionName" xml:space="preserve">
+    <value>单步唤醒</value>
+  </data>
+  <data name="DeveloperDebugSpeakActionName" xml:space="preserve">
+    <value>发送调试台词</value>
+  </data>
+  <data name="DeveloperDebugSpeakText" xml:space="preserve">
+    <value>这是一条开发者页发送的调试台词。</value>
+  </data>
+  <data name="DeveloperDebugActionRunningFormat" xml:space="preserve">
+    <value>正在执行“{0}”：{1}</value>
+  </data>
+  <data name="DeveloperDebugActionSuccessFormat" xml:space="preserve">
+    <value>“{0}”已提交。commandId={1} traceId={2}</value>
+  </data>
+  <data name="DeveloperDebugActionFailedFormat" xml:space="preserve">
+    <value>“{0}”失败。原始错误码：{1}</value>
+  </data>
+  <data name="DeveloperDebugTickSuccessFormat" xml:space="preserve">
+    <value>单步唤醒完成。traceId={0} observationFacts={1} eventFacts={2}</value>
+  </data>
+  <data name="DeveloperDebugNoSelection" xml:space="preserve">
+    <value>请先选择一个活动 NPC。</value>
+  </data>
+  <data name="DeveloperDebugBridgeUnavailable" xml:space="preserve">
+    <value>桥接未连接或存档身份已过期，暂不能执行受控动作。</value>
+  </data>
+  <data name="DeveloperDebugServiceUnavailable" xml:space="preserve">
+    <value>当前构建未注册对应调试服务。</value>
+  </data>
+  <data name="DeveloperDebugActionServiceUnavailable" xml:space="preserve">
+    <value>放置与调试台词服务不可用；单步唤醒仍可用。</value>
+  </data>
+  <data name="DeveloperDebugTickServiceUnavailable" xml:space="preserve">
+    <value>单步唤醒服务不可用；放置与调试台词仍可用。</value>
+  </data>
+  <data name="DeveloperDebugActionInProgress" xml:space="preserve">
+    <value>已有调试或导出操作正在执行。</value>
+  </data>
+  <data name="DeveloperDebugActionReady" xml:space="preserve">
+    <value>已选择 NPC，桥接可用。执行前会再次确认。</value>
+  </data>
+  <data name="DeveloperDebugConfirmTitle" xml:space="preserve">
+    <value>确认受控调试动作</value>
+  </data>
+  <data name="DeveloperDebugConfirmContentFormat" xml:space="preserve">
+    <value>即将对 {1} 执行“{0}”。这会影响游戏内状态，仅用于调试，不代表自然行为成功。</value>
+  </data>
+  <data name="DeveloperDebugConfirmPrimaryButton" xml:space="preserve">
+    <value>执行</value>
+  </data>
+  <data name="DeveloperDebugConfirmCancelButton" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="DeveloperDiagnosticsExportUnavailable" xml:space="preserve">
+    <value>没有可导出的活动 NPC 诊断。</value>
+  </data>
+  <data name="DeveloperDiagnosticsExportRunning" xml:space="preserve">
+    <value>正在生成脱敏诊断包...</value>
+  </data>
+  <data name="DeveloperDiagnosticsExportSuccessFormat" xml:space="preserve">
+    <value>诊断包已导出：{0}</value>
+  </data>
+  <data name="DeveloperDiagnosticsExportFailedFormat" xml:space="preserve">
+    <value>诊断包导出失败：{0}</value>
+  </data>
+  <data name="DeveloperContextBlockEmptyState" xml:space="preserve">
+    <value>当前追踪没有上下文注入差异记录。</value>
+  </data>
+  <data name="DeveloperContextCharsBeforeLabel.Text" xml:space="preserve">
+    <value>注入前字符</value>
+  </data>
+  <data name="DeveloperContextCharsAfterLabel.Text" xml:space="preserve">
+    <value>注入后字符</value>
+  </data>
+  <data name="DeveloperContextTokensLabel.Text" xml:space="preserve">
+    <value>估算 token</value>
+  </data>
+  <data name="DeveloperContextTrimmedLabel.Text" xml:space="preserve">
+    <value>已裁剪</value>
   </data>
   <data name="DeveloperInspectorFileMissing" xml:space="preserve">
     <value>未找到文件。</value>
