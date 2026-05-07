@@ -13,6 +13,7 @@ using StardewValley.Pathfinding;
 public sealed class BridgeCommandQueue
 {
     private const int MaxReplanAttempts = 2;
+    private const int WarpTransitionTimeoutTicks = 180;
 
     private readonly ConcurrentQueue<BridgeMoveCommand> _pending = new();
     private readonly ConcurrentQueue<IBridgeUiCommand> _pendingUi = new();
@@ -490,6 +491,12 @@ public sealed class BridgeCommandQueue
         var currentTile = GetCurrentTile(npc);
         var currentLocationName = currentLocation.NameOrUniqueName ?? currentLocation.Name;
 
+        if (command.IsAwaitingWarp)
+            return HandleAwaitingWarp(command, npc);
+
+        if (command.IsReplanningAfterWarp)
+            return command.ToStatusData();
+
         if (!ReferenceEquals(currentLocation, targetLocation))
         {
             if (command.Status == "running" &&
@@ -710,9 +717,21 @@ public sealed class BridgeCommandQueue
         if (command.CurrentSegment?.TargetKind == "warp_to_next_location")
         {
             StopNpcMotion(npc);
-            command.SetPhase("awaiting_warp", command.CurrentSegment.LocationName);
-            command.SetCrossMapPhase("awaiting_warp");
+            command.BeginAwaitingWarp(Game1.ticks, WarpTransitionTimeoutTicks);
             _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"awaiting_warp;nextLocation={command.CurrentSegment.NextLocationName}");
+            if (TryTriggerWarpTransition(command, npc))
+            {
+                var currentLocationName = npc.currentLocation?.NameOrUniqueName ?? npc.currentLocation?.Name;
+                if (command.TryCompleteAwaitingWarp(currentLocationName))
+                {
+                    _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"replanning_after_warp;location={currentLocationName}");
+                }
+                else
+                {
+                    command.FailUnexpectedWarpLocation(currentLocationName);
+                    _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", command.BlockedReason);
+                }
+            }
             return;
         }
 
@@ -720,6 +739,62 @@ public sealed class BridgeCommandQueue
         ApplyArrivalFacing(npc, command);
         command.Complete();
         _logger.Write("task_completed", command.NpcId, "move", command.TraceId, command.CommandId, "completed", null);
+    }
+
+    private TaskStatusData HandleAwaitingWarp(BridgeMoveCommand command, NPC npc)
+    {
+        var currentLocation = npc.currentLocation;
+        if (currentLocation is null)
+        {
+            command.Fail("preflight_blocked", "current_location_missing");
+            _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", "current_location_missing");
+            return command.ToStatusData();
+        }
+
+        var currentLocationName = currentLocation.NameOrUniqueName ?? currentLocation.Name;
+        if (command.TryCompleteAwaitingWarp(currentLocationName))
+        {
+            _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"replanning_after_warp;location={currentLocationName}");
+            return command.ToStatusData();
+        }
+
+        if (!string.Equals(command.CurrentSegment?.LocationName, currentLocationName, StringComparison.OrdinalIgnoreCase))
+        {
+            command.FailUnexpectedWarpLocation(currentLocationName);
+            _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", command.BlockedReason);
+            return command.ToStatusData();
+        }
+
+        if (!command.WarpTransitionAttempted)
+        {
+            TryTriggerWarpTransition(command, npc);
+            currentLocationName = npc.currentLocation?.NameOrUniqueName ?? npc.currentLocation?.Name ?? currentLocationName;
+            if (command.TryCompleteAwaitingWarp(currentLocationName))
+            {
+                _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"replanning_after_warp;location={currentLocationName}");
+                return command.ToStatusData();
+            }
+        }
+
+        if (command.HasWarpTransitionTimedOut(Game1.ticks))
+        {
+            command.FailWarpTransitionTimeout(currentLocationName);
+            _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", command.BlockedReason);
+            return command.ToStatusData();
+        }
+
+        _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"awaiting_warp;nextLocation={command.ExpectedNextLocationName};ticks={Game1.ticks}");
+        return command.ToStatusData();
+    }
+
+    private static bool TryTriggerWarpTransition(BridgeMoveCommand command, NPC npc)
+    {
+        if (command.CurrentSegment?.TargetTile is null || npc.currentLocation is null)
+            return false;
+
+        var triggered = VanillaNpcWarpTransition.TryTrigger(npc, npc.currentLocation, command.CurrentSegment.TargetTile);
+        command.MarkWarpTransitionAttempted(npc.currentLocation?.NameOrUniqueName ?? npc.currentLocation?.Name);
+        return triggered;
     }
 
     private void ShowMoveThoughtIfPresent(NPC npc, BridgeMoveCommand command)
@@ -1197,6 +1272,13 @@ public sealed class BridgeMoveCommand
     public BridgeMoveFinalTargetData? FinalTarget { get; private set; }
     public BridgeMoveSegmentData? CurrentSegment { get; private set; }
     public string? LastFailureCode { get; private set; }
+    public string? ExpectedNextLocationName { get; private set; }
+    public int? AwaitingWarpStartedTick { get; private set; }
+    public int? WarpTimeoutTicks { get; private set; }
+    public string? LastKnownLocationName { get; private set; }
+    public bool WarpTransitionAttempted { get; private set; }
+    public bool IsAwaitingWarp => string.Equals(CrossMapPhase, "awaiting_warp", StringComparison.OrdinalIgnoreCase);
+    public bool IsReplanningAfterWarp => string.Equals(CrossMapPhase, "replanning_after_warp", StringComparison.OrdinalIgnoreCase);
     public int RouteRevision { get; private set; }
     public bool IsTerminal => Status is "completed" or "cancelled" or "failed" or "blocked" or "interrupted";
     public int PathStepsRemaining => _schedulePath?.Count ?? 0;
@@ -1310,6 +1392,66 @@ public sealed class BridgeMoveCommand
         return true;
     }
 
+    public void BeginAwaitingWarp(int currentTick, int timeoutTicks)
+    {
+        if (CurrentSegment is null)
+            throw new InvalidOperationException("Cannot await a warp without a current segment.");
+
+        ExpectedNextLocationName = CurrentSegment.NextLocationName;
+        AwaitingWarpStartedTick = currentTick;
+        WarpTimeoutTicks = timeoutTicks;
+        LastKnownLocationName = CurrentSegment.LocationName;
+        WarpTransitionAttempted = false;
+        SetPhase("awaiting_warp", CurrentSegment.LocationName);
+        SetCrossMapPhase("awaiting_warp");
+    }
+
+    public void MarkWarpTransitionAttempted(string? currentLocationName)
+    {
+        WarpTransitionAttempted = true;
+        if (!string.IsNullOrWhiteSpace(currentLocationName))
+            LastKnownLocationName = currentLocationName;
+    }
+
+    public bool TryCompleteAwaitingWarp(string? currentLocationName)
+    {
+        if (!IsAwaitingWarp ||
+            string.IsNullOrWhiteSpace(ExpectedNextLocationName) ||
+            string.IsNullOrWhiteSpace(currentLocationName) ||
+            !string.Equals(ExpectedNextLocationName, currentLocationName, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        SetPhase("replanning_after_warp", currentLocationName);
+        SetCrossMapPhase("replanning_after_warp");
+        LastKnownLocationName = currentLocationName;
+        return true;
+    }
+
+    public bool HasWarpTransitionTimedOut(int currentTick)
+    {
+        if (!IsAwaitingWarp || AwaitingWarpStartedTick is null || WarpTimeoutTicks is null)
+            return false;
+
+        return currentTick - AwaitingWarpStartedTick.Value > WarpTimeoutTicks.Value;
+    }
+
+    public void FailWarpTransitionTimeout(string? currentLocationName)
+    {
+        var actual = string.IsNullOrWhiteSpace(currentLocationName) ? LastKnownLocationName : currentLocationName;
+        Fail(
+            "warp_transition_timeout",
+            $"warp_transition_timeout:expected={ValueOrUnknown(ExpectedNextLocationName)};actual={ValueOrUnknown(actual)}");
+    }
+
+    public void FailUnexpectedWarpLocation(string? currentLocationName)
+    {
+        Fail(
+            "unexpected_location_after_warp",
+            $"unexpected_location_after_warp:expected={ValueOrUnknown(ExpectedNextLocationName)};actual={ValueOrUnknown(currentLocationName)}");
+    }
+
     public bool TryRecordReplanAttempt(int maxAttempts, out int attempt)
     {
         if (_replanAttempts >= maxAttempts)
@@ -1364,4 +1506,20 @@ public sealed class BridgeMoveCommand
             FinalTarget,
             CurrentSegment,
             LastFailureCode);
+
+    private static string ValueOrUnknown(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "unknown" : value;
+}
+
+internal static class VanillaNpcWarpTransition
+{
+    public static bool TryTrigger(NPC npc, GameLocation location, TileDto segmentTargetTile)
+    {
+        var controller = new PathFindController(
+            new Stack<Point>(new[] { new Point(segmentTargetTile.X, segmentTargetTile.Y) }),
+            npc,
+            location);
+        controller.handleWarps(npc.GetBoundingBox());
+        return !ReferenceEquals(npc.currentLocation, location);
+    }
 }

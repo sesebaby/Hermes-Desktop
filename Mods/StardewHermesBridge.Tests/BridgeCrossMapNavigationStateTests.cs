@@ -66,4 +66,91 @@ public sealed class BridgeCrossMapNavigationStateTests
         Assert.IsNotNull(status.RouteProbe);
         Assert.AreEqual("route_found", status.RouteProbe!.Status);
     }
+
+    [TestMethod]
+    public void BeginAwaitingWarp_KeepsCommandRunningAndFailsWithStableTimeoutCode()
+    {
+        var command = CreateRunningCrossMapCommand();
+
+        command.BeginAwaitingWarp(currentTick: 100, timeoutTicks: 2);
+
+        Assert.AreEqual("running", command.Status);
+        Assert.AreEqual("awaiting_warp", command.Phase);
+        Assert.AreEqual("awaiting_warp", command.CrossMapPhase);
+        Assert.AreEqual("Town", command.CurrentLocationName);
+        Assert.IsFalse(command.HasWarpTransitionTimedOut(currentTick: 101));
+        Assert.IsTrue(command.HasWarpTransitionTimedOut(currentTick: 103));
+
+        command.FailWarpTransitionTimeout(currentLocationName: "Town");
+
+        Assert.AreEqual("failed", command.Status);
+        Assert.AreEqual("warp_transition_timeout", command.ErrorCode);
+        Assert.AreEqual("warp_transition_timeout", command.LastFailureCode);
+        Assert.AreEqual(
+            "warp_transition_timeout:expected=Beach;actual=Town",
+            command.BlockedReason);
+    }
+
+    [TestMethod]
+    public void CompleteAwaitingWarp_WhenExpectedLocationObserved_ReplansWithoutCompletingCommand()
+    {
+        var command = CreateRunningCrossMapCommand();
+        command.BeginAwaitingWarp(currentTick: 100, timeoutTicks: 60);
+
+        var observed = command.TryCompleteAwaitingWarp(currentLocationName: "Beach");
+
+        Assert.IsTrue(observed);
+        Assert.AreEqual("running", command.Status);
+        Assert.AreEqual("replanning_after_warp", command.Phase);
+        Assert.AreEqual("replanning_after_warp", command.CrossMapPhase);
+        Assert.AreEqual("Beach", command.CurrentLocationName);
+        Assert.AreEqual("Beach", command.FinalTarget?.LocationName);
+        Assert.AreEqual(20, command.FinalTarget?.Tile.X);
+        Assert.AreEqual(35, command.FinalTarget?.Tile.Y);
+    }
+
+    [TestMethod]
+    public void FailUnexpectedWarpLocation_UsesStableFailureCodeAndDiagnostic()
+    {
+        var command = CreateRunningCrossMapCommand();
+        command.BeginAwaitingWarp(currentTick: 100, timeoutTicks: 60);
+
+        command.FailUnexpectedWarpLocation(currentLocationName: "Forest");
+
+        Assert.AreEqual("failed", command.Status);
+        Assert.AreEqual("unexpected_location_after_warp", command.ErrorCode);
+        Assert.AreEqual("unexpected_location_after_warp", command.LastFailureCode);
+        Assert.AreEqual(
+            "unexpected_location_after_warp:expected=Beach;actual=Forest",
+            command.BlockedReason);
+    }
+
+    private static BridgeMoveCommand CreateRunningCrossMapCommand()
+    {
+        var command = new BridgeMoveCommand(
+            "cmd-1",
+            "trace-1",
+            "Haley",
+            "Beach",
+            new TileDto(20, 35),
+            2,
+            null);
+        var routeProbe = new RouteProbeData(
+            "cross_location",
+            "route_found",
+            "Town",
+            new TileDto(80, 93),
+            "Beach",
+            new TileDto(20, 35),
+            new[] { new TileDto(80, 94) },
+            new RouteProbeSegmentData(
+                "Town",
+                new TileDto(80, 94),
+                "warp_to_next_location",
+                "Beach"));
+
+        command.RecordRouteProbe(routeProbe);
+        command.StartCrossMapSegment(routeProbe);
+        return command;
+    }
 }

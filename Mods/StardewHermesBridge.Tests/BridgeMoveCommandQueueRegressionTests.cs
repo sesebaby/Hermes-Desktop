@@ -207,6 +207,62 @@ public sealed class BridgeMoveCommandQueueRegressionTests
     }
 
     [TestMethod]
+    public void CrossLocationMoveProcessesWarpTransitionAsAStateMachine()
+    {
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(
+            commandQueue,
+            "HandleAwaitingWarp(",
+            "The running move pump must route awaiting_warp through a dedicated transition state handler instead of falling back into normal movement cleanup.");
+        StringAssert.Contains(
+            commandQueue,
+            "TryTriggerWarpTransition(",
+            "After physically reaching the warp tile, Bridge should invoke a tightly scoped transition hook rather than passive waiting forever.");
+        StringAssert.Contains(
+            commandQueue,
+            "warp_transition_timeout",
+            "A warp tile that does not transition must fail with the stable timeout code required by the plan.");
+        StringAssert.Contains(
+            commandQueue,
+            "unexpected_location_after_warp",
+            "External movement to the wrong map must use the stable unexpected-location failure code.");
+        StringAssert.Contains(
+            commandQueue,
+            "replanning_after_warp",
+            "A successful observed location transition should keep the command running for post-warp replanning.");
+        StringAssert.Contains(
+            commandQueue,
+            "IsReplanningAfterWarp",
+            "Phase 2 must stop at replanning_after_warp until Phase 3 owns post-warp route planning.");
+        StringAssert.Contains(
+            commandQueue,
+            "return command.ToStatusData();",
+            "The post-warp replanning phase should be observable instead of immediately falling through to path_exhausted.");
+    }
+
+    [TestMethod]
+    public void CrossLocationMoveUsesVanillaWarpCollisionHookWithoutDirectWarpCharacter()
+    {
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(
+            commandQueue,
+            "VanillaNpcWarpTransition",
+            "The Phase 2 transition lane should be isolated behind a named helper so it is not confused with fake completion.");
+        StringAssert.Contains(
+            commandQueue,
+            ".handleWarps(",
+            "The helper should call Stardew's schedule warp collision handler after Bridge has walked the NPC to the warp tile.");
+        Assert.IsFalse(
+            commandQueue.Contains("Game1.warpCharacter", StringComparison.Ordinal),
+            "Bridge move code must not directly call warpCharacter; vanilla internals may do so inside handleWarps.");
+        Assert.IsFalse(
+            commandQueue.Contains("npc.controller = new PathFindController", StringComparison.Ordinal),
+            "The transition hook must not assign a controller to own movement execution.");
+    }
+
+    [TestMethod]
     public void MovePumpDoesNotDelegateExecutionToNpcController()
     {
         var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
