@@ -193,6 +193,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
         StringAssert.Contains(systemPrompt, "`stardew_move(destination, reason)`");
         StringAssert.Contains(systemPrompt, "destination=<destinationId 精确值>");
         StringAssert.Contains(systemPrompt, "target(locationName,x,y,source)");
+        StringAssert.Contains(systemPrompt, "skill_view(name=\"stardew-navigation\", file_path=\"references/index.md\")");
         StringAssert.Contains(systemPrompt, "stardew_navigate_to_tile");
         StringAssert.Contains(systemPrompt, "executor-only");
         StringAssert.Contains(systemPrompt, "destinationId");

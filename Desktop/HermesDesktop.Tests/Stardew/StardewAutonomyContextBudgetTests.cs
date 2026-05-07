@@ -804,6 +804,34 @@ public class StardewAutonomyContextBudgetTests
         Assert.IsFalse(combined.Contains("create persona summary", StringComparison.OrdinalIgnoreCase));
     }
 
+    [TestMethod]
+    public void StardewNavigationSkillAssets_UseLayeredDisclosureForMechanicalTargets()
+    {
+        var root = FindRepositoryRoot();
+        var navigationRoot = Path.Combine(root, "skills", "gaming", "stardew-navigation");
+        var skill = File.ReadAllText(Path.Combine(navigationRoot, "SKILL.md"));
+        var index = File.ReadAllText(Path.Combine(navigationRoot, "references", "index.md"));
+        var beachRegion = File.ReadAllText(Path.Combine(navigationRoot, "references", "regions", "beach.md"));
+        var townRegion = File.ReadAllText(Path.Combine(navigationRoot, "references", "regions", "town.md"));
+        var beachPoi = File.ReadAllText(Path.Combine(navigationRoot, "references", "poi", "beach-shoreline.md"));
+        var townPoi = File.ReadAllText(Path.Combine(navigationRoot, "references", "poi", "town-square.md"));
+
+        StringAssert.Contains(skill, "skill_view(name=\"stardew-navigation\", file_path=\"references/index.md\")");
+        StringAssert.Contains(index, "references/regions/beach.md");
+        StringAssert.Contains(index, "references/regions/town.md");
+        Assert.IsFalse(index.Contains("locationName=", StringComparison.Ordinal));
+        Assert.IsFalse(index.Contains("x=", StringComparison.Ordinal));
+        Assert.IsFalse(index.Contains("y=", StringComparison.Ordinal));
+
+        StringAssert.Contains(beachRegion, "references/poi/beach-shoreline.md");
+        StringAssert.Contains(townRegion, "references/poi/town-square.md");
+        Assert.IsFalse(beachRegion.Contains("target(locationName", StringComparison.Ordinal));
+        Assert.IsFalse(townRegion.Contains("target(locationName", StringComparison.Ordinal));
+
+        StringAssert.Contains(beachPoi, "target(locationName=Beach,x=20,y=35,source=map-skill:stardew.navigation.poi.beach-shoreline)");
+        StringAssert.Contains(townPoi, "target(locationName=Town,x=42,y=17,source=map-skill:stardew.navigation.poi.town-square)");
+    }
+
     private static Session CreateAutonomySession()
     {
         var session = new Session { Id = "sdv_save-1_haley_default", Platform = "stardew" };

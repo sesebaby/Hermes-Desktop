@@ -227,6 +227,8 @@ public sealed class StardewNpcAutonomyPromptSupplementBuilder
                 "stardew_move",
                 "destination=<destinationId 精确值>",
                 "target(locationName,x,y,source)",
+                "references/index.md",
+                "skill_view",
                 "stardew_navigate_to_tile",
                 "本地 executor-only",
                 "destinationId",
@@ -261,6 +263,12 @@ public sealed class StardewNpcAutonomyPromptSupplementBuilder
             !summaryLines.Any(line => line.Contains("skill_view(", StringComparison.Ordinal)))
         {
             summaryLines.Add("`skill_view(name=\"stardew-world\", file_path=\"references/stardew-places.md\")`");
+        }
+        else if (string.Equals(skillId, "stardew-navigation", StringComparison.OrdinalIgnoreCase) &&
+                 rawContent.Contains("references/index.md", StringComparison.OrdinalIgnoreCase) &&
+                 !summaryLines.Any(line => line.Contains("skill_view(", StringComparison.Ordinal)))
+        {
+            summaryLines.Add("`skill_view(name=\"stardew-navigation\", file_path=\"references/index.md\")`");
         }
 
         return string.Join(
