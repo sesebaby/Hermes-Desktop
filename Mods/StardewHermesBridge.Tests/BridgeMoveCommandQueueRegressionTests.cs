@@ -175,7 +175,7 @@ public sealed class BridgeMoveCommandQueueRegressionTests
     }
 
     [TestMethod]
-    public void CrossLocationMoveIsBlockedInsteadOfTeleported()
+    public void CrossLocationMoveExecutesFirstSegmentInsteadOfStoppingAtProbeBoundary()
     {
         var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
 
@@ -193,8 +193,11 @@ public sealed class BridgeMoveCommandQueueRegressionTests
             "Cross-location route probes should resolve the next warp tile for task_status diagnostics.");
         StringAssert.Contains(
             commandQueue,
-            "command.Block(\"cross_location_unsupported\")",
-            "Cross-location requests must not be faked as completed until the transition state machine is implemented.");
+            "StartCrossMapSegment",
+            "Route-found cross-location requests must execute the current-map warp segment before waiting for transition support.");
+        Assert.IsFalse(
+            commandQueue.Contains("command.Block(\"cross_location_unsupported\")", StringComparison.Ordinal),
+            "The probe-phase cross-location blocker must not remain on the route-found execution path.");
         Assert.IsFalse(
             commandQueue.Contains("npc.currentLocation = targetLocation;", StringComparison.Ordinal),
             "Move execution must not silently transfer the NPC between locations.");

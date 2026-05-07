@@ -136,7 +136,22 @@ public sealed record StardewTaskStatusData(
     [property: JsonPropertyName("currentLocationName")] string? CurrentLocationName = null,
     [property: JsonPropertyName("resolvedStandTile")] StardewTile? ResolvedStandTile = null,
     [property: JsonPropertyName("routeRevision")] int? RouteRevision = null,
-    [property: JsonPropertyName("routeProbe")] StardewRouteProbeData? RouteProbe = null);
+    [property: JsonPropertyName("routeProbe")] StardewRouteProbeData? RouteProbe = null,
+    [property: JsonPropertyName("crossMapPhase")] string? CrossMapPhase = null,
+    [property: JsonPropertyName("finalTarget")] StardewMoveFinalTargetData? FinalTarget = null,
+    [property: JsonPropertyName("currentSegment")] StardewMoveSegmentData? CurrentSegment = null,
+    [property: JsonPropertyName("lastFailureCode")] string? LastFailureCode = null);
+
+public sealed record StardewMoveFinalTargetData(
+    [property: JsonPropertyName("locationName")] string LocationName,
+    [property: JsonPropertyName("tile")] StardewTile Tile,
+    [property: JsonPropertyName("facingDirection")] int? FacingDirection = null);
+
+public sealed record StardewMoveSegmentData(
+    [property: JsonPropertyName("locationName")] string LocationName,
+    [property: JsonPropertyName("targetTile")] StardewTile? TargetTile,
+    [property: JsonPropertyName("targetKind")] string TargetKind,
+    [property: JsonPropertyName("nextLocationName")] string? NextLocationName = null);
 
 public sealed record StardewRouteProbeData(
     [property: JsonPropertyName("mode")] string Mode,

@@ -96,7 +96,22 @@ public sealed record TaskStatusData(
     string? CurrentLocationName = null,
     TileDto? ResolvedStandTile = null,
     int? RouteRevision = null,
-    RouteProbeData? RouteProbe = null);
+    RouteProbeData? RouteProbe = null,
+    string? CrossMapPhase = null,
+    BridgeMoveFinalTargetData? FinalTarget = null,
+    BridgeMoveSegmentData? CurrentSegment = null,
+    string? LastFailureCode = null);
+
+public sealed record BridgeMoveFinalTargetData(
+    string LocationName,
+    TileDto Tile,
+    int? FacingDirection = null);
+
+public sealed record BridgeMoveSegmentData(
+    string LocationName,
+    TileDto? TargetTile,
+    string TargetKind,
+    string? NextLocationName = null);
 
 public sealed record RouteProbeData(
     string Mode,

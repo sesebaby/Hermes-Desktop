@@ -492,26 +492,62 @@ public sealed class BridgeCommandQueue
 
         if (!ReferenceEquals(currentLocation, targetLocation))
         {
-            var routeProbe = ProbeCrossLocationRoute(
-                npc,
-                currentLocationName,
-                currentTile,
-                currentLocation,
-                command.LocationName,
-                targetLocation,
-                command.TargetTile);
-            command.RecordRouteProbe(routeProbe);
-            command.Block("cross_location_unsupported");
-            _logger.Write(
-                "task_blocked",
-                command.NpcId,
-                "move",
-                command.TraceId,
-                command.CommandId,
-                "blocked",
-                FormatRouteProbeLogDetail(routeProbe));
+            if (command.Status == "running" &&
+                command.CurrentSegment is not null &&
+                string.Equals(command.CurrentSegment.LocationName, currentLocationName, StringComparison.OrdinalIgnoreCase))
+            {
+                targetLocation = currentLocation;
+            }
+            else
+            {
+                var routeProbe = ProbeCrossLocationRoute(
+                    npc,
+                    currentLocationName,
+                    currentTile,
+                    currentLocation,
+                    command.LocationName,
+                    targetLocation,
+                    command.TargetTile);
+                command.RecordRouteProbe(routeProbe);
+                if (!command.TryStartCrossMapSegment(routeProbe, out var failureCode))
+                {
+                    command.Fail(failureCode ?? "cross_location_route_unavailable");
+                    _logger.Write(
+                        "task_failed",
+                        command.NpcId,
+                        "move",
+                        command.TraceId,
+                        command.CommandId,
+                        "failed",
+                        FormatRouteProbeLogDetail(routeProbe));
+                    return command.ToStatusData();
+                }
+
+                MaintainNpcMovementControl(npc);
+                StopNpcMotion(npc);
+                ShowMoveThoughtIfPresent(npc, command);
+                _logger.Write(
+                    "task_running",
+                    command.NpcId,
+                    "move",
+                    command.TraceId,
+                    command.CommandId,
+                    "running",
+                    $"cross_map_segment_started;{FormatRouteProbeLogDetail(routeProbe)}");
+                return command.ToStatusData();
+            }
+        }
+
+        if (command.Status == "running" &&
+            command.CurrentSegment?.TargetKind == "warp_to_next_location" &&
+            string.Equals(command.CurrentSegment.NextLocationName, currentLocationName, StringComparison.OrdinalIgnoreCase))
+        {
+            command.SetPhase("replanning_after_warp", currentLocationName);
+            command.SetCrossMapPhase("replanning_after_warp");
             return command.ToStatusData();
         }
+
+        var movementLocationName = command.CurrentSegment?.LocationName ?? command.LocationName;
 
         if (command.Status == "queued")
         {
@@ -589,10 +625,7 @@ public sealed class BridgeCommandQueue
 
         if (IsAtTileCenter(npc, command.TargetTile))
         {
-            command.SetPhase("arriving", command.LocationName);
-            ApplyArrivalFacing(npc, command);
-            command.Complete();
-            _logger.Write("task_completed", command.NpcId, "move", command.TraceId, command.CommandId, "completed", null);
+            CompleteOrAwaitWarpAtSegmentTarget(command, npc);
             return command.ToStatusData();
         }
 
@@ -601,10 +634,7 @@ public sealed class BridgeCommandQueue
         {
             if (IsAtTileCenter(npc, command.TargetTile))
             {
-                command.SetPhase("arriving", command.LocationName);
-                ApplyArrivalFacing(npc, command);
-                command.Complete();
-                _logger.Write("task_completed", command.NpcId, "move", command.TraceId, command.CommandId, "completed", null);
+                CompleteOrAwaitWarpAtSegmentTarget(command, npc);
             }
             else
             {
@@ -619,22 +649,22 @@ public sealed class BridgeCommandQueue
         var nextStepSafety = BridgeMovementPathProbe.CheckRouteStepSafety(targetLocation, nextTile);
         if (!nextStepSafety.IsSafe)
         {
-            _logger.Write("step_blocked", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"step_blocked:{command.LocationName}:{nextTile.X},{nextTile.Y};{nextStepSafety.FailureKind}");
+            _logger.Write("step_blocked", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"step_blocked:{movementLocationName}:{nextTile.X},{nextTile.Y};{nextStepSafety.FailureKind}");
             if (command.TryRecordReplanAttempt(MaxReplanAttempts, out var attempt))
             {
-                command.SetPhase("replanning", command.LocationName, incrementRouteRevision: true);
+                command.SetPhase("replanning", movementLocationName, incrementRouteRevision: true);
                 var replanProbe = ProbeRoute(npc, currentTile, targetLocation, command.TargetTile);
                 command.RecordRouteProbe(ToRouteProbeData(
                     "same_location",
                     replanProbe,
                     targetLocation.NameOrUniqueName ?? targetLocation.Name,
                     currentTile,
-                    command.LocationName,
+                    movementLocationName,
                     command.TargetTile));
                 if (replanProbe.Status == BridgeRouteProbeStatus.RouteValid && replanProbe.Route.Count > 0)
                 {
                     command.ReplaceSchedulePath(replanProbe.Route);
-                    command.SetPhase("executing_segment", command.LocationName);
+                    command.SetPhase("executing_segment", movementLocationName);
                     _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"route_replanned;blockedStep={nextTile.X},{nextTile.Y};attempt={attempt}");
                     return command.ToStatusData();
                 }
@@ -645,7 +675,7 @@ public sealed class BridgeCommandQueue
                 return command.ToStatusData();
             }
 
-            var failure = BridgeMoveFailureMapper.PathBlocked(command.LocationName, nextTile, nextStepSafety.FailureKind ?? "step_blocked");
+            var failure = BridgeMoveFailureMapper.PathBlocked(movementLocationName, nextTile, nextStepSafety.FailureKind ?? "step_blocked");
             StopNpcMotion(npc);
             command.Fail(failure.ErrorCode, failure.BlockedReason);
             _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", command.BlockedReason);
@@ -664,10 +694,7 @@ public sealed class BridgeCommandQueue
 
         if (nextTile.X == command.TargetTile.X && nextTile.Y == command.TargetTile.Y)
         {
-            command.SetPhase("arriving", command.LocationName);
-            ApplyArrivalFacing(npc, command);
-            command.Complete();
-            _logger.Write("task_completed", command.NpcId, "move", command.TraceId, command.CommandId, "completed", null);
+            CompleteOrAwaitWarpAtSegmentTarget(command, npc);
             return command.ToStatusData();
         }
 
@@ -677,6 +704,23 @@ public sealed class BridgeCommandQueue
 
     private static bool ShouldTryArrivalFallback(BridgeRouteProbeResult probe)
         => probe.Status is BridgeRouteProbeStatus.TargetUnsafe or BridgeRouteProbeStatus.PathEmpty;
+
+    private void CompleteOrAwaitWarpAtSegmentTarget(BridgeMoveCommand command, NPC npc)
+    {
+        if (command.CurrentSegment?.TargetKind == "warp_to_next_location")
+        {
+            StopNpcMotion(npc);
+            command.SetPhase("awaiting_warp", command.CurrentSegment.LocationName);
+            command.SetCrossMapPhase("awaiting_warp");
+            _logger.Write("task_running", command.NpcId, "move", command.TraceId, command.CommandId, "running", $"awaiting_warp;nextLocation={command.CurrentSegment.NextLocationName}");
+            return;
+        }
+
+        command.SetPhase("arriving", command.LocationName);
+        ApplyArrivalFacing(npc, command);
+        command.Complete();
+        _logger.Write("task_completed", command.NpcId, "move", command.TraceId, command.CommandId, "completed", null);
+    }
 
     private void ShowMoveThoughtIfPresent(NPC npc, BridgeMoveCommand command)
     {
@@ -1149,6 +1193,10 @@ public sealed class BridgeMoveCommand
     public string? InterruptionReason { get; private set; }
     public string Phase { get; private set; } = "queued";
     public string CurrentLocationName { get; private set; } = string.Empty;
+    public string? CrossMapPhase { get; private set; }
+    public BridgeMoveFinalTargetData? FinalTarget { get; private set; }
+    public BridgeMoveSegmentData? CurrentSegment { get; private set; }
+    public string? LastFailureCode { get; private set; }
     public int RouteRevision { get; private set; }
     public bool IsTerminal => Status is "completed" or "cancelled" or "failed" or "blocked" or "interrupted";
     public int PathStepsRemaining => _schedulePath?.Count ?? 0;
@@ -1161,6 +1209,9 @@ public sealed class BridgeMoveCommand
         if (incrementRouteRevision)
             RouteRevision++;
     }
+
+    public void SetCrossMapPhase(string phase)
+        => CrossMapPhase = phase;
 
     public void Start()
     {
@@ -1189,6 +1240,7 @@ public sealed class BridgeMoveCommand
     {
         Status = "failed";
         ErrorCode = errorCode;
+        LastFailureCode = errorCode;
         BlockedReason = blockedReason;
     }
 
@@ -1196,6 +1248,7 @@ public sealed class BridgeMoveCommand
     {
         Status = "blocked";
         ErrorCode = reason;
+        LastFailureCode = reason;
         BlockedReason = reason;
     }
 
@@ -1221,6 +1274,41 @@ public sealed class BridgeMoveCommand
 
     public void RecordRouteProbe(RouteProbeData routeProbe)
         => RouteProbe = routeProbe;
+
+    public void StartCrossMapSegment(RouteProbeData routeProbe)
+    {
+        if (!TryStartCrossMapSegment(routeProbe, out var failureCode))
+            throw new InvalidOperationException(failureCode ?? "cross_location_route_unavailable");
+    }
+
+    public bool TryStartCrossMapSegment(RouteProbeData routeProbe, out string? failureCode)
+    {
+        failureCode = null;
+        if (!string.Equals(routeProbe.Status, "route_found", StringComparison.OrdinalIgnoreCase))
+        {
+            failureCode = routeProbe.FailureCode ?? routeProbe.Status;
+            return false;
+        }
+
+        if (routeProbe.NextSegment?.StandTile is null)
+        {
+            failureCode = "cross_location_segment_missing";
+            return false;
+        }
+
+        FinalTarget ??= new BridgeMoveFinalTargetData(LocationName, TargetTile, FacingDirection);
+        CurrentSegment = new BridgeMoveSegmentData(
+            routeProbe.NextSegment.LocationName,
+            routeProbe.NextSegment.StandTile,
+            routeProbe.NextSegment.TargetKind,
+            routeProbe.NextSegment.NextLocationName);
+        TargetTile = routeProbe.NextSegment.StandTile;
+        CrossMapPhase = "executing_segment";
+        SetPhase("executing_segment", CurrentSegment.LocationName, incrementRouteRevision: true);
+        ReplaceSchedulePath(routeProbe.Route);
+        Start();
+        return true;
+    }
 
     public bool TryRecordReplanAttempt(int maxAttempts, out int attempt)
     {
@@ -1271,5 +1359,9 @@ public sealed class BridgeMoveCommand
             CurrentLocationName,
             TargetTile,
             RouteRevision > 0 ? RouteRevision : null,
-            RouteProbe);
+            RouteProbe,
+            CrossMapPhase,
+            FinalTarget,
+            CurrentSegment,
+            LastFailureCode);
 }

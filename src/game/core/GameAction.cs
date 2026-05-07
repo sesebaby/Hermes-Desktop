@@ -57,7 +57,22 @@ public sealed record GameCommandStatus(
     string? CurrentLocationName = null,
     GameTile? ResolvedStandTile = null,
     int? RouteRevision = null,
-    GameRouteProbe? RouteProbe = null);
+    GameRouteProbe? RouteProbe = null,
+    string? CrossMapPhase = null,
+    GameMoveFinalTarget? FinalTarget = null,
+    GameMoveSegment? CurrentSegment = null,
+    string? LastFailureCode = null);
+
+public sealed record GameMoveFinalTarget(
+    string LocationName,
+    GameTile Tile,
+    int? FacingDirection = null);
+
+public sealed record GameMoveSegment(
+    string LocationName,
+    GameTile? TargetTile,
+    string TargetKind,
+    string? NextLocationName = null);
 
 public sealed record GameRouteProbe(
     string Mode,

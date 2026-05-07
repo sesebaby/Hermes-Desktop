@@ -1,0 +1,38 @@
+# Stardew NPC Cross-Map Navigation Context Snapshot
+
+- task statement: Execute `.omx/plans/stardew-npc-跨地图导航完成计划.md` under Ralph, with timely commits.
+- desired outcome: Progress the current cross-location route-probe implementation into verified cross-map NPC navigation. Current execution starts with Phase 1 because Phase 2+ depends on a separate natural-transition evidence gate.
+- known facts/evidence:
+  - Current branch: `allgameinai...origin/allgameinai [ahead 11]`.
+  - Only pre-existing untracked file observed at intake: `.omx/drafts/草案-开发者页调试动作与诊断增强-20260507.md`; leave it untouched.
+  - `Mods/StardewHermesBridge/Bridge/BridgeCommandQueue.cs` currently records a cross-location `routeProbe`, then blocks with `cross_location_unsupported`.
+  - `RouteProbeData.Route` is a current-map tile route to the next warp/door tile, not a location-name route.
+  - Current bridge probe code uses `StardewValley.Pathfinding.WarpPathfindingCache.GetLocationRoute`, `GameLocation.getWarpPointTo`, and `PathFindController.findPathForNPCSchedules`.
+  - Local Stardew 1.6.15 assembly inspection found:
+    - `StardewValley.Pathfinding.WarpPathfindingCache`
+    - `GameLocation.getWarpPointTo(string location, StardewValley.Character character)` with a callable optional/default character argument in existing code.
+    - `PathFindController.findPathForNPCSchedules(Point, Point, GameLocation, int)` and `PathFindController.findPathForNPCSchedules(Point, Point, GameLocation, int, Character)`.
+  - Market Day reference composes cross-location schedule paths from location route + per-map `getWarpPointTo(...)` + schedule pathfinding.
+  - BotFramework reference models world navigation as a graph and turns the next warp into the current location's next navigation target.
+- constraints:
+  - Do not use `Game1.warpCharacter` as natural navigation success.
+  - Do not assign `npc.controller = new PathFindController(...)` or otherwise delegate execution to the NPC controller.
+  - `PathFindController.findPathForNPCSchedules(...)` remains a probe only; Bridge consumes the route through its own stepper.
+  - Do not treat `CanSpawnCharacterHere(...) == false` as proof every route step is blocked.
+  - Preserve final target (`locationName/x/y/facingDirection`) separately from current segment target.
+  - Cross-map execution status must expose `crossMapPhase`, `finalTarget`, `currentSegment`, `routeProbe`, and stable failure codes.
+  - `source` remains a Hermes runtime audit field, not a bridge payload field.
+- unknowns/open questions:
+  - Natural transition from Bridge-owned pixel walking at a warp tile is not proven yet.
+  - Whether Phase 2 should use pure wait, schedule transition state, or a different non-teleport transition hook remains evidence-gated.
+  - Real SMAPI manual validation cannot be claimed until the game is run and logs are inspected.
+- likely codebase touchpoints:
+  - `Mods/StardewHermesBridge/Bridge/BridgeCommandQueue.cs`
+  - `Mods/StardewHermesBridge/Bridge/BridgeCommandModels.cs`
+  - `Mods/StardewHermesBridge/Bridge/BridgeMovementPathProbe.cs`
+  - `Mods/StardewHermesBridge.Tests/BridgeMoveCommandQueueRegressionTests.cs`
+  - `Mods/StardewHermesBridge.Tests/BridgeCrossMapNavigationStateTests.cs`
+  - `src/games/stardew/StardewBridgeDtos.cs`
+  - `src/game/core/GameAction.cs`
+  - `src/games/stardew/StardewCommandService.cs`
+  - `Desktop/HermesDesktop.Tests/Stardew/StardewCommandServiceTests.cs`
