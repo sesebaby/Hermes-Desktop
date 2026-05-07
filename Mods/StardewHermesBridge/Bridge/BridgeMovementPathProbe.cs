@@ -179,7 +179,7 @@ internal static class BridgeMovementPathProbe
                 currentTile,
                 targetLocationName,
                 targetTile,
-                probe.FailureKind ?? "target_tile_unreachable",
+                ToCrossLocationSegmentFailureCode(probe),
                 probe.FailureDetail,
                 probe.Route);
         }
@@ -420,6 +420,11 @@ internal static class BridgeMovementPathProbe
 
     private static bool SameTile(TileDto left, TileDto right)
         => left.X == right.X && left.Y == right.Y;
+
+    private static string ToCrossLocationSegmentFailureCode(BridgeRouteProbeResult probe)
+        => probe.Status == BridgeRouteProbeStatus.TargetUnsafe
+            ? "target_tile_unreachable"
+            : "segment_path_unreachable";
 }
 
 internal sealed class ScopedTerrainFeatureRemoval : IDisposable

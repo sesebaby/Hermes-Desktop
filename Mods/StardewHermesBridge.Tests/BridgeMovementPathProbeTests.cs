@@ -171,4 +171,23 @@ public sealed class BridgeMovementPathProbeTests
         Assert.AreEqual("warp_point_not_found", result.FailureCode);
         Assert.IsNull(result.NextSegment);
     }
+
+    [TestMethod]
+    public void BuildCrossLocationRouteProbe_WhenSegmentPathEmpty_ReturnsStableSegmentFailure()
+    {
+        var result = BridgeMovementPathProbe.BuildCrossLocationRouteProbe(
+            "Town",
+            new TileDto(80, 93),
+            "Beach",
+            new TileDto(20, 35),
+            new[] { "Town", "Beach" },
+            nextLocationName => nextLocationName == "Beach" ? new TileDto(80, 94) : null,
+            () => BridgeMovementPathProbe.ToSchedulePath(Array.Empty<TileDto>()),
+            _ => BridgeTileSafetyCheck.Safe);
+
+        Assert.AreEqual("cross_location", result.Mode);
+        Assert.AreEqual("segment_path_unreachable", result.Status);
+        Assert.AreEqual("segment_path_unreachable", result.FailureCode);
+        Assert.IsNull(result.NextSegment);
+    }
 }
