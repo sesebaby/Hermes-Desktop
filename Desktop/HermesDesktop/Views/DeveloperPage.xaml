@@ -251,10 +251,18 @@
                                 Style="{StaticResource BodySecondaryTextStyle}"
                                 FontSize="12"
                                 TextWrapping="Wrap" />
-                            <StackPanel
+                            <Grid
                                 Grid.Row="2"
-                                Orientation="Horizontal"
-                                Spacing="8">
+                                ColumnSpacing="8"
+                                RowSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
                                 <Button
                                     x:Name="DebugRepositionButton"
                                     x:Uid="DeveloperDebugRepositionButton"
@@ -266,6 +274,7 @@
                                 <Button
                                     x:Name="DebugTickButton"
                                     x:Uid="DeveloperDebugTickButton"
+                                    Grid.Column="1"
                                     AutomationProperties.AutomationId="DeveloperDebugTickButton"
                                     Click="DebugTick_Click"
                                     Background="{StaticResource AppInsetBrush}"
@@ -275,13 +284,25 @@
                                 <Button
                                     x:Name="DebugSpeakButton"
                                     x:Uid="DeveloperDebugSpeakButton"
+                                    Grid.Row="1"
                                     AutomationProperties.AutomationId="DeveloperDebugSpeakButton"
                                     Click="DebugSpeak_Click"
                                     Background="{StaticResource AppInsetBrush}"
                                     BorderBrush="{StaticResource AppStrokeBrush}"
                                     Foreground="White"
                                     Padding="10,6" />
-                            </StackPanel>
+                                <Button
+                                    x:Name="DebugBeachRouteButton"
+                                    x:Uid="DeveloperDebugBeachRouteButton"
+                                    Grid.Row="1"
+                                    Grid.Column="1"
+                                    AutomationProperties.AutomationId="DeveloperDebugBeachRouteButton"
+                                    Click="DebugBeachRoute_Click"
+                                    Background="{StaticResource AppInsetBrush}"
+                                    BorderBrush="{StaticResource AppStrokeBrush}"
+                                    Foreground="White"
+                                    Padding="10,6" />
+                            </Grid>
                             <TextBlock
                                 x:Name="DebugActionStatusText"
                                 x:Uid="DeveloperDebugActionStatusInitial"

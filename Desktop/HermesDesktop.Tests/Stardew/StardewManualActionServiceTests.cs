@@ -173,6 +173,34 @@ public sealed class StardewManualActionServiceTests
     }
 
     [TestMethod]
+    public async Task ProbeBeachRouteAsync_WithBodyBinding_SubmitsMechanicalBeachTarget()
+    {
+        var discovery = new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+            new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token-2" },
+            DateTimeOffset.Parse("2026-04-29T08:00:00Z"),
+            456,
+            "save-9"));
+        var commandService = new FakeGameCommandService();
+        var service = new StardewNpcDebugActionService(discovery, _ => commandService);
+        var bodyBinding = new NpcBodyBinding("haley", "Haley", "Haley", "海莉", "stardew");
+
+        var result = await service.ProbeBeachRouteAsync(bodyBinding, CancellationToken.None);
+
+        Assert.IsTrue(result.Accepted);
+        Assert.IsNotNull(commandService.LastAction);
+        Assert.AreEqual(GameActionType.Move, commandService.LastAction.Type);
+        Assert.AreEqual("haley", commandService.LastAction.NpcId);
+        Assert.AreEqual("Haley", commandService.LastAction.BodyBinding?.TargetEntityId);
+        Assert.AreEqual("tile", commandService.LastAction.Target.Kind);
+        Assert.AreEqual("Beach", commandService.LastAction.Target.LocationName);
+        Assert.IsNotNull(commandService.LastAction.Target.Tile);
+        Assert.AreEqual(32, commandService.LastAction.Target.Tile.X);
+        Assert.AreEqual(34, commandService.LastAction.Target.Tile.Y);
+        Assert.AreEqual(2, (int?)commandService.LastAction.Payload?["facingDirection"]);
+        Assert.IsFalse(commandService.LastAction.Payload?.ContainsKey("destinationId") is true);
+    }
+
+    [TestMethod]
     public async Task RepositionToTownAsync_WhenBridgeUnavailable_ReturnsDiscoveryFailure()
     {
         var service = new StardewNpcDebugActionService(

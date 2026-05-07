@@ -1,0 +1,37 @@
+# E-2026-0507-developer-page-route-probe-no-input
+
+- id: E-2026-0507-developer-page-route-probe-no-input
+- title: Developer page route probe validation had no executable user input path
+- symptoms:
+  - Manual validation showed `debug_npc_reposition_completed` and `action_speak_completed`, but no `routeProbe`, `route_found`, or `stardew_navigate_to_tile`.
+  - NPC runtime kept recording `stardew_move` / `cross_location_unsupported` from older task context instead of a Beach mechanical target.
+  - The developer page exposed only `放到镇上`, `单步唤醒`, and `发送调试台词`; there was no field or button to submit the required "go to Beach" mechanical target.
+- trigger_scope:
+  - Developer-page validation of Stardew cross-location route probe.
+  - Any manual QA step that requires a user/NPC input path not actually present in the UI.
+- root_cause:
+  - The validation instructions assumed the user could send a natural-language NPC objective from the developer page.
+  - The page only had fixed debug actions; `发送调试台词` sends a literal debug speech line and does not inject an autonomy goal or mechanical move target.
+  - Without `target.locationName/x/y/source`, the runtime cannot select `stardew_navigate_to_tile`, so the bridge never receives a route-probeable Beach target.
+- bad_fix_paths:
+  - Treat `发送调试台词` as if it were a player/NPC task input.
+  - Ask the user to type a prompt into a developer page area that does not exist.
+  - Interpret `放到镇上` or manual speech success as proof that cross-location route calculation worked.
+  - Let the old semantic `stardew_move` path stand in for the mechanical `stardew_navigate_to_tile` probe.
+- corrective_constraints:
+  - Before prescribing a manual validation step, confirm the UI has an actual control for that step.
+  - Route probe validation needs an executable path that submits `GameActionType.Move` with `Target.Kind=tile`, `LocationName=Beach`, and explicit tile coordinates.
+  - Keep debug teleport, debug speech, and route-probe actions visually and semantically distinct.
+  - Route-probe success must be evidenced by `stardew_navigate_to_tile` / `routeProbe`, not by `debug_npc_reposition` or `action_speak_completed`.
+- verification_evidence:
+  - Added a failing-then-passing regression test for `StardewNpcDebugActionService.ProbeBeachRouteAsync`.
+  - Added a dedicated developer-page `计算去海边路线` action using the same body binding contract as other manual debug actions.
+- keywords:
+  - stardew
+  - developer-page
+  - routeProbe
+  - stardew_navigate_to_tile
+  - cross_location_unsupported
+  - manual-debug
+  - Beach
+- updated_at: 2026-05-07

@@ -216,6 +216,13 @@ public sealed partial class DeveloperPage : Page
                 ct));
     }
 
+    private async void DebugBeachRoute_Click(object sender, RoutedEventArgs e)
+    {
+        await ExecuteDebugCommandAsync(
+            ResourceLoader.GetString("DeveloperDebugBeachRouteActionName"),
+            ct => _stardewNpcDebugActions!.ProbeBeachRouteAsync(_currentSnapshot!.BodyBinding!, ct));
+    }
+
     private async void DebugTick_Click(object sender, RoutedEventArgs e)
     {
         await ExecuteDebugTickAsync(ResourceLoader.GetString("DeveloperDebugTickActionName"));
@@ -502,6 +509,7 @@ public sealed partial class DeveloperPage : Page
         var canUseDebugCommands = !_operationInProgress && hasSelection && bridgeReady && hasDebugActionService;
         DebugRepositionButton.IsEnabled = canUseDebugCommands;
         DebugSpeakButton.IsEnabled = canUseDebugCommands;
+        DebugBeachRouteButton.IsEnabled = canUseDebugCommands;
         DebugTickButton.IsEnabled = !_operationInProgress && hasSelection && bridgeReady && hasTickService;
         ApplyTraceFilterButton.IsEnabled = !_operationInProgress && hasSelection;
         ClearTraceFilterButton.IsEnabled = !_operationInProgress && hasSelection;

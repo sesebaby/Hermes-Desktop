@@ -1533,6 +1533,12 @@
   <data name="DeveloperDebugSpeakButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Send a debug dialogue line for the selected NPC</value>
   </data>
+  <data name="DeveloperDebugBeachRouteButton.Content" xml:space="preserve">
+    <value>Probe Beach Route</value>
+  </data>
+  <data name="DeveloperDebugBeachRouteButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Calculate a cross-location route probe to Beach for the selected NPC</value>
+  </data>
   <data name="DeveloperDebugActionStatusInitial.Text" xml:space="preserve">
     <value>Select an NPC to run controlled debug actions.</value>
   </data>
@@ -1628,6 +1634,9 @@
   </data>
   <data name="DeveloperDebugSpeakText" xml:space="preserve">
     <value>This is a debug line sent from the developer inspector.</value>
+  </data>
+  <data name="DeveloperDebugBeachRouteActionName" xml:space="preserve">
+    <value>Probe Beach Route</value>
   </data>
   <data name="DeveloperDebugActionRunningFormat" xml:space="preserve">
     <value>Running "{0}" for {1}</value>

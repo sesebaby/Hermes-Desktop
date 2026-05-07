@@ -134,6 +134,11 @@ public sealed class FileStardewBridgeDiscovery : IStardewBridgeDiscovery
 
 public sealed class StardewNpcDebugActionService
 {
+    private const string BeachRouteProbeLocationName = "Beach";
+    private const int BeachRouteProbeTileX = 32;
+    private const int BeachRouteProbeTileY = 34;
+    private const int BeachRouteProbeFacingDirection = 2;
+
     private readonly IStardewBridgeDiscovery _discovery;
     private readonly Func<StardewBridgeDiscoverySnapshot, IGameCommandService> _commandServiceFactory;
 
@@ -222,6 +227,51 @@ public sealed class StardewNpcDebugActionService
             $"manual_reposition_{bodyBinding.NpcId}_{Guid.NewGuid():N}",
             new GameActionTarget("debug_reposition"),
             "manual desktop debug reposition to town",
+            payload,
+            BodyBinding: bodyBinding);
+
+        try
+        {
+            return await _commandServiceFactory(snapshot).SubmitAsync(action, ct);
+        }
+        catch
+        {
+            return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.BridgeUnavailable, traceId);
+        }
+    }
+
+    public async Task<GameCommandResult> ProbeBeachRouteAsync(string npcId, CancellationToken ct)
+        => await ProbeBeachRouteAsync(NpcBodyBinding.FromLogicalId(npcId, "stardew"), ct);
+
+    public async Task<GameCommandResult> ProbeBeachRouteAsync(NpcBodyBinding bodyBinding, CancellationToken ct)
+    {
+        var traceId = $"trace_manual_route_probe_{Guid.NewGuid():N}";
+        ArgumentNullException.ThrowIfNull(bodyBinding);
+        if (string.IsNullOrWhiteSpace(bodyBinding.NpcId))
+            return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.InvalidTarget, traceId);
+
+        if (!_discovery.TryReadLatest(out var snapshot, out var failureReason) || snapshot is null)
+            return new GameCommandResult(false, "", StardewCommandStatuses.Failed, failureReason ?? StardewBridgeErrorCodes.BridgeUnavailable, traceId);
+
+        if (!StardewBridgeRuntimeIdentity.TryGetSaveId(snapshot, out _))
+            return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.BridgeStaleDiscovery, traceId);
+
+        var payload = new System.Text.Json.Nodes.JsonObject
+        {
+            ["facingDirection"] = BeachRouteProbeFacingDirection,
+            ["thought"] = "manual desktop route probe to Beach"
+        };
+        var action = new GameAction(
+            bodyBinding.NpcId,
+            "stardew-valley",
+            GameActionType.Move,
+            traceId,
+            $"manual_route_probe_{bodyBinding.NpcId}_{Guid.NewGuid():N}",
+            new GameActionTarget(
+                "tile",
+                BeachRouteProbeLocationName,
+                new GameTile(BeachRouteProbeTileX, BeachRouteProbeTileY)),
+            "manual desktop debug route probe to Beach",
             payload,
             BodyBinding: bodyBinding);
 
