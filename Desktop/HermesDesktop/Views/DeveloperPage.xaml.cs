@@ -173,8 +173,8 @@ public sealed partial class DeveloperPage : Page
         RuntimeLogPathText.Text = "";
         TraceDiagnosticsText.Text = "";
         DebugActionStatusText.Text = message;
-        DebugActionResultText.Text = ResourceLoader.GetString("DeveloperDebugActionResultInitial");
-        DiagnosticsExportText.Text = ResourceLoader.GetString("DeveloperDiagnosticsExportInitial");
+        DebugActionResultText.Text = ResourceLoader.GetString("DeveloperDebugActionResultInitial/Text");
+        DiagnosticsExportText.Text = ResourceLoader.GetString("DeveloperDiagnosticsExportInitial/Text");
         UpdateActionControls();
     }
 
