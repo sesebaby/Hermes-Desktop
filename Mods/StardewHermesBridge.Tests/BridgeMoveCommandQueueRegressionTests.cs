@@ -472,6 +472,34 @@ public sealed class BridgeMoveCommandQueueRegressionTests
     }
 
     [TestMethod]
+    public void ManualDebugMovePreemptsExistingMoveCommandsForSameNpc()
+    {
+        var models = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandModels.cs");
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(
+            models,
+            "bool? DebugManual",
+            "Manual desktop debug moves need an explicit bridge contract bit, not trace-prefix guessing.");
+        StringAssert.Contains(
+            commandQueue,
+            "CancelMoveCommandsForNpc(command.NpcId, command.CommandId, \"manual_debug_preempted\")",
+            "A manual debug move should cancel stale autonomous move commands for the same NPC before it is queued.");
+        StringAssert.Contains(
+            commandQueue,
+            "_activeMove is not null &&",
+            "Preemption must include the currently running move, not only commands still in the pending queue.");
+        StringAssert.Contains(
+            commandQueue,
+            "task_cancelled",
+            "Preempted commands should be visible in SMAPI logs rather than silently disappearing.");
+        StringAssert.Contains(
+            commandQueue,
+            "RebuildPendingQueueExcluding",
+            "Pending move commands for the same NPC must be removed from the queue, otherwise they can run immediately after the manual beach command.");
+    }
+
+    [TestMethod]
     public void MovePumpReplansRuntimeStepBlocksBeforeTerminalPathBlocked()
     {
         var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");

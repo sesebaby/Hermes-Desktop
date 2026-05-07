@@ -87,6 +87,40 @@ public class StardewCommandServiceTests
     }
 
     [TestMethod]
+    public async Task SubmitAsync_Move_WithManualDebugPayload_IncludesDebugManualInMoveEnvelope()
+    {
+        var client = new FakeSmapiClient();
+        client.MoveResponse = new StardewBridgeResponse<StardewMoveAcceptedData>(
+            true,
+            "trace-manual",
+            "req-manual",
+            "cmd-manual",
+            StardewCommandStatuses.Queued,
+            new StardewMoveAcceptedData(true, new StardewMoveClaim("haley", new StardewTile(32, 34), null)),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.Move,
+            "trace-manual",
+            "manual_haley_beach_1",
+            new GameActionTarget("tile", "Beach", new GameTile(32, 34)),
+            "manual desktop debug move to Beach shoreline",
+            Payload: new JsonObject
+            {
+                ["debugManual"] = true
+            });
+
+        var result = await service.SubmitAsync(action, CancellationToken.None);
+
+        Assert.IsTrue(result.Accepted);
+        var envelope = (StardewBridgeEnvelope<StardewMoveRequest>)client.LastEnvelope!;
+        Assert.AreEqual(true, envelope.Payload.DebugManual);
+    }
+
+    [TestMethod]
     public async Task SubmitAsync_Move_WithDestinationIdOnlyPayload_PostsDestinationFirstEnvelope()
     {
         var client = new FakeSmapiClient();

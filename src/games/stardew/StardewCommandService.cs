@@ -44,7 +44,8 @@ public sealed class StardewCommandService : IGameCommandService
             Reason: action.Reason,
             DestinationId: destinationId,
             FacingDirection: ReadOptionalInt(action.Payload, "facingDirection"),
-            Thought: action.Payload?["thought"]?.ToString());
+            Thought: action.Payload?["thought"]?.ToString(),
+            DebugManual: ReadOptionalBool(action.Payload, "debugManual"));
         var envelope = new StardewBridgeEnvelope<StardewMoveRequest>(
             requestId,
             action.TraceId,
@@ -236,6 +237,14 @@ public sealed class StardewCommandService : IGameCommandService
             return null;
 
         return int.TryParse(node.ToString(), out var value) ? value : null;
+    }
+
+    private static bool? ReadOptionalBool(System.Text.Json.Nodes.JsonObject? payload, string propertyName)
+    {
+        if (payload is null || !payload.TryGetPropertyValue(propertyName, out var node) || node is null)
+            return null;
+
+        return bool.TryParse(node.ToString(), out var value) ? value : null;
     }
 
     private static GameCommandStatus ToCommandStatus(StardewBridgeResponse<StardewTaskStatusData> response, string fallbackCommandId)

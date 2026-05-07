@@ -36,6 +36,8 @@ internal sealed record BridgeCrossLocationSegmentProbe(BridgeRouteProbeResult Pr
     public IReadOnlyList<TileDto> Route => Probe.Route;
 }
 
+internal sealed record BridgeBoundaryLandingRoute(BridgeRouteProbeResult Route, TileDto EscapeTile);
+
 internal static class BridgeMovementPathProbe
 {
     private const int MaxSchedulePathSteps = 300;
@@ -124,6 +126,89 @@ internal static class BridgeMovementPathProbe
             npc);
 
         return ToSchedulePath(rawPath, currentTile);
+    }
+
+    public static BridgeBoundaryLandingRoute? TryBuildRouteFromBoundaryLanding(
+        TileDto boundaryLanding,
+        TileDto targetTile,
+        Func<TileDto, BridgeTileSafetyCheck> targetAffordanceCheck,
+        Func<TileDto, Stack<TileDto>?> schedulePathFromFactory,
+        Func<TileDto, BridgeTileSafetyCheck> routeStepSafetyCheck)
+    {
+        ArgumentNullException.ThrowIfNull(targetAffordanceCheck);
+        ArgumentNullException.ThrowIfNull(schedulePathFromFactory);
+        ArgumentNullException.ThrowIfNull(routeStepSafetyCheck);
+
+        if (!IsBoundaryLandingTile(boundaryLanding))
+            return null;
+
+        foreach (var escapeTile in EnumerateBoundaryEscapeTiles(boundaryLanding))
+        {
+            var escapeSafety = targetAffordanceCheck(escapeTile);
+            if (!escapeSafety.IsSafe)
+                continue;
+
+            var targetSafety = targetAffordanceCheck(targetTile);
+            if (!targetSafety.IsSafe)
+            {
+                return new BridgeBoundaryLandingRoute(
+                    new BridgeRouteProbeResult(
+                        BridgeRouteProbeStatus.TargetUnsafe,
+                        Array.Empty<TileDto>(),
+                        0,
+                        targetTile,
+                        targetSafety.FailureKind,
+                        targetSafety.FailureDetail),
+                    escapeTile);
+            }
+
+            var routeAfterEscape = ToRoute(schedulePathFromFactory(escapeTile), escapeTile);
+            if (SameTile(escapeTile, targetTile))
+            {
+                return new BridgeBoundaryLandingRoute(
+                    new BridgeRouteProbeResult(
+                        BridgeRouteProbeStatus.RouteValid,
+                        new[] { escapeTile },
+                        1,
+                        null,
+                        null,
+                        null),
+                    escapeTile);
+            }
+
+            if (routeAfterEscape.Count == 0)
+                continue;
+
+            var fullRoute = new[] { escapeTile }.Concat(routeAfterEscape).ToArray();
+            foreach (var step in fullRoute)
+            {
+                var stepSafety = routeStepSafetyCheck(step);
+                if (stepSafety.IsSafe)
+                    continue;
+
+                return new BridgeBoundaryLandingRoute(
+                    new BridgeRouteProbeResult(
+                        BridgeRouteProbeStatus.StepUnsafe,
+                        fullRoute,
+                        fullRoute.Length,
+                        step,
+                        stepSafety.FailureKind,
+                        stepSafety.FailureDetail),
+                    escapeTile);
+            }
+
+            return new BridgeBoundaryLandingRoute(
+                new BridgeRouteProbeResult(
+                    BridgeRouteProbeStatus.RouteValid,
+                    fullRoute,
+                    fullRoute.Length,
+                    null,
+                    null,
+                    null),
+                escapeTile);
+        }
+
+        return null;
     }
 
     public static Stack<TileDto> ToSchedulePath(IEnumerable<TileDto> route)
@@ -303,6 +388,17 @@ internal static class BridgeMovementPathProbe
 
     private static bool IsInBoundsTile(TileDto tile)
         => tile.X >= 0 && tile.Y >= 0;
+
+    private static bool IsBoundaryLandingTile(TileDto tile)
+        => tile.X >= 0 && tile.Y >= 0 && (tile.X == 0 || tile.Y == 0);
+
+    private static IEnumerable<TileDto> EnumerateBoundaryEscapeTiles(TileDto tile)
+    {
+        if (tile.Y == 0)
+            yield return new TileDto(tile.X, tile.Y + 1);
+        if (tile.X == 0)
+            yield return new TileDto(tile.X + 1, tile.Y);
+    }
 
     private static RouteProbeData CrossLocationFailure(
         string? currentLocationName,

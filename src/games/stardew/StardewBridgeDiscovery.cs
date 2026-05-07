@@ -280,6 +280,7 @@ public sealed class StardewNpcDebugActionService
 
         var payload = new System.Text.Json.Nodes.JsonObject
         {
+            ["debugManual"] = true,
             ["facingDirection"] = BeachShorelineFacingDirection,
             ["thought"] = "manual desktop debug move to Beach shoreline",
             ["targetSource"] = "map-skill:stardew.navigation.poi.beach-shoreline"

@@ -23,7 +23,13 @@ public sealed record BridgeResponse<TData>(
 
 public sealed record BridgeError(string Code, string Message, bool Retryable);
 
-public sealed record MovePayload(MoveTarget? Target, string? Reason, string? DestinationId = null, int? FacingDirection = null, string? Thought = null);
+public sealed record MovePayload(
+    MoveTarget? Target,
+    string? Reason,
+    string? DestinationId = null,
+    int? FacingDirection = null,
+    string? Thought = null,
+    bool? DebugManual = null);
 
 public sealed record MoveTarget(string LocationName, TileDto Tile);
 

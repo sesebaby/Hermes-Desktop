@@ -83,10 +83,14 @@ public sealed class BridgeCommandQueue
             target.FacingDirection,
             envelope.IdempotencyKey,
             target.DestinationId,
-            envelope.Payload.Thought);
+            envelope.Payload.Thought,
+            envelope.Payload.DebugManual == true);
         _commands[commandId] = command;
         if (!string.IsNullOrWhiteSpace(envelope.IdempotencyKey))
             _idempotency[envelope.IdempotencyKey] = commandId;
+
+        if (command.IsManualDebug)
+            CancelMoveCommandsForNpc(command.NpcId, command.CommandId, "manual_debug_preempted");
 
         _pending.Enqueue(command);
         _logger.Write("task_move_enqueued", command.NpcId, "move", command.TraceId, command.CommandId, "queued", null);
@@ -803,6 +807,18 @@ public sealed class BridgeCommandQueue
             var finalProbe = ProbeRoute(npc, currentTile, currentLocation, finalTarget);
             TileDto? resolvedSegmentTarget = null;
             int? resolvedFacingDirection = null;
+            if (finalProbe.Status == BridgeRouteProbeStatus.PathEmpty)
+            {
+                var escaped = BridgeMovementPathProbe.TryBuildRouteFromBoundaryLanding(
+                    currentTile,
+                    finalTarget,
+                    tile => BridgeMovementPathProbe.CheckTargetAffordance(currentLocation, tile),
+                    routeStart => BridgeMovementPathProbe.FindSchedulePath(npc, currentLocation, routeStart, finalTarget),
+                    tile => BridgeMovementPathProbe.CheckRouteStepSafety(currentLocation, tile));
+                if (escaped is not null)
+                    finalProbe = escaped.Route;
+            }
+
             if (ShouldTryArrivalFallback(finalProbe) && command.FinalTarget is not null)
             {
                 var resolved = BridgeMovementPathProbe.FindClosestReachableNeighbor(
@@ -1158,6 +1174,49 @@ public sealed class BridgeCommandQueue
         }
     }
 
+    private void CancelMoveCommandsForNpc(string npcId, string exceptCommandId, string reason)
+    {
+        if (_activeMove is not null &&
+            !string.Equals(_activeMove.CommandId, exceptCommandId, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(_activeMove.NpcId, npcId, StringComparison.OrdinalIgnoreCase) &&
+            _activeMove.Status is "queued" or "running")
+        {
+            _activeMove.Cancel(reason);
+            _logger.Write("task_cancelled", _activeMove.NpcId, "move", _activeMove.TraceId, _activeMove.CommandId, "cancelled", reason);
+            _activeMove = null;
+        }
+
+        foreach (var existing in _commands.Values)
+        {
+            if (string.Equals(existing.CommandId, exceptCommandId, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(existing.NpcId, npcId, StringComparison.OrdinalIgnoreCase) ||
+                existing.Status is not ("queued" or "running"))
+            {
+                continue;
+            }
+
+            existing.Cancel(reason);
+            _logger.Write("task_cancelled", existing.NpcId, "move", existing.TraceId, existing.CommandId, "cancelled", reason);
+        }
+
+        RebuildPendingQueueExcluding(command =>
+            string.Equals(command.NpcId, npcId, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(command.CommandId, exceptCommandId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void RebuildPendingQueueExcluding(Func<BridgeMoveCommand, bool> shouldExclude)
+    {
+        var keep = new List<BridgeMoveCommand>();
+        while (_pending.TryDequeue(out var queued))
+        {
+            if (!shouldExclude(queued))
+                keep.Add(queued);
+        }
+
+        foreach (var queued in keep)
+            _pending.Enqueue(queued);
+    }
+
     private void MarkPrivateChatInputOpened(string npcName, string conversationId, string traceId)
     {
         lock (_privateChatInputGate)
@@ -1370,7 +1429,8 @@ public sealed class BridgeMoveCommand
         int? facingDirection,
         string? idempotencyKey,
         string? destinationId = null,
-        string? thought = null)
+        string? thought = null,
+        bool isManualDebug = false)
     {
         CommandId = commandId;
         TraceId = traceId;
@@ -1381,6 +1441,7 @@ public sealed class BridgeMoveCommand
         IdempotencyKey = idempotencyKey;
         DestinationId = destinationId;
         Thought = thought;
+        IsManualDebug = isManualDebug;
     }
 
     public string CommandId { get; }
@@ -1392,6 +1453,7 @@ public sealed class BridgeMoveCommand
     public string? IdempotencyKey { get; }
     public string? DestinationId { get; }
     public string? Thought { get; }
+    public bool IsManualDebug { get; }
     public RouteProbeData? RouteProbe { get; private set; }
     public string Status { get; private set; } = "queued";
     public string? BlockedReason { get; private set; }
