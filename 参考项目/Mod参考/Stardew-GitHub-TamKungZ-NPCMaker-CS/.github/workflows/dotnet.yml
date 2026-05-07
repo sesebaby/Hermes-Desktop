@@ -1,0 +1,39 @@
+name: Build and Publish NPCMaker
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        runtime: [win-x64, linux-x64, osx-x64]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Restore dependencies
+      run: dotnet restore NPCMaker.csproj
+
+    - name: Build
+      run: dotnet build NPCMaker.csproj --configuration Release
+
+    - name: Publish for ${{ matrix.runtime }}
+      run: dotnet publish NPCMaker.csproj -c Release -r ${{ matrix.runtime }} --self-contained true
+
+    - name: Upload published app
+      uses: actions/upload-artifact@v4
+      with:
+        name: NPCMaker-${{ matrix.runtime }}
+        path: bin/Release/net8.0/${{ matrix.runtime }}/publish/

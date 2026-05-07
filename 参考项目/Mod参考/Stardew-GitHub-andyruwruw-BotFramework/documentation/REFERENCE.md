@@ -1,0 +1,37 @@
+[Go Back](../README.md)
+
+# BotFramework References
+
+- BotFramework
+  - [Bot.cs](./BotFramework/Bot.md)
+  - [ModConfig.cs](./BotFramework/ModConfig.md)
+  - Framework
+    - [Brain.cs](./BotFramework/Framework/Brain.md)
+    - [Actionable]()
+      - [ActionableGroup.cs]()
+      - [ActionableLocation.cs]()
+      - [ActionableTile.cs]()
+    - [Controller]()
+      - [PlayerController.cs]()
+      - [FarmerGenerator.cs]()
+    - [Helpers]()
+      - [Distance.cs]()
+      - [LogProxy.cs]()
+    - [Location]()
+      - [LocationParser.cs](#frameworklocationlocationparser)
+      - [LocationTour.cs](#frameworklocationlocationtour)
+      - [Map.cs](#frameworklocationmap)
+      - [Tile.cs](#frameworklocationtile)
+    - [Pathfinding](#frameworkpathfinding)
+      - [FillGenerator.cs](#frameworkpathfindingfillgenerator)
+      - [SearchGenerator.cs](#frameworkpathfindingsearchgenerator)
+      - [TourGenerator.cs](#frameworkpathfindingtourgenerator)
+    - [Targets](#frameworktargets)
+      - [CharacterTarget.cs](#frameworktargetscharactertarget)
+      - [ObjectTarget.cs](#frameworktargetsobjecttarget)
+      - [Target.cs](#frameworktargetstarget)
+      - [TileTarget.cs](#frameworktargetstiletarget)
+    - [World](#frameworkworld)
+      - [WorldParser.cs](#frameworkworldworldparser)
+      - [WorldTour.cs](#frameworkworldworldtour)
+

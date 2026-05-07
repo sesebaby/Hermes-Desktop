@@ -1,0 +1,460 @@
+{
+	"GrangeShops": [
+		{
+			"ShopName": "SophiaShop",
+			"NpcName": "Sophia",
+			"OpenSignPath": "assets/open-bluemoon.png",
+			"ClosedSignPath": "assets/closed-blue.png",
+			"Quote": "Blue Moon Cellar Door",
+			"When": [
+				"HasMod FlashShifter.StardewValleyExpandedCP"
+			],
+			"ItemStocks": [
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Blue Moon Wine"
+					],
+					"Stock": 20
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Aged Blue Moon Wine"
+					],
+					"Stock": 4
+				}
+			]
+		},
+		{
+			"ShopName": "AndyShop",
+			"NpcName": "Andy",
+			"OpenSignPath": "assets/open-fairhaven.png",
+			"ClosedSignPath": "assets/closed-brown.png",
+			"Quote": "Fairhaven Farm",
+			"SignObjectIndex": "400",
+			"DefaultSellPriceMultiplier": 2.0,
+			"When": [
+				"HasMod FlashShifter.StardewValleyExpandedCP"
+			],
+			"ItemStocks": [
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Potato",
+						"Strawberry",
+						"Green Bean",
+						"Corn",
+						"Tomato",
+						"Hops",
+						"Corn",
+						"Eggplant",
+						"Grape"
+					],
+					"Stock": 10
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Strawberry Seeds"
+					],
+					"When": [
+						"z spring/z summer/z fall"
+					],
+					"FilterBySeason": false,
+					"SellPriceMultiplier": 3.0,
+					"Stock": 10
+				}
+			]
+		},
+		{
+			"ShopName": "SusanShop",
+			"NpcName": "Susan",
+			"OpenSignPath": "assets/open-emerald.png",
+			"ClosedSignPath": "assets/closed-green.png",
+			"Quote": "Emerald Farm",
+			"When": [
+				"n landslideDone",
+				"HasMod FlashShifter.StardewValleyExpandedCP"
+			],
+			"SignObjectIndex": "60",
+			"DefaultSellPriceMultiplier": 2.0,
+			"ItemStocks": [
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Potato",
+						"Cauliflower",
+						"Parsnip",
+						"Green Bean",
+						"Corn",
+						"Melon",
+						"Radish",
+						"Hops",
+						"Corn",
+						"Pumpkin",
+						"Yam",
+						"Grape"
+					],
+					"Quality": 1,
+					"Stock": 10
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Potato",
+						"Cauliflower",
+						"Parsnip",
+						"Green Bean",
+						"Corn",
+						"Melon",
+						"Radish",
+						"Hops",
+						"Corn",
+						"Pumpkin",
+						"Yam",
+						"Grape"
+					],
+					"Quality": 2,
+					"Stock": 10
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Pale Ale"
+					],
+					"Stock": 5,
+					"Quality": 5
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Deluxe Speed-Gro"
+					],
+					"Stock": 5
+				}
+			]
+		},
+		{
+			"ShopName": "LolaWeaponShop",
+			"OpenSignText": "Weapons",
+			"NpcName": "Lola",
+			"OpenSignPath": "assets/open-weapons.png",
+			"ClosedSignPath": "",
+			"Quote": "How can I help you, dear?",
+			"When": [
+				"HasMod Rafseazz.RSVCP",
+				"e 528052"
+			],
+			"ItemStocks": [
+				{
+					"ItemType": "Weapon",
+					"ItemNames": [
+						"Blade of Rubies"
+					],
+					"StockPrice": 25000,
+					"Stock": 1
+				},
+				{
+					"ItemType": "Weapon",
+					"ItemNames": [
+						"Celestine Sword"
+					],
+					"StockPrice": 23000,
+					"Stock": 1
+				},
+				{
+					"ItemType": "Weapon",
+					"ItemNames": [
+						"Frost Queen's Blade"
+					],
+					"StockPrice": 22000,
+					"Stock": 1
+				},
+				{
+					"ItemType": "Weapon",
+					"ItemNames": [
+						"Pearlskin Blade"
+					],
+					"StockPrice": 24000,
+					"Stock": 1
+				},
+				{
+					"ItemType": "Weapon",
+					"ItemNames": [
+						"Reaper Bane"
+					],
+					"StockPrice": 31000,
+					"Stock": 1
+				},
+				{
+					"ItemType": "Weapon",
+					"ItemNames": [
+						"Runic Greatsword"
+					],
+					"StockPrice": 25000,
+					"Stock": 1
+				},
+				{
+					"ItemType": "Weapon",
+					"ItemNames": [
+						"Lava Katana"
+					],
+					"StockPrice": 16000,
+					"Stock": 1
+				},
+				{
+					"ItemType": "Weapon",
+					"ItemNames": [
+						"Steel Falchion"
+					],
+					"StockPrice": 8000,
+					"Stock": 1
+				},
+				{
+					"ItemType": "Weapon",
+					"ItemNames": [
+						"Bone Sword"
+					],
+					"StockPrice": 5000,
+					"Stock": 1
+				},
+				{
+					"ItemType": "Weapon",
+					"ItemNames": [
+						"Obsidian Edge"
+					],
+					"StockPrice": 11000,
+					"Stock": 1
+				},
+				{
+					"ItemType": "Weapon",
+					"ItemNames": [
+						"Templar's Blade"
+					],
+					"StockPrice": 5000,
+					"Stock": 1
+				},
+				{
+					"ItemType": "Weapon",
+					"ItemNames": [
+						"The Slammer"
+					],
+					"StockPrice": 13000,
+					"Stock": 1
+				}
+			]
+		},
+		{
+			"ShopName": "LorenzoFertilizerShop",
+			"OpenSignText": "Fertilizer",
+			"NpcName": "Lorenzo",
+			"OpenSignPath": "assets/open-heaps.png",
+			"ClosedSignPath": "",
+			"Quote": "All Fertilizer",
+			"DefaultSellPriceMultiplier": 2.0,
+			"When": [
+				"HasMod Rafseazz.RSVCP"
+			],
+			"ItemStocks": [
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Deluxe Fertilizer"
+					],
+					"Stock": 5,
+					"When": [
+						"n willyBoatFixed"
+					]
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Hyper Speed-Gro"
+					],
+					"Stock": 5
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Deluxe Retaining Soil"
+					],
+					"Stock": 5
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Deluxe Speed-Gro"
+					],
+					"Stock": 10
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Quality Fertilizer"
+					],
+					"Stock": 10
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Hyper Speed-Gro"
+					],
+					"Stock": 5
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Basic Fertilizer"
+					],
+					"Stock": 5
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Speed-Gro"
+					],
+					"Stock": 5
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Tree Fertilizer"
+					],
+					"Stock": 50
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Deluxe Fish Food"
+					],
+					"StockPrice": 300,
+					"When": [
+						"HasMod atravita.MoreFertilizers",
+						"n Island_UpgradeTrader",
+						"f Lorenzo 2000"
+					],
+					"Stock": 2
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Joja's Deluxe Fertilizer"
+					],
+					"StockPrice": 300,
+					"When": [
+						"HasMod atravita.MoreFertilizers"
+					],
+					"Stock": 5
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Organic Fertilizer"
+					],
+					"When": [
+						"HasMod atravita.MoreFertilizers"
+					],
+					"Stock": 5
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Bountiful Fertilizer"
+					],
+					"When": [
+						"HasMod atravita.MoreFertilizers"
+					],
+					"Stock": 5
+				}
+			]
+		},
+		{
+			"ShopName": "PikasRestaurant",
+			"OpenSignText": "Pika's",
+			"NpcName": "Pika",
+			"OpenSignPath": "assets/open-pika.png",
+			"ClosedSignPath": "",
+			"Quote": "Smell that?",
+			"DefaultSellPriceMultiplier": 2.0,
+			"When": [
+				"HasMod Rafseazz.RSVCP"
+			],
+			"ItemStocks": [
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Arugula Roll",
+						"Autumn Dew Drop Juice",
+						"Cherry Berry Shakey",
+						"Fried Fish a la Ridge",
+						"Fried Mountain Greens",
+						"Highland Ice Cream",
+						"Honey Glazed Salad",
+						"Ridge Fruity Plate",
+						"Ridgeside Shaketini",
+						"Snow Bowl Surprise",
+						"Snowball Slurpee",
+						"Zesty Tuna",
+						"Bean Hotpot",
+						"Blackberry Cobbler",
+						"Coleslaw",
+						"Farmer's Lunch",
+						"Fish Taco",
+						"Lucky Lunch",
+						"Omelet",
+						"Pepper Poppers",
+						"Pumpkin Soup",
+						"Salad",
+						"Spaghetti",
+						"Stir Fry",
+						"Tom Kha Soup"
+					],
+					"MaxNumItemsSoldInItemStock": 20,
+					"Stock": 3
+				}
+			]
+		},
+		{
+			"ShopName": "ESInnShop",
+			"OpenSignText": "The Inn",
+			"NpcName": "Rosa",
+			"OpenSignPath": "",
+			"ClosedSignPath": "",
+			"Quote": "Howdy! How can I help you?",
+			"DefaultSellPriceMultiplier": 2.0,
+			"When": [
+				"HasMod LemurKat.EastScarpe.CP"
+			],
+			"ItemStocks": [
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Bread",
+						"Coffee",
+						"Cookie",
+						"Cranberry Candy",
+						"Poppyseed Muffin",
+						"Maple Bar",
+						"Blackberry Cobbler",
+						"Rhubarb Pie",
+						"Blueberry Tart",
+						"Plum Pudding",
+						"Pink Cake",
+						"Ice Cream",
+						"Jack-O-Lantern"
+					],
+					"MaxNumItemsSoldInItemStock": 20,
+					"Stock": 5
+				},
+				{
+					"ItemType": "Object",
+					"ItemNames": [
+						"Spirit Torch"
+					],
+					"Stock": 2
+				}
+			]
+		}
+	]
+}

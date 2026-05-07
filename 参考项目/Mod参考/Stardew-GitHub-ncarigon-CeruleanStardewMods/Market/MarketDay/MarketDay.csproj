@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <Version>1.0.1</Version>
+        <TargetFramework>net6.0</TargetFramework>
+        <EnableHarmony>true</EnableHarmony>
+        <PackageId>MarketDay</PackageId>
+        <RootNamespace>MarketDay</RootNamespace>
+        <GamePath>/Volumes/Daten/Games/Steam/steamapps/common/Stardew Valley/Contents/MacOS</GamePath>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+      <NoWarn>1701;1702;IDE1006;IDE0060</NoWarn>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+      <NoWarn>1701;1702;IDE1006;IDE0060</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.2" />
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Reference Include="ContentPatcher">
+        <HintPath>E:\games\Stardew Valley\MO2\mods\Content Patcher\ContentPatcher\ContentPatcher.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
+      <Reference Include="MailFrameworkMod">
+        <HintPath>E:\games\Stardew Valley\MO2\mods\MailFrameworkMod\MailFrameworkMod\MailFrameworkMod.dll</HintPath>
+        <Private>False</Private>
+      </Reference>
+    </ItemGroup>
+</Project>

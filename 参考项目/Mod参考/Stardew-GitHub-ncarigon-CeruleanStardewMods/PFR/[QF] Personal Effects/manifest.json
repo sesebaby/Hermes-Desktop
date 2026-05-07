@@ -1,0 +1,13 @@
+{
+  "Name": "[QF] Personal Effects Redux",
+  "Author": "ceruleandeep",
+  "Version": "1.6.4",
+  "Description": "A Stardew Valley quest pack for certain individuals. <3",
+  "UniqueID": "ceruleandeep.qf.personaleffects",
+  "MinimumApiVersion": "3.6.0",
+  "UpdateKeys": ["Nexus:???"],
+  "ContentPackFor": {
+    "UniqueID": "PurrplingCat.QuestFramework", 
+    "MinimumVersion": "1.2.0" 
+  }
+}

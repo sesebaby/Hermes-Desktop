@@ -1,0 +1,25 @@
+﻿{
+  "Name": "Market Day",
+  "Author": "ceruleandeep, LiSoNaZa, NCarigon",
+  "Version": "1.1.7-unofficial.8-NCarigon",
+  "Description": "Market Day - unofficial 1.6 update",
+  "UniqueID": "ceruleandeep.MarketDay",
+  "EntryDll": "MarketDay.dll",
+  "MinimumApiVersion": "4.0.0",
+  "Dependencies": [
+    {
+      "UniqueID": "Pathoschild.ContentPatcher",
+      "MinimumVersion": "1.23.0"
+    },
+    {
+      "UniqueID": "DIGUS.MailFrameworkMod",
+      "MinimumVersion": "1.12.2"
+    },
+    {
+      "UniqueID": "Cherry.ExpandedPreconditionsUtility"
+    }
+  ],
+  "UpdateKeys": [
+    "Nexus:11778"
+  ]
+}

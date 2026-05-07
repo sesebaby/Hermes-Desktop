@@ -1,0 +1,297 @@
+<Window xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    x:Class="NPCMaker.MainWindow"
+    Icon="/Assets/avalonia-logo.ico"
+    Title="Stardew NPC Maker"
+    Width="1280" Height="720">
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Page 1: Basic info and file pickers -->
+        <StackPanel x:Name="Page1" Spacing="10">
+            <TextBlock Text="Stardew NPC Maker" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center"/>
+            <Separator/>
+
+            <TextBlock Text="NPC Internal Name:"/>
+            <TextBox x:Name="NpcInternalNameBox" Text="MyNPC"/>
+
+            <TextBlock Text="NPC Display Name:"/>
+            <TextBox x:Name="NpcDisplayNameBox" Text="My NPC"/>
+
+            <TextBlock Text="Author:"/>
+            <TextBox x:Name="AuthorBox" Text="YourName"/>
+            <Separator/>
+            <TextBlock Text="(Image selection moved to Image page)" FontStyle="Italic"/>
+        </StackPanel>
+
+        <!-- Page 2: Custom settings (dialogue, schedules) -->
+        <StackPanel x:Name="Page2" Spacing="10" IsVisible="False">
+            <TextBlock Text="Custom Settings" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
+            <Separator/>
+
+            <TextBlock Text="Dialogues" FontWeight="SemiBold"/>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBox x:Name="DialogueKeyBox" Width="200" Watermark="Key (e.g. Introduction)"/>
+                <TextBox x:Name="DialogueValueBox" Width="400" Watermark="Text"/>
+                <Button x:Name="AddDialogueButton" Content="Add"/>
+            </StackPanel>
+            <ListBox x:Name="DialoguesListBox" Height="120"/>
+
+            <Separator/>
+            <TextBlock Text="Schedules" FontWeight="SemiBold"/>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBox x:Name="SeasonBox" Width="100" Watermark="Season (spring)"/>
+                <TextBox x:Name="TimeRangeBox" Width="100" Watermark="Time (e.g. 800-1200)"/>
+                <TextBox x:Name="LocationBox" Width="140" Watermark="Location (Town)"/>
+                <TextBox x:Name="XBox" Width="50" Watermark="X"/>
+                <TextBox x:Name="YBox" Width="50" Watermark="Y"/>
+                <TextBox x:Name="ZBox" Width="50" Watermark="Z"/>
+                <ComboBox x:Name="DirectionBox" Width="100" SelectedIndex="0">
+                    <ComboBoxItem Content="0 (Up)"/>
+                    <ComboBoxItem Content="1 (Right)"/>
+                    <ComboBoxItem Content="2 (Down)"/>
+                    <ComboBoxItem Content="3 (Left)"/>
+                </ComboBox>
+                <Button x:Name="AddScheduleButton" Content="Add"/>
+            </StackPanel>
+            <ListBox x:Name="SchedulesListBox" Height="120"/>
+        </StackPanel>
+
+        <!-- Page Image: Portrait & Sprite selection + previews -->
+        <ScrollViewer x:Name="PageImage" IsVisible="False">
+            <StackPanel Spacing="10">
+                <TextBlock Text="Images" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
+                <Separator/>
+
+                <Grid ColumnDefinitions="1*,1*" ColumnSpacing="15">
+                    <!-- Portrait section -->
+                    <StackPanel Grid.Column="0" Spacing="8">
+                        <TextBlock Text="Portrait Image (PNG):" FontWeight="SemiBold"/>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBox x:Name="PortraitPathBox" Grid.Column="0" IsReadOnly="True"/>
+                            <Button x:Name="PortraitBrowseButton" Grid.Column="1" Content="Browse" Width="80"/>
+                        </Grid>
+                        <TextBlock Text="Portrait Preview" FontSize="12" Foreground="Gray"/>
+                        <Image x:Name="PortraitPreview" Width="200" Height="200" Stretch="Uniform"/>
+                    </StackPanel>
+
+                    <!-- Sprite section -->
+                    <StackPanel Grid.Column="1" Spacing="8">
+                        <TextBlock Text="Sprite Image (PNG):" FontWeight="SemiBold"/>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <TextBox x:Name="SpritePathBox" Grid.Column="0" IsReadOnly="True"/>
+                            <Button x:Name="SpriteBrowseButton" Grid.Column="1" Content="Browse" Width="80"/>
+                        </Grid>
+                        <TextBlock Text="Sprite Preview" FontSize="12" Foreground="Gray"/>
+                        <Image x:Name="SpritePreview" Width="200" Height="200" Stretch="Uniform"/>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Page 4: Events editor -->
+        <ScrollViewer x:Name="Page4" IsVisible="False">
+            <StackPanel Spacing="10">
+                <TextBlock Text="Events Editor" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
+                <Separator/>
+
+                <TextBlock Text="Add Event Entry" FontWeight="SemiBold"/>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBox x:Name="EventKeyBox" Width="300" Watermark="Event key (e.g. 99990001/f NPCName 500)"/>
+                    <TextBox x:Name="EventValueBox" Width="700" Watermark="Event value string"/>
+                    <Button x:Name="AddEventButton" Content="Add"/>
+                </StackPanel>
+                <ListBox x:Name="EventsListBox" Height="180"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Page 3: NPC Disposition Settings -->
+        <ScrollViewer x:Name="Page3" IsVisible="False">
+            <StackPanel Spacing="10">
+                <TextBlock Text="Disposition Settings" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
+                <Separator/>
+
+                <!-- Row 1: Age, Manner, Personality, Optimism -->
+                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="10">
+                    <StackPanel Grid.Column="0" Spacing="4">
+                        <TextBlock Text="Age (Field 1):" FontWeight="SemiBold"/>
+                        <ComboBox x:Name="AgeCombo" SelectedIndex="0">
+                            <ComboBoxItem Content="adult"/>
+                            <ComboBoxItem Content="teen"/>
+                            <ComboBoxItem Content="child"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                        <TextBlock Text="Manner (Field 2):" FontWeight="SemiBold"/>
+                        <ComboBox x:Name="MannerCombo" SelectedIndex="0">
+                            <ComboBoxItem Content="neutral"/>
+                            <ComboBoxItem Content="polite"/>
+                            <ComboBoxItem Content="rude"/>
+                            <ComboBoxItem Content="shy"/>
+                            <ComboBoxItem Content="outgoing"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="4">
+                        <TextBlock Text="Personality (Field 3):" FontWeight="SemiBold"/>
+                        <ComboBox x:Name="PersonalityCombo" SelectedIndex="0">
+                            <ComboBoxItem Content="neutral"/>
+                            <ComboBoxItem Content="friendly"/>
+                            <ComboBoxItem Content="shy"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="3" Spacing="4">
+                        <TextBlock Text="Optimism (Field 4):" FontWeight="SemiBold"/>
+                        <ComboBox x:Name="OptimismCombo" SelectedIndex="0">
+                            <ComboBoxItem Content="0"/>
+                            <ComboBoxItem Content="1"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Row 2: Gender, Breathing, Home, Datable -->
+                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="10">
+                    <StackPanel Grid.Column="0" Spacing="4">
+                        <TextBlock Text="Gender (Field 5):" FontWeight="SemiBold"/>
+                        <ComboBox x:Name="GenderCombo" SelectedIndex="0">
+                            <ComboBoxItem Content="0 (Male)"/>
+                            <ComboBoxItem Content="1 (Female)"/>
+                            <ComboBoxItem Content="2 (Non-binary)"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                        <TextBlock Text="Breathing (Field 6):" FontWeight="SemiBold"/>
+                        <ComboBox x:Name="BreathingCombo" SelectedIndex="0">
+                            <ComboBoxItem Content="0"/>
+                            <ComboBoxItem Content="1"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="4">
+                        <TextBlock Text="Home (Field 7):" FontWeight="SemiBold"/>
+                        <TextBox x:Name="HomeBox" Text="Town" Watermark="e.g. Town, Forest, Mountain"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="3" Spacing="4">
+                        <TextBlock Text="Datable (Field 8):" FontWeight="SemiBold"/>
+                        <ComboBox x:Name="DatableCombo" SelectedIndex="0">
+                            <ComboBoxItem Content="datable"/>
+                            <ComboBoxItem Content="null"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Row 3: Relationship, Spawn Location -->
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                    <StackPanel Grid.Column="0" Spacing="4">
+                        <TextBlock Text="Relationship (Field 9):" FontWeight="SemiBold"/>
+                        <TextBox x:Name="RelationshipBox" Watermark="null or NPC name (e.g. Abigail)"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                        <TextBlock Text="Spawn Location (Field 10):" FontWeight="SemiBold"/>
+                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                            <TextBox Grid.Column="0" x:Name="SpawnMapBox" Watermark="Map"/>
+                            <TextBox Grid.Column="1" x:Name="SpawnXBox" Watermark="X"/>
+                            <TextBox Grid.Column="2" x:Name="SpawnYBox" Watermark="Y"/>
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Row 4: Preferences (Loves, Likes, Dislikes, Hates) -->
+                <Separator/>
+                <TextBlock Text="Item Preferences" FontWeight="SemiBold" FontSize="14"/>
+                <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="10">
+                    <StackPanel Grid.Column="0" Spacing="4">
+                        <TextBlock Text="Loves (Field 12):" FontSize="12"/>
+                        <TextBox x:Name="LovesBox" Height="60" TextWrapping="Wrap" Watermark="(74) (206) (category_gems)"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                        <TextBlock Text="Likes (Field 13):" FontSize="12"/>
+                        <TextBox x:Name="LikesBox" Height="60" TextWrapping="Wrap" Watermark="(74) (206)"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Spacing="4">
+                        <TextBlock Text="Dislikes (Field 14):" FontSize="12"/>
+                        <TextBox x:Name="DislikesBox" Height="60" TextWrapping="Wrap" Watermark="(74) (206)"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="3" Spacing="4">
+                        <TextBlock Text="Hates (Field 15):" FontSize="12"/>
+                        <TextBox x:Name="HatesBox" Height="60" TextWrapping="Wrap" Watermark="(74) (206)"/>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Page About: App Information -->
+        <ScrollViewer x:Name="PageAbout" IsVisible="False">
+            <StackPanel Spacing="12" Margin="10">
+                <TextBlock Text="About Stardew NPC Maker" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
+                <Separator/>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Application Name:" FontWeight="SemiBold"/>
+                    <TextBlock Text="Stardew NPC Maker" Foreground="Gray"/>
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Version:" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="AppVersionText" Text="1.0.0" Foreground="Gray"/>
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Made By:" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="AppAuthorText" Text="TamKungZ_" Foreground="Gray"/>
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Contact:" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="AppContactText" Text="kittiwut.pimpromma@gmail.com" Foreground="Gray"/>
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Website:" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="AppWebsiteText" Text="https://github.com/TamKungZ/Stardew-NPC-Maker-CS" Foreground="Gray"/>
+                </StackPanel>
+
+                <Separator/>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="License:" FontWeight="SemiBold"/>
+                    <TextBlock x:Name="AppLicenseText" Text="MIT License" Foreground="Gray"/>
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Framework:" FontWeight="SemiBold"/>
+                    <TextBlock Text=".NET 8 / Avalonia UI" Foreground="Gray"/>
+                </StackPanel>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Purpose:" FontWeight="SemiBold"/>
+                    <TextBlock Text="Generate custom Stardew Valley NPC content packs with portraits, sprites, dialogues, schedules, events, and dispositions." 
+                               TextWrapping="Wrap" Foreground="Gray"/>
+                </StackPanel>
+
+                <Separator/>
+
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Safety Certificate:" FontWeight="SemiBold"/>
+                    <TextBlock Text="✓ No external data collection&#10;✓ Open source&#10;✓ Local file generation only&#10;✓ User-controlled assets"
+                               TextWrapping="Wrap" Foreground="Gray"/>
+                </StackPanel>
+
+                <Separator/>
+
+                <TextBlock Text="Copyright © 2025. All rights reserved." FontSize="11" Foreground="DarkGray" HorizontalAlignment="Center"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Bottom navigation -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Spacing="10" Margin="0,12,0,0">
+            <Button x:Name="BackButton" Content="Back" IsEnabled="False"/>
+            <Button x:Name="NextButton" Content="Next"/>
+            <Button x:Name="AboutButton" Content="About"/>
+            <Button x:Name="GenerateButton" Content="Generate Mod"/>
+            <TextBlock x:Name="StatusText" Text="Ready. Fill in the details." VerticalAlignment="Center" Margin="12,0,0,0"/>
+        </StackPanel>
+    </Grid>
+</Window>
