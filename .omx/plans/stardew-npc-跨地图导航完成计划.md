@@ -22,14 +22,29 @@
 已验证：
 
 - `dotnet test .\Mods\StardewHermesBridge.Tests\Mods.StardewHermesBridge.Tests.csproj -c Debug --filter "FullyQualifiedName~BridgeMoveCommandQueueRegressionTests|FullyQualifiedName~BridgeMovementPathProbeTests|FullyQualifiedName~BridgeMoveFailureMapperTests"`：26 passed。
-- `dotnet test .\Mods\StardewHermesBridge.Tests\Mods.StardewHermesBridge.Tests.csproj -c Debug`：89 passed。
+- `dotnet test .\Mods\StardewHermesBridge.Tests\Mods.StardewHermesBridge.Tests.csproj -c Debug`：93 passed。
 - `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~StardewCommandServiceTests|FullyQualifiedName~StardewNpcToolFactoryTests|FullyQualifiedName~NpcLocalExecutorRunnerTests|FullyQualifiedName~NpcLocalActionIntentTests"`：64 passed。
 
 当前限制：
 
 - `routeProbe.status=route_found` 只证明能算 route 和下一段 `standTile`，不代表 NPC 已经移动或过图。
-- 跨地图 command 当前允许 `blocked/cross_location_execution_not_enabled`，这是探针阶段设计，不是最终完成态。
+- 跨地图 command 当前会 `blocked/cross_location_unsupported`，这是探针阶段设计，不是最终完成态。
 - 还没有跨图 segment 状态机、自然 warp 等待、切图后重规划、最终目标完成判断。
+
+## 术语与数据语义校准
+
+后续实现必须先固定这些语义，避免把 probe 结果误读成完整路径：
+
+- `RouteProbeData.Route` 当前是 **当前地图内的 tile path**，不是 location-name route。`Town -> Beach` 的 location route 只用于计算下一张地图和 warp tile，当前没有单独暴露在 DTO 中。
+- 如果 UI、日志或测试需要断言 location route，必须新增显式字段，例如 `locationRoute: ["Town", "Beach"]`；不能把 `RouteProbeData.Route` 改口解释成 location route。
+- `routeProbe.currentLocationName == "Town"`、`routeProbe.targetLocationName == "Beach"`、`routeProbe.nextSegment.nextLocationName == "Beach"` 才是当前状态面里能证明跨地图方向的字段。
+- `routeProbe.nextSegment.standTile` 是当前地图内要走到的 warp/door tile；它不是最终 `Beach/x/y`。
+- 跨地图 command 必须同时保留：
+  - `finalTarget.locationName/x/y/facingDirection`：父层给出的最终目标，直到 command 完成或失败都不能丢。
+  - `currentSegment.locationName/targetTile/targetKind/nextLocationName`：当前正在执行的地图内片段。
+- 实现时不能直接用 `BridgeMoveCommand.ReplaceTarget(...)` 把最终目标永久改成 warp tile，除非另有字段保存原始最终目标并且测试证明切图后能恢复。
+- `crossMapPhase` 是跨图状态机字段；现有 `Phase` 可以继续表达同地图移动阶段，但跨图状态必须有稳定字段或等价结构，避免 UI 和日志把同地图 `executing_segment` 与跨图 segment 混淆。
+- `cross_location_unsupported` 是当前探针阶段 blocker；进入 Phase 1 后，route found 的跨地图命令不得再以任何 `cross_location_*` blocker 作为成功路径。
 
 ## 必守原则
 
@@ -41,6 +56,8 @@
 - `routeProbe` 只在 `task_status` / `GameCommandStatus.RouteProbe` 状态面，不进 `TaskMove` accepted response。
 - 不用 `Game1.warpCharacter` 冒充自然移动成功；它只能作为显式调试 fallback，且不能计入自然导航验收。
 - 小步提交。每个阶段完成后必须提交，commit message 使用 Lore protocol。
+- 历史错误约束：不得用 `npc.controller = new PathFindController(...)` 接管执行来绕开 Bridge stepper；`PathFindController.findPathForNPCSchedules(...)` 只作为 route probe，执行仍由 Bridge 消费已探测路径。
+- 历史错误约束：不得把 `CanSpawnCharacterHere(...) == false` 当成每个 schedule path step 不可走；spawn affordance 属于最终目标/stand tile 检查，不属于每个路径步。
 
 ## 参考依据
 
@@ -258,7 +275,9 @@
   预期：
 
   - `routeProbe.status=route_found`。
-  - `routeProbe.route` 包含 `Town` 和 `Beach`。
+  - `routeProbe.currentLocationName=Town`。
+  - `routeProbe.targetLocationName=Beach`。
+  - `routeProbe.route` 是当前地图内到 warp tile 的 tile path，不得断言它包含 `Town` 或 `Beach` 字符串。
   - `routeProbe.nextSegment.targetKind=warp_to_next_location`。
   - `routeProbe.nextSegment.nextLocationName=Beach`。
   - `routeProbe.nextSegment.standTile` 有明确 `x/y`。
@@ -268,6 +287,32 @@
   如果无需改代码，只提交日志/文档结果；如果需要补诊断，只补日志或映射，不扩大到状态机。
 
   推荐提交边界：只包含测试、诊断或文档证据。
+
+## Phase 0.5：自然切图机制证据门槛
+
+目标：在写跨图执行状态机前，证明“Bridge-owned pixel walking 到 warp tile 后等待原版自然切图”这个核心假设是否成立；如果不成立，必须先改计划而不是硬写 Phase 2。
+
+不做：不把任何临时实验代码作为生产路径提交；不使用 `Game1.warpCharacter` 证明自然导航成功。
+
+- [ ] **Step 0.5.1：确认 Stardew NPC 自然切图触发条件**
+
+  从一手资料、当前反编译或最小实验确认：
+
+  - 手动更新 `npc.Position += velocity` 到 warp tile 是否会触发 NPC location transition。
+  - `MaintainNpcMovementControl(...)` 清理 `controller`、`temporaryController`、`DirectionsToNewLocation` 是否会阻止原版 schedule warp。
+  - 原版自然切图是否要求 `DirectionsToNewLocation`、schedule path description、controller 状态、或特定 `NPC` API。
+
+  输出：把结论写入 `.omx/context/...` 或 Phase 0.5 commit body。
+
+- [ ] **Step 0.5.2：选择 transition 实现 lane**
+
+  只能在证据后选择：
+
+  - **Lane A：Bridge stepper + natural warp wait**。前提：实验证明手动走到 warp tile 会自然切图，或只需很小的非作弊状态设置即可触发。
+  - **Lane B：Bridge stepper + explicit non-success transition hook**。前提：手动走到 warp tile 不会自然切图，但可以通过非 `warpCharacter` 的原版 NPC schedule/route 状态推进过图；必须记录为何不算伪造成功。
+  - **Lane C：临时 schedule 注入主线化**。前提：A/B 都不可稳定；必须先写 ADR，说明恢复 schedule、冲突处理和权限边界。
+
+  停止条件：未完成本步骤前，不得开始 Phase 2；Phase 1 只能做到“走向/到达 warp stand tile 并报告状态”。
 
 ## Phase 1：执行跨地图第一段同地图移动
 
@@ -292,9 +337,11 @@
 
   断言：
 
-  - cross-location target 不再立刻 `Blocked("cross_location_execution_not_enabled")`。
+  - cross-location route found 后 command `Status == "running"`，不是 `blocked` / `failed`。
+  - `BlockedReason` / `ErrorCode` 不得是 `cross_location_unsupported`，也不得是任何 `cross_location_*` blocker。
   - command phase 进入 `executing_segment`。
   - 当前 segment target tile 等于 `routeProbe.nextSegment.standTile`。
+  - command 仍保留最终 `targetLocationName=Beach` 和最终 `targetTile=20,35`，不会被 warp tile 覆盖。
   - segment path probe 使用 `PathFindController.findPathForNPCSchedules`。
   - `routeProbe` 仍保留在 task status。
 
@@ -304,11 +351,14 @@
 
   实现要求：
 
+  - 新增或等价实现 `FinalTargetLocationName` / `FinalTargetTile` / `FinalFacingDirection`，保存父层 mechanical target。
+  - 新增或等价实现 `CurrentSegment`，包含 `LocationName`、`TargetTile`、`TargetKind`、`NextLocationName`。
   - route found 后设置 command phase：`executing_segment`。
   - `CurrentSegment.LocationName=currentLocationName`。
   - `CurrentSegment.TargetKind=warp_to_next_location`。
   - `CurrentSegment.TargetTile=routeProbe.nextSegment.standTile`。
   - 使用现有同地图 move controller/path probe 走到该 tile。
+  - 同地图路径消费必须基于 `CurrentSegment.TargetTile`；不要把 `BridgeMoveCommand.TargetTile` 永久改写成 warp tile 后丢掉 final target。
 
 - [ ] **Step 1.3：状态面映射**
 
@@ -323,6 +373,7 @@
 
   - `crossMapPhase`
   - `currentSegment`
+  - `finalTarget`
   - `routeProbe`
   - `lastFailureCode`
 
@@ -339,9 +390,11 @@
 
 ## Phase 2：等待自然 warp 并识别切图
 
-目标：NPC 到达当前地图 warp tile 后，不调用 `Game1.warpCharacter`，而是等待 Stardew 原版自然切图；检测 `npc.currentLocation` 变化后进入重规划。
+目标：NPC 到达当前地图 warp tile 后，不调用 `Game1.warpCharacter`，而是按 Phase 0.5 选定的 transition lane 等待或推进原版切图；检测 `npc.currentLocation` 变化后进入重规划。
 
 不做：不做完整多段循环；只处理一次 `Town -> Beach` 的自然切图识别。
+
+前置条件：Phase 0.5 必须明确证明选定 lane 可行。若 Phase 0.5 证明 Bridge-owned pixel walking 不会触发自然切图，则本 phase 必须先改写为被证据支持的 transition lane，不能继续保留“等待自然切图”的假设。
 
 选项：
 
@@ -361,6 +414,7 @@
   - 到达 segment target 后 phase 变为 `awaiting_warp`。
   - 未切图时 command 不完成。
   - 未切图超时后返回 `warp_transition_timeout`，不是自然语言失败。
+  - awaiting 期间不能继续调用会阻断 transition 的 movement cleanup；如果必须调用 `MaintainNpcMovementControl(...)`，测试或手测必须证明它不会阻止切图。
   - 代码不调用 `Game1.warpCharacter`。
 
 - [ ] **Step 2.2：实现 phase**
@@ -379,6 +433,7 @@
   - 如果 `npc.currentLocation` 变成 expected next location，进入 `replanning_after_warp`。
   - 如果超时，blocked/failed：`warp_transition_timeout`。
   - 如果 NPC 被外力带到其他地图，failed：`unexpected_location_after_warp`，附带 actual/expected。
+  - 如果选定 lane 需要设置原版 NPC schedule/transition state，必须把设置和清理封装在明确方法里，并加测试证明不会污染普通同地图 move。
 
 - [ ] **Step 2.3：手测**
 
@@ -422,7 +477,8 @@
 
   - phase 从 `replanning_after_warp` 进入 `executing_segment`。
   - 当前地图等于目标地图时 `currentSegment.targetKind=final_target_tile`。
-  - segment target 是 parent target tile，不是 warp tile。
+  - segment target 是保存的 `finalTarget.targetTile`，不是上一段 warp tile。
+  - 重规划不会覆盖 `finalTarget`；每段只更新 `currentSegment`。
 
 - [ ] **Step 3.2：实现循环**
 
@@ -441,7 +497,7 @@
 
   规则：
 
-  - 当前地图 == 目标地图：执行 final tile segment。
+  - 当前地图 == `finalTarget.locationName`：执行 final tile segment。
   - 当前地图 != 目标地图：执行 warp segment。
   - 每段失败都要写 `failureCode` 和 `failureDetail`。
 
@@ -452,6 +508,7 @@
   - `crossMapPhase`
   - `currentLocationName`
   - `targetLocationName`
+  - `finalTarget`
   - `currentSegment`
   - `routeProbe`
   - `failureCode`
@@ -584,6 +641,7 @@
   - 主模型逐层选出 `Beach/x/y/source`。
   - local executor 使用 `host_deterministic`。
   - bridge 自然跨图或结构化失败。
+  - 如果底层 Phase 1-4 未完成，不允许把 prompt/skill 成功解释成跨地图移动成功；只能记录为意图选择成功。
 
 ## Phase 6：可选 schedule 注入对照实验
 
@@ -639,12 +697,13 @@
    让这个 NPC 去海边，不要瞬移。使用地图 skill 选一个明确 Beach 坐标。
    ```
 
-6. Phase 0 通过：看到 `routeProbe.route_found` 和 `nextSegment.nextLocationName=Beach`。
-7. Phase 1 通过：NPC 走向 Town 通往 Beach 的 warp tile。
-8. Phase 2 通过：NPC 到达 warp tile 后自然切到 Beach，状态进入 `replanning_after_warp`。
-9. Phase 3 通过：NPC 切到 Beach 后继续走向最终 Beach 坐标。
-10. Phase 4 通过：任务完成或返回稳定失败码。
-11. Phase 5 通过：用户只说“去海边”，系统也能通过分层 skill 找到 `Beach/x/y/source`。
+6. Phase 0 通过：看到 `routeProbe.status=route_found`、`currentLocationName=Town`、`targetLocationName=Beach` 和 `nextSegment.nextLocationName=Beach`；`routeProbe.route` 只代表当前地图 tile path。
+7. Phase 0.5 通过：已经证明选定 transition lane 能让 NPC 从当前地图进入下一地图，或已经记录不能自然切图并改用有证据的 lane。
+8. Phase 1 通过：NPC 走向 Town 通往 Beach 的 warp tile，且 task status 同时保留 `finalTarget=Beach/x/y` 和 `currentSegment=Town/warp tile`。
+9. Phase 2 通过：NPC 到达 warp tile 后按选定 lane 切到 Beach，状态进入 `replanning_after_warp`。
+10. Phase 3 通过：NPC 切到 Beach 后继续走向最终 Beach 坐标。
+11. Phase 4 通过：任务完成或返回稳定失败码。
+12. Phase 5 通过：用户只说“去海边”，系统也能通过分层 skill 找到 `Beach/x/y/source`。
 
 ## 排障矩阵
 
@@ -653,7 +712,7 @@
 - `route_not_found`：查 `WarpPathfindingCache` / route cache。
 - `warp_point_not_found`：查 `getWarpPointTo` 和当前地图出口。
 - `segment_path_unreachable`：查当前地图内 path probe 或 stand tile。
-- `warp_transition_timeout`：NPC 到了 warp tile 但原版没切图，查是否 stand tile 错、controller 未触发、时间/事件阻塞。
+- `warp_transition_timeout`：NPC 到了 warp tile 但没有切图，先查 Phase 0.5 选定 lane 是否真实支持 transition，再查 stand tile、schedule/transition state、时间/事件阻塞。
 - `unexpected_location_after_warp`：NPC 被其他系统移动或 route 过期。
 - `npc_controller_interrupted`：NPC schedule、event、其他 mod 或 bridge command 打断。
 - NPC 不动但 status 正常：先看 controller 是否创建，再看 SMAPI log，不要直接改 skill。
@@ -665,6 +724,7 @@
 推荐 commit intent：
 
 - Phase 0：`Record live route-probe evidence before enabling cross-map movement`
+- Phase 0.5：`Prove the Stardew transition lane before executing cross-map segments`
 - Phase 1：`Execute the first route segment instead of stopping at cross-map probe`
 - Phase 2：`Wait for natural Stardew warp transitions during NPC navigation`
 - Phase 3：`Replan cross-map NPC movement after each location transition`
@@ -683,8 +743,10 @@
 
 ```powershell
 dotnet test .\Mods\StardewHermesBridge.Tests\Mods.StardewHermesBridge.Tests.csproj -c Debug
-dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~StardewCommandServiceTests|FullyQualifiedName~StardewNpcToolFactoryTests|FullyQualifiedName~NpcLocalExecutorRunnerTests|FullyQualifiedName~NpcLocalActionIntentTests|FullyQualifiedName~StardewNavigationSkillTests"
+dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~StardewCommandServiceTests|FullyQualifiedName~StardewNpcToolFactoryTests|FullyQualifiedName~NpcLocalExecutorRunnerTests|FullyQualifiedName~NpcLocalActionIntentTests|FullyQualifiedName~NpcAutonomyLoopTests|FullyQualifiedName~NpcRuntimeLogWriterTests|FullyQualifiedName~StardewAutonomyTickDebugServiceTests|FullyQualifiedName~StardewNavigationSkillTests|FullyQualifiedName~StardewCrossMapStatusMappingTests"
 ```
+
+如果执行完整 `Desktop\HermesDesktop.Tests` 测试超时，必须记录超时时长、是否留下 `dotnet` 子进程、以及已清理的进程；不能把超时当作通过。
 
 最终手测必须覆盖：
 
@@ -696,11 +758,12 @@ dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --
 
 ## 下一步推荐
 
-推荐马上执行 Phase 0，然后 Phase 1。
+推荐马上执行 Phase 0、Phase 0.5，然后 Phase 1。
 
 理由：
 
-- Phase 0 把当前 `8815ac97` 的真实游戏证据补齐，避免在未验证真实 SMAPI 的情况下继续写状态机。
+- Phase 0 把当前 `8815ac97` 的真实游戏 route-probe 证据补齐，避免在未验证真实 SMAPI 的情况下继续写状态机。
+- Phase 0.5 把自然切图/transition lane 证据补齐，避免 Phase 1/2 写出能走到 warp tile 但永远不过图的假闭环。
 - Phase 1 是最小用户可见进展：NPC 至少会走向跨图 warp tile。
 - 如果 Phase 1 失败，失败面仍然很窄，只在“routeProbe -> 当前地图 segment”之间，不会污染后续 warp/replan 逻辑。
 
