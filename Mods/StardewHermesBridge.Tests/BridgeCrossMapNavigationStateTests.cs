@@ -319,6 +319,80 @@ public sealed class BridgeCrossMapNavigationStateTests
     }
 
     [TestMethod]
+    public void PostWarpFinalReplan_WhenLandingPathIsTemporarilyEmpty_KeepsCommandRunningForRetry()
+    {
+        var command = CreateRunningCrossMapCommand();
+        command.BeginAwaitingWarp(currentTick: 100, timeoutTicks: 60);
+        command.TryCompleteAwaitingWarp(currentLocationName: "Beach");
+        var probe = new BridgeRouteProbeResult(
+            BridgeRouteProbeStatus.PathEmpty,
+            Array.Empty<TileDto>(),
+            0,
+            null,
+            "path_empty",
+            null);
+
+        var deferred = command.TryDeferPostWarpFinalReplan(
+            probe,
+            new TileDto(38, 0),
+            maxAttempts: 2,
+            out var attempt);
+
+        Assert.IsTrue(deferred);
+        Assert.AreEqual(1, attempt);
+        Assert.AreEqual("running", command.Status);
+        Assert.AreEqual("replanning_after_warp", command.CrossMapPhase);
+        Assert.IsNull(command.LastFailureCode);
+        Assert.IsNull(command.BlockedReason);
+    }
+
+    [TestMethod]
+    public void PostWarpFinalReplan_WhenRetryBudgetIsExhausted_DoesNotMaskPathFailure()
+    {
+        var command = CreateRunningCrossMapCommand();
+        command.BeginAwaitingWarp(currentTick: 100, timeoutTicks: 60);
+        command.TryCompleteAwaitingWarp(currentLocationName: "Beach");
+        var probe = new BridgeRouteProbeResult(
+            BridgeRouteProbeStatus.PathEmpty,
+            Array.Empty<TileDto>(),
+            0,
+            null,
+            "path_empty",
+            null);
+
+        Assert.IsTrue(command.TryDeferPostWarpFinalReplan(probe, new TileDto(38, 0), maxAttempts: 1, out _));
+        var deferredAgain = command.TryDeferPostWarpFinalReplan(probe, new TileDto(38, 0), maxAttempts: 1, out var attempt);
+
+        Assert.IsFalse(deferredAgain);
+        Assert.AreEqual(1, attempt);
+        Assert.AreEqual("running", command.Status);
+        Assert.AreEqual("replanning_after_warp", command.CrossMapPhase);
+    }
+
+    [TestMethod]
+    public void PostWarpFinalReplan_WhenTargetUnsafe_DoesNotDeferFailure()
+    {
+        var command = CreateRunningCrossMapCommand();
+        command.BeginAwaitingWarp(currentTick: 100, timeoutTicks: 60);
+        command.TryCompleteAwaitingWarp(currentLocationName: "Beach");
+        var probe = new BridgeRouteProbeResult(
+            BridgeRouteProbeStatus.TargetUnsafe,
+            Array.Empty<TileDto>(),
+            0,
+            new TileDto(32, 34),
+            "target_tile_open_false",
+            "tile_location_open_false");
+
+        var deferred = command.TryDeferPostWarpFinalReplan(
+            probe,
+            new TileDto(38, 0),
+            maxAttempts: 2,
+            out _);
+
+        Assert.IsFalse(deferred);
+    }
+
+    [TestMethod]
     public void StartPostWarpResolvedFinalSegment_CompletesAtReachableAdjacentTileWithoutLosingFinalTarget()
     {
         var command = CreateRunningCrossMapCommand();

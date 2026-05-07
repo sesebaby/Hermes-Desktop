@@ -235,20 +235,28 @@ internal static class BridgeMovementPathProbe
         Func<TileDto, Stack<TileDto>?> schedulePathFactory,
         Func<TileDto, BridgeTileSafetyCheck> routeStepSafetyCheck)
     {
-        var warpProbe = ProbeCrossLocationWarpTarget(
-            currentTile,
-            warpTile,
-            warpTile,
-            schedulePathFactory,
-            routeStepSafetyCheck);
-        if (warpProbe.Status == BridgeRouteProbeStatus.RouteValid)
-            return new BridgeCrossLocationSegmentProbe(warpProbe, warpTile);
+        if (IsInBoundsTile(warpTile))
+        {
+            var warpProbe = ProbeCrossLocationWarpTarget(
+                currentTile,
+                warpTile,
+                warpTile,
+                schedulePathFactory,
+                routeStepSafetyCheck);
+            if (warpProbe.Status == BridgeRouteProbeStatus.RouteValid)
+                return new BridgeCrossLocationSegmentProbe(warpProbe, warpTile);
 
-        if (warpProbe.Status != BridgeRouteProbeStatus.PathEmpty)
-            return new BridgeCrossLocationSegmentProbe(warpProbe, null);
+            if (warpProbe.Status != BridgeRouteProbeStatus.PathEmpty)
+                return new BridgeCrossLocationSegmentProbe(warpProbe, null);
+        }
+
+        BridgeRouteProbeResult? firstPathEmptyProbe = null;
 
         foreach (var candidate in EnumerateWarpApproachCandidates(warpTile))
         {
+            if (!IsInBoundsTile(candidate.Tile))
+                continue;
+
             var candidateProbe = ProbeCrossLocationWarpTarget(
                 currentTile,
                 candidate.Tile,
@@ -260,9 +268,19 @@ internal static class BridgeMovementPathProbe
 
             if (candidateProbe.Status != BridgeRouteProbeStatus.PathEmpty)
                 return new BridgeCrossLocationSegmentProbe(candidateProbe, null);
+
+            firstPathEmptyProbe ??= candidateProbe;
         }
 
-        return new BridgeCrossLocationSegmentProbe(warpProbe, null);
+        var fallbackProbe = firstPathEmptyProbe ??
+            new BridgeRouteProbeResult(
+                BridgeRouteProbeStatus.PathEmpty,
+                Array.Empty<TileDto>(),
+                0,
+                null,
+                "path_empty",
+                null);
+        return new BridgeCrossLocationSegmentProbe(fallbackProbe, null);
     }
 
     private static BridgeRouteProbeResult ProbeCrossLocationWarpTarget(
@@ -282,6 +300,9 @@ internal static class BridgeMovementPathProbe
 
     private static IEnumerable<(TileDto Tile, int Direction)> EnumerateWarpApproachCandidates(TileDto warpTile)
         => EnumerateArrivalFallbackCandidates(warpTile, maxRadius: 1);
+
+    private static bool IsInBoundsTile(TileDto tile)
+        => tile.X >= 0 && tile.Y >= 0;
 
     private static RouteProbeData CrossLocationFailure(
         string? currentLocationName,

@@ -304,6 +304,33 @@ public sealed class BridgeMovementPathProbeTests
     }
 
     [TestMethod]
+    public void BuildCrossLocationRouteProbe_WhenWarpPointIsOffMap_UsesReachableApproachTile()
+    {
+        var offMapWarpTrigger = new TileDto(38, -1);
+        var approachTile = new TileDto(38, 0);
+
+        var result = BridgeMovementPathProbe.BuildCrossLocationRouteProbe(
+            "Beach",
+            new TileDto(38, 0),
+            "Town",
+            new TileDto(47, 56),
+            new[] { "Beach", "Town" },
+            nextLocationName => nextLocationName == "Town" ? offMapWarpTrigger : null,
+            routeTarget => routeTarget == approachTile
+                ? BridgeMovementPathProbe.ToSchedulePath(new[] { approachTile })
+                : BridgeMovementPathProbe.ToSchedulePath(new[] { offMapWarpTrigger }),
+            _ => BridgeTileSafetyCheck.Safe);
+
+        Assert.AreEqual("cross_location", result.Mode);
+        Assert.AreEqual("route_found", result.Status);
+        Assert.IsNotNull(result.NextSegment);
+        Assert.AreEqual(approachTile, result.NextSegment!.StandTile);
+        Assert.AreEqual(offMapWarpTrigger, result.NextSegment.WarpTriggerTile);
+        Assert.AreEqual("warp_to_next_location", result.NextSegment.TargetKind);
+        Assert.AreEqual("Town", result.NextSegment.NextLocationName);
+    }
+
+    [TestMethod]
     public void BuildCrossLocationRouteProbe_WhenIntermediateStepUnsafe_ReportsFailingTileDetail()
     {
         var blockedStep = new TileDto(7, 20);

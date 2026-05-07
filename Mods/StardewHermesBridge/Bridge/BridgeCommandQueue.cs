@@ -13,6 +13,7 @@ using StardewValley.Pathfinding;
 public sealed class BridgeCommandQueue
 {
     private const int MaxReplanAttempts = 2;
+    private const int MaxPostWarpFinalReplanAttempts = 30;
     private const int WarpTransitionTimeoutTicks = 180;
 
     private readonly ConcurrentQueue<BridgeMoveCommand> _pending = new();
@@ -817,13 +818,14 @@ public sealed class BridgeCommandQueue
                 }
             }
 
-            command.RecordRouteProbe(ToRouteProbeData(
+            var finalProbeData = ToRouteProbeData(
                 "same_location",
                 finalProbe,
                 currentLocationName,
                 currentTile,
                 command.LocationName,
-                resolvedSegmentTarget ?? finalTarget));
+                resolvedSegmentTarget ?? finalTarget);
+            command.RecordRouteProbe(finalProbeData);
             var started = resolvedSegmentTarget is null
                 ? command.TryStartPostWarpFinalTargetSegment(currentLocationName, finalProbe, out var failureCode)
                 : command.TryStartPostWarpFinalTargetSegment(
@@ -834,8 +836,32 @@ public sealed class BridgeCommandQueue
                     out failureCode);
             if (!started)
             {
+                if (command.TryDeferPostWarpFinalReplan(
+                    finalProbe,
+                    currentTile,
+                    MaxPostWarpFinalReplanAttempts,
+                    out var attempt))
+                {
+                    _logger.Write(
+                        "task_running",
+                        command.NpcId,
+                        "move",
+                        command.TraceId,
+                        command.CommandId,
+                        "running",
+                        $"post_warp_final_replan_deferred;attempt={attempt};{FormatRouteProbeLogDetail(finalProbeData)}");
+                    return command.ToStatusData();
+                }
+
                 command.Fail(failureCode ?? "target_tile_unreachable");
-                _logger.Write("task_failed", command.NpcId, "move", command.TraceId, command.CommandId, "failed", command.BlockedReason);
+                _logger.Write(
+                    "task_failed",
+                    command.NpcId,
+                    "move",
+                    command.TraceId,
+                    command.CommandId,
+                    "failed",
+                    FormatRouteProbeLogDetail(finalProbeData));
                 return command.ToStatusData();
             }
 
@@ -1332,6 +1358,7 @@ public sealed class BridgeMoveCommand
 
     private Stack<TileDto>? _schedulePath;
     private int _replanAttempts;
+    private int _postWarpFinalReplanAttempts;
     private TileDto? _resolvedTargetTile;
 
     public BridgeMoveCommand(
@@ -1618,6 +1645,35 @@ public sealed class BridgeMoveCommand
         attempt = _replanAttempts;
         return true;
     }
+
+    internal bool TryDeferPostWarpFinalReplan(
+        BridgeRouteProbeResult probe,
+        TileDto currentTile,
+        int maxAttempts,
+        out int attempt)
+    {
+        if (probe.Status != BridgeRouteProbeStatus.PathEmpty ||
+            !IsBoundaryLandingTile(currentTile))
+        {
+            attempt = _postWarpFinalReplanAttempts;
+            return false;
+        }
+
+        if (_postWarpFinalReplanAttempts >= maxAttempts)
+        {
+            attempt = _postWarpFinalReplanAttempts;
+            return false;
+        }
+
+        _postWarpFinalReplanAttempts++;
+        attempt = _postWarpFinalReplanAttempts;
+        SetPhase("replanning_after_warp", CurrentLocationName);
+        SetCrossMapPhase("replanning_after_warp");
+        return true;
+    }
+
+    private static bool IsBoundaryLandingTile(TileDto tile)
+        => tile.X >= 0 && tile.Y >= 0 && (tile.X == 0 || tile.Y == 0);
 
     public TileDto? NextScheduleStepFrom(TileDto currentTile)
     {
