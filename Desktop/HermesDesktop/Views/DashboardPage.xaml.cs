@@ -371,7 +371,7 @@ public sealed partial class DashboardPage : Page
     private void OpenLogs_Click(object sender, RoutedEventArgs e) => HermesEnvironment.OpenLogs();
     private void OpenConfig_Click(object sender, RoutedEventArgs e) => HermesEnvironment.OpenConfig();
     private void OpenNpcRuntimeLogs_Click(object sender, RoutedEventArgs e) => _npcRuntimeWorkspaceService?.OpenRuntimeDirectory();
-    private void OpenNpcRuntimeWorkbench_Click(object sender, RoutedEventArgs e) => MainWindow.ActiveShell?.NavigateToAgentRuntime();
+    private void OpenNpcRuntimeWorkbench_Click(object sender, RoutedEventArgs e) => MainWindow.ActiveShell?.NavigateToDeveloperNpcInspector();
 
     // ── Helpers ──
 

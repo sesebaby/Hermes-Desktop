@@ -122,6 +122,12 @@
   <data name="AgentNavItem.Content" xml:space="preserve">
     <value>Agent</value>
   </data>
+  <data name="DeveloperNavItem.Content" xml:space="preserve">
+    <value>Developer</value>
+  </data>
+  <data name="DeveloperNavItem.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Open the developer page</value>
+  </data>
   <data name="SkillsNavItem.Content" xml:space="preserve">
     <value>Skills</value>
   </data>
@@ -1273,13 +1279,13 @@
     <value>Turn {0}</value>
   </data>
   <data name="DashNpcRuntimeOpenRuntimeButton.Content" xml:space="preserve">
-    <value>Open Runtime</value>
+    <value>Open Inspector</value>
   </data>
   <data name="DashNpcRuntimeOpenRuntimeButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Open the Agent Runtime tab</value>
+    <value>Open the developer NPC inspector</value>
   </data>
   <data name="DashNpcRuntimeSummaryHint.Text" xml:space="preserve">
-    <value>This dashboard card is read-only. Use Agent > Runtime for the full NPC runtime list and debug actions.</value>
+    <value>This dashboard card is read-only. Use Developer / NPC Inspector for decisions, files, model replies, tool calls, delegation, and logs.</value>
   </data>
   <data name="AgentTabAgentsButton.Content" xml:space="preserve">
     <value>Agents</value>
@@ -1316,6 +1322,12 @@
   </data>
   <data name="AgentRuntimeOpenLogsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Open NPC runtime logs</value>
+  </data>
+  <data name="AgentRuntimeOpenDeveloperButton.Content" xml:space="preserve">
+    <value>Open Inspector</value>
+  </data>
+  <data name="AgentRuntimeOpenDeveloperButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Open the developer NPC inspector</value>
   </data>
   <data name="AgentRuntimeRuntimesLabel.Text" xml:space="preserve">
     <value>Runtimes</value>
@@ -1367,6 +1379,144 @@
   </data>
   <data name="AgentRuntimeUnavailable" xml:space="preserve">
     <value>NPC runtime workspace is not available in this build.</value>
+  </data>
+  <data name="DeveloperPageEyebrow.Text" xml:space="preserve">
+    <value>Developer</value>
+  </data>
+  <data name="DeveloperPageTitle.Text" xml:space="preserve">
+    <value>NPC Inspector</value>
+  </data>
+  <data name="DeveloperPageSubtitle.Text" xml:space="preserve">
+    <value>Read-only view of NPC runtime, context files, model replies, tool calls, delegation, tasks, todos, and log paths.</value>
+  </data>
+  <data name="DeveloperRefreshButton.Content" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="DeveloperRefreshButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Refresh the NPC inspector</value>
+  </data>
+  <data name="DeveloperOpenRuntimeDirectoryButton.Content" xml:space="preserve">
+    <value>Open Folder</value>
+  </data>
+  <data name="DeveloperOpenRuntimeDirectoryButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Open the NPC runtime folder</value>
+  </data>
+  <data name="DeveloperRuntimeCountLabel.Text" xml:space="preserve">
+    <value>Runtimes</value>
+  </data>
+  <data name="DeveloperBridgeLabel.Text" xml:space="preserve">
+    <value>Bridge</value>
+  </data>
+  <data name="DeveloperMainChannelLabel.Text" xml:space="preserve">
+    <value>Channels</value>
+  </data>
+  <data name="DeveloperLastErrorLabel.Text" xml:space="preserve">
+    <value>Last Error</value>
+  </data>
+  <data name="DeveloperNpcListTitle.Text" xml:space="preserve">
+    <value>NPC List</value>
+  </data>
+  <data name="DeveloperNpcListSubtitle.Text" xml:space="preserve">
+    <value>Select an NPC to inspect read-only diagnostics.</value>
+  </data>
+  <data name="DeveloperNpcList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>NPC list</value>
+  </data>
+  <data name="DeveloperSelectedNpcLabel.Text" xml:space="preserve">
+    <value>Selected NPC</value>
+  </data>
+  <data name="DeveloperSessionLabel.Text" xml:space="preserve">
+    <value>Session</value>
+  </data>
+  <data name="DeveloperTraceLabel.Text" xml:space="preserve">
+    <value>Latest Trace</value>
+  </data>
+  <data name="DeveloperStateLabel.Text" xml:space="preserve">
+    <value>State</value>
+  </data>
+  <data name="DeveloperDocumentsTitle.Text" xml:space="preserve">
+    <value>Files and Context</value>
+  </data>
+  <data name="DeveloperDocumentList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>NPC context file list</value>
+  </data>
+  <data name="DeveloperDocumentPreviewTitle.Text" xml:space="preserve">
+    <value>Read-only Preview</value>
+  </data>
+  <data name="DeveloperTimelineTitle.Text" xml:space="preserve">
+    <value>Timeline</value>
+  </data>
+  <data name="DeveloperTraceList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>NPC trace timeline</value>
+  </data>
+  <data name="DeveloperDetailsTitle.Text" xml:space="preserve">
+    <value>Details</value>
+  </data>
+  <data name="DeveloperDetailModelButton.Content" xml:space="preserve">
+    <value>Model Reply</value>
+  </data>
+  <data name="DeveloperDetailModelButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Show model replies</value>
+  </data>
+  <data name="DeveloperDetailToolButton.Content" xml:space="preserve">
+    <value>Tool Calls</value>
+  </data>
+  <data name="DeveloperDetailToolButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Show tool calls</value>
+  </data>
+  <data name="DeveloperDetailDelegationButton.Content" xml:space="preserve">
+    <value>Delegation</value>
+  </data>
+  <data name="DeveloperDetailDelegationButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Show delegation chain</value>
+  </data>
+  <data name="DeveloperDetailTodoButton.Content" xml:space="preserve">
+    <value>Tasks and Todos</value>
+  </data>
+  <data name="DeveloperDetailTodoButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Show tasks and todos</value>
+  </data>
+  <data name="DeveloperDetailLogsButton.Content" xml:space="preserve">
+    <value>Logs</value>
+  </data>
+  <data name="DeveloperDetailLogsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Show log paths and parse diagnostics</value>
+  </data>
+  <data name="DeveloperModelReplyList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Model reply list</value>
+  </data>
+  <data name="DeveloperToolCallList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Tool call list</value>
+  </data>
+  <data name="DeveloperDelegationList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Delegation chain list</value>
+  </data>
+  <data name="DeveloperTodoList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Task and todo list</value>
+  </data>
+  <data name="DeveloperRuntimeUnavailable" xml:space="preserve">
+    <value>The developer inspector is not available in this build.</value>
+  </data>
+  <data name="DeveloperNoNpcEmptyState" xml:space="preserve">
+    <value>No observable NPC is available.</value>
+  </data>
+  <data name="DeveloperRuntimeSnapshotMissing" xml:space="preserve">
+    <value>No active runtime snapshot was found for this NPC.</value>
+  </data>
+  <data name="DeveloperLoadFailedFormat" xml:space="preserve">
+    <value>Failed to load inspector data: {0}</value>
+  </data>
+  <data name="DeveloperNoDocumentSelected" xml:space="preserve">
+    <value>Select a context file.</value>
+  </data>
+  <data name="DeveloperRuntimePathFormat" xml:space="preserve">
+    <value>Runtime folder: {0}</value>
+  </data>
+  <data name="DeveloperRuntimeLogPathFormat" xml:space="preserve">
+    <value>Activity log: {0}</value>
+  </data>
+  <data name="DeveloperNoTraceDiagnostics" xml:space="preserve">
+    <value>No parse diagnostics.</value>
   </data>
   
   

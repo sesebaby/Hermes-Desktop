@@ -277,6 +277,10 @@
                                     AutomationProperties.AutomationId="AgentRuntimeOpenLogsButton"
                                     FontSize="11" Padding="10,4" HorizontalAlignment="Right"
                                     Background="{StaticResource AppInsetBrush}" BorderBrush="{StaticResource AppStrokeBrush}" Foreground="White"/>
+                            <Button x:Uid="AgentRuntimeOpenDeveloperButton" Click="OpenDeveloperInspector_Click"
+                                    AutomationProperties.AutomationId="AgentRuntimeOpenDeveloperButton"
+                                    FontSize="11" Padding="10,4" HorizontalAlignment="Right"
+                                    Background="{StaticResource AppAccentGradientBrush}" Foreground="#16110D"/>
                         </StackPanel>
 
                         <Grid ColumnSpacing="16">

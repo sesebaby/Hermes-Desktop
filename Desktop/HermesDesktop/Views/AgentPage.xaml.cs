@@ -271,6 +271,8 @@ public sealed partial class AgentPage : Page
 
     private void OpenNpcRuntimeLogs_Click(object sender, RoutedEventArgs e) => _npcRuntimeWorkspaceService?.OpenRuntimeDirectory();
 
+    private void OpenDeveloperInspector_Click(object sender, RoutedEventArgs e) => MainWindow.ActiveShell?.NavigateToDeveloperNpcInspector();
+
     private async void NpcSpeakHaley_Click(object sender, RoutedEventArgs e)
         => await SpeakNpcAsync("Haley", ResourceLoader.GetString("DashNpcRuntimeDebugHaleySpeakText"));
 

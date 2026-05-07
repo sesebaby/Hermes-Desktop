@@ -16,6 +16,7 @@ public sealed partial class MainWindow : Window
         ["dashboard"] = typeof(DashboardPage),
         ["chat"] = typeof(ChatPage),
         ["agent"] = typeof(AgentPage),
+        ["developer"] = typeof(DeveloperPage),
         ["skills"] = typeof(SkillsPage),
         ["memory"] = typeof(MemoryPage),
         ["buddy"] = typeof(BuddyPage),
@@ -90,6 +91,8 @@ public sealed partial class MainWindow : Window
     }
 
     internal void NavigateToAgentRuntime() => NavigateToTag("agent", AgentPage.RuntimeTabParameter);
+
+    internal void NavigateToDeveloperNpcInspector() => NavigateToTag("developer");
 
     private void NavigateToTag(string tag, object? parameter = null)
     {

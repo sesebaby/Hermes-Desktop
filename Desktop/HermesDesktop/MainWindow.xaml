@@ -73,6 +73,14 @@
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem
+                    x:Name="DeveloperNavItem"
+                    x:Uid="DeveloperNavItem"
+                    Tag="developer">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="View" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem
                     x:Name="SkillsNavItem"
                     x:Uid="SkillsNavItem"
                     Tag="skills">
