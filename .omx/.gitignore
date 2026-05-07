@@ -1,8 +1,6 @@
-# Runtime-only OMX artifacts
+# Runtime-only OMX artifacts.
+# Project documents under `.omx/` are intended to be versioned; the repo root
+# `.gitignore` explicitly re-includes `.omx/**` to override local excludes.
 logs/
 state/
-hud-config.json
-metrics.json
-project-memory.json
-setup-scope.json
-tmux-hook.json
+/*.json
