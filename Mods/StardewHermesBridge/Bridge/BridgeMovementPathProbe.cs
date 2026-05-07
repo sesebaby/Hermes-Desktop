@@ -127,6 +127,98 @@ internal static class BridgeMovementPathProbe
         return stack;
     }
 
+    public static RouteProbeData BuildCrossLocationRouteProbe(
+        string? currentLocationName,
+        TileDto currentTile,
+        string targetLocationName,
+        TileDto targetTile,
+        IReadOnlyList<string>? locationRoute,
+        Func<string, TileDto?> warpPointResolver,
+        Func<Stack<TileDto>?> schedulePathFactory,
+        Func<TileDto, BridgeTileSafetyCheck> routeStepSafetyCheck)
+    {
+        ArgumentNullException.ThrowIfNull(warpPointResolver);
+        ArgumentNullException.ThrowIfNull(schedulePathFactory);
+        ArgumentNullException.ThrowIfNull(routeStepSafetyCheck);
+
+        if (locationRoute is null || locationRoute.Count < 2)
+        {
+            return CrossLocationFailure(
+                currentLocationName,
+                currentTile,
+                targetLocationName,
+                targetTile,
+                "route_not_found",
+                "no location route was found");
+        }
+
+        var nextLocationName = locationRoute[1];
+        var warpTile = warpPointResolver(nextLocationName);
+        if (warpTile is null)
+        {
+            return CrossLocationFailure(
+                currentLocationName,
+                currentTile,
+                targetLocationName,
+                targetTile,
+                "warp_point_not_found",
+                $"no warp point from {currentLocationName ?? "<unknown>"} to {nextLocationName}");
+        }
+
+        var probe = Probe(
+            currentTile,
+            warpTile,
+            _ => BridgeTileSafetyCheck.Safe,
+            schedulePathFactory,
+            routeStepSafetyCheck);
+
+        if (probe.Status != BridgeRouteProbeStatus.RouteValid)
+        {
+            return CrossLocationFailure(
+                currentLocationName,
+                currentTile,
+                targetLocationName,
+                targetTile,
+                probe.FailureKind ?? "target_tile_unreachable",
+                probe.FailureDetail,
+                probe.Route);
+        }
+
+        return new RouteProbeData(
+            "cross_location",
+            "route_found",
+            currentLocationName,
+            currentTile,
+            targetLocationName,
+            targetTile,
+            probe.Route,
+            new RouteProbeSegmentData(
+                currentLocationName ?? locationRoute[0],
+                warpTile,
+                "warp_to_next_location",
+                nextLocationName));
+    }
+
+    private static RouteProbeData CrossLocationFailure(
+        string? currentLocationName,
+        TileDto currentTile,
+        string targetLocationName,
+        TileDto targetTile,
+        string failureCode,
+        string? failureDetail,
+        IReadOnlyList<TileDto>? route = null)
+        => new(
+            "cross_location",
+            failureCode,
+            currentLocationName,
+            currentTile,
+            targetLocationName,
+            targetTile,
+            route ?? Array.Empty<TileDto>(),
+            null,
+            failureCode,
+            failureDetail);
+
     private static Stack<TileDto> ToSchedulePath(Stack<Point>? rawPath, TileDto currentTile)
         => ToSchedulePath(ToRoute(rawPath, currentTile));
 

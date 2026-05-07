@@ -8,6 +8,7 @@ using StardewHermesBridge.Ui;
 using StardewModdingAPI;
 using StardewValley;
 using StardewValley.Menus;
+using StardewValley.Pathfinding;
 
 public sealed class BridgeCommandQueue
 {
@@ -439,13 +440,24 @@ public sealed class BridgeCommandQueue
 
         if (!ReferenceEquals(currentLocation, targetLocation))
         {
-            command.RecordRouteProbe(RouteProbeDataFactory.CrossLocationUnsupported(
+            var routeProbe = ProbeCrossLocationRoute(
+                npc,
                 currentLocationName,
                 currentTile,
+                currentLocation,
                 command.LocationName,
-                command.TargetTile));
+                targetLocation,
+                command.TargetTile);
+            command.RecordRouteProbe(routeProbe);
             command.Block("cross_location_unsupported");
-            _logger.Write("task_blocked", command.NpcId, "move", command.TraceId, command.CommandId, "blocked", "cross_location_unsupported");
+            _logger.Write(
+                "task_blocked",
+                command.NpcId,
+                "move",
+                command.TraceId,
+                command.CommandId,
+                "blocked",
+                routeProbe.Status);
             return command.ToStatusData();
         }
 
@@ -627,6 +639,43 @@ public sealed class BridgeCommandQueue
             tile => BridgeMovementPathProbe.CheckTargetAffordance(location, tile),
             () => BridgeMovementPathProbe.FindSchedulePath(npc, location, currentTile, targetTile),
             tile => BridgeMovementPathProbe.CheckRouteStepSafety(location, tile));
+
+    private static RouteProbeData ProbeCrossLocationRoute(
+        NPC npc,
+        string? currentLocationName,
+        TileDto currentTile,
+        GameLocation currentLocation,
+        string targetLocationName,
+        GameLocation targetLocation,
+        TileDto targetTile)
+    {
+        var locationRoute = currentLocationName is null
+            ? null
+            : WarpPathfindingCache.GetLocationRoute(currentLocationName, targetLocationName, npc.Gender);
+        return BridgeMovementPathProbe.BuildCrossLocationRouteProbe(
+            currentLocationName,
+            currentTile,
+            targetLocationName,
+            targetTile,
+            locationRoute,
+            nextLocationName =>
+            {
+                var warpPoint = currentLocation.getWarpPointTo(nextLocationName);
+                return warpPoint == Point.Zero ? null : new TileDto(warpPoint.X, warpPoint.Y);
+            },
+            () =>
+            {
+                var warpPoint = currentLocation.getWarpPointTo(locationRoute?[1] ?? targetLocation.NameOrUniqueName ?? targetLocation.Name);
+                return warpPoint == Point.Zero
+                    ? new Stack<TileDto>()
+                    : BridgeMovementPathProbe.FindSchedulePath(
+                        npc,
+                        currentLocation,
+                        currentTile,
+                        new TileDto(warpPoint.X, warpPoint.Y));
+            },
+            tile => BridgeMovementPathProbe.CheckRouteStepSafety(currentLocation, tile));
+    }
 
     private static RouteProbeData ToRouteProbeData(
         string mode,
@@ -1105,24 +1154,4 @@ public sealed class BridgeMoveCommand
             TargetTile,
             RouteRevision > 0 ? RouteRevision : null,
             RouteProbe);
-}
-
-internal static class RouteProbeDataFactory
-{
-    public static RouteProbeData CrossLocationUnsupported(
-        string? currentLocationName,
-        TileDto currentTile,
-        string targetLocationName,
-        TileDto targetTile)
-        => new(
-            "cross_location",
-            "cross_location_unsupported",
-            currentLocationName,
-            currentTile,
-            targetLocationName,
-            targetTile,
-            Array.Empty<TileDto>(),
-            null,
-            "cross_location_unsupported",
-            "cross-location route probe is not implemented yet");
 }

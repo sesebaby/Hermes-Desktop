@@ -157,8 +157,16 @@ public sealed class BridgeMoveCommandQueueRegressionTests
 
         StringAssert.Contains(
             commandQueue,
-            "RouteProbeDataFactory.CrossLocationUnsupported",
-            "Cross-location requests should surface a structured routeProbe on task_status before blocking.");
+            "ProbeCrossLocationRoute(",
+            "Cross-location requests should run a real route probe before blocking execution.");
+        StringAssert.Contains(
+            commandQueue,
+            "WarpPathfindingCache.GetLocationRoute",
+            "Cross-location route probes should use Stardew's location route cache rather than hardcoded routes.");
+        StringAssert.Contains(
+            commandQueue,
+            "currentLocation.getWarpPointTo",
+            "Cross-location route probes should resolve the next warp tile for task_status diagnostics.");
         StringAssert.Contains(
             commandQueue,
             "command.Block(\"cross_location_unsupported\")",

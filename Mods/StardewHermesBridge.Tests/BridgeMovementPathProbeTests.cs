@@ -124,4 +124,51 @@ public sealed class BridgeMovementPathProbeTests
             candidates.Contains(new TileDto(12, 12)) || candidates.Contains(new TileDto(11, 13)),
             "Blocked furniture anchors such as HaleyHouse living room need a wider reachable fallback search.");
     }
+
+    [TestMethod]
+    public void BuildCrossLocationRouteProbe_ReturnsFirstWarpSegmentWithoutExecutingWarp()
+    {
+        var currentTile = new TileDto(80, 93);
+        var warpTile = new TileDto(80, 94);
+        var routeToWarp = new[] { warpTile };
+
+        var result = BridgeMovementPathProbe.BuildCrossLocationRouteProbe(
+            "Town",
+            currentTile,
+            "Beach",
+            new TileDto(20, 35),
+            new[] { "Town", "Beach" },
+            nextLocationName => nextLocationName == "Beach" ? warpTile : null,
+            () => BridgeMovementPathProbe.ToSchedulePath(routeToWarp),
+            _ => BridgeTileSafetyCheck.Safe);
+
+        Assert.AreEqual("cross_location", result.Mode);
+        Assert.AreEqual("route_found", result.Status);
+        CollectionAssert.AreEqual(routeToWarp, result.Route.ToArray());
+        Assert.IsNotNull(result.NextSegment);
+        Assert.AreEqual("Town", result.NextSegment!.LocationName);
+        Assert.AreEqual(warpTile, result.NextSegment.StandTile);
+        Assert.AreEqual("warp_to_next_location", result.NextSegment.TargetKind);
+        Assert.AreEqual("Beach", result.NextSegment.NextLocationName);
+        Assert.IsNull(result.FailureCode);
+    }
+
+    [TestMethod]
+    public void BuildCrossLocationRouteProbe_WhenWarpPointMissing_ReturnsStableFailure()
+    {
+        var result = BridgeMovementPathProbe.BuildCrossLocationRouteProbe(
+            "Town",
+            new TileDto(80, 93),
+            "Beach",
+            new TileDto(20, 35),
+            new[] { "Town", "Beach" },
+            _ => null,
+            () => BridgeMovementPathProbe.ToSchedulePath(Array.Empty<TileDto>()),
+            _ => BridgeTileSafetyCheck.Safe);
+
+        Assert.AreEqual("cross_location", result.Mode);
+        Assert.AreEqual("warp_point_not_found", result.Status);
+        Assert.AreEqual("warp_point_not_found", result.FailureCode);
+        Assert.IsNull(result.NextSegment);
+    }
 }
