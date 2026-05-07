@@ -732,7 +732,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithDecisionResponse_WritesNpcLocalMemory()
+    public async Task RunOneTickAsync_WithDecisionResponse_DoesNotWriteNpcLocalMemory()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-memory-tests", Guid.NewGuid().ToString("N"));
         try
@@ -756,15 +756,12 @@ public class NpcAutonomyLoopTests
                 adapter,
                 factStore,
                 agent,
-                memoryManager: memoryManager,
                 traceIdFactory: () => "trace-memory");
 
             await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
 
             var entries = await memoryManager.ReadEntriesAsync("memory", CancellationToken.None);
-            Assert.AreEqual(1, entries.Count);
-            Assert.IsTrue(entries[0].Contains("trace-memory", StringComparison.Ordinal));
-            Assert.IsTrue(entries[0].Contains("I will wait near the fountain.", StringComparison.Ordinal));
+            Assert.AreEqual(0, entries.Count);
         }
         finally
         {
@@ -774,7 +771,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithLocalExecutorMoveIntent_ExecutesRunnerLogsEvidenceAndWritesSummaryMemory()
+    public async Task RunOneTickAsync_WithLocalExecutorMoveIntent_ExecutesRunnerLogsEvidenceAndDoesNotWriteMemory()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-local-executor-tests", Guid.NewGuid().ToString("N"));
         try
@@ -813,7 +810,6 @@ public class NpcAutonomyLoopTests
                 new NpcObservationFactStore(),
                 new FakeAgent(() => { }, parentContract),
                 logWriter: new NpcRuntimeLogWriter(logPath),
-                memoryManager: memoryManager,
                 localExecutorRunner: localExecutor,
                 traceIdFactory: () => "trace-local-move");
 
@@ -833,10 +829,7 @@ public class NpcAutonomyLoopTests
             AssertLogRecordExecutorMode(records, "local_executor", "stardew_move", "model_called");
 
             var entries = await memoryManager.ReadEntriesAsync("memory", CancellationToken.None);
-            Assert.AreEqual(1, entries.Count);
-            StringAssert.Contains(entries[0], "tried moving to PierreShop");
-            Assert.IsFalse(entries[0].Contains("\"action\"", StringComparison.Ordinal));
-            Assert.IsFalse(entries[0].Contains("allowedActions", StringComparison.Ordinal));
+            Assert.AreEqual(0, entries.Count);
         }
         finally
         {
@@ -1146,7 +1139,6 @@ public class NpcAutonomyLoopTests
                 new NpcObservationFactStore(),
                 new FakeAgent(() => { }, "not json"),
                 logWriter: new NpcRuntimeLogWriter(logPath),
-                memoryManager: memoryManager,
                 localExecutorRunner: localExecutor,
                 traceIdFactory: () => "trace-invalid-contract");
 

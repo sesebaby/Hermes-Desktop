@@ -8,7 +8,6 @@
 
 **Tech Stack:** C# / .NET 10 Hermes runtime, SMAPI bridge `net6.0`, Stardew Valley 1.6 API, `WarpPathfindingCache.GetLocationRoute`, `GameLocation.getWarpPointTo`, `PathFindController.findPathForNPCSchedules`, MSTest。
 
----
 
 ## 当前状态
 

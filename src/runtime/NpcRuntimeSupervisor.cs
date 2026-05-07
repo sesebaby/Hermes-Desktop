@@ -281,7 +281,6 @@ public sealed class NpcRuntimeSupervisor
             factStore,
             agentHandle.Agent,
             new NpcRuntimeLogWriter(Path.Combine(instance.Namespace.ActivityPath, "runtime.jsonl")),
-            agentHandle.Context.MemoryManager,
             request.Services.LoggerFactory.CreateLogger<NpcAutonomyLoop>(),
             localExecutorRunner: localExecutorRunner);
 

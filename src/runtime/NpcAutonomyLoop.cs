@@ -1,6 +1,5 @@
 using Hermes.Agent.Core;
 using Hermes.Agent.Game;
-using Hermes.Agent.Memory;
 using Hermes.Agent.Tasks;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -16,7 +15,6 @@ public sealed class NpcAutonomyLoop
     private readonly NpcObservationFactStore _factStore;
     private readonly Hermes.Agent.Core.IAgent? _agent;
     private readonly NpcRuntimeLogWriter? _logWriter;
-    private readonly MemoryManager? _memoryManager;
     private readonly INpcLocalExecutorRunner? _localExecutorRunner;
     private readonly ILogger<NpcAutonomyLoop>? _logger;
     private readonly Func<string> _traceIdFactory;
@@ -26,7 +24,6 @@ public sealed class NpcAutonomyLoop
         NpcObservationFactStore factStore,
         Hermes.Agent.Core.IAgent? agent = null,
         NpcRuntimeLogWriter? logWriter = null,
-        MemoryManager? memoryManager = null,
         ILogger<NpcAutonomyLoop>? logger = null,
         Func<string>? traceIdFactory = null,
         INpcLocalExecutorRunner? localExecutorRunner = null)
@@ -35,7 +32,6 @@ public sealed class NpcAutonomyLoop
         _factStore = factStore;
         _agent = agent;
         _logWriter = logWriter;
-        _memoryManager = memoryManager;
         _localExecutorRunner = localExecutorRunner;
         _logger = logger;
         _traceIdFactory = traceIdFactory ?? (() => $"trace_{Guid.NewGuid():N}");
@@ -206,8 +202,6 @@ public sealed class NpcAutonomyLoop
         if (IsToolIterationLimitFallback(decisionResponse))
             decisionResponse = null;
 
-        var memorySummary = decisionResponse;
-        var skipMemory = false;
         if (_localExecutorRunner is not null && !string.IsNullOrWhiteSpace(decisionResponse))
         {
             var route = await RunLocalExecutorAsync(
@@ -218,8 +212,6 @@ public sealed class NpcAutonomyLoop
                 decisionResponse,
                 ct);
             decisionResponse = route.DecisionResponse;
-            memorySummary = route.MemorySummary;
-            skipMemory = route.SkipMemory;
         }
 
         await WriteActivityAsync(descriptor, traceId, eventFacts, decisionResponse, ct);
@@ -231,8 +223,6 @@ public sealed class NpcAutonomyLoop
         }
 
         await WriteSessionTaskContinuityEvidenceAsync(descriptor, traceId, decisionSession, null, ct);
-        if (!skipMemory)
-            await WriteMemoryAsync(traceId, memorySummary, ct);
 
         return new NpcAutonomyTickResult(descriptor.NpcId, traceId, 1, eventFacts, decisionResponse, eventBatch.NextCursor);
     }
@@ -390,9 +380,7 @@ public sealed class NpcAutonomyLoop
                 ct);
 
             return new LocalExecutorRouteResult(
-                $"local_executor_escalated:{error}",
-                null,
-                SkipMemory: true);
+                $"local_executor_escalated:{error}");
         }
 
         var action = FormatLocalAction(intent.Action);
@@ -430,10 +418,7 @@ public sealed class NpcAutonomyLoop
 
         await WriteLocalExecutorDiagnosticsAsync(descriptor, traceId, result.Diagnostics, ct);
         await WriteLocalExecutorResultAsync(descriptor, traceId, result, ct);
-        return new LocalExecutorRouteResult(
-            result.DecisionResponse,
-            result.MemorySummary,
-            SkipMemory: string.IsNullOrWhiteSpace(result.MemorySummary));
+        return new LocalExecutorRouteResult(result.DecisionResponse);
     }
 
     private async Task ApplyTaskUpdateContractAsync(
@@ -1028,23 +1013,9 @@ public sealed class NpcAutonomyLoop
             _ => action.ToString()
         };
 
-    private sealed record LocalExecutorRouteResult(
-        string DecisionResponse,
-        string? MemorySummary,
-        bool SkipMemory);
+    private sealed record LocalExecutorRouteResult(string DecisionResponse);
 
     private sealed record ToolResultEvidence(string? CommandId, GameCommandStatus? TerminalStatus);
-
-    private async Task WriteMemoryAsync(string traceId, string? decisionResponse, CancellationToken ct)
-    {
-        if (_memoryManager is null || string.IsNullOrWhiteSpace(decisionResponse))
-            return;
-
-        await _memoryManager.AddAsync(
-            "memory",
-            $"Autonomy tick {traceId}: {Truncate(decisionResponse, 300)}",
-            ct);
-    }
 
     private static bool HasToolCall(Session? session, string toolName)
     {
