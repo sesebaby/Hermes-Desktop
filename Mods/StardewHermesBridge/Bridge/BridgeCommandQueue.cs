@@ -509,7 +509,7 @@ public sealed class BridgeCommandQueue
                 command.TraceId,
                 command.CommandId,
                 "blocked",
-                routeProbe.Status);
+                FormatRouteProbeLogDetail(routeProbe));
             return command.ToStatusData();
         }
 
@@ -760,6 +760,43 @@ public sealed class BridgeCommandQueue
             probe.Status == BridgeRouteProbeStatus.RouteValid ? null : probe.FailureKind,
             probe.Status == BridgeRouteProbeStatus.RouteValid ? null : probe.FailureDetail);
     }
+
+    internal static string FormatRouteProbeLogDetail(RouteProbeData routeProbe)
+    {
+        ArgumentNullException.ThrowIfNull(routeProbe);
+
+        var from = FormatLocationTile(routeProbe.CurrentLocationName, routeProbe.CurrentTile);
+        var target = FormatLocationTile(routeProbe.TargetLocationName, routeProbe.TargetTile);
+        var next = FormatNextSegment(routeProbe.NextSegment);
+        return string.Join(
+            ";",
+            $"routeProbeStatus={ValueOrDash(routeProbe.Status)}",
+            $"mode={ValueOrDash(routeProbe.Mode)}",
+            $"from={from}",
+            $"target={target}",
+            $"next={next}",
+            $"routeSteps={routeProbe.Route.Count}",
+            $"failure={ValueOrDash(routeProbe.FailureCode)}");
+    }
+
+    private static string FormatLocationTile(string? locationName, TileDto? tile)
+        => tile is null
+            ? $"{ValueOrDash(locationName)}:-"
+            : $"{ValueOrDash(locationName)}:{tile.X},{tile.Y}";
+
+    private static string FormatNextSegment(RouteProbeSegmentData? segment)
+    {
+        if (segment is null)
+            return "-";
+
+        var from = FormatLocationTile(segment.LocationName, segment.StandTile);
+        return string.IsNullOrWhiteSpace(segment.NextLocationName)
+            ? $"{from}({ValueOrDash(segment.TargetKind)})"
+            : $"{from}->{segment.NextLocationName}({ValueOrDash(segment.TargetKind)})";
+    }
+
+    private static string ValueOrDash(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "-" : value;
 
     private static void FailMoveForProbe(
         BridgeMoveCommand command,

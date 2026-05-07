@@ -44,6 +44,30 @@ public sealed class BridgeMoveCommandQueueRegressionTests
     }
 
     [TestMethod]
+    public void FormatRouteProbeLogDetail_WithCrossLocationRoute_IncludesHumanReadableProbeSummary()
+    {
+        var probe = new StardewHermesBridge.Bridge.RouteProbeData(
+            "cross_location",
+            "route_found",
+            "Town",
+            new StardewHermesBridge.Bridge.TileDto(50, 66),
+            "Beach",
+            new StardewHermesBridge.Bridge.TileDto(32, 34),
+            new[] { new StardewHermesBridge.Bridge.TileDto(80, 94) },
+            new StardewHermesBridge.Bridge.RouteProbeSegmentData(
+                "Town",
+                new StardewHermesBridge.Bridge.TileDto(80, 94),
+                "warp_to_next_location",
+                "Beach"));
+
+        var detail = StardewHermesBridge.Bridge.BridgeCommandQueue.FormatRouteProbeLogDetail(probe);
+
+        Assert.AreEqual(
+            "routeProbeStatus=route_found;mode=cross_location;from=Town:50,66;target=Beach:32,34;next=Town:80,94->Beach(warp_to_next_location);routeSteps=1;failure=-",
+            detail);
+    }
+
+    [TestMethod]
     public void StatusQueryExposesShortSafeMoveCandidates()
     {
         var models = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandModels.cs");
