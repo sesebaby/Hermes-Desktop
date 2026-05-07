@@ -1,0 +1,8 @@
+# Runtime-only OMX artifacts
+logs/
+state/
+hud-config.json
+metrics.json
+project-memory.json
+setup-scope.json
+tmux-hook.json
