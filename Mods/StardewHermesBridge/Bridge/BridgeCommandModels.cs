@@ -84,7 +84,26 @@ public sealed record TaskStatusData(
     string? Phase = null,
     string? CurrentLocationName = null,
     TileDto? ResolvedStandTile = null,
-    int? RouteRevision = null);
+    int? RouteRevision = null,
+    RouteProbeData? RouteProbe = null);
+
+public sealed record RouteProbeData(
+    string Mode,
+    string Status,
+    string? CurrentLocationName,
+    TileDto? CurrentTile,
+    string TargetLocationName,
+    TileDto TargetTile,
+    IReadOnlyList<TileDto> Route,
+    RouteProbeSegmentData? NextSegment = null,
+    string? FailureCode = null,
+    string? FailureDetail = null);
+
+public sealed record RouteProbeSegmentData(
+    string LocationName,
+    TileDto? StandTile,
+    string TargetKind,
+    string? NextLocationName = null);
 
 public sealed record StatusQuery(string? NpcId);
 

@@ -434,22 +434,35 @@ public sealed class BridgeCommandQueue
             return command.ToStatusData();
         }
 
+        var currentTile = GetCurrentTile(npc);
+        var currentLocationName = currentLocation.NameOrUniqueName ?? currentLocation.Name;
+
         if (!ReferenceEquals(currentLocation, targetLocation))
         {
+            command.RecordRouteProbe(RouteProbeDataFactory.CrossLocationUnsupported(
+                currentLocationName,
+                currentTile,
+                command.LocationName,
+                command.TargetTile));
             command.Block("cross_location_unsupported");
             _logger.Write("task_blocked", command.NpcId, "move", command.TraceId, command.CommandId, "blocked", "cross_location_unsupported");
             return command.ToStatusData();
         }
 
-        var currentTile = GetCurrentTile(npc);
-
         if (command.Status == "queued")
         {
-            command.SetPhase("resolving_destination", currentLocation?.NameOrUniqueName ?? currentLocation?.Name, incrementRouteRevision: true);
+            command.SetPhase("resolving_destination", currentLocationName, incrementRouteRevision: true);
             MaintainNpcMovementControl(npc);
             StopNpcMotion(npc);
             command.SetPhase("preflight", command.LocationName);
             var initialProbe = ProbeRoute(npc, currentTile, targetLocation, command.TargetTile);
+            command.RecordRouteProbe(ToRouteProbeData(
+                "same_location",
+                initialProbe,
+                currentLocationName,
+                currentTile,
+                command.LocationName,
+                command.TargetTile));
             if (ShouldTryArrivalFallback(initialProbe))
             {
                 command.SetPhase("resolving_arrival", command.LocationName, incrementRouteRevision: true);
@@ -459,6 +472,13 @@ public sealed class BridgeCommandQueue
                 {
                     command.ReplaceTarget(resolved.Value.StandTile, resolved.Value.FacingDirection);
                     initialProbe = resolved.Value.Route;
+                    command.RecordRouteProbe(ToRouteProbeData(
+                        "same_location",
+                        initialProbe,
+                        currentLocationName,
+                        currentTile,
+                        command.LocationName,
+                        command.TargetTile));
                     _logger.Write("task_target_resolved", command.NpcId, "move",
                         command.TraceId, command.CommandId, "running",
                         $"resolved={resolved.Value.StandTile.X},{resolved.Value.StandTile.Y};facing={resolved.Value.FacingDirection}");
@@ -540,6 +560,13 @@ public sealed class BridgeCommandQueue
             {
                 command.SetPhase("replanning", command.LocationName, incrementRouteRevision: true);
                 var replanProbe = ProbeRoute(npc, currentTile, targetLocation, command.TargetTile);
+                command.RecordRouteProbe(ToRouteProbeData(
+                    "same_location",
+                    replanProbe,
+                    targetLocation.NameOrUniqueName ?? targetLocation.Name,
+                    currentTile,
+                    command.LocationName,
+                    command.TargetTile));
                 if (replanProbe.Status == BridgeRouteProbeStatus.RouteValid && replanProbe.Route.Count > 0)
                 {
                     command.ReplaceSchedulePath(replanProbe.Route);
@@ -600,6 +627,38 @@ public sealed class BridgeCommandQueue
             tile => BridgeMovementPathProbe.CheckTargetAffordance(location, tile),
             () => BridgeMovementPathProbe.FindSchedulePath(npc, location, currentTile, targetTile),
             tile => BridgeMovementPathProbe.CheckRouteStepSafety(location, tile));
+
+    private static RouteProbeData ToRouteProbeData(
+        string mode,
+        BridgeRouteProbeResult probe,
+        string? currentLocationName,
+        TileDto currentTile,
+        string targetLocationName,
+        TileDto targetTile)
+    {
+        var status = probe.Status == BridgeRouteProbeStatus.RouteValid
+            ? "route_found"
+            : probe.FailureKind ?? probe.Status.ToString();
+        return new RouteProbeData(
+            mode,
+            status,
+            currentLocationName,
+            currentTile,
+            targetLocationName,
+            targetTile,
+            probe.Route,
+            probe.Route.Count == 0
+                ? null
+                : new RouteProbeSegmentData(
+                    currentLocationName ?? targetLocationName,
+                    probe.Route[0],
+                    "tile",
+                    string.Equals(currentLocationName, targetLocationName, StringComparison.OrdinalIgnoreCase)
+                        ? null
+                        : targetLocationName),
+            probe.Status == BridgeRouteProbeStatus.RouteValid ? null : probe.FailureKind,
+            probe.Status == BridgeRouteProbeStatus.RouteValid ? null : probe.FailureDetail);
+    }
 
     private static void FailMoveForProbe(
         BridgeMoveCommand command,
@@ -916,6 +975,7 @@ public sealed class BridgeMoveCommand
     public string? IdempotencyKey { get; }
     public string? DestinationId { get; }
     public string? Thought { get; }
+    public RouteProbeData? RouteProbe { get; private set; }
     public string Status { get; private set; } = "queued";
     public string? BlockedReason { get; private set; }
     public string? ErrorCode { get; private set; }
@@ -992,6 +1052,9 @@ public sealed class BridgeMoveCommand
         FacingDirection = resolvedFacing;
     }
 
+    public void RecordRouteProbe(RouteProbeData routeProbe)
+        => RouteProbe = routeProbe;
+
     public bool TryRecordReplanAttempt(int maxAttempts, out int attempt)
     {
         if (_replanAttempts >= maxAttempts)
@@ -1040,5 +1103,26 @@ public sealed class BridgeMoveCommand
             Phase,
             CurrentLocationName,
             TargetTile,
-            RouteRevision > 0 ? RouteRevision : null);
+            RouteRevision > 0 ? RouteRevision : null,
+            RouteProbe);
+}
+
+internal static class RouteProbeDataFactory
+{
+    public static RouteProbeData CrossLocationUnsupported(
+        string? currentLocationName,
+        TileDto currentTile,
+        string targetLocationName,
+        TileDto targetTile)
+        => new(
+            "cross_location",
+            "cross_location_unsupported",
+            currentLocationName,
+            currentTile,
+            targetLocationName,
+            targetTile,
+            Array.Empty<TileDto>(),
+            null,
+            "cross_location_unsupported",
+            "cross-location route probe is not implemented yet");
 }

@@ -6,6 +6,44 @@ namespace StardewHermesBridge.Tests;
 public sealed class BridgeMoveCommandQueueRegressionTests
 {
     [TestMethod]
+    public void TaskStatusDataCarriesRouteProbeButMoveAcceptedDataDoesNot()
+    {
+        var probe = new StardewHermesBridge.Bridge.RouteProbeData(
+            "same_location",
+            "route_found",
+            "Town",
+            new StardewHermesBridge.Bridge.TileDto(42, 17),
+            "Beach",
+            new StardewHermesBridge.Bridge.TileDto(20, 35),
+            new[] { new StardewHermesBridge.Bridge.TileDto(43, 17) },
+            new StardewHermesBridge.Bridge.RouteProbeSegmentData(
+                "Town",
+                new StardewHermesBridge.Bridge.TileDto(43, 17),
+                "warp",
+                "Beach"));
+        var status = new StardewHermesBridge.Bridge.TaskStatusData(
+            "cmd-1",
+            "trace-1",
+            "Haley",
+            "move",
+            "blocked",
+            null,
+            0,
+            0,
+            "route_found",
+            null,
+            RouteProbe: probe);
+
+        Assert.AreSame(probe, status.RouteProbe);
+        Assert.IsNotNull(status.RouteProbe);
+        Assert.AreEqual("route_found", status.RouteProbe!.Status);
+        Assert.AreEqual("Town", status.RouteProbe.NextSegment?.LocationName);
+        Assert.IsNull(
+            typeof(StardewHermesBridge.Bridge.MoveAcceptedData).GetProperty("RouteProbe"),
+            "Route probe belongs to task_status data, not the accepted response.");
+    }
+
+    [TestMethod]
     public void StatusQueryExposesShortSafeMoveCandidates()
     {
         var models = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandModels.cs");
@@ -117,6 +155,10 @@ public sealed class BridgeMoveCommandQueueRegressionTests
     {
         var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
 
+        StringAssert.Contains(
+            commandQueue,
+            "RouteProbeDataFactory.CrossLocationUnsupported",
+            "Cross-location requests should surface a structured routeProbe on task_status before blocking.");
         StringAssert.Contains(
             commandQueue,
             "command.Block(\"cross_location_unsupported\")",

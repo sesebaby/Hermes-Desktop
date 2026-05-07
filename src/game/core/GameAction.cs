@@ -55,4 +55,23 @@ public sealed record GameCommandStatus(
     string? Phase = null,
     string? CurrentLocationName = null,
     GameTile? ResolvedStandTile = null,
-    int? RouteRevision = null);
+    int? RouteRevision = null,
+    GameRouteProbe? RouteProbe = null);
+
+public sealed record GameRouteProbe(
+    string Mode,
+    string Status,
+    string? CurrentLocationName,
+    GameTile? CurrentTile,
+    string TargetLocationName,
+    GameTile TargetTile,
+    IReadOnlyList<GameTile> Route,
+    GameRouteProbeSegment? NextSegment = null,
+    string? FailureCode = null,
+    string? FailureDetail = null);
+
+public sealed record GameRouteProbeSegment(
+    string LocationName,
+    GameTile? StandTile,
+    string TargetKind,
+    string? NextLocationName = null);

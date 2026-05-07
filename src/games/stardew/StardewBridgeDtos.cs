@@ -123,7 +123,26 @@ public sealed record StardewTaskStatusData(
     [property: JsonPropertyName("phase")] string? Phase = null,
     [property: JsonPropertyName("currentLocationName")] string? CurrentLocationName = null,
     [property: JsonPropertyName("resolvedStandTile")] StardewTile? ResolvedStandTile = null,
-    [property: JsonPropertyName("routeRevision")] int? RouteRevision = null);
+    [property: JsonPropertyName("routeRevision")] int? RouteRevision = null,
+    [property: JsonPropertyName("routeProbe")] StardewRouteProbeData? RouteProbe = null);
+
+public sealed record StardewRouteProbeData(
+    [property: JsonPropertyName("mode")] string Mode,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("currentLocationName")] string? CurrentLocationName,
+    [property: JsonPropertyName("currentTile")] StardewTile? CurrentTile,
+    [property: JsonPropertyName("targetLocationName")] string TargetLocationName,
+    [property: JsonPropertyName("targetTile")] StardewTile TargetTile,
+    [property: JsonPropertyName("route")] IReadOnlyList<StardewTile> Route,
+    [property: JsonPropertyName("nextSegment")] StardewRouteProbeSegmentData? NextSegment = null,
+    [property: JsonPropertyName("failureCode")] string? FailureCode = null,
+    [property: JsonPropertyName("failureDetail")] string? FailureDetail = null);
+
+public sealed record StardewRouteProbeSegmentData(
+    [property: JsonPropertyName("locationName")] string LocationName,
+    [property: JsonPropertyName("standTile")] StardewTile? StandTile,
+    [property: JsonPropertyName("targetKind")] string TargetKind,
+    [property: JsonPropertyName("nextLocationName")] string? NextLocationName = null);
 
 public sealed record StardewStatusQuery(
     [property: JsonPropertyName("npcId")] string? NpcId);

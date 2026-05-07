@@ -192,7 +192,25 @@ public class StardewCommandServiceTests
               "phase": "planning_route",
               "currentLocationName": "Town",
               "resolvedStandTile": { "x": 41, "y": 17 },
-              "routeRevision": 3
+              "routeRevision": 3,
+              "routeProbe": {
+                "mode": "cross_location",
+                "status": "route_found",
+                "currentLocationName": "Town",
+                "currentTile": { "x": 42, "y": 17 },
+                "targetLocationName": "Beach",
+                "targetTile": { "x": 20, "y": 35 },
+                "route": [
+                  { "x": 43, "y": 17 },
+                  { "x": 44, "y": 17 }
+                ],
+                "nextSegment": {
+                  "locationName": "Town",
+                  "standTile": { "x": 43, "y": 17 },
+                  "targetKind": "warp",
+                  "nextLocationName": "Beach"
+                }
+              }
             }
             """)!,
             null,
@@ -217,6 +235,18 @@ public class StardewCommandServiceTests
         Assert.AreEqual(41, status.ResolvedStandTile.X);
         Assert.AreEqual(17, status.ResolvedStandTile.Y);
         Assert.AreEqual(3, status.RouteRevision);
+        Assert.IsNotNull(status.RouteProbe);
+        Assert.AreEqual("cross_location", status.RouteProbe.Mode);
+        Assert.AreEqual("route_found", status.RouteProbe.Status);
+        Assert.AreEqual("Town", status.RouteProbe.CurrentLocationName);
+        Assert.AreEqual(42, status.RouteProbe.CurrentTile?.X);
+        Assert.AreEqual("Beach", status.RouteProbe.TargetLocationName);
+        Assert.AreEqual(2, status.RouteProbe.Route.Count);
+        Assert.IsNotNull(status.RouteProbe.NextSegment);
+        Assert.AreEqual("Town", status.RouteProbe.NextSegment.LocationName);
+        Assert.AreEqual(43, status.RouteProbe.NextSegment.StandTile?.X);
+        Assert.AreEqual("warp", status.RouteProbe.NextSegment.TargetKind);
+        Assert.AreEqual("Beach", status.RouteProbe.NextSegment.NextLocationName);
         Assert.AreEqual(StardewBridgeRoutes.TaskStatus, client.LastRoute);
     }
 

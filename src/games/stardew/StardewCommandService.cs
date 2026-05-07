@@ -245,6 +245,31 @@ public sealed class StardewCommandService : IGameCommandService
             response.Data.ResolvedStandTile is null
                 ? null
                 : new GameTile(response.Data.ResolvedStandTile.X, response.Data.ResolvedStandTile.Y),
-            response.Data.RouteRevision);
+            response.Data.RouteRevision,
+            ToRouteProbe(response.Data.RouteProbe));
     }
+
+    private static GameRouteProbe? ToRouteProbe(StardewRouteProbeData? data)
+        => data is null
+            ? null
+            : new GameRouteProbe(
+                data.Mode,
+                data.Status,
+                data.CurrentLocationName,
+                ToGameTile(data.CurrentTile),
+                data.TargetLocationName,
+                ToGameTile(data.TargetTile)!,
+                data.Route.Select(tile => ToGameTile(tile)!).ToArray(),
+                data.NextSegment is null
+                    ? null
+                    : new GameRouteProbeSegment(
+                        data.NextSegment.LocationName,
+                        ToGameTile(data.NextSegment.StandTile),
+                        data.NextSegment.TargetKind,
+                        data.NextSegment.NextLocationName),
+                data.FailureCode,
+                data.FailureDetail);
+
+    private static GameTile? ToGameTile(StardewTile? tile)
+        => tile is null ? null : new GameTile(tile.X, tile.Y);
 }
