@@ -220,7 +220,8 @@ public sealed partial class DeveloperPage : Page
     {
         await ExecuteDebugCommandAsync(
             ResourceLoader.GetString("DeveloperDebugBeachRouteActionName"),
-            ct => _stardewNpcDebugActions!.ProbeBeachRouteAsync(_currentSnapshot!.BodyBinding!, ct));
+            ct => _stardewNpcDebugActions!.SendHaleyToBeachAsync(ct),
+            ResourceLoader.GetString("DeveloperDebugHaleyDisplayName"));
     }
 
     private async void DebugTick_Click(object sender, RoutedEventArgs e)
@@ -340,19 +341,23 @@ public sealed partial class DeveloperPage : Page
             await LoadNpcAsync(item);
     }
 
-    private async Task ExecuteDebugCommandAsync(string actionName, Func<CancellationToken, Task<GameCommandResult>> action)
+    private async Task ExecuteDebugCommandAsync(
+        string actionName,
+        Func<CancellationToken, Task<GameCommandResult>> action,
+        string? targetDisplayName = null)
     {
         if (!CanRunDebugAction(_stardewNpcDebugActions is not null))
             return;
 
-        if (!await ConfirmDebugActionAsync(actionName))
+        var displayName = targetDisplayName ?? _currentSnapshot!.DisplayName;
+        if (!await ConfirmDebugActionAsync(actionName, displayName))
             return;
 
         _operationInProgress = true;
         UpdateActionControls();
         SetStatusText(
             DebugActionResultText,
-            string.Format(CultureInfo.CurrentCulture, ResourceLoader.GetString("DeveloperDebugActionRunningFormat"), actionName, _currentSnapshot!.DisplayName),
+            string.Format(CultureInfo.CurrentCulture, ResourceLoader.GetString("DeveloperDebugActionRunningFormat"), actionName, displayName),
             success: null);
 
         try
@@ -481,8 +486,9 @@ public sealed partial class DeveloperPage : Page
         return true;
     }
 
-    private async Task<bool> ConfirmDebugActionAsync(string actionName)
+    private async Task<bool> ConfirmDebugActionAsync(string actionName, string? targetDisplayName = null)
     {
+        var displayName = targetDisplayName ?? _currentSnapshot?.DisplayName ?? _currentSnapshot?.NpcId ?? "-";
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
@@ -491,7 +497,7 @@ public sealed partial class DeveloperPage : Page
                 CultureInfo.CurrentCulture,
                 ResourceLoader.GetString("DeveloperDebugConfirmContentFormat"),
                 actionName,
-                _currentSnapshot?.DisplayName ?? _currentSnapshot?.NpcId ?? "-"),
+                displayName),
             PrimaryButtonText = ResourceLoader.GetString("DeveloperDebugConfirmPrimaryButton"),
             CloseButtonText = ResourceLoader.GetString("DeveloperDebugConfirmCancelButton"),
             DefaultButton = ContentDialogButton.Close

@@ -134,10 +134,14 @@ public sealed class FileStardewBridgeDiscovery : IStardewBridgeDiscovery
 
 public sealed class StardewNpcDebugActionService
 {
-    private const string BeachRouteProbeLocationName = "Beach";
-    private const int BeachRouteProbeTileX = 32;
-    private const int BeachRouteProbeTileY = 34;
-    private const int BeachRouteProbeFacingDirection = 2;
+    private const string HaleyNpcId = "haley";
+    private const string HaleyTargetEntityId = "Haley";
+    private const string HaleySmapiName = "Haley";
+    private const string HaleyDisplayName = "Haley";
+    private const string BeachShorelineLocationName = "Beach";
+    private const int BeachShorelineTileX = 20;
+    private const int BeachShorelineTileY = 35;
+    private const int BeachShorelineFacingDirection = 2;
 
     private readonly IStardewBridgeDiscovery _discovery;
     private readonly Func<StardewBridgeDiscoverySnapshot, IGameCommandService> _commandServiceFactory;
@@ -244,8 +248,26 @@ public sealed class StardewNpcDebugActionService
         => await ProbeBeachRouteAsync(NpcBodyBinding.FromLogicalId(npcId, "stardew"), ct);
 
     public async Task<GameCommandResult> ProbeBeachRouteAsync(NpcBodyBinding bodyBinding, CancellationToken ct)
+        => await SendToBeachAsync(bodyBinding, "trace_manual_route_probe", "manual_route_probe", ct);
+
+    public async Task<GameCommandResult> SendHaleyToBeachAsync(CancellationToken ct)
     {
-        var traceId = $"trace_manual_route_probe_{Guid.NewGuid():N}";
+        var bodyBinding = new NpcBodyBinding(
+            HaleyNpcId,
+            HaleyTargetEntityId,
+            HaleySmapiName,
+            HaleyDisplayName,
+            "stardew");
+        return await SendToBeachAsync(bodyBinding, "trace_manual_haley_beach", "manual_haley_beach", ct);
+    }
+
+    private async Task<GameCommandResult> SendToBeachAsync(
+        NpcBodyBinding bodyBinding,
+        string tracePrefix,
+        string commandPrefix,
+        CancellationToken ct)
+    {
+        var traceId = $"{tracePrefix}_{Guid.NewGuid():N}";
         ArgumentNullException.ThrowIfNull(bodyBinding);
         if (string.IsNullOrWhiteSpace(bodyBinding.NpcId))
             return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.InvalidTarget, traceId);
@@ -258,20 +280,21 @@ public sealed class StardewNpcDebugActionService
 
         var payload = new System.Text.Json.Nodes.JsonObject
         {
-            ["facingDirection"] = BeachRouteProbeFacingDirection,
-            ["thought"] = "manual desktop route probe to Beach"
+            ["facingDirection"] = BeachShorelineFacingDirection,
+            ["thought"] = "manual desktop debug move to Beach shoreline",
+            ["targetSource"] = "map-skill:stardew.navigation.poi.beach-shoreline"
         };
         var action = new GameAction(
             bodyBinding.NpcId,
             "stardew-valley",
             GameActionType.Move,
             traceId,
-            $"manual_route_probe_{bodyBinding.NpcId}_{Guid.NewGuid():N}",
+            $"{commandPrefix}_{bodyBinding.NpcId}_{Guid.NewGuid():N}",
             new GameActionTarget(
                 "tile",
-                BeachRouteProbeLocationName,
-                new GameTile(BeachRouteProbeTileX, BeachRouteProbeTileY)),
-            "manual desktop debug route probe to Beach",
+                BeachShorelineLocationName,
+                new GameTile(BeachShorelineTileX, BeachShorelineTileY)),
+            "manual desktop debug move to Beach shoreline",
             payload,
             BodyBinding: bodyBinding);
 

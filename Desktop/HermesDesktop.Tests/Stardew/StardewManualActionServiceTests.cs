@@ -173,7 +173,7 @@ public sealed class StardewManualActionServiceTests
     }
 
     [TestMethod]
-    public async Task ProbeBeachRouteAsync_WithBodyBinding_SubmitsMechanicalBeachTarget()
+    public async Task SendHaleyToBeachAsync_SubmitsSkillBeachTargetForHaley()
     {
         var discovery = new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
             new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token-2" },
@@ -182,9 +182,7 @@ public sealed class StardewManualActionServiceTests
             "save-9"));
         var commandService = new FakeGameCommandService();
         var service = new StardewNpcDebugActionService(discovery, _ => commandService);
-        var bodyBinding = new NpcBodyBinding("haley", "Haley", "Haley", "海莉", "stardew");
-
-        var result = await service.ProbeBeachRouteAsync(bodyBinding, CancellationToken.None);
+        var result = await service.SendHaleyToBeachAsync(CancellationToken.None);
 
         Assert.IsTrue(result.Accepted);
         Assert.IsNotNull(commandService.LastAction);
@@ -194,8 +192,8 @@ public sealed class StardewManualActionServiceTests
         Assert.AreEqual("tile", commandService.LastAction.Target.Kind);
         Assert.AreEqual("Beach", commandService.LastAction.Target.LocationName);
         Assert.IsNotNull(commandService.LastAction.Target.Tile);
-        Assert.AreEqual(32, commandService.LastAction.Target.Tile.X);
-        Assert.AreEqual(34, commandService.LastAction.Target.Tile.Y);
+        Assert.AreEqual(20, commandService.LastAction.Target.Tile.X);
+        Assert.AreEqual(35, commandService.LastAction.Target.Tile.Y);
         Assert.AreEqual(2, (int?)commandService.LastAction.Payload?["facingDirection"]);
         Assert.IsFalse(commandService.LastAction.Payload?.ContainsKey("destinationId") is true);
     }

@@ -1519,10 +1519,10 @@
     <value>让选中 NPC 发送一条调试台词</value>
   </data>
   <data name="DeveloperDebugBeachRouteButton.Content" xml:space="preserve">
-    <value>计算去海边路线</value>
+    <value>让海莉去海边</value>
   </data>
   <data name="DeveloperDebugBeachRouteButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>为选中 NPC 计算去 Beach 的跨地图路线探针</value>
+    <value>向桥接层提交让海莉去 Beach 海岸线的机械坐标移动</value>
   </data>
   <data name="DeveloperDebugActionStatusInitial.Text" xml:space="preserve">
     <value>选择 NPC 后可执行受控调试动作。</value>
@@ -1621,7 +1621,10 @@
     <value>这是一条开发者页发送的调试台词。</value>
   </data>
   <data name="DeveloperDebugBeachRouteActionName" xml:space="preserve">
-    <value>计算去海边路线</value>
+    <value>让海莉去海边</value>
+  </data>
+  <data name="DeveloperDebugHaleyDisplayName" xml:space="preserve">
+    <value>海莉</value>
   </data>
   <data name="DeveloperDebugActionRunningFormat" xml:space="preserve">
     <value>正在执行“{0}”：{1}</value>
