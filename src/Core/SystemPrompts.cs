@@ -113,7 +113,7 @@ For current time/date/timezone on Windows, use an available live-environment int
     {
         if (!string.IsNullOrWhiteSpace(repositoryRoot))
         {
-            var rootedCandidate = Path.Combine(repositoryRoot, "skills", "system", "stardew-npc-runtime", "SYSTEM.md");
+            var rootedCandidate = Path.Combine(repositoryRoot, StardewNpcRuntimeAssetRelativePath);
             return File.Exists(rootedCandidate) ? rootedCandidate : null;
         }
 
@@ -125,7 +125,7 @@ For current time/date/timezone on Windows, use an available live-environment int
                  directory is not null;
                  directory = directory.Parent)
             {
-                var candidate = Path.Combine(directory.FullName, "skills", "system", "stardew-npc-runtime", "SYSTEM.md");
+                var candidate = Path.Combine(directory.FullName, StardewNpcRuntimeAssetRelativePath);
                 if (File.Exists(candidate))
                     return candidate;
             }

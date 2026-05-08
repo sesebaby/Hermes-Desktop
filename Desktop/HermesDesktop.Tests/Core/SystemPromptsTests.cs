@@ -10,7 +10,7 @@ public sealed class SystemPromptsTests
     public void LoadStardewNpcRuntimePrompt_UsesRepositoryAsset()
     {
         var repositoryRoot = FindRepositoryRoot();
-        var assetPath = Path.Combine(repositoryRoot, "skills", "system", "stardew-npc-runtime", "SYSTEM.md");
+        var assetPath = Path.Combine(repositoryRoot, SystemPrompts.StardewNpcRuntimeAssetRelativePath);
 
         var prompt = SystemPrompts.LoadStardewNpcRuntimePrompt(repositoryRoot);
 
@@ -55,7 +55,7 @@ public sealed class SystemPromptsTests
              directory is not null;
              directory = directory.Parent)
         {
-            var candidate = Path.Combine(directory.FullName, "skills", "system", "stardew-npc-runtime", "SYSTEM.md");
+            var candidate = Path.Combine(directory.FullName, SystemPrompts.StardewNpcRuntimeAssetRelativePath);
             if (File.Exists(candidate))
                 return directory.FullName;
         }
