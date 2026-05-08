@@ -67,6 +67,8 @@
   宿主不是在暴露能力边界，而是在按 channel 直接规定 agent 的思考模式和输出契约。
 - **为什么越界**:
   这等于宿主先决定：这个 agent 只能产出 intent，不能自己决定是否查工具、是否读技能、是否查记忆。这已经是“替 agent 选工作方式”。
+   用户意见:
+  没有看懂,你结合主agent和子agent的分工不同,再次评估,并用大白话给我描述
 
 ### 4. Skill mandatory prompt 强制 agent 先扫 skill，并且“宁可多载入”
 - **位置**: `src/skills/SkillManager.cs:164-227`
