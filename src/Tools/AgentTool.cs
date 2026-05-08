@@ -96,53 +96,14 @@ public sealed class AgentTool : ITool
     }
     
     private AgentDefinition GetAgentDefinition(string agentType)
-    {
-        return agentType.ToLowerInvariant() switch
-        {
-            "researcher" => new AgentDefinition(
-                "Researcher",
-                "You are a research specialist. Synthesize available local context and prior session memory. Be clear about evidence and uncertainty.",
-                new[] { "session_search", "skills_list", "skill_view", "memory" }
-            ),
-            
-            "coder" => new AgentDefinition(
-                "Coder",
-                "You are an implementation planning specialist. Break work into concrete, verifiable steps using the retained local agent tools.",
-                new[] { "session_search", "todo", "memory", "skills_list", "skill_view" }
-            ),
-            
-            "analyst" => new AgentDefinition(
-                "Analyst",
-                "You are an analysis specialist. Break down complex problems, identify patterns, and provide actionable insights.",
-                new[] { "session_search", "memory", "skills_list", "skill_view" }
-            ),
-            
-            "planner" => new AgentDefinition(
-                "Planner",
-                "You are a planning specialist. Create detailed, actionable plans with clear steps, dependencies, and success criteria.",
-                new[] { "session_search", "todo", "memory" }
-            ),
-            
-            "reviewer" => new AgentDefinition(
-                "Reviewer",
-                "You are a code review specialist. Identify issues, suggest improvements, and ensure code quality and security.",
-                new[] { "session_search", "memory", "skills_list", "skill_view" }
-            ),
-            
-            _ => new AgentDefinition(
-                "General",
-                "You are a helpful assistant. Complete the task efficiently and accurately.",
-                new[] { "session_search", "todo", "schedule_cron", "ask_user", "memory", "skills_list", "skill_view", "skill_invoke" }
-            )
-        };
-    }
+        => _config.ResolveDefinition(agentType);
     
     private IEnumerable<ToolDefinition>? GetToolsForAgent(string agentType)
     {
         var definition = GetAgentDefinition(agentType);
         var tools = new List<ToolDefinition>();
         
-        foreach (var toolName in definition.AllowedTools)
+        foreach (var toolName in AgentToolConfig.NormalizeToolNames(definition.AllowedTools))
         {
             var tool = _toolRegistry.GetTool(toolName);
             if (tool is not null)
@@ -188,9 +149,78 @@ public sealed record AgentDefinition(
 /// </summary>
 public sealed class AgentToolConfig
 {
+    public static IReadOnlyList<AgentDefinition> BuiltInAgentDefinitions { get; } =
+    [
+        new(
+            "Researcher",
+            "You are a research specialist. Synthesize available local context and prior session memory. Be clear about evidence and uncertainty.",
+            ["session_search", "skills_list", "skill_view", "memory"]),
+        new(
+            "Coder",
+            "You are an implementation planning specialist. Break work into concrete, verifiable steps using the retained local agent tools.",
+            ["session_search", "todo", "memory", "skills_list", "skill_view"]),
+        new(
+            "Analyst",
+            "You are an analysis specialist. Break down complex problems, identify patterns, and provide actionable insights.",
+            ["session_search", "memory", "skills_list", "skill_view"]),
+        new(
+            "Planner",
+            "You are a planning specialist. Create detailed, actionable plans with clear steps, dependencies, and success criteria.",
+            ["session_search", "todo", "memory"]),
+        new(
+            "Reviewer",
+            "You are a code review specialist. Identify issues, suggest improvements, and ensure code quality and security.",
+            ["session_search", "memory", "skills_list", "skill_view"]),
+        new(
+            "General",
+            "You are a helpful assistant. Complete the task efficiently and accurately.",
+            ["session_search", "todo", "schedule_cron", "ask_user", "memory", "skills_list", "skill_view", "skill_invoke"])
+    ];
+
     public int MaxSubagentDepth { get; init; } = 3;
     public int MaxTokensPerSubagent { get; init; } = 8000;
     public TimeSpan Timeout { get; init; } = TimeSpan.FromMinutes(5);
+    public IReadOnlyList<AgentDefinition> AgentDefinitions { get; init; } = [];
+
+    public AgentDefinition ResolveDefinition(string? agentType)
+    {
+        var definitions = BuildEffectiveDefinitions();
+        var requested = string.IsNullOrWhiteSpace(agentType) ? "general" : agentType.Trim();
+        return definitions.TryGetValue(requested, out var definition)
+            ? definition
+            : definitions["general"];
+    }
+
+    public static IReadOnlyList<string> NormalizeToolNames(IEnumerable<string>? toolNames)
+        => (toolNames ?? [])
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private IReadOnlyDictionary<string, AgentDefinition> BuildEffectiveDefinitions()
+    {
+        var definitions = new Dictionary<string, AgentDefinition>(StringComparer.OrdinalIgnoreCase);
+        foreach (var definition in BuiltInAgentDefinitions)
+            definitions[definition.Name] = NormalizeDefinition(definition);
+
+        foreach (var definition in AgentDefinitions ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(definition.Name))
+                continue;
+
+            definitions[definition.Name.Trim()] = NormalizeDefinition(definition);
+        }
+
+        return definitions;
+    }
+
+    private static AgentDefinition NormalizeDefinition(AgentDefinition definition)
+        => definition with
+        {
+            Name = definition.Name.Trim(),
+            AllowedTools = NormalizeToolNames(definition.AllowedTools)
+        };
 }
 
 public sealed class AgentParameters
