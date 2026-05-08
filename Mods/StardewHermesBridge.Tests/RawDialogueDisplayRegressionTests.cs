@@ -393,8 +393,8 @@ public class RawDialogueDisplayRegressionTests
             "Movement thought bubbles need their own diagnostic channel.");
         StringAssert.Contains(
             bubbleOverlay,
-            "PrivateChat: false",
-            "Movement thought bubbles must not emit private_chat_reply_closed when they expire.");
+            "string.Equals(entry.Channel, PrivateChatChannel",
+            "Only explicit private_chat bubbles may emit private_chat_reply_closed when they expire.");
     }
 
     [TestMethod]

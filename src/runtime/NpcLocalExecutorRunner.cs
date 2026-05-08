@@ -218,6 +218,7 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
             NpcLocalActionKind.Move => "stardew_move",
             NpcLocalActionKind.TaskStatus => "stardew_task_status",
             NpcLocalActionKind.Observe => "stardew_status",
+            NpcLocalActionKind.IdleMicroAction => "stardew_idle_micro_action",
             _ => null
         };
 
@@ -366,6 +367,20 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
             case NpcLocalActionKind.Escalate:
                 values["escalate"] = true;
                 break;
+            case NpcLocalActionKind.IdleMicroAction:
+                if (intent.IdleMicroAction is not null)
+                {
+                    values["idleMicroAction"] = new Dictionary<string, object?>
+                    {
+                        ["kind"] = intent.IdleMicroAction.Kind,
+                        ["animationAlias"] = intent.IdleMicroAction.AnimationAlias,
+                        ["intensity"] = intent.IdleMicroAction.Intensity,
+                        ["ttlSeconds"] = intent.IdleMicroAction.TtlSeconds
+                    }.Where(pair => pair.Value is not null)
+                        .ToDictionary(pair => pair.Key, pair => pair.Value);
+                }
+
+                break;
         }
 
         return JsonSerializer.Serialize(values);
@@ -459,12 +474,12 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
             using var document = JsonDocument.Parse(content);
             var root = document.RootElement;
             var commandId = ReadString(root, "commandId");
-            var status = ReadString(root, "status");
+            var status = ReadString(root, "result") ?? ReadString(root, "status");
             if (root.TryGetProperty("finalStatus", out var finalStatus) &&
                 finalStatus.ValueKind == JsonValueKind.Object)
             {
                 commandId ??= ReadString(finalStatus, "commandId");
-                status = ReadString(finalStatus, "status") ?? status;
+                status = ReadString(finalStatus, "result") ?? ReadString(finalStatus, "status") ?? status;
             }
 
             return new ToolEvidence(commandId, status);
@@ -493,6 +508,7 @@ public sealed class NpcLocalExecutorRunner : INpcLocalExecutorRunner
             NpcLocalActionKind.Wait => "wait",
             NpcLocalActionKind.TaskStatus => "task_status",
             NpcLocalActionKind.Escalate => "escalate",
+            NpcLocalActionKind.IdleMicroAction => "idle_micro_action",
             _ => action.ToString()
         };
 

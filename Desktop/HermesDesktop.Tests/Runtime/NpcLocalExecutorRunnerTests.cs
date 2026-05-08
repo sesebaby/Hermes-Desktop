@@ -187,6 +187,71 @@ public sealed class NpcLocalExecutorRunnerTests
     }
 
     [TestMethod]
+    public async Task ExecuteAsync_WithIdleMicroAction_ExposesOnlyIdleMicroActionTool()
+    {
+        var chatClient = new RecordingChatClient(
+            [
+                new StreamEvent.ToolUseComplete(
+                    "call-idle",
+                    "stardew_idle_micro_action",
+                    Json("""{"kind":"look_around","intensity":"light","ttlSeconds":4}"""))
+            ]);
+        var idleTool = new RecordingTool(
+            "stardew_idle_micro_action",
+            typeof(IdleMicroActionParameters),
+            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-idle-1","status":"completed","result":"displayed"}"""));
+        var moveTool = new RecordingTool(
+            "stardew_move",
+            typeof(MoveParameters),
+            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-move-1","status":"queued"}"""));
+        var speakTool = new RecordingTool(
+            "stardew_speak",
+            typeof(SpeakParameters),
+            ToolResult.Ok("""{"accepted":true,"status":"completed"}"""));
+        var runner = new NpcLocalExecutorRunner(chatClient, [idleTool, moveTool, speakTool]);
+
+        var result = await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            new NpcLocalActionIntent(
+                NpcLocalActionKind.IdleMicroAction,
+                "thinking about the next errand",
+                IdleMicroAction: new NpcLocalIdleMicroActionIntent("look_around", null, "light", 4)),
+            [CreateObservationFact("Haley is idle and visible.")],
+            "trace-idle",
+            CancellationToken.None);
+
+        Assert.AreEqual(1, chatClient.StreamCalls);
+        Assert.AreEqual(1, chatClient.LastTools.Count);
+        Assert.AreEqual("stardew_idle_micro_action", chatClient.LastTools.Single().Name);
+        Assert.AreEqual(1, idleTool.ExecuteCalls);
+        Assert.AreEqual(0, moveTool.ExecuteCalls);
+        Assert.AreEqual(0, speakTool.ExecuteCalls);
+        Assert.AreEqual("stardew_idle_micro_action", result.Target);
+        Assert.AreEqual("displayed", result.Result);
+        Assert.AreEqual("local_executor_completed:stardew_idle_micro_action", result.DecisionResponse);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_WithIdleMicroAction_WithoutDelegation_Blocks()
+    {
+        var runner = new NpcUnavailableLocalExecutorRunner();
+
+        var result = await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            new NpcLocalActionIntent(
+                NpcLocalActionKind.IdleMicroAction,
+                "thinking about the next errand",
+                IdleMicroAction: new NpcLocalIdleMicroActionIntent("look_around", null, "light", 4)),
+            [CreateObservationFact("Haley is idle and visible.")],
+            "trace-idle-unavailable",
+            CancellationToken.None);
+
+        Assert.AreEqual("blocked", result.Stage);
+        Assert.AreEqual("blocked", result.ExecutorMode);
+        Assert.AreEqual("local_executor_blocked:local_executor_unavailable", result.DecisionResponse);
+    }
+
+    [TestMethod]
     public async Task ExecuteAsync_WithWaitIntent_CompletesHostInterpretedWithoutModelCall()
     {
         var chatClient = new RecordingChatClient([]);
@@ -545,6 +610,14 @@ public sealed class NpcLocalExecutorRunnerTests
         public required string CommandId { get; init; }
     }
 
+    private sealed class IdleMicroActionParameters
+    {
+        public required string Kind { get; init; }
+        public string? AnimationAlias { get; init; }
+        public string? Intensity { get; init; }
+        public int? TtlSeconds { get; init; }
+    }
+
     private sealed class NavigateToTileParameters
     {
         public required string LocationName { get; init; }
@@ -562,5 +635,10 @@ public sealed class NpcLocalExecutorRunnerTests
 
     private sealed class NoParameters
     {
+    }
+
+    private sealed class SpeakParameters
+    {
+        public required string Text { get; init; }
     }
 }

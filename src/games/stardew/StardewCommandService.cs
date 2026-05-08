@@ -18,6 +18,9 @@ public sealed class StardewCommandService : IGameCommandService
         if (action.Type == GameActionType.Speak)
             return await SubmitSpeakAsync(action, ct);
 
+        if (action.Type == GameActionType.IdleMicroAction)
+            return await SubmitIdleMicroActionAsync(action, ct);
+
         if (action.Type == GameActionType.OpenPrivateChat)
             return await SubmitOpenPrivateChatAsync(action, ct);
 
@@ -145,6 +148,33 @@ public sealed class StardewCommandService : IGameCommandService
 
         var response = await _client.SendAsync<StardewSpeakRequest, StardewSpeakData>(
             StardewBridgeRoutes.ActionSpeak,
+            envelope,
+            ct);
+
+        return ToCommandResult(response, action.TraceId);
+    }
+
+    private async Task<GameCommandResult> SubmitIdleMicroActionAsync(GameAction action, CancellationToken ct)
+    {
+        var kind = action.Payload?["kind"]?.ToString();
+        if (string.IsNullOrWhiteSpace(kind))
+            return new GameCommandResult(false, "", StardewCommandStatuses.Failed, StardewBridgeErrorCodes.InvalidTarget, action.TraceId);
+
+        var envelope = new StardewBridgeEnvelope<StardewIdleMicroActionRequest>(
+            $"req_{Guid.NewGuid():N}",
+            action.TraceId,
+            ResolveNpcId(action),
+            _saveId,
+            action.IdempotencyKey,
+            new StardewIdleMicroActionRequest(
+                kind,
+                action.Reason,
+                action.Payload?["animationAlias"]?.ToString(),
+                action.Payload?["intensity"]?.ToString(),
+                ReadOptionalInt(action.Payload, "ttlSeconds")));
+
+        var response = await _client.SendAsync<StardewIdleMicroActionRequest, StardewIdleMicroActionData>(
+            StardewBridgeRoutes.ActionIdleMicroAction,
             envelope,
             ct);
 

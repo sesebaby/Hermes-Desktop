@@ -16,6 +16,7 @@ public static class StardewBridgeRoutes
     public const string TaskLookup = "/task/lookup";
     public const string TaskCancel = "/task/cancel";
     public const string ActionSpeak = "/action/speak";
+    public const string ActionIdleMicroAction = "/action/idle_micro_action";
     public const string ActionOpenPrivateChat = "/action/open_private_chat";
     public const string DebugNpcReposition = "/debug/npc/reposition";
 }

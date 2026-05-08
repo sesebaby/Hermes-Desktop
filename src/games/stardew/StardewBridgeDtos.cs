@@ -97,6 +97,20 @@ public sealed record StardewSpeakData(
     [property: JsonPropertyName("channel")] string Channel,
     [property: JsonPropertyName("displayed")] bool Displayed);
 
+public sealed record StardewIdleMicroActionRequest(
+    [property: JsonPropertyName("kind")] string Kind,
+    [property: JsonPropertyName("reason")] string? Reason = null,
+    [property: JsonPropertyName("animationAlias")] string? AnimationAlias = null,
+    [property: JsonPropertyName("intensity")] string? Intensity = null,
+    [property: JsonPropertyName("ttlSeconds")] int? TtlSeconds = null);
+
+public sealed record StardewIdleMicroActionData(
+    [property: JsonPropertyName("npcId")] string NpcId,
+    [property: JsonPropertyName("kind")] string Kind,
+    [property: JsonPropertyName("result")] string Result,
+    [property: JsonPropertyName("reasonCode")] string? ReasonCode = null,
+    [property: JsonPropertyName("interrupted")] bool Interrupted = false);
+
 public sealed record StardewOpenPrivateChatRequest(
     [property: JsonPropertyName("prompt")] string? Prompt,
     [property: JsonPropertyName("conversationId")] string? ConversationId);

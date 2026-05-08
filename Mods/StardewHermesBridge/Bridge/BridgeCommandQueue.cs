@@ -15,6 +15,31 @@ public sealed class BridgeCommandQueue
     private const int MaxReplanAttempts = 2;
     private const int MaxPostWarpFinalReplanAttempts = 30;
     private const int WarpTransitionTimeoutTicks = 180;
+    private const int NearbyIdleMicroRange = 8;
+
+    private static readonly HashSet<string> AllowedIdleMicroKinds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "emote_happy",
+        "emote_question",
+        "emote_sleepy",
+        "emote_music",
+        "look_left",
+        "look_right",
+        "look_up",
+        "look_down",
+        "look_around",
+        "tiny_hop",
+        "tiny_shake",
+        "idle_pose",
+        "idle_animation_once"
+    };
+
+    private static readonly HashSet<string> AllowedIdleAnimationAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "idle_tinker",
+        "idle_clean",
+        "idle_stretch"
+    };
 
     private readonly ConcurrentQueue<BridgeMoveCommand> _pending = new();
     private readonly ConcurrentQueue<IBridgeUiCommand> _pendingUi = new();
@@ -198,6 +223,23 @@ public sealed class BridgeCommandQueue
         return completion.Task.WaitAsync(ct);
     }
 
+    public Task<BridgeResponse<IdleMicroActionData>> IdleMicroActionAsync(
+        BridgeEnvelope<IdleMicroActionPayload> envelope,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(envelope.NpcId))
+        {
+            return Task.FromResult(IdleMicroBlocked(
+                envelope,
+                "invalid_target",
+                "npcId is required."));
+        }
+
+        var completion = new TaskCompletionSource<BridgeResponse<IdleMicroActionData>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingUi.Enqueue(new BridgeIdleMicroActionUiCommand(envelope, completion));
+        return completion.Task.WaitAsync(ct);
+    }
+
     private BridgeResponse<SpeakData> ExecuteSpeak(BridgeEnvelope<SpeakPayload> envelope)
     {
         var npcId = envelope.NpcId;
@@ -255,6 +297,68 @@ public sealed class BridgeCommandQueue
             new SpeakData(npcId, envelope.Payload.Text, channel, true),
             null,
             new { });
+    }
+
+    private BridgeResponse<IdleMicroActionData> ExecuteIdleMicroAction(BridgeEnvelope<IdleMicroActionPayload> envelope)
+    {
+        var npcId = envelope.NpcId;
+        var kind = envelope.Payload.Kind?.Trim();
+        _logger.Write("idle_micro_received", npcId, "idle_micro_action", envelope.TraceId, null, "received", kind);
+
+        if (string.IsNullOrWhiteSpace(npcId))
+            return IdleMicroBlocked(envelope, "invalid_target", "npcId is required.");
+
+        if (string.IsNullOrWhiteSpace(kind))
+            return IdleMicroBlocked(envelope, "idle_micro_action_required", "kind is required.");
+
+        if (!AllowedIdleMicroKinds.Contains(kind))
+            return IdleMicroBlocked(envelope, "idle_micro_action_kind_not_allowed", $"Unsupported idle micro action kind: {kind}.");
+
+        if (!Context.IsWorldReady || Game1.player is null)
+            return IdleMicroBlocked(envelope, "world_not_ready", "The Stardew world is not ready.");
+
+        var npc = BridgeNpcResolver.Resolve(npcId);
+        if (npc is null)
+            return IdleMicroBlocked(envelope, "invalid_target", "NPC was not found.");
+
+        if ((_activeMove is not null &&
+             string.Equals(_activeMove.NpcId, npc.Name, StringComparison.OrdinalIgnoreCase) &&
+             !_activeMove.IsTerminal) ||
+            HasQueuedMoveForNpc(npc.Name))
+        {
+            return IdleMicroInterrupted(envelope, npc.Name, kind, "move_started");
+        }
+
+        if (Game1.eventUp)
+            return IdleMicroBlocked(envelope, "event_active", "A Stardew event is active.");
+
+        if (Game1.activeClickableMenu is not null)
+            return IdleMicroBlocked(envelope, "menu_blocked", "A Stardew menu is already open.");
+
+        if (npc.currentLocation is null)
+            return IdleMicroBlocked(envelope, "current_location_missing", "NPC current location is missing.");
+
+        if (!IsNpcVisibleToPlayer(npc))
+            return IdleMicroSkipped(envelope, npc.Name, kind, "not_visible");
+
+        if (npc.isMoving())
+            return IdleMicroBlocked(envelope, "npc_busy", "NPC is currently moving.");
+
+        if (Game1.currentSpeaker is not null &&
+            string.Equals(Game1.currentSpeaker.Name, npc.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return IdleMicroBlocked(envelope, "dialogue_open", "NPC is currently in dialogue.");
+        }
+
+        if (string.Equals(kind, "idle_animation_once", StringComparison.OrdinalIgnoreCase) &&
+            !AllowedIdleAnimationAliases.Contains(envelope.Payload.AnimationAlias ?? string.Empty))
+        {
+            return IdleMicroBlocked(envelope, "animation_not_allowed", "animationAlias is not in the idle micro allowlist.");
+        }
+
+        ApplyIdleMicroActionPresentation(npc, envelope, kind);
+        _logger.Write("idle_micro_displayed", npc.Name, "idle_micro_action", envelope.TraceId, null, "completed", kind);
+        return IdleMicroDisplayed(envelope, npc.Name, kind);
     }
 
     public Task<BridgeResponse<OpenPrivateChatData>> OpenPrivateChatAsync(BridgeEnvelope<OpenPrivateChatPayload> envelope, CancellationToken ct)
@@ -948,6 +1052,74 @@ public sealed class BridgeCommandQueue
             _bubbleOverlay.ShowMoveThought(npc, command.Thought, command.CommandId);
     }
 
+    private void ApplyIdleMicroActionPresentation(NPC npc, BridgeEnvelope<IdleMicroActionPayload> envelope, string kind)
+    {
+        switch (kind.ToLowerInvariant())
+        {
+            case "look_left":
+                npc.faceDirection(3);
+                _bubbleOverlay.ShowIdleMicro(npc, "<", envelope.RequestId, "look");
+                break;
+            case "look_right":
+                npc.faceDirection(1);
+                _bubbleOverlay.ShowIdleMicro(npc, ">", envelope.RequestId, "look");
+                break;
+            case "look_up":
+                npc.faceDirection(0);
+                _bubbleOverlay.ShowIdleMicro(npc, "^", envelope.RequestId, "look");
+                break;
+            case "look_down":
+                npc.faceDirection(2);
+                _bubbleOverlay.ShowIdleMicro(npc, "v", envelope.RequestId, "look");
+                break;
+            case "look_around":
+                npc.faceDirection((npc.FacingDirection + 1) % 4);
+                _bubbleOverlay.ShowIdleMicro(npc, "...", envelope.RequestId, "look");
+                break;
+            case "emote_happy":
+                _bubbleOverlay.ShowIdleMicro(npc, ":)", envelope.RequestId, "emote");
+                break;
+            case "emote_question":
+                _bubbleOverlay.ShowIdleMicro(npc, "?", envelope.RequestId, "emote");
+                break;
+            case "emote_sleepy":
+                _bubbleOverlay.ShowIdleMicro(npc, "zZ", envelope.RequestId, "emote");
+                break;
+            case "emote_music":
+                _bubbleOverlay.ShowIdleMicro(npc, "~", envelope.RequestId, "emote");
+                break;
+            case "idle_animation_once":
+                _bubbleOverlay.ShowIdleMicro(npc, envelope.Payload.AnimationAlias ?? "*", envelope.RequestId, "idle_animation");
+                break;
+            case "tiny_hop":
+            case "tiny_shake":
+            case "idle_pose":
+            default:
+                _bubbleOverlay.ShowIdleMicro(npc, ".", envelope.RequestId, "fidget");
+                break;
+        }
+    }
+
+    private static bool IsNpcVisibleToPlayer(NPC npc)
+    {
+        if (Game1.player?.currentLocation is null ||
+            npc.currentLocation is null ||
+            !ReferenceEquals(Game1.player.currentLocation, npc.currentLocation))
+        {
+            return false;
+        }
+
+        var playerTile = Game1.player.TilePoint;
+        var npcTile = npc.TilePoint;
+        return Math.Abs(playerTile.X - npcTile.X) <= NearbyIdleMicroRange &&
+               Math.Abs(playerTile.Y - npcTile.Y) <= NearbyIdleMicroRange;
+    }
+
+    private bool HasQueuedMoveForNpc(string npcName)
+        => _pending.Any(command =>
+            string.Equals(command.NpcId, npcName, StringComparison.OrdinalIgnoreCase) &&
+            !command.IsTerminal);
+
     private static BridgeRouteProbeResult ProbeRoute(NPC npc, TileDto currentTile, GameLocation location, TileDto targetTile)
         => BridgeMovementPathProbe.Probe(
             currentTile,
@@ -1268,6 +1440,73 @@ public sealed class BridgeCommandQueue
             null,
             new { });
 
+    private BridgeResponse<IdleMicroActionData> IdleMicroDisplayed(
+        BridgeEnvelope<IdleMicroActionPayload> envelope,
+        string npcId,
+        string kind)
+        => new(
+            true,
+            envelope.TraceId,
+            envelope.RequestId,
+            null,
+            "completed",
+            new IdleMicroActionData(npcId, kind, "displayed"),
+            null,
+            new { result = "displayed" });
+
+    private BridgeResponse<IdleMicroActionData> IdleMicroSkipped(
+        BridgeEnvelope<IdleMicroActionPayload> envelope,
+        string npcId,
+        string kind,
+        string reasonCode)
+    {
+        _logger.Write("idle_micro_skipped", npcId, "idle_micro_action", envelope.TraceId, null, "completed", reasonCode);
+        return new BridgeResponse<IdleMicroActionData>(
+            true,
+            envelope.TraceId,
+            envelope.RequestId,
+            null,
+            "completed",
+            new IdleMicroActionData(npcId, kind, "skipped", reasonCode),
+            null,
+            new { result = "skipped", reasonCode });
+    }
+
+    private BridgeResponse<IdleMicroActionData> IdleMicroBlocked(
+        BridgeEnvelope<IdleMicroActionPayload> envelope,
+        string reasonCode,
+        string message)
+    {
+        _logger.Write("idle_micro_blocked", envelope.NpcId, "idle_micro_action", envelope.TraceId, null, "blocked", reasonCode);
+        return new BridgeResponse<IdleMicroActionData>(
+            false,
+            envelope.TraceId,
+            envelope.RequestId,
+            null,
+            "blocked",
+            new IdleMicroActionData(envelope.NpcId ?? string.Empty, envelope.Payload.Kind, "blocked", reasonCode),
+            new BridgeError(reasonCode, message, false),
+            new { result = "blocked", reasonCode });
+    }
+
+    private BridgeResponse<IdleMicroActionData> IdleMicroInterrupted(
+        BridgeEnvelope<IdleMicroActionPayload> envelope,
+        string npcId,
+        string kind,
+        string reasonCode)
+    {
+        _logger.Write("idle_micro_interrupted", npcId, "idle_micro_action", envelope.TraceId, null, "interrupted", reasonCode);
+        return new BridgeResponse<IdleMicroActionData>(
+            false,
+            envelope.TraceId,
+            envelope.RequestId,
+            null,
+            "interrupted",
+            new IdleMicroActionData(npcId, kind, "interrupted", reasonCode, Interrupted: true),
+            new BridgeError(reasonCode, reasonCode, true),
+            new { result = "interrupted", reasonCode });
+    }
+
     private static BridgeResponse<TData> Error<TData>(string traceId, string requestId, string code, string message, bool retryable)
         => new(false, traceId, requestId, null, "failed", default, new BridgeError(code, message, retryable), new { });
 
@@ -1317,6 +1556,35 @@ public sealed class BridgeCommandQueue
             {
                 _completion.TrySetException(ex);
                 return FailedUiStatus(_envelope.ToUntyped(), "speak", ex);
+            }
+        }
+    }
+
+    private sealed class BridgeIdleMicroActionUiCommand : IBridgeUiCommand
+    {
+        private readonly BridgeEnvelope<IdleMicroActionPayload> _envelope;
+        private readonly TaskCompletionSource<BridgeResponse<IdleMicroActionData>> _completion;
+
+        public BridgeIdleMicroActionUiCommand(
+            BridgeEnvelope<IdleMicroActionPayload> envelope,
+            TaskCompletionSource<BridgeResponse<IdleMicroActionData>> completion)
+        {
+            _envelope = envelope;
+            _completion = completion;
+        }
+
+        public TaskStatusData Execute(BridgeCommandQueue queue)
+        {
+            try
+            {
+                var response = queue.ExecuteIdleMicroAction(_envelope);
+                _completion.TrySetResult(response);
+                return ToUiStatus(_envelope.ToUntyped(), "idle_micro_action", response);
+            }
+            catch (Exception ex)
+            {
+                _completion.TrySetException(ex);
+                return FailedUiStatus(_envelope.ToUntyped(), "idle_micro_action", ex);
             }
         }
     }

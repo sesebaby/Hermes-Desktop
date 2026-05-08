@@ -454,6 +454,49 @@ public class StardewCommandServiceTests
     }
 
     [TestMethod]
+    public async Task SubmitAsync_IdleMicroAction_PostsTypedEnvelopeToActionIdleMicroActionRoute()
+    {
+        var client = new FakeSmapiClient();
+        client.IdleMicroActionResponse = new StardewBridgeResponse<StardewIdleMicroActionData>(
+            true,
+            "trace-idle",
+            "req-idle",
+            "cmd-idle-1",
+            StardewCommandStatuses.Completed,
+            new StardewIdleMicroActionData("haley", "look_around", "displayed", null, false),
+            null,
+            null);
+        var service = new StardewCommandService(client, "save-1");
+        var action = new GameAction(
+            "haley",
+            "stardew-valley",
+            GameActionType.IdleMicroAction,
+            "trace-idle",
+            "idem-idle",
+            new GameActionTarget("self"),
+            "thinking about the next errand",
+            Payload: new JsonObject
+            {
+                ["kind"] = "look_around",
+                ["intensity"] = "light",
+                ["ttlSeconds"] = 4
+            });
+
+        var result = await service.SubmitAsync(action, CancellationToken.None);
+
+        Assert.IsTrue(result.Accepted);
+        Assert.AreEqual(StardewBridgeRoutes.ActionIdleMicroAction, client.LastRoute);
+        Assert.IsInstanceOfType(client.LastEnvelope, typeof(StardewBridgeEnvelope<StardewIdleMicroActionRequest>));
+        var envelope = (StardewBridgeEnvelope<StardewIdleMicroActionRequest>)client.LastEnvelope!;
+        Assert.AreEqual("haley", envelope.NpcId);
+        Assert.AreEqual("look_around", envelope.Payload.Kind);
+        Assert.AreEqual("light", envelope.Payload.Intensity);
+        Assert.AreEqual(4, envelope.Payload.TtlSeconds);
+        Assert.AreEqual("thinking about the next errand", envelope.Payload.Reason);
+        Assert.AreEqual(StardewCommandStatuses.Completed, result.Status);
+    }
+
+    [TestMethod]
     public async Task SubmitAsync_Speak_PassesPrivateChatSourceToBridge()
     {
         var client = new FakeSmapiClient();
@@ -764,6 +807,7 @@ public class StardewCommandServiceTests
         public StardewBridgeResponse<StardewTaskStatusData>? StatusResponse { get; set; }
         public StardewBridgeResponse<StardewTaskStatusData>? LookupResponse { get; set; }
         public StardewBridgeResponse<StardewSpeakData>? SpeakResponse { get; set; }
+        public StardewBridgeResponse<StardewIdleMicroActionData>? IdleMicroActionResponse { get; set; }
         public StardewBridgeResponse<StardewOpenPrivateChatData>? OpenPrivateChatResponse { get; set; }
         public StardewBridgeResponse<StardewDebugRepositionData>? DebugRepositionResponse { get; set; }
 
@@ -782,6 +826,7 @@ public class StardewCommandServiceTests
                 StardewBridgeRoutes.TaskLookup => LookupResponse ?? throw new InvalidOperationException("No lookup response configured."),
                 StardewBridgeRoutes.TaskCancel => StatusResponse ?? throw new InvalidOperationException("No cancel response configured."),
                 StardewBridgeRoutes.ActionSpeak => SpeakResponse ?? throw new InvalidOperationException("No speak response configured."),
+                StardewBridgeRoutes.ActionIdleMicroAction => IdleMicroActionResponse ?? throw new InvalidOperationException("No idle micro action response configured."),
                 StardewBridgeRoutes.ActionOpenPrivateChat => OpenPrivateChatResponse ?? throw new InvalidOperationException("No open private chat response configured."),
                 StardewBridgeRoutes.DebugNpcReposition => DebugRepositionResponse ?? throw new InvalidOperationException("No debug reposition response configured."),
                 _ => throw new InvalidOperationException($"Unexpected route {route}.")

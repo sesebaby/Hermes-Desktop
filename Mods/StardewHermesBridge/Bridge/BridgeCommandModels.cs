@@ -70,6 +70,20 @@ public sealed record SpeakPayload(string Text, string? Channel, string? Conversa
 
 public sealed record SpeakData(string NpcId, string Text, string Channel, bool Displayed);
 
+public sealed record IdleMicroActionPayload(
+    string Kind,
+    string? Reason = null,
+    string? AnimationAlias = null,
+    string? Intensity = null,
+    int? TtlSeconds = null);
+
+public sealed record IdleMicroActionData(
+    string NpcId,
+    string Kind,
+    string Result,
+    string? ReasonCode = null,
+    bool Interrupted = false);
+
 public sealed record OpenPrivateChatPayload(string? Prompt, string? ConversationId);
 
 public sealed record OpenPrivateChatData(string NpcId, bool Opened, string? ThreadId = null, string? OpenState = null);

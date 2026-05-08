@@ -14,6 +14,7 @@ public static class StardewNpcToolFactory
         "stardew_status",
         "stardew_move",
         "stardew_navigate_to_tile",
+        "stardew_idle_micro_action",
         "stardew_task_status"
     };
 
@@ -79,6 +80,7 @@ public static class StardewNpcToolFactory
             new StardewStatusTool(adapter.Queries, descriptor),
             new StardewMoveTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
             new StardewNavigateToTileTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
+            new StardewIdleMicroActionTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewTaskStatusTool(adapter.Commands)
         ];
     }
@@ -89,6 +91,7 @@ public static class StardewNpcToolFactory
                 new ToolFingerprintProbe("stardew_status"),
                 new ToolFingerprintProbe("stardew_move"),
                 new ToolFingerprintProbe("stardew_navigate_to_tile"),
+                new ToolFingerprintProbe("stardew_idle_micro_action"),
                 new ToolFingerprintProbe("stardew_task_status")
             ])
             .Fingerprint;
@@ -643,6 +646,74 @@ public sealed class StardewSpeakTool : ITool, IToolSchemaProvider
     }
 }
 
+public sealed class StardewIdleMicroActionTool : ITool, IToolSchemaProvider
+{
+    private readonly IGameCommandService _commands;
+    private readonly NpcRuntimeDescriptor _descriptor;
+    private readonly Func<string> _traceIdFactory;
+    private readonly Func<string> _idempotencyKeyFactory;
+    private readonly StardewRuntimeActionController _runtimeActions;
+
+    internal StardewIdleMicroActionTool(
+        IGameCommandService commands,
+        NpcRuntimeDescriptor descriptor,
+        Func<string> traceIdFactory,
+        Func<string> idempotencyKeyFactory,
+        StardewRuntimeActionController runtimeActions)
+    {
+        _commands = commands;
+        _descriptor = descriptor;
+        _traceIdFactory = traceIdFactory;
+        _idempotencyKeyFactory = idempotencyKeyFactory;
+        _runtimeActions = runtimeActions;
+    }
+
+    public string Name => "stardew_idle_micro_action";
+
+    public string Description => "Executor-only idle micro action tool. Choose only from the approved idle micro action contract already selected by the parent autonomy lane.";
+
+    public Type ParametersType => typeof(StardewIdleMicroActionToolParameters);
+
+    public JsonElement GetParameterSchema() => StardewNpcToolSchemas.IdleMicroAction();
+
+    public async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+    {
+        var p = (StardewIdleMicroActionToolParameters)parameters;
+        if (string.IsNullOrWhiteSpace(p.Kind))
+            return ToolResult.Fail("kind is required.");
+
+        var payload = new JsonObject
+        {
+            ["kind"] = p.Kind
+        };
+        if (!string.IsNullOrWhiteSpace(p.AnimationAlias))
+            payload["animationAlias"] = p.AnimationAlias;
+        if (!string.IsNullOrWhiteSpace(p.Intensity))
+            payload["intensity"] = p.Intensity;
+        if (p.TtlSeconds is not null)
+            payload["ttlSeconds"] = p.TtlSeconds.Value;
+
+        var action = new GameAction(
+            _descriptor.NpcId,
+            _descriptor.GameId,
+            GameActionType.IdleMicroAction,
+            _traceIdFactory(),
+            _idempotencyKeyFactory(),
+            new GameActionTarget("self"),
+            "idle_micro_action",
+            payload,
+            BodyBinding: _descriptor.EffectiveBodyBinding);
+
+        var preparedAction = await _runtimeActions.TryBeginAsync(action, ct);
+        if (preparedAction?.BlockedResult is not null)
+            return ToolResult.Ok(StardewNpcToolJson.Serialize(preparedAction.BlockedResult));
+
+        var commandResult = await _commands.SubmitAsync(action, ct);
+        await _runtimeActions.RecordSubmitResultAsync(preparedAction, commandResult, ct);
+        return ToolResult.Ok(StardewNpcToolJson.Serialize(commandResult));
+    }
+}
+
 public sealed class StardewTaskStatusTool : ITool, IToolSchemaProvider
 {
     private readonly IGameCommandService _commands;
@@ -985,6 +1056,7 @@ internal sealed class StardewRuntimeActionController
         {
             GameActionType.Move => "move",
             GameActionType.Speak => "speak",
+            GameActionType.IdleMicroAction => "idle_micro_action",
             GameActionType.OpenPrivateChat => "open_private_chat",
             _ => "action"
         };
@@ -1060,6 +1132,17 @@ public sealed class StardewTaskStatusToolParameters
     public required string CommandId { get; init; }
 }
 
+public sealed class StardewIdleMicroActionToolParameters
+{
+    public required string Kind { get; init; }
+
+    public string? AnimationAlias { get; init; }
+
+    public string? Intensity { get; init; }
+
+    public int? TtlSeconds { get; init; }
+}
+
 public sealed class StardewOpenPrivateChatToolParameters
 {
     public string? Prompt { get; init; }
@@ -1130,6 +1213,17 @@ internal static class StardewNpcToolSchemas
                 ["channel"] = new { type = "string", description = "Delivery channel; defaults to player." }
             },
             ["text"]);
+
+    public static JsonElement IdleMicroAction()
+        => Schema(
+            new Dictionary<string, object>
+            {
+                ["kind"] = new { type = "string", description = "Approved idle micro action kind selected from the fixed whitelist." },
+                ["animationAlias"] = new { type = "string", description = "Optional allowlisted animation alias when kind is idle_animation_once." },
+                ["intensity"] = new { type = "string", description = "Optional light intensity label from the parent intent." },
+                ["ttlSeconds"] = new { type = "integer", description = "Optional TTL for the idle micro action." }
+            },
+            ["kind"]);
 
     public static JsonElement TaskStatus()
         => Schema(

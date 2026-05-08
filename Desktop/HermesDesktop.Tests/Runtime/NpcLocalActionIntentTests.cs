@@ -138,6 +138,32 @@ public sealed class NpcLocalActionIntentTests
         Assert.IsTrue(intent.Escalate);
     }
 
+    [TestMethod]
+    public void TryParse_WhenIdleMicroActionUsesWhitelistedFields_AcceptsContract()
+    {
+        var ok = NpcLocalActionIntent.TryParse(
+            """
+            {
+              "action": "idle_micro_action",
+              "reason": "thinking about the next errand",
+              "idleMicroAction": {
+                "kind": "look_around",
+                "intensity": "light",
+                "ttlSeconds": 4
+              }
+            }
+            """,
+            out var intent,
+            out var error);
+
+        Assert.IsTrue(ok, error);
+        Assert.IsNotNull(intent);
+        Assert.AreEqual("thinking about the next errand", intent.Reason);
+        Assert.AreEqual("look_around", intent.IdleMicroAction?.Kind);
+        Assert.AreEqual("light", intent.IdleMicroAction?.Intensity);
+        Assert.AreEqual(4, intent.IdleMicroAction?.TtlSeconds);
+    }
+
     [DataTestMethod]
     [DataRow("not json", "intent_contract_invalid")]
     [DataRow("""{"action":"move","reason":"go"}""", "move_target_required")]
@@ -148,6 +174,11 @@ public sealed class NpcLocalActionIntentTests
     [DataRow("""{"action":"gift","reason":"give flowers"}""", "action_not_allowed")]
     [DataRow("""{"action":"wait","reason":"wait","speech":{"shouldSpeak":true}}""", "speech_text_required")]
     [DataRow("""{"action":"wait","reason":"wait","taskUpdate":{"taskId":"1","status":"done"}}""", "task_update_status_not_allowed")]
+    [DataRow("""{"action":"idle_micro_action","reason":"idle","speech":{"shouldSpeak":true,"text":"hi"}}""", "idle_micro_action_forbidden_field")]
+    [DataRow("""{"action":"idle_micro_action","reason":"idle","destinationId":"town.square","idleMicroAction":{"kind":"look_around"}}""", "idle_micro_action_forbidden_field")]
+    [DataRow("""{"action":"idle_micro_action","reason":"idle","target":{"locationName":"Town","x":1,"y":2,"source":"map"},"idleMicroAction":{"kind":"look_around"}}""", "idle_micro_action_forbidden_field")]
+    [DataRow("""{"action":"idle_micro_action","reason":"idle","idleMicroAction":{"kind":"raw_animation","rawAnimationId":"abc"}}""", "idle_micro_action_forbidden_field")]
+    [DataRow("""{"action":"idle_micro_action","reason":"idle","idleMicroAction":{"kind":"dance_break"}}""", "idle_micro_action_kind_not_allowed")]
     public void TryParse_WhenContractIsInvalid_RejectsWithMachineReadableError(string contract, string expectedError)
     {
         var ok = NpcLocalActionIntent.TryParse(contract, out var intent, out var error);

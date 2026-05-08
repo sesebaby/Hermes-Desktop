@@ -11,6 +11,10 @@ using StardewValley.Menus;
 public sealed class NpcOverheadBubbleOverlay
 {
     private static readonly TimeSpan BubbleLifetime = TimeSpan.FromSeconds(5);
+    private const string PlayerDialogueChannel = "player_dialogue";
+    private const string PrivateChatChannel = "private_chat";
+    private const string MoveThoughtChannel = "move_thought";
+    private const string IdleMicroChannel = "idle_micro";
 
     private readonly BridgeEventBuffer _events;
     private readonly SmapiBridgeLogger _logger;
@@ -24,14 +28,18 @@ public sealed class NpcOverheadBubbleOverlay
 
     public void Show(NPC npc, string text, string? conversationId, bool privateChat)
     {
-        _bubbles[npc.Name] = new BubbleEntry(npc.Name, text, conversationId, privateChat, DateTime.UtcNow.Add(BubbleLifetime));
-        _logger.Write("message_bubble_displayed", npc.Name, privateChat ? "private_chat" : "speak", "bubble", null, "displayed", conversationId);
+        var channel = privateChat ? PrivateChatChannel : PlayerDialogueChannel;
+        ShowCore(npc, text, conversationId, channel, "text");
     }
 
     public void ShowMoveThought(NPC npc, string text, string? commandId)
     {
-        _bubbles[npc.Name] = new BubbleEntry(npc.Name, text, commandId, PrivateChat: false, DateTime.UtcNow.Add(BubbleLifetime));
-        _logger.Write("message_bubble_displayed", npc.Name, "move_thought", "bubble", commandId, "displayed", null);
+        ShowCore(npc, text, commandId, MoveThoughtChannel, "text");
+    }
+
+    public void ShowIdleMicro(NPC npc, string text, string? commandId, string kind)
+    {
+        ShowCore(npc, text, commandId, IdleMicroChannel, kind);
     }
 
     public void Draw(SpriteBatch spriteBatch)
@@ -42,7 +50,8 @@ public sealed class NpcOverheadBubbleOverlay
             if (now > entry.ExpiresAtUtc)
             {
                 _bubbles.Remove(entry.NpcName);
-                if (entry.PrivateChat && !string.IsNullOrWhiteSpace(entry.ConversationId))
+                if (string.Equals(entry.Channel, PrivateChatChannel, StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(entry.ConversationId))
                 {
                     _events.Record(
                         "private_chat_reply_closed",
@@ -82,10 +91,23 @@ public sealed class NpcOverheadBubbleOverlay
         spriteBatch.DrawString(Game1.smallFont, text, position + new Vector2(14, 12), Color.Black);
     }
 
+    private void ShowCore(NPC npc, string text, string? correlationId, string channel, string kind)
+    {
+        _bubbles[npc.Name] = new BubbleEntry(
+            npc.Name,
+            text,
+            correlationId,
+            channel,
+            kind,
+            DateTime.UtcNow.Add(BubbleLifetime));
+        _logger.Write("message_bubble_displayed", npc.Name, channel, "bubble", correlationId, "displayed", kind);
+    }
+
     private sealed record BubbleEntry(
         string NpcName,
         string Text,
         string? ConversationId,
-        bool PrivateChat,
+        string Channel,
+        string Kind,
         DateTime ExpiresAtUtc);
 }

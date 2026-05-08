@@ -131,6 +131,9 @@ public sealed class BridgeHttpHost
                 case "/action/speak":
                     await HandleSpeakAsync(context, ct);
                     return;
+                case "/action/idle_micro_action":
+                    await HandleIdleMicroActionAsync(context, ct);
+                    return;
                 case "/action/open_private_chat":
                     await HandleOpenPrivateChatAsync(context, ct);
                     return;
@@ -205,6 +208,13 @@ public sealed class BridgeHttpHost
     {
         var envelope = await ReadJsonAsync<BridgeEnvelope<SpeakPayload>>(context.Request, ct);
         var response = await _commands.SpeakAsync(envelope, ct);
+        await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
+    }
+
+    private async Task HandleIdleMicroActionAsync(HttpListenerContext context, CancellationToken ct)
+    {
+        var envelope = await ReadJsonAsync<BridgeEnvelope<IdleMicroActionPayload>>(context.Request, ct);
+        var response = await _commands.IdleMicroActionAsync(envelope, ct);
         await WriteJsonAsync(context.Response, HttpStatusCode.OK, response, ct);
     }
 

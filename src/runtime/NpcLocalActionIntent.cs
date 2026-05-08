@@ -8,7 +8,8 @@ public enum NpcLocalActionKind
     Observe,
     Wait,
     TaskStatus,
-    Escalate
+    Escalate,
+    IdleMicroAction
 }
 
 public sealed record NpcLocalActionIntent(
@@ -21,7 +22,8 @@ public sealed record NpcLocalActionIntent(
     NpcLocalSpeechIntent? Speech = null,
     NpcLocalTaskUpdateIntent? TaskUpdate = null,
     NpcLocalMoveTargetIntent? Target = null,
-    bool Escalate = false)
+    bool Escalate = false,
+    NpcLocalIdleMicroActionIntent? IdleMicroAction = null)
 {
     private static readonly HashSet<string> AllowedActions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -29,7 +31,25 @@ public sealed record NpcLocalActionIntent(
         "observe",
         "wait",
         "task_status",
-        "escalate"
+        "escalate",
+        "idle_micro_action"
+    };
+
+    private static readonly HashSet<string> AllowedIdleMicroActionKinds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "emote_happy",
+        "emote_question",
+        "emote_sleepy",
+        "emote_music",
+        "look_left",
+        "look_right",
+        "look_up",
+        "look_down",
+        "look_around",
+        "tiny_hop",
+        "tiny_shake",
+        "idle_pose",
+        "idle_animation_once"
     };
 
     private static readonly HashSet<string> AllowedTaskStatuses = new(StringComparer.OrdinalIgnoreCase)
@@ -89,6 +109,13 @@ public sealed record NpcLocalActionIntent(
             return false;
         }
 
+        if (action is NpcLocalActionKind.IdleMicroAction &&
+            HasIdleMicroActionForbiddenField(root))
+        {
+            error = "idle_micro_action_forbidden_field";
+            return false;
+        }
+
         var destinationId = ReadString(root, "destinationId");
         if (!TryReadMoveTarget(root, out var target, out error))
             return false;
@@ -114,6 +141,9 @@ public sealed record NpcLocalActionIntent(
         if (!TryReadTaskUpdate(root, out var taskUpdate, out error))
             return false;
 
+        if (!TryReadIdleMicroAction(root, action, out var idleMicroAction, out error))
+            return false;
+
         intent = new NpcLocalActionIntent(
             action,
             ReadString(root, "reason") ?? "",
@@ -124,8 +154,83 @@ public sealed record NpcLocalActionIntent(
             speech,
             taskUpdate,
             target,
-            escalate);
+            escalate,
+            idleMicroAction);
         return true;
+    }
+
+    private static bool TryReadIdleMicroAction(
+        JsonElement root,
+        NpcLocalActionKind action,
+        out NpcLocalIdleMicroActionIntent? idleMicroAction,
+        out string error)
+    {
+        idleMicroAction = null;
+        error = "";
+        if (action is not NpcLocalActionKind.IdleMicroAction)
+            return true;
+
+        if (!root.TryGetProperty("idleMicroAction", out var element) ||
+            element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            error = "idle_micro_action_required";
+            return false;
+        }
+
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            error = "idle_micro_action_contract_invalid";
+            return false;
+        }
+
+        var kind = ReadString(element, "kind");
+        if (string.IsNullOrWhiteSpace(kind) || !AllowedIdleMicroActionKinds.Contains(kind))
+        {
+            error = "idle_micro_action_kind_not_allowed";
+            return false;
+        }
+
+        if (!TryReadOptionalInt(element, "ttlSeconds", out var ttlSeconds))
+        {
+            error = "idle_micro_action_ttl_invalid";
+            return false;
+        }
+
+        idleMicroAction = new NpcLocalIdleMicroActionIntent(
+            kind.Trim(),
+            ReadString(element, "animationAlias"),
+            ReadString(element, "intensity"),
+            ttlSeconds);
+        return true;
+    }
+
+    private static bool HasIdleMicroActionForbiddenField(JsonElement root)
+    {
+        string[] forbiddenRootFields = ["speech", "destinationId", "target", "text", "message", "dialogue", "locationName", "x", "y"];
+        foreach (var field in forbiddenRootFields)
+        {
+            if (root.TryGetProperty(field, out var value) &&
+                value.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+            {
+                return true;
+            }
+        }
+
+        if (root.TryGetProperty("idleMicroAction", out var idleMicroAction) &&
+            idleMicroAction.ValueKind == JsonValueKind.Object)
+        {
+            string[] forbiddenIdleFields = ["frame", "frameIndex", "rawAnimationId"];
+            foreach (var field in forbiddenIdleFields)
+            {
+                if (idleMicroAction.TryGetProperty(field, out var value) &&
+                    value.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static bool TryReadMoveTarget(JsonElement root, out NpcLocalMoveTargetIntent? target, out string error)
@@ -276,6 +381,9 @@ public sealed record NpcLocalActionIntent(
             case "escalate":
                 action = NpcLocalActionKind.Escalate;
                 return true;
+            case "idle_micro_action":
+                action = NpcLocalActionKind.IdleMicroAction;
+                return true;
             default:
                 action = default;
                 return false;
@@ -293,6 +401,22 @@ public sealed record NpcLocalActionIntent(
         return element.TryGetProperty(propertyName, out var property) &&
                property.ValueKind == JsonValueKind.Number &&
                property.TryGetInt32(out value);
+    }
+
+    private static bool TryReadOptionalInt(JsonElement element, string propertyName, out int? value)
+    {
+        value = null;
+        if (!element.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return true;
+        }
+
+        if (property.ValueKind != JsonValueKind.Number || !property.TryGetInt32(out var parsed))
+            return false;
+
+        value = parsed;
+        return true;
     }
 
     private static bool ReadBool(JsonElement element, string propertyName)
@@ -316,3 +440,9 @@ public sealed record NpcLocalMoveTargetIntent(
     int Y,
     string Source,
     int? FacingDirection = null);
+
+public sealed record NpcLocalIdleMicroActionIntent(
+    string Kind,
+    string? AnimationAlias,
+    string? Intensity,
+    int? TtlSeconds);
