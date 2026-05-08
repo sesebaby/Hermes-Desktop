@@ -12,6 +12,57 @@ namespace HermesDesktop.Tests.Stardew;
 public class StardewNpcToolFactoryTests
 {
     [TestMethod]
+    public void StardewNpcToolSurfacePolicy_DefaultParentSurfaceMatchesCurrentTools()
+    {
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"));
+
+        CollectionAssert.AreEqual(
+            StardewNpcToolSurfacePolicy.Default.ParentToolNames.ToArray(),
+            tools.Select(tool => tool.Name).ToArray());
+    }
+
+    [TestMethod]
+    public void StardewNpcToolSurfacePolicy_DefaultLocalExecutorSurfaceMatchesCurrentTools()
+    {
+        var tools = StardewNpcToolFactory.CreateLocalExecutorTools(
+            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"));
+
+        CollectionAssert.AreEqual(
+            StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(),
+            tools.Select(tool => tool.Name).ToArray());
+        CollectionAssert.Contains(StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(), "stardew_navigate_to_tile");
+        CollectionAssert.Contains(StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(), "stardew_idle_micro_action");
+        CollectionAssert.DoesNotContain(StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(), "stardew_speak");
+        CollectionAssert.DoesNotContain(StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(), "stardew_open_private_chat");
+    }
+
+    [TestMethod]
+    public void StardewNpcToolSurfacePolicy_OverrideControlsExecutorSurface()
+    {
+        var policy = StardewNpcToolSurfacePolicy.Create(
+            parentToolNames: ["stardew_status"],
+            localExecutorToolNames: ["stardew_status", "stardew_task_status"]);
+
+        var parentTools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"),
+            toolSurfacePolicy: policy);
+        var executorTools = StardewNpcToolFactory.CreateLocalExecutorTools(
+            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"),
+            toolSurfacePolicy: policy);
+
+        CollectionAssert.AreEqual(new[] { "stardew_status" }, parentTools.Select(tool => tool.Name).ToArray());
+        CollectionAssert.AreEqual(new[] { "stardew_status", "stardew_task_status" }, executorTools.Select(tool => tool.Name).ToArray());
+        Assert.AreNotEqual(
+            StardewNpcToolFactory.LocalExecutorToolFingerprint(),
+            StardewNpcToolFactory.LocalExecutorToolFingerprint(policy));
+    }
+
+    [TestMethod]
     public void CreateDefault_ReturnsOnlyNpcSafeStardewTools()
     {
         var tools = StardewNpcToolFactory.CreateDefault(

@@ -168,7 +168,11 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 IncludeUser: true,
                 MaxToolIterations: 2,
                 AdapterFactory: () => adapter,
-                GameToolFactory: gameAdapter => [new DiscoveredNoopTool("stardew_status")],
+                GameToolFactory: gameAdapter =>
+                [
+                    new DiscoveredNoopTool("stardew_status"),
+                    new DiscoveredNoopTool("stardew_navigate_to_tile")
+                ],
                 Services: new NpcRuntimeCompositionServices(
                     chatClient,
                     NullLoggerFactory.Instance,
@@ -177,7 +181,12 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 ToolSurface: NpcToolSurface.FromTools([])),
             CancellationToken.None);
 
+        Assert.AreEqual(0, handle.AgentHandle.Agent.Tools.Count);
         Assert.IsFalse(handle.AgentHandle.Agent.Tools.ContainsKey("agent"));
+        Assert.IsFalse(handle.AgentHandle.Agent.Tools.ContainsKey("todo"));
+        Assert.IsFalse(handle.AgentHandle.Agent.Tools.ContainsKey("memory"));
+        Assert.IsFalse(handle.AgentHandle.Agent.Tools.ContainsKey("stardew_status"));
+        Assert.IsFalse(handle.AgentHandle.Agent.Tools.ContainsKey("stardew_navigate_to_tile"));
     }
 
     [TestMethod]

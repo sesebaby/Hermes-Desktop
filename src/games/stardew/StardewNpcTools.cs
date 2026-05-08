@@ -9,15 +9,6 @@ using Microsoft.Extensions.Logging;
 
 public static class StardewNpcToolFactory
 {
-    private static readonly HashSet<string> LocalExecutorToolNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "stardew_status",
-        "stardew_move",
-        "stardew_navigate_to_tile",
-        "stardew_idle_micro_action",
-        "stardew_task_status"
-    };
-
     public static IReadOnlyList<ITool> CreateDefault(
         IGameAdapter adapter,
         NpcRuntimeDescriptor descriptor,
@@ -29,7 +20,8 @@ public static class StardewNpcToolFactory
         IStardewRecentActivityProvider? recentActivityProvider = null,
         ILogger? logger = null,
         Func<DateTime>? nowUtc = null,
-        TimeSpan? actionTimeout = null)
+        TimeSpan? actionTimeout = null,
+        StardewNpcToolSurfacePolicy? toolSurfacePolicy = null)
     {
         traceIdFactory ??= () => $"trace_{descriptor.NpcId}_{Guid.NewGuid():N}";
         idempotencyKeyFactory ??= () => $"idem_{descriptor.NpcId}_{Guid.NewGuid():N}";
@@ -39,7 +31,7 @@ public static class StardewNpcToolFactory
             nowUtc,
             actionTimeout);
 
-        return
+        return (toolSurfacePolicy ?? StardewNpcToolSurfacePolicy.Default).ApplyToParent(
         [
             new StardewStatusTool(adapter.Queries, descriptor),
             new StardewPlayerStatusTool(adapter.Queries, descriptor),
@@ -52,7 +44,7 @@ public static class StardewNpcToolFactory
             new StardewSpeakTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewOpenPrivateChatTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewTaskStatusTool(adapter.Commands)
-        ];
+        ]);
     }
 
     public static IReadOnlyList<ITool> CreateLocalExecutorTools(
@@ -65,7 +57,8 @@ public static class StardewNpcToolFactory
         WorldCoordinationService? worldCoordination = null,
         ILogger? logger = null,
         Func<DateTime>? nowUtc = null,
-        TimeSpan? actionTimeout = null)
+        TimeSpan? actionTimeout = null,
+        StardewNpcToolSurfacePolicy? toolSurfacePolicy = null)
     {
         traceIdFactory ??= () => $"trace_{descriptor.NpcId}_{Guid.NewGuid():N}";
         idempotencyKeyFactory ??= () => $"idem_{descriptor.NpcId}_{Guid.NewGuid():N}";
@@ -75,29 +68,22 @@ public static class StardewNpcToolFactory
             nowUtc,
             actionTimeout);
 
-        return
+        return (toolSurfacePolicy ?? StardewNpcToolSurfacePolicy.Default).ApplyToLocalExecutor(
         [
             new StardewStatusTool(adapter.Queries, descriptor),
             new StardewMoveTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
             new StardewNavigateToTileTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
             new StardewIdleMicroActionTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewTaskStatusTool(adapter.Commands)
-        ];
+        ]);
     }
 
-    public static string LocalExecutorToolFingerprint()
+    public static string LocalExecutorToolFingerprint(StardewNpcToolSurfacePolicy? toolSurfacePolicy = null)
         => NpcToolSurface.FromTools(
-            [
-                new ToolFingerprintProbe("stardew_status"),
-                new ToolFingerprintProbe("stardew_move"),
-                new ToolFingerprintProbe("stardew_navigate_to_tile"),
-                new ToolFingerprintProbe("stardew_idle_micro_action"),
-                new ToolFingerprintProbe("stardew_task_status")
-            ])
+                (toolSurfacePolicy ?? StardewNpcToolSurfacePolicy.Default)
+                .ValidatedLocalExecutorToolNames()
+                .Select(name => new ToolFingerprintProbe(name)))
             .Fingerprint;
-
-    private static bool IsLocalExecutorTool(ITool tool)
-        => LocalExecutorToolNames.Contains(tool.Name);
 
     private sealed class ToolFingerprintProbe(string name) : ITool
     {
@@ -111,6 +97,91 @@ public static class StardewNpcToolFactory
     private sealed class NoopParameters
     {
     }
+}
+
+public sealed record StardewNpcToolSurfacePolicy(
+    IReadOnlyList<string> ParentToolNames,
+    IReadOnlyList<string> LocalExecutorToolNames)
+{
+    private static readonly string[] ParentCatalog =
+    [
+        "stardew_status",
+        "stardew_player_status",
+        "stardew_progress_status",
+        "stardew_social_status",
+        "stardew_quest_status",
+        "stardew_farm_status",
+        "stardew_recent_activity",
+        "stardew_move",
+        "stardew_speak",
+        "stardew_open_private_chat",
+        "stardew_task_status"
+    ];
+
+    private static readonly string[] LocalExecutorCatalog =
+    [
+        "stardew_status",
+        "stardew_move",
+        "stardew_navigate_to_tile",
+        "stardew_idle_micro_action",
+        "stardew_task_status"
+    ];
+
+    public static StardewNpcToolSurfacePolicy Default { get; } = new(
+        ParentCatalog,
+        LocalExecutorCatalog);
+
+    public static StardewNpcToolSurfacePolicy Create(
+        IEnumerable<string>? parentToolNames = null,
+        IEnumerable<string>? localExecutorToolNames = null)
+        => new(
+            Normalize(parentToolNames ?? ParentCatalog),
+            Normalize(localExecutorToolNames ?? LocalExecutorCatalog));
+
+    public IReadOnlyList<ITool> ApplyToParent(IEnumerable<ITool> tools)
+        => Apply("parent", tools, ParentToolNames, ParentCatalog);
+
+    public IReadOnlyList<ITool> ApplyToLocalExecutor(IEnumerable<ITool> tools)
+        => Apply("local executor", tools, LocalExecutorToolNames, LocalExecutorCatalog);
+
+    public IReadOnlyList<string> ValidatedLocalExecutorToolNames()
+    {
+        ValidateKnown("local executor", LocalExecutorToolNames, LocalExecutorCatalog);
+        return LocalExecutorToolNames;
+    }
+
+    private static IReadOnlyList<ITool> Apply(
+        string surfaceName,
+        IEnumerable<ITool> tools,
+        IReadOnlyList<string> allowedToolNames,
+        IReadOnlyCollection<string> knownToolNames)
+    {
+        var toolList = tools.ToArray();
+        ValidateKnown(surfaceName, allowedToolNames, knownToolNames);
+        var allowed = new HashSet<string>(allowedToolNames, StringComparer.OrdinalIgnoreCase);
+        return toolList.Where(tool => allowed.Contains(tool.Name)).ToArray();
+    }
+
+    private static void ValidateKnown(
+        string surfaceName,
+        IReadOnlyList<string> allowedToolNames,
+        IReadOnlyCollection<string> knownToolNames)
+    {
+        var known = new HashSet<string>(knownToolNames, StringComparer.OrdinalIgnoreCase);
+        var unknown = allowedToolNames
+            .Where(name => !known.Contains(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (unknown.Length > 0)
+            throw new ArgumentException($"Unknown Stardew {surfaceName} tool(s): {string.Join(", ", unknown)}.");
+    }
+
+    private static IReadOnlyList<string> Normalize(IEnumerable<string> toolNames)
+        => toolNames
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 }
 
 public interface IStardewRecentActivityProvider
