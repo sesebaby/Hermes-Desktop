@@ -124,7 +124,8 @@ public sealed class StardewAutonomyTickDebugServiceTests
             message.Contains("### stardew-navigation", StringComparison.Ordinal) &&
             message.Contains("### stardew-task-continuity", StringComparison.Ordinal) &&
             message.Contains("### stardew-world", StringComparison.Ordinal) &&
-            message.Contains("skill_view(name=\"stardew-world\", file_path=\"references/stardew-places.md\")", StringComparison.Ordinal) &&
+            message.Contains("stardew-world fixture compact contract", StringComparison.Ordinal) &&
+            !message.Contains("skill_view(name=\"stardew-world\", file_path=\"references/stardew-places.md\")", StringComparison.Ordinal) &&
             !message.Contains("## Skills (mandatory)", StringComparison.Ordinal) &&
             !message.Contains("full stardew places encyclopedia fixture", StringComparison.Ordinal)));
         Assert.IsTrue(chatClient.SystemMessages.Any(message =>
@@ -150,7 +151,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithRepositoryGamingSkillRootInjectsWorldAndNavigationOwnerGuidance()
+    public async Task RunOneTickAsync_WithRepositoryGamingSkillRoot_UsesSkillOwnedCompactContract()
     {
         var repositoryGamingRoot = FindRepositoryPath("skills", "gaming");
         var chatClient = new ToolSnapshotChatClient("I will observe before moving.");
@@ -191,9 +192,11 @@ public sealed class StardewAutonomyTickDebugServiceTests
         var systemPrompt = chatClient.SystemMessages.First(message =>
             message.Contains("## Stardew Runtime Contract", StringComparison.Ordinal));
         StringAssert.Contains(systemPrompt, "### stardew-world");
+        StringAssert.Contains(systemPrompt, "compact-contract-owner: stardew-world");
         StringAssert.Contains(systemPrompt, "destination[n]");
         StringAssert.Contains(systemPrompt, "skill_view(name=\"stardew-world\", file_path=\"references/stardew-places.md\")");
         StringAssert.Contains(systemPrompt, "### stardew-navigation");
+        StringAssert.Contains(systemPrompt, "compact-contract-owner: stardew-navigation");
         StringAssert.Contains(systemPrompt, "`stardew_move(destination, reason)`");
         StringAssert.Contains(systemPrompt, "destination=<destinationId 精确值>");
         StringAssert.Contains(systemPrompt, "target(locationName,x,y,source)");
@@ -207,6 +210,51 @@ public sealed class StardewAutonomyTickDebugServiceTests
         Assert.IsFalse(
             systemPrompt.Contains("stardew-world test guidance", StringComparison.Ordinal),
             "Repo-backed prompt supplement coverage must use the real skills/gaming root, not fixture-only text.");
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithRepositoryGamingSkillRoot_DoesNotUseHostNeedleSelection()
+    {
+        var repositoryGamingRoot = FindRepositoryPath("skills", "gaming");
+        var chatClient = new ToolSnapshotChatClient("I will pick a grounded next action.");
+        var service = new StardewAutonomyTickDebugService(
+            new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+                new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+                DateTimeOffset.UtcNow,
+                1234,
+                "save-42")),
+            _ => new FakeGameAdapter(
+                new FakeCommandService(),
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Haley is in her room.",
+                    ["location=HaleyHouse", "tile=8,7"])),
+                new FakeEventSource([])),
+            chatClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            new NpcRuntimeSupervisor(),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            CreatePromptSupplementBuilder(new FixedStardewGamingSkillRootProvider(repositoryGamingRoot)),
+            discoveredToolProvider: null,
+            worldCoordination: CreateWorldCoordination(),
+            includeMemory: true,
+            includeUser: true,
+            maxToolIterations: 2,
+            runtimeRoot: _tempDir);
+
+        var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.FailureReason);
+        var systemPrompt = chatClient.SystemMessages.First(message =>
+            message.Contains("## Stardew Runtime Contract", StringComparison.Ordinal));
+        StringAssert.Contains(systemPrompt, "compact-contract-owner: stardew-world");
+        Assert.IsFalse(
+            systemPrompt.Contains("这个世界是一个小型的乡村山谷", StringComparison.Ordinal),
+            "Compact prompt text must come from the skill-owned compact contract, not host-selected fallback prose.");
     }
 
     [TestMethod]
@@ -882,9 +930,31 @@ public sealed class StardewAutonomyTickDebugServiceTests
     private static void CreateGamingSkillFixtures(string gamingSkillRoot)
     {
         Directory.CreateDirectory(gamingSkillRoot);
-        File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-core.md"), "stardew-core test guidance");
-        File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-social.md"), "stardew-social test guidance");
-        File.WriteAllText(Path.Combine(gamingSkillRoot, "stardew-navigation.md"), "stardew-navigation test guidance");
+        File.WriteAllText(
+            Path.Combine(gamingSkillRoot, "stardew-core.md"),
+            """
+            stardew-core test guidance
+
+            ## Compact Contract
+            - stardew-core fixture compact contract
+            """);
+        File.WriteAllText(
+            Path.Combine(gamingSkillRoot, "stardew-social.md"),
+            """
+            stardew-social test guidance
+
+            ## Compact Contract
+            - stardew-social fixture compact contract
+            """);
+        File.WriteAllText(
+            Path.Combine(gamingSkillRoot, "stardew-navigation.md"),
+            """
+            stardew-navigation test guidance
+
+            ## Compact Contract
+            - stardew-navigation fixture compact contract
+            - `skill_view(name="stardew-navigation", file_path="references/index.md")`
+            """);
         var taskContinuityRoot = Path.Combine(gamingSkillRoot, "stardew-task-continuity");
         Directory.CreateDirectory(taskContinuityRoot);
         File.WriteAllText(Path.Combine(taskContinuityRoot, "SKILL.md"), "stardew-task-continuity test guidance");
@@ -892,7 +962,12 @@ public sealed class StardewAutonomyTickDebugServiceTests
         Directory.CreateDirectory(Path.Combine(stardewWorldRoot, "references"));
         File.WriteAllText(
             Path.Combine(stardewWorldRoot, "SKILL.md"),
-            "stardew-world test guidance; detailed places live in references/stardew-places.md");
+            """
+            stardew-world test guidance; detailed places live in references/stardew-places.md
+
+            ## Compact Contract
+            - stardew-world fixture compact contract
+            """);
         File.WriteAllText(
             Path.Combine(stardewWorldRoot, "references", "stardew-places.md"),
             "full stardew places encyclopedia fixture");

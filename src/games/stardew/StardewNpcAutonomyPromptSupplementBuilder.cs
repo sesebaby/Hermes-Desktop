@@ -86,7 +86,7 @@ public sealed class StardewNpcAutonomyPromptSupplementBuilder
         {
             var skillPath = ResolveRequiredSkillPath(descriptor, skillRoots, skillId);
             builder.AppendLine($"### {skillId}");
-            builder.AppendLine(BuildCompactSkillContract(skillId, File.ReadAllText(skillPath)));
+            builder.AppendLine(BuildCompactSkillContract(File.ReadAllText(skillPath)));
             builder.AppendLine();
         }
 
@@ -190,107 +190,105 @@ public sealed class StardewNpcAutonomyPromptSupplementBuilder
             $"required skill '{skillId}' was not found at any configured Stardew gaming skill root. Checked: {checkedPathList}.");
     }
 
-    private static string BuildCompactSkillContract(string skillId, string rawContent)
+    private static string BuildCompactSkillContract(string rawContent)
     {
-        var lines = rawContent
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Split('\n')
-            .Select(line => line.Trim())
-            .Where(line => !string.IsNullOrWhiteSpace(line) && !IsFrontmatterMetadata(line))
-            .ToArray();
+        var lines = NormalizeSkillLines(rawContent);
 
         if (lines.Length == 0)
             return "- (empty skill)";
 
-        var summaryLines = skillId switch
-        {
-            "stardew-core" => SelectSummaryLines(
-                lines,
-                "本轮目标",
-                "session_search",
-                "`memory`",
-                "memory",
-                "避免重复广泛状态扫描",
-                "stardew_task_status"),
-            "stardew-social" => SelectSummaryLines(
-                lines,
-                "玩家指令优先级最高",
-                "`stardew_speak`",
-                "stardew_speak",
-                "移动开始",
-                "移动到达",
-                "闲置",
-                "任务状态"),
-            "stardew-navigation" => SelectSummaryLines(
-                lines,
-                "`stardew_move(destination, reason)`",
-                "stardew_move",
-                "destination=<destinationId 精确值>",
-                "target(locationName,x,y,source)",
-                "references/index.md",
-                "skill_view",
-                "stardew_navigate_to_tile",
-                "本地 executor-only",
-                "destinationId",
-                "不要发明",
-                "stardew_task_status"),
-            "stardew-task-continuity" => SelectSummaryLines(
-                lines,
-                "`todo`",
-                "todo",
-                "玩家给你以后要兑现的约定",
-                "先回应玩家，再恢复原来的任务",
-                "stardew_task_status",
-                "blocked",
-                "failed",
-                "session_search"),
-            "stardew-world" => SelectSummaryLines(
-                lines,
-                "destination[n]",
-                "destinationId",
-                "label",
-                "schedule_entry[n]",
-                "skill_view",
-                "references/stardew-places.md"),
-            _ => SelectFallbackSummaryLines(lines)
-        };
-
+        var summaryLines = SelectCompactContractLines(lines);
         if (summaryLines.Count == 0)
             summaryLines = SelectFallbackSummaryLines(lines);
-
-        if (string.Equals(skillId, "stardew-world", StringComparison.OrdinalIgnoreCase) &&
-            rawContent.Contains("references/stardew-places.md", StringComparison.OrdinalIgnoreCase) &&
-            !summaryLines.Any(line => line.Contains("skill_view(", StringComparison.Ordinal)))
-        {
-            summaryLines.Add("`skill_view(name=\"stardew-world\", file_path=\"references/stardew-places.md\")`");
-        }
-        else if (string.Equals(skillId, "stardew-navigation", StringComparison.OrdinalIgnoreCase) &&
-                 rawContent.Contains("references/index.md", StringComparison.OrdinalIgnoreCase) &&
-                 !summaryLines.Any(line => line.Contains("skill_view(", StringComparison.Ordinal)))
-        {
-            summaryLines.Add("`skill_view(name=\"stardew-navigation\", file_path=\"references/index.md\")`");
-        }
 
         return string.Join(
             "\n",
             summaryLines.Select(line => line.StartsWith("- ", StringComparison.Ordinal) ? line : "- " + line));
     }
 
-    private static List<string> SelectSummaryLines(IReadOnlyList<string> lines, params string[] needles)
+    private static string[] NormalizeSkillLines(string rawContent)
+    {
+        var normalized = new List<string>();
+        var inFrontmatter = false;
+        var firstContentLine = true;
+        foreach (var rawLine in rawContent.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+        {
+            var line = rawLine.Trim();
+            if (firstContentLine && line == "---")
+            {
+                inFrontmatter = true;
+                firstContentLine = false;
+                continue;
+            }
+
+            firstContentLine = false;
+            if (inFrontmatter)
+            {
+                if (line == "---")
+                    inFrontmatter = false;
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(line) && !IsFrontmatterMetadata(line))
+                normalized.Add(line);
+        }
+
+        return normalized.ToArray();
+    }
+
+    private static List<string> SelectCompactContractLines(IReadOnlyList<string> lines)
     {
         var selected = new List<string>();
-        foreach (var needle in needles)
+        var inCompactSection = false;
+        var compactHeadingLevel = 0;
+        foreach (var line in lines)
         {
-            var line = lines.FirstOrDefault(line => line.Contains(needle, StringComparison.OrdinalIgnoreCase));
-            if (!string.IsNullOrWhiteSpace(line) &&
-                !selected.Contains(line, StringComparer.Ordinal))
+            if (TryParseHeading(line, out var headingLevel, out var headingText))
             {
-                selected.Add(line);
+                if (inCompactSection && headingLevel <= compactHeadingLevel)
+                    break;
+
+                if (IsCompactContractHeading(headingText))
+                {
+                    inCompactSection = true;
+                    compactHeadingLevel = headingLevel;
+                }
+
+                continue;
             }
+
+            if (!inCompactSection)
+                continue;
+
+            if (!line.StartsWith("- ", StringComparison.Ordinal))
+                break;
+
+            selected.Add(line);
         }
 
         return selected;
     }
+
+    private static bool TryParseHeading(string line, out int level, out string text)
+    {
+        level = 0;
+        text = "";
+        while (level < line.Length && line[level] == '#')
+            level++;
+
+        if (level == 0 || level >= line.Length || line[level] != ' ')
+        {
+            level = 0;
+            return false;
+        }
+
+        text = line[(level + 1)..].Trim();
+        return !string.IsNullOrWhiteSpace(text);
+    }
+
+    private static bool IsCompactContractHeading(string headingText)
+        => string.Equals(headingText, "Compact Contract", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(headingText, "精简契约", StringComparison.OrdinalIgnoreCase);
 
     private static List<string> SelectFallbackSummaryLines(IReadOnlyList<string> lines)
     {

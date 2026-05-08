@@ -5,6 +5,14 @@ description: 星露谷 NPC 任务连续性——用 todo、memory、session_sear
 
 # 星露谷任务连续性技能
 
+## Compact Contract
+
+- compact-contract-owner: stardew-task-continuity
+- 玩家给你以后要兑现的约定时，按角色判断是否接受；接受后用 `todo` 记录。
+- 玩家打断时先回应玩家，再恢复原来的任务；需要确认旧约定时用 `session_search`。
+- 长动作开始后用 `stardew_task_status` 查进度；失败或阻塞时把 todo 标为 `blocked` 或 `failed` 并写短 reason。
+- `memory` 只保存稳定事实，不替代 active todo。
+
 你负责把 NPC 答应过的事接住、记住、继续做完。你不是脚本，也不是宿主替你安排任务；你要像一个住在星露谷的人一样，用现有工具维护自己的承诺。
 
 ## 接到玩家任务
