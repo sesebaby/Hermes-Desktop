@@ -52,6 +52,19 @@ public sealed class NpcAutonomyLoop
 
     public async Task<NpcAutonomyTickResult> RunOneTickAsync(
         NpcRuntimeInstance instance,
+        GameEventBatch eventBatch,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+
+        var result = await RunOneTickForInstanceAsync(instance, eventBatch, ct);
+        instance.RecordTrace(result.TraceId);
+        await WriteInstanceTaskContinuityEvidenceAsync(instance, result.TraceId, ct);
+        return result;
+    }
+
+    public async Task<NpcAutonomyTickResult> RunOneTickAsync(
+        NpcRuntimeInstance instance,
         GameObservation observation,
         GameEventBatch eventBatch,
         CancellationToken ct)
@@ -73,11 +86,6 @@ public sealed class NpcAutonomyLoop
         ArgumentNullException.ThrowIfNull(eventCursor);
 
         var descriptor = instance.Descriptor;
-        var observeStopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var observation = await _adapter.Queries.ObserveAsync(descriptor.EffectiveBodyBinding, ct);
-        observeStopwatch.Stop();
-        LogObservation(descriptor, observation, observeStopwatch.ElapsedMilliseconds);
-
         var eventStopwatch = System.Diagnostics.Stopwatch.StartNew();
         var eventBatch = await _adapter.Events.PollBatchAsync(eventCursor, ct);
         eventStopwatch.Stop();
@@ -88,7 +96,16 @@ public sealed class NpcAutonomyLoop
             eventBatch.NextCursor?.Since ?? "-",
             eventBatch.NextCursor?.Sequence,
             eventStopwatch.ElapsedMilliseconds);
-        return await RunOneTickForInstanceAsync(instance, observation, eventBatch, ct);
+        return await RunOneTickForInstanceAsync(instance, eventBatch, ct);
+    }
+
+    private Task<NpcAutonomyTickResult> RunOneTickForInstanceAsync(
+        NpcRuntimeInstance instance,
+        GameEventBatch eventBatch,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        return RunOneTickCoreAsync(instance, instance.Descriptor, null, eventBatch, ct);
     }
 
     private Task<NpcAutonomyTickResult> RunOneTickForInstanceAsync(
@@ -109,11 +126,6 @@ public sealed class NpcAutonomyLoop
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentNullException.ThrowIfNull(eventCursor);
 
-        var observeStopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var observation = await _adapter.Queries.ObserveAsync(descriptor.EffectiveBodyBinding, ct);
-        observeStopwatch.Stop();
-        LogObservation(descriptor, observation, observeStopwatch.ElapsedMilliseconds);
-
         var eventStopwatch = System.Diagnostics.Stopwatch.StartNew();
         var eventBatch = await _adapter.Events.PollBatchAsync(eventCursor, ct);
         eventStopwatch.Stop();
@@ -124,7 +136,7 @@ public sealed class NpcAutonomyLoop
             eventBatch.NextCursor?.Since ?? "-",
             eventBatch.NextCursor?.Sequence,
             eventStopwatch.ElapsedMilliseconds);
-        return await RunOneTickCoreAsync(null, descriptor, observation, eventBatch, ct);
+        return await RunOneTickCoreAsync(null, descriptor, null, eventBatch, ct);
     }
 
     public async Task<NpcAutonomyTickResult> RunOneTickAsync(
@@ -137,20 +149,16 @@ public sealed class NpcAutonomyLoop
     private async Task<NpcAutonomyTickResult> RunOneTickCoreAsync(
         NpcRuntimeInstance? instance,
         NpcRuntimeDescriptor descriptor,
-        GameObservation observation,
+        GameObservation? observation,
         GameEventBatch eventBatch,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
-        ArgumentNullException.ThrowIfNull(observation);
         ArgumentNullException.ThrowIfNull(eventBatch);
 
         var traceId = _traceIdFactory();
-        var currentFacts = new List<NpcObservationFact>
-        {
-            ToObservationFact(descriptor, observation)
-        };
-        _factStore.RecordObservation(descriptor, observation);
+        if (observation is not null)
+            _factStore.RecordObservation(descriptor, observation);
 
         var eventFacts = 0;
         foreach (var record in eventBatch.Records)
@@ -159,7 +167,6 @@ public sealed class NpcAutonomyLoop
                 continue;
 
             _factStore.RecordEvent(descriptor, record);
-            currentFacts.Add(ToEventFact(descriptor, record));
             eventFacts++;
         }
 
@@ -175,16 +182,13 @@ public sealed class NpcAutonomyLoop
             decisionSession.State["traceId"] = traceId;
             decisionSession.State["npcId"] = descriptor.NpcId;
             decisionSession.State[StardewAutonomySessionKeys.IsAutonomyTurn] = true;
-            var decisionMessage = BuildDecisionMessage(descriptor, currentFacts);
+            var decisionMessage = BuildDecisionMessage(descriptor);
             _logger?.LogInformation(
-                "NPC autonomy decision request prepared; npc={NpcId}; trace={TraceId}; facts={FactCount}; messageChars={MessageChars}; gameTime={GameTime}; location={Location}; tile={Tile}",
+                "NPC autonomy decision request prepared; npc={NpcId}; trace={TraceId}; injectedFacts={FactCount}; messageChars={MessageChars}",
                 descriptor.NpcId,
                 traceId,
-                currentFacts.Count,
-                decisionMessage.Length,
-                FindFactValue(observation.Facts, "gameTime") ?? FindFactValue(observation.Facts, "gameClock") ?? "-",
-                FindFactValue(observation.Facts, "location") ?? "-",
-                FindFactValue(observation.Facts, "tile") ?? "-");
+                0,
+                decisionMessage.Length);
             var decisionStopwatch = System.Diagnostics.Stopwatch.StartNew();
             decisionResponse = await _agent.ChatAsync(
                 decisionMessage,
@@ -207,7 +211,7 @@ public sealed class NpcAutonomyLoop
             var route = await RunLocalExecutorAsync(
                 instance,
                 descriptor,
-                currentFacts,
+                [],
                 traceId,
                 decisionResponse,
                 ct);
@@ -224,7 +228,7 @@ public sealed class NpcAutonomyLoop
 
         await WriteSessionTaskContinuityEvidenceAsync(descriptor, traceId, decisionSession, null, ct);
 
-        return new NpcAutonomyTickResult(descriptor.NpcId, traceId, 1, eventFacts, decisionResponse, eventBatch.NextCursor);
+        return new NpcAutonomyTickResult(descriptor.NpcId, traceId, 0, eventFacts, decisionResponse, eventBatch.NextCursor);
     }
 
     private static bool BelongsToRuntimeNpc(NpcRuntimeDescriptor descriptor, GameEventRecord record)
@@ -238,79 +242,24 @@ public sealed class NpcAutonomyLoop
                string.Equals(body.SmapiName, record.NpcId, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static NpcObservationFact ToObservationFact(NpcRuntimeDescriptor descriptor, GameObservation observation)
-        => new(
-            descriptor.NpcId,
-            descriptor.GameId,
-            descriptor.SaveId,
-            descriptor.ProfileId,
-            descriptor.SessionId,
-            "observation",
-            null,
-            observation.TimestampUtc,
-            observation.Summary,
-            observation.Facts.ToArray());
-
-    private static NpcObservationFact ToEventFact(NpcRuntimeDescriptor descriptor, GameEventRecord record)
-        => new(
-            descriptor.NpcId,
-            descriptor.GameId,
-            descriptor.SaveId,
-            descriptor.ProfileId,
-            descriptor.SessionId,
-            "event",
-            record.EventId,
-            record.TimestampUtc,
-            record.Summary,
-            [record.EventType]);
-
-    private static string BuildDecisionMessage(NpcRuntimeDescriptor descriptor, IReadOnlyList<NpcObservationFact> facts)
+    private static string BuildDecisionMessage(NpcRuntimeDescriptor descriptor)
     {
-        var lines = facts.Select(fact =>
-            $"- [{fact.SourceKind}] {fact.SourceId ?? "current"} {fact.TimestampUtc:O}: {fact.Summary} ({string.Join("; ", fact.Facts)})");
         return
             $"NPC: {descriptor.DisplayName} ({descriptor.NpcId})\n" +
-            "你现在要决定下一步自主行动。先看当前观察事实和 active todo，再决定是推进任务、观察当前状态，还是回应玩家。\n" +
-            "如果玩家给过的约定还没完成，要优先考虑怎么继续；被玩家打断时先回应玩家，再恢复原来的任务。\n" +
-            "如果只是需要稍后继续，不要把 todo 标成 blocked，也不要反复输出 wait；保持任务 pending/in_progress，并用 schedule_cron 工具预约下一次继续。\n" +
+            "你被唤醒了一轮。你是生活在星露谷里的人，不是宿主替你操控的脚本。\n" +
+            "宿主这一次只负责唤醒你；它没有替你观察世界，没有替你选择目标，也没有要求你必须先观察。\n" +
+            "你要像生活在星露谷里的人一样，自己决定下一步该做什么；宿主不会替你规定是否观察、等待、移动、说话、推进任务或做闲置动作。\n" +
+            "不要声称已经看见、到达、完成或知道当前世界状态，除非那来自你自己已有的上下文或后续工具执行结果。\n" +
             "低风险动作只输出一个 JSON object 交给本地执行层，不要直接写工具参数或假装已经做完。\n" +
             "必须只输出 raw JSON object；不要 Markdown code fence，不要解释文字，不要在 JSON 前后添加任何自然语言。\n" +
             "JSON schema 固定为 {\"action\":\"move|observe|wait|task_status|idle_micro_action|escalate\",\"reason\":\"short reason\",\"destinationId\":\"optional semantic move\",\"target\":{\"locationName\":\"required for mechanical move\",\"x\":0,\"y\":0,\"facingDirection\":\"optional\",\"source\":\"required disclosed map skill id\"},\"commandId\":\"optional for task_status\",\"observeTarget\":\"optional for observe\",\"waitReason\":\"optional for wait\",\"idleMicroAction\":{\"kind\":\"required for idle_micro_action\",\"animationAlias\":\"optional only when kind=idle_animation_once\",\"intensity\":\"optional\",\"ttlSeconds\":0},\"speech\":{\"shouldSpeak\":false,\"channel\":\"player|overhead|private\",\"text\":\"optional short line\"},\"taskUpdate\":{\"taskId\":\"optional existing todo id\",\"status\":\"pending|in_progress|blocked|completed|failed|cancelled\",\"reason\":\"optional short reason\"},\"escalate\":false}。\n" +
             "只输出所选 action 需要的字段；不要输出 null、空字符串或无关字段，尤其不要在非 escalate 动作里输出 escalate=false。\n" +
-            "如果需要移动，二选一：语义移动用 destinationId，必须复制当前事实里的 destinationId；机械坐标移动用完整 target(locationName,x,y,source)，必须来自已披露地图 skill，不要猜坐标。\n" +
             "机械 target 只表达父层决策；本地 executor 会用 executor-only stardew_navigate_to_tile 执行，父层不要写工具参数或调用该工具。\n" +
             "如果只是查长动作进度，action=task_status 且 commandId 必须来自已有命令。\n" +
-            "如果 NPC 暂时不该移动、也不需要说话，只是在原地做一个短暂可见的小动作，优先用 action=idle_micro_action，并提供 idleMicroAction.kind；可选 kind 只有 emote_happy、emote_question、emote_sleepy、emote_music、look_left、look_right、look_up、look_down、look_around、tiny_hop、tiny_shake、idle_pose、idle_animation_once。\n" +
+            "如果你只是想在原地做一个短暂可见的小动作，用 action=idle_micro_action，并提供 idleMicroAction.kind；可选 kind 只有 emote_happy、emote_question、emote_sleepy、emote_music、look_left、look_right、look_up、look_down、look_around、tiny_hop、tiny_shake、idle_pose、idle_animation_once。\n" +
             "idle_micro_action 只能表达原地短动作；不要同时附带 speech、destinationId 或 target，也不要把它改写成 move 或 speak。\n" +
             "如果任务真的被外部条件阻断，用 taskUpdate 把已有 todo 标成 blocked；如果确定做不成，标成 failed；blocked 或 failed 都要写短 reason。\n" +
-            "wait 只作为没有可推进行动、没有可查询命令、也没有必要预约时的兜底调度意图；不要把 wait 当普通世界动作。\n" +
-            "如果这是答应玩家的事，能说话时用 speech 字段告诉玩家卡在哪里；不要调用或编写工具参数。\n" +
-            "每条事实前面的 ISO 时间是记录时间不是星露谷游戏内时间；gameTime/gameClock 才是游戏内时间，判断早晚必须看它们。\n" +
-            "下面的事件只是上下文，不要把事件当成玩家的新命令。\n\n" +
-            "[Observed Facts]\n" +
-            string.Join("\n", lines);
-    }
-
-    private void LogObservation(NpcRuntimeDescriptor descriptor, GameObservation observation, long durationMs)
-    {
-        _logger?.LogInformation(
-            "NPC autonomy observation completed; npc={NpcId}; observedNpc={ObservedNpcId}; summary={Summary}; gameTime={GameTime}; gameClock={GameClock}; location={Location}; tile={Tile}; factCount={FactCount}; durationMs={DurationMs}",
-            descriptor.NpcId,
-            observation.NpcId,
-            Truncate(observation.Summary, 180),
-            FindFactValue(observation.Facts, "gameTime") ?? "-",
-            FindFactValue(observation.Facts, "gameClock") ?? "-",
-            FindFactValue(observation.Facts, "location") ?? "-",
-            FindFactValue(observation.Facts, "tile") ?? "-",
-            observation.Facts.Count,
-            durationMs);
-    }
-
-    private static string? FindFactValue(IReadOnlyList<string> facts, string key)
-    {
-        var prefix = key + "=";
-        var fact = facts.FirstOrDefault(value => value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
-        return fact is null ? null : fact[prefix.Length..];
+            "wait 只表示你现在选择暂不推进，不是普通世界动作。";
     }
 
     private static bool IsToolIterationLimitFallback(string? value)
@@ -336,7 +285,7 @@ public sealed class NpcAutonomyLoop
             "tick",
             null,
             "completed",
-            decisionResponse ?? $"observed:{eventFacts + 1}"), ct);
+            decisionResponse ?? $"woken:eventFacts={eventFacts}"), ct);
     }
 
     private async Task WriteToolBudgetDiagnosticAsync(

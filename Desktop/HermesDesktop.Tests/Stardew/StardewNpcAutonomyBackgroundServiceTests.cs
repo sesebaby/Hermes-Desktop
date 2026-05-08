@@ -542,7 +542,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
-    public async Task DispatchOneIterationAsync_WhenWorkerIsBusy_MergesQueuedEventBatchesIntoNextTick()
+    public async Task DispatchOneIterationAsync_WhenWorkerIsBusy_MergesQueuedEventCursorsWithoutInjectingEvents()
     {
         var discovery = CreateDiscovery("save-42");
         var chatClient = new BlockFirstChatClient("I will wait near the library.");
@@ -584,8 +584,9 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         await chatClient.WaitForCallCountAsync(2, TimeSpan.FromSeconds(1));
 
         var secondRequest = chatClient.GetCapturedRequest(2);
-        StringAssert.Contains(secondRequest, "Haley noticed the second clock tick.");
-        StringAssert.Contains(secondRequest, "Haley noticed the third clock tick.");
+        Assert.IsFalse(secondRequest.Contains("Haley noticed the first clock tick.", StringComparison.Ordinal));
+        Assert.IsFalse(secondRequest.Contains("Haley noticed the second clock tick.", StringComparison.Ordinal));
+        Assert.IsFalse(secondRequest.Contains("Haley noticed the third clock tick.", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -1305,7 +1306,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
-    public async Task RunOneIterationAsync_FiltersSharedBatchByNpcPersistedCursorBeforeDispatch()
+    public async Task RunOneIterationAsync_FiltersSharedBatchByNpcPersistedCursorBeforeWake()
     {
         var discovery = CreateDiscovery("save-42");
         var chatClient = new CapturingChatClient("I will wait near the library.");
@@ -1334,7 +1335,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
 
         var request = chatClient.CapturedRequests.Single();
         Assert.IsFalse(request.Contains("old Haley event", StringComparison.Ordinal), "Host fanout must filter records already acknowledged by this NPC before worker dispatch.");
-        Assert.IsTrue(request.Contains("new Haley event", StringComparison.Ordinal));
+        Assert.IsFalse(request.Contains("new Haley event", StringComparison.Ordinal), "Wake-only autonomy must not inject matching event records into the parent prompt.");
         var trackerCursor = GetTrackerCursor(service, "haley");
         Assert.AreEqual("evt-12", trackerCursor.Since);
         Assert.AreEqual(12L, trackerCursor.Sequence);

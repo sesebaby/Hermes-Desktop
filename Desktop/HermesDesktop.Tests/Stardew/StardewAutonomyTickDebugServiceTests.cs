@@ -104,7 +104,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
         Assert.IsTrue(result.Success);
         Assert.AreEqual("haley", result.NpcId);
         Assert.AreEqual("local_executor_completed:wait", result.DecisionResponse);
-        Assert.AreEqual("haley", queries.LastNpcId);
+        Assert.IsNull(queries.LastNpcId);
 
         Assert.AreEqual(0, chatClient.ToolNames.Count, "Parent autonomy lane must decide intent without direct tool calls.");
         CollectionAssert.DoesNotContain(chatClient.ToolNames.ToArray(), "stardew_move");
@@ -127,6 +127,10 @@ public sealed class StardewAutonomyTickDebugServiceTests
             message.Contains("skill_view(name=\"stardew-world\", file_path=\"references/stardew-places.md\")", StringComparison.Ordinal) &&
             !message.Contains("## Skills (mandatory)", StringComparison.Ordinal) &&
             !message.Contains("full stardew places encyclopedia fixture", StringComparison.Ordinal)));
+        Assert.IsTrue(chatClient.SystemMessages.Any(message =>
+            message.Contains("host does not observe or choose the first step for you", StringComparison.Ordinal) &&
+            !message.Contains("Decide small next actions from observed game facts", StringComparison.Ordinal) &&
+            !message.Contains("Use the available game tools to inspect the world before acting", StringComparison.Ordinal)));
 
         var runtimeSoulPath = Path.Combine(
             _tempDir,
@@ -626,7 +630,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithObservedMoveCandidateExecutesStardewMoveTool()
+    public async Task RunOneTickAsync_WithParentMoveIntentExecutesStardewMoveToolWithoutInjectedCandidates()
     {
         var commands = new FakeCommandService();
         var chatClient = new ToolSnapshotChatClient(
@@ -682,9 +686,12 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
         Assert.IsTrue(result.Success, result.FailureReason);
         Assert.AreEqual("local_executor_completed:stardew_move", result.DecisionResponse);
-        Assert.IsTrue(
+        Assert.IsFalse(
             chatClient.UserMessages.Any(message => message.Contains("destinationId=town.fountain", StringComparison.Ordinal)),
-            "The model-facing autonomy prompt must expose executable destinationId before the tool call happens.");
+            "The host must not preload observed destination ids into the parent autonomy prompt.");
+        Assert.IsFalse(
+            chatClient.UserMessages.Any(message => message.Contains("nearby[0]", StringComparison.Ordinal)),
+            "The host must not preload host-generated nearby movement affordances into the parent autonomy prompt.");
         CollectionAssert.DoesNotContain(chatClient.ToolNames.ToArray(), "stardew_move");
         CollectionAssert.Contains(delegationChatClient.ToolNames.ToArray(), "stardew_move");
         Assert.IsNotNull(commands.LastAction);
@@ -750,9 +757,9 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
         Assert.IsTrue(result.Success, result.FailureReason);
         Assert.AreEqual("local_executor_completed:stardew_status", result.DecisionResponse);
-        Assert.IsTrue(
+        Assert.IsFalse(
             chatClient.UserMessages.Any(message => message.Contains("destination[0]=label=Bedroom mirror", StringComparison.Ordinal)),
-            "The candidate should be visible to the model, not converted into a host-side movement.");
+            "Wake-only autonomy must not expose place candidates unless the agent explicitly observes through tools.");
         CollectionAssert.Contains(delegationChatClient.ToolNames.ToArray(), "stardew_status");
         Assert.IsNull(commands.LastAction, "A placeCandidate fact must not force host-side movement without an agent tool call.");
     }
@@ -800,10 +807,11 @@ public sealed class StardewAutonomyTickDebugServiceTests
         var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
 
         Assert.IsTrue(result.Success, result.FailureReason);
-        Assert.IsTrue(
+        Assert.IsFalse(
             chatClient.UserMessages.Any(message =>
                 message.Contains("[event] evt-1", StringComparison.Ordinal) &&
-                message.Contains("下面的事件只是上下文", StringComparison.Ordinal)));
+                message.Contains("下面的事件只是上下文", StringComparison.Ordinal)),
+            "Wake-only autonomy must not inject event records into the parent prompt.");
         Assert.IsNull(commands.LastAction, "Non-private-chat events must not directly drive host-side movement.");
     }
 

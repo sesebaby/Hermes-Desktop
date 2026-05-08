@@ -539,20 +539,9 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                     LocalExecutorToolFingerprint: StardewNpcToolFactory.LocalExecutorToolFingerprint()),
                 ct);
 
-            var observeStopwatch = Stopwatch.StartNew();
-            var observation = await hostAdapter.Queries.ObserveAsync(binding.Descriptor.EffectiveBodyBinding, ct);
-            observeStopwatch.Stop();
             _logger.LogInformation(
-                "Stardew autonomy observation completed; npc={NpcId}; observedNpc={ObservedNpcId}; summary={Summary}; gameTime={GameTime}; gameClock={GameClock}; location={Location}; tile={Tile}; factCount={FactCount}; durationMs={DurationMs}",
-                binding.Descriptor.NpcId,
-                observation.NpcId,
-                TruncateForLog(observation.Summary, 180),
-                FindFactValue(observation.Facts, "gameTime") ?? "-",
-                FindFactValue(observation.Facts, "gameClock") ?? "-",
-                FindFactValue(observation.Facts, "location") ?? "-",
-                FindFactValue(observation.Facts, "tile") ?? "-",
-                observation.Facts.Count,
-                observeStopwatch.ElapsedMilliseconds);
+                "Stardew autonomy wake prepared; npc={NpcId}; mode=autonomy; noFactsInjected=true",
+                binding.Descriptor.NpcId);
             using var llmTurnCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             llmTurnCts.CancelAfter(_budget.Options.EffectiveLlmTurnTimeout);
             NpcAutonomyTickResult tick;
@@ -560,15 +549,14 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             {
                 var llmStartedAtUtc = DateTime.UtcNow;
                 var llmStopwatch = Stopwatch.StartNew();
-            _logger.LogInformation(
-                "Stardew autonomy LLM turn started; npc={NpcId}; timeoutSeconds={TimeoutSeconds}; maxToolIterations={MaxToolIterations}; observationFacts={ObservationFactCount}; eventCount={EventCount}; toolSurfaceVersion={ToolSurfaceVersion}",
-                binding.Descriptor.NpcId,
-                _budget.Options.EffectiveLlmTurnTimeout.TotalSeconds,
-                _budget.Options.MaxToolIterations,
-                observation.Facts.Count,
-                dispatch.SharedEventBatch.Records.Count,
-                toolSnapshot.SnapshotVersion);
-                tick = await handle.Loop.RunOneTickAsync(handle.Instance, observation, dispatch.SharedEventBatch, llmTurnCts.Token);
+                _logger.LogInformation(
+                    "Stardew autonomy LLM turn started; npc={NpcId}; timeoutSeconds={TimeoutSeconds}; maxToolIterations={MaxToolIterations}; eventCount={EventCount}; toolSurfaceVersion={ToolSurfaceVersion}",
+                    binding.Descriptor.NpcId,
+                    _budget.Options.EffectiveLlmTurnTimeout.TotalSeconds,
+                    _budget.Options.MaxToolIterations,
+                    dispatch.SharedEventBatch.Records.Count,
+                    toolSnapshot.SnapshotVersion);
+                tick = await handle.Loop.RunOneTickAsync(handle.Instance, dispatch.SharedEventBatch, llmTurnCts.Token);
                 llmStopwatch.Stop();
                 _logger.LogInformation(
                     "Stardew autonomy LLM turn completed; npc={NpcId}; startedAtUtc={StartedAtUtc:o}; durationMs={DurationMs}; nextCursor={NextCursor}; nextSequence={NextSequence}",
@@ -664,13 +652,6 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         }
 
         return Task.CompletedTask;
-    }
-
-    private static string? FindFactValue(IReadOnlyList<string> facts, string key)
-    {
-        var prefix = key + "=";
-        var fact = facts.FirstOrDefault(value => value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
-        return fact is null ? null : fact[prefix.Length..];
     }
 
     private static string TruncateForLog(string value, int maxLength)

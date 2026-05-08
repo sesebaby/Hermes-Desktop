@@ -15,7 +15,7 @@ namespace HermesDesktop.Tests.Runtime;
 public class NpcAutonomyLoopTests
 {
     [TestMethod]
-    public async Task RunOneTickAsync_GathersObservationAndEventsWithoutCallingCommands()
+    public async Task RunOneTickAsync_WakesAgentAndRecordsEventsWithoutObservingOrCallingCommands()
     {
         var at = new DateTime(2026, 4, 30, 9, 30, 0, DateTimeKind.Utc);
         var descriptor = CreateDescriptor("haley");
@@ -38,17 +38,17 @@ public class NpcAutonomyLoopTests
 
         var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor("evt-1"), CancellationToken.None);
 
-        Assert.AreEqual("haley", queries.LastNpcId);
+        Assert.IsNull(queries.LastNpcId);
         Assert.AreEqual("evt-1", events.LastCursor?.Since);
         Assert.AreEqual(0, commands.SubmitCalls);
         Assert.AreEqual(0, commands.StatusCalls);
         Assert.AreEqual(0, commands.CancelCalls);
 
-        Assert.AreEqual(1, result.ObservationFacts);
+        Assert.AreEqual(0, result.ObservationFacts);
         Assert.AreEqual(2, result.EventFacts);
         var facts = factStore.Snapshot(descriptor);
-        Assert.AreEqual(3, facts.Count);
-        Assert.IsTrue(facts.Any(fact => fact.SourceKind == "observation"));
+        Assert.AreEqual(2, facts.Count);
+        Assert.IsFalse(facts.Any(fact => fact.SourceKind == "observation"));
         Assert.IsTrue(facts.Any(fact => fact.SourceId == "evt-2"));
         Assert.IsTrue(facts.Any(fact => fact.SourceId == "evt-3"));
         Assert.IsFalse(facts.Any(fact => fact.SourceId == "evt-4"));
@@ -84,7 +84,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_ObservesBeforeAgentDecisionAndSubmitsVisibleFallbackSpeak()
+    public async Task RunOneTickAsync_WakesAgentWithoutInjectingObservationOrEventFacts()
     {
         var steps = new List<string>();
         var at = new DateTime(2026, 4, 30, 10, 0, 0, DateTimeKind.Utc);
@@ -107,10 +107,11 @@ public class NpcAutonomyLoopTests
 
         var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor("evt-1"), CancellationToken.None);
 
-        CollectionAssert.AreEqual(new[] { "observe", "poll", "decide" }, steps);
+        CollectionAssert.AreEqual(new[] { "poll", "decide" }, steps);
         Assert.AreEqual(1, agent.ChatCalls);
-        Assert.IsTrue(agent.LastMessage?.Contains("location=Town", StringComparison.Ordinal) ?? false);
-        Assert.IsTrue(agent.LastMessage?.Contains("evt-2", StringComparison.Ordinal) ?? false);
+        Assert.IsFalse(agent.LastMessage?.Contains("location=Town", StringComparison.Ordinal) ?? true);
+        Assert.IsFalse(agent.LastMessage?.Contains("evt-2", StringComparison.Ordinal) ?? true);
+        Assert.IsFalse(agent.LastMessage?.Contains("The clock advanced.", StringComparison.Ordinal) ?? true);
         Assert.AreEqual("我在喷泉边等一下。", result.DecisionResponse);
         Assert.AreEqual(0, commands.SubmitCalls);
     }
@@ -142,7 +143,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_DecisionMessageDoesNotReuseHistoricalMoveCandidates()
+    public async Task RunOneTickAsync_DecisionMessageDoesNotInjectObservedMoveCandidates()
     {
         var descriptor = CreateDescriptor("haley");
         var factStore = new NpcObservationFactStore();
@@ -178,17 +179,17 @@ public class NpcAutonomyLoopTests
             CancellationToken.None);
 
         Assert.AreEqual(2, agent.Messages.Count);
-        StringAssert.Contains(agent.Messages[1], "x=8,y=8");
-        Assert.IsFalse(
-            agent.Messages[1].Contains("x=9,y=7", StringComparison.Ordinal),
-            "Old move candidates must remain in persisted debug facts but must not re-enter the current decision prompt.");
+        Assert.IsFalse(agent.Messages[0].Contains("x=9,y=7", StringComparison.Ordinal));
+        Assert.IsFalse(agent.Messages[0].Contains("moveCandidate[0]", StringComparison.Ordinal));
+        Assert.IsFalse(agent.Messages[1].Contains("x=8,y=8", StringComparison.Ordinal));
+        Assert.IsFalse(agent.Messages[1].Contains("moveCandidate[0]", StringComparison.Ordinal));
         Assert.IsTrue(
             factStore.Snapshot(descriptor).Any(fact => fact.Facts.Any(value => value.Contains("x=9,y=7", StringComparison.Ordinal))),
-            "The store can retain historical observations for diagnostics; only the live decision prompt must be current-only.");
+            "The store can retain observations for diagnostics; the parent prompt must remain wake-only.");
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_DecisionMessageUsesChineseTaskContinuityGuidance()
+    public async Task RunOneTickAsync_DecisionMessageUsesWakeOnlyAutonomyGuidance()
     {
         var descriptor = CreateDescriptor("haley");
         var agent = new FakeAgent(() => { });
@@ -208,20 +209,20 @@ public class NpcAutonomyLoopTests
         await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
 
         Assert.IsNotNull(agent.LastMessage);
-        StringAssert.Contains(agent.LastMessage, "先看当前观察事实和 active todo");
-        StringAssert.Contains(agent.LastMessage, "玩家给过的约定");
-        StringAssert.Contains(agent.LastMessage, "用 schedule_cron 工具预约下一次继续");
-        StringAssert.Contains(agent.LastMessage, "不要把 todo 标成 blocked");
-        StringAssert.Contains(agent.LastMessage, "wait 只作为");
-        StringAssert.Contains(agent.LastMessage, "不要把 wait 当普通世界动作");
+        StringAssert.Contains(agent.LastMessage, "你被唤醒了一轮");
+        StringAssert.Contains(agent.LastMessage, "你是生活在星露谷里的人");
+        StringAssert.Contains(agent.LastMessage, "宿主这一次只负责唤醒你");
+        StringAssert.Contains(agent.LastMessage, "没有替你观察世界");
+        StringAssert.Contains(agent.LastMessage, "没有替你选择目标");
+        StringAssert.Contains(agent.LastMessage, "没有要求你必须先观察");
+        StringAssert.Contains(agent.LastMessage, "自己决定下一步该做什么");
+        StringAssert.Contains(agent.LastMessage, "宿主不会替你规定是否观察、等待、移动、说话、推进任务或做闲置动作");
+        StringAssert.Contains(agent.LastMessage, "不要声称已经看见");
+        StringAssert.Contains(agent.LastMessage, "wait 只表示你现在选择暂不推进");
         StringAssert.Contains(agent.LastMessage, "blocked 或 failed");
-        StringAssert.Contains(agent.LastMessage, "用 speech 字段");
         StringAssert.Contains(agent.LastMessage, "\"taskUpdate\"");
         StringAssert.Contains(agent.LastMessage, "只输出一个 JSON object");
         StringAssert.Contains(agent.LastMessage, "\"action\"");
-        StringAssert.Contains(agent.LastMessage, "语义移动用 destinationId");
-        StringAssert.Contains(agent.LastMessage, "机械坐标移动用完整 target(locationName,x,y,source)");
-        StringAssert.Contains(agent.LastMessage, "来自已披露地图 skill");
         StringAssert.Contains(agent.LastMessage, "executor-only stardew_navigate_to_tile");
         StringAssert.Contains(agent.LastMessage, "idle_micro_action");
         StringAssert.Contains(agent.LastMessage, "idleMicroAction");
@@ -229,17 +230,22 @@ public class NpcAutonomyLoopTests
         Assert.IsFalse(
             agent.LastMessage.Contains("allowedActions", StringComparison.Ordinal),
             "The parent model should not echo host-owned action whitelist fields.");
-        StringAssert.Contains(agent.LastMessage, "不要把事件当成玩家的新命令");
         Assert.IsFalse(
             agent.LastMessage.Contains("需要移动就用 stardew_move", StringComparison.Ordinal),
             "Parent autonomy prompt must not tell the parent agent to call local-executor-owned movement tools directly.");
         Assert.IsFalse(
             agent.LastMessage.Contains("Use these passive game facts", StringComparison.Ordinal),
             "Autonomy decision prompt should use Chinese plain-language continuity guidance instead of the old generic English instruction.");
+        Assert.IsFalse(
+            agent.LastMessage.Contains("location=Town", StringComparison.Ordinal),
+            "Wake-only prompts must not preload world facts.");
+        Assert.IsFalse(
+            agent.LastMessage.Contains("moveCandidate[0]", StringComparison.Ordinal),
+            "Wake-only prompts must not preload host-generated action candidates.");
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_DecisionMessageMarksObservationTimestampAsRecordTimeNotGameTime()
+    public async Task RunOneTickAsync_DecisionMessageDoesNotInjectObservedGameTime()
     {
         var descriptor = CreateDescriptor("haley");
         var agent = new FakeAgent(() => { });
@@ -259,10 +265,11 @@ public class NpcAutonomyLoopTests
         await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
 
         Assert.IsNotNull(agent.LastMessage);
-        StringAssert.Contains(agent.LastMessage, "记录时间不是星露谷游戏内时间");
-        StringAssert.Contains(agent.LastMessage, "gameTime/gameClock 才是游戏内时间");
-        StringAssert.Contains(agent.LastMessage, "gameTime=1430");
-        StringAssert.Contains(agent.LastMessage, "gameClock=14:30");
+        Assert.IsFalse(agent.LastMessage.Contains("记录时间不是星露谷游戏内时间", StringComparison.Ordinal));
+        Assert.IsFalse(agent.LastMessage.Contains("gameTime/gameClock 才是游戏内时间", StringComparison.Ordinal));
+        Assert.IsFalse(agent.LastMessage.Contains("gameTime=1430", StringComparison.Ordinal));
+        Assert.IsFalse(agent.LastMessage.Contains("gameClock=14:30", StringComparison.Ordinal));
+        Assert.IsFalse(agent.LastMessage.Contains("location=Town", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -546,7 +553,7 @@ public class NpcAutonomyLoopTests
             try
             {
                 var tick = records.Single(doc => doc.RootElement.GetProperty("actionType").GetString() == "tick");
-                Assert.AreEqual("observed:1", tick.RootElement.GetProperty("result").GetString());
+                Assert.AreEqual("woken:eventFacts=0", tick.RootElement.GetProperty("result").GetString());
                 Assert.IsFalse(
                     records.Any(doc => doc.RootElement.GetProperty("result").GetString()?.Contains("maximum number of tool call iterations", StringComparison.Ordinal) == true),
                     "Framework max-tool fallback must not be written as user-visible NPC activity text.");
