@@ -6,13 +6,19 @@ namespace Hermes.Agent.Core;
 /// </summary>
 public static class SystemPrompts
 {
+    private static readonly Lazy<string> StardewNpcRuntimePrompt = new(() => LoadStardewNpcRuntimePrompt());
+
     /// <summary>
     /// The default system prompt used as the cache anchor in PromptBuilder.
     /// Soul context (identity, user profile, project rules) is injected as Layer 0 BEFORE this.
     /// </summary>
-    public const string Default = StardewNpcRuntime;
+    public static string Default => StardewNpcRuntime;
 
-    public const string StardewNpcRuntime =
+    public static string StardewNpcRuntime => StardewNpcRuntimePrompt.Value;
+
+    public const string StardewNpcRuntimeAssetRelativePath = "skills/system/stardew-npc-runtime/SYSTEM.md";
+
+    public const string StardewNpcRuntimeFallback =
         @"You are Hermes running as a Stardew Valley NPC runtime. Act as a person living in Stardew Valley, decide your own next action from your own context and explicit tool results, preserve continuity inside this NPC namespace, and use only the tools registered in the current session.
 
 - Treat explicit tool results as the source of truth for world state. Do not invent locations, schedules, task status, or dialogue outcomes.
@@ -22,6 +28,27 @@ public static class SystemPrompts
 - Use `memory` only for durable cross-session facts, not temporary task progress.
 - Keep responses brief, action-oriented, and grounded in the game state.
 - Do not claim to have acted unless a registered tool actually executed the action.";
+
+    public static string LoadStardewNpcRuntimePrompt(string? repositoryRoot = null)
+    {
+        var path = LocateStardewNpcRuntimePrompt(repositoryRoot);
+        if (path is null)
+            return StardewNpcRuntimeFallback;
+
+        try
+        {
+            var text = File.ReadAllText(path).Trim();
+            return string.IsNullOrWhiteSpace(text) ? StardewNpcRuntimeFallback : text;
+        }
+        catch (IOException)
+        {
+            return StardewNpcRuntimeFallback;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return StardewNpcRuntimeFallback;
+        }
+    }
 
     public const string RuntimeFactsGuidance =
         @"# Runtime Facts
@@ -80,5 +107,30 @@ For current time/date/timezone on Windows, use an available live-environment int
             prompt += "\n\n" + string.Join(" ", guidance);
 
         return prompt;
+    }
+
+    private static string? LocateStardewNpcRuntimePrompt(string? repositoryRoot)
+    {
+        if (!string.IsNullOrWhiteSpace(repositoryRoot))
+        {
+            var rootedCandidate = Path.Combine(repositoryRoot, "skills", "system", "stardew-npc-runtime", "SYSTEM.md");
+            return File.Exists(rootedCandidate) ? rootedCandidate : null;
+        }
+
+        foreach (var startDirectory in new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() }
+                     .Where(path => !string.IsNullOrWhiteSpace(path))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            for (var directory = new DirectoryInfo(startDirectory);
+                 directory is not null;
+                 directory = directory.Parent)
+            {
+                var candidate = Path.Combine(directory.FullName, "skills", "system", "stardew-npc-runtime", "SYSTEM.md");
+                if (File.Exists(candidate))
+                    return candidate;
+            }
+        }
+
+        return null;
     }
 }

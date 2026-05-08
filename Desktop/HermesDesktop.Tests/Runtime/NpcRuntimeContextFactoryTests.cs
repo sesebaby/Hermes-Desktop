@@ -43,6 +43,7 @@ public class NpcRuntimeContextFactoryTests
 
         Assert.AreEqual(Path.Combine(ns.SoulHomePath, "SOUL.md"), bundle.SoulService.SoulFilePath);
         Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("Stardew Valley NPC runtime", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains(SystemPrompts.RuntimeFactsGuidance, StringComparison.Ordinal));
         Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("## Skills (mandatory)", StringComparison.Ordinal));
         Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("npc-memory-skill", StringComparison.Ordinal));
         Assert.IsTrue(messages.Any(message =>
