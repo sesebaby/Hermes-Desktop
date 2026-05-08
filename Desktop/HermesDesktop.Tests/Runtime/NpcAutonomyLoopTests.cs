@@ -223,6 +223,9 @@ public class NpcAutonomyLoopTests
         StringAssert.Contains(agent.LastMessage, "机械坐标移动用完整 target(locationName,x,y,source)");
         StringAssert.Contains(agent.LastMessage, "来自已披露地图 skill");
         StringAssert.Contains(agent.LastMessage, "executor-only stardew_navigate_to_tile");
+        StringAssert.Contains(agent.LastMessage, "idle_micro_action");
+        StringAssert.Contains(agent.LastMessage, "idleMicroAction");
+        StringAssert.Contains(agent.LastMessage, "idle_micro_action 只能表达原地短动作");
         Assert.IsFalse(
             agent.LastMessage.Contains("allowedActions", StringComparison.Ordinal),
             "The parent model should not echo host-owned action whitelist fields.");
@@ -827,6 +830,77 @@ public class NpcAutonomyLoopTests
             AssertLogRecord(records, "diagnostic", "local_executor", "selected", "action=move;lane=delegation");
             AssertLogRecord(records, "local_executor", "stardew_move", "completed", "queued", "cmd-move-1");
             AssertLogRecordExecutorMode(records, "local_executor", "stardew_move", "model_called");
+
+            var entries = await memoryManager.ReadEntriesAsync("memory", CancellationToken.None);
+            Assert.AreEqual(0, entries.Count);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithLocalExecutorIdleMicroAction_ExecutesRunnerLogsEvidenceAndDoesNotWriteMemory()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-local-executor-idle-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            ns.EnsureDirectories();
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var memoryManager = ns.CreateMemoryManager(new FakeChatClient(), NullLogger<MemoryManager>.Instance);
+            var parentContract =
+                """
+                {
+                  "action": "idle_micro_action",
+                  "reason": "she is staying in place and can do a small idle motion",
+                  "idleMicroAction": {
+                    "kind": "look_around",
+                    "ttlSeconds": 8
+                  },
+                  "escalate": false
+                }
+                """;
+            var localExecutor = new FakeLocalExecutorRunner(new NpcLocalExecutorResult(
+                Target: "stardew_idle_micro_action",
+                Stage: "completed",
+                Result: "completed",
+                DecisionResponse: "local_executor_completed:stardew_idle_micro_action",
+                MemorySummary: "played look_around idle micro action for Haley",
+                CommandId: "cmd-idle-1"));
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation(
+                        "haley",
+                        "stardew-valley",
+                        DateTime.UtcNow,
+                        "Haley is sitting still in her room.",
+                        ["location=HaleyHouse", "available=false", "moving=false"])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                new FakeAgent(() => { }, parentContract),
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                localExecutorRunner: localExecutor,
+                traceIdFactory: () => "trace-local-idle");
+
+            var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.AreEqual(1, localExecutor.CallCount);
+            Assert.IsNotNull(localExecutor.LastIntent);
+            Assert.AreEqual(NpcLocalActionKind.IdleMicroAction, localExecutor.LastIntent.Action);
+            Assert.IsNotNull(localExecutor.LastIntent.IdleMicroAction);
+            Assert.AreEqual("look_around", localExecutor.LastIntent.IdleMicroAction!.Kind);
+            Assert.AreEqual("local_executor_completed:stardew_idle_micro_action", result.DecisionResponse);
+
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertLogRecord(records, "diagnostic", "intent_contract", "accepted", "action=idle_micro_action;reason=she is staying in place and can do a small idle motion");
+            AssertLogRecord(records, "diagnostic", "local_executor", "selected", "action=idle_micro_action;lane=delegation");
+            AssertLogRecord(records, "local_executor", "stardew_idle_micro_action", "completed", "completed", "cmd-idle-1");
+            AssertLogRecordExecutorMode(records, "local_executor", "stardew_idle_micro_action", "model_called");
 
             var entries = await memoryManager.ReadEntriesAsync("memory", CancellationToken.None);
             Assert.AreEqual(0, entries.Count);
