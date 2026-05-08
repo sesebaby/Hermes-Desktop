@@ -35,4 +35,3 @@ Readiness gates:
 - Non-goals: 不在 deep-interview 内改源码；不推翻 parent-intent/local-executor 架构。
 - Decision boundaries: Codex 可以整理、分类并持久化问题；具体代码执行需后续计划/执行 lane。
 - Pressure pass: 已完成，把“中长期”改为持久化 ledger。
-

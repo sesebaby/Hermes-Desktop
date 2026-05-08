@@ -320,4 +320,3 @@ RALPLAN 输出应至少包含：
 - PRD：逐项覆盖本 spec 的 A/B/C 编号。
 - Test spec：每个修复点对应测试。
 - 执行切片：先测试校准和 prompt/skill 边界，再 timeout，再配置策略。
-
