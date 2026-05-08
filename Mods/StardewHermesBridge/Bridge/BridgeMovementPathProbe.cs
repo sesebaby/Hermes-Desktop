@@ -41,6 +41,7 @@ internal sealed record BridgeBoundaryLandingRoute(BridgeRouteProbeResult Route, 
 internal static class BridgeMovementPathProbe
 {
     private const int MaxSchedulePathSteps = 300;
+    private const int MaxArrivalFallbackRadius = 12;
 
     public static BridgeRouteProbeResult Probe(
         TileDto currentTile,
@@ -141,13 +142,13 @@ internal static class BridgeMovementPathProbe
         if (!IsBoundaryLandingTile(boundaryLanding))
             return null;
 
+        var targetSafety = targetAffordanceCheck(targetTile);
         foreach (var escapeTile in EnumerateBoundaryEscapeTiles(boundaryLanding))
         {
             var escapeSafety = routeStepSafetyCheck(escapeTile);
             if (!escapeSafety.IsSafe)
                 continue;
 
-            var targetSafety = targetAffordanceCheck(targetTile);
             if (!targetSafety.IsSafe)
             {
                 return new BridgeBoundaryLandingRoute(
@@ -515,12 +516,18 @@ internal static class BridgeMovementPathProbe
     }
 
     public static (TileDto StandTile, int FacingDirection, BridgeRouteProbeResult Route)? FindClosestReachableNeighbor(
-        NPC npc,
-        GameLocation location,
         TileDto target,
-        TileDto currentTile)
+        TileDto currentTile,
+        Func<TileDto, BridgeTileSafetyCheck> targetAffordanceCheck,
+        Func<TileDto, TileDto, Stack<TileDto>?> schedulePathFactory,
+        Func<TileDto, BridgeTileSafetyCheck> routeStepSafetyCheck)
     {
-        var candidates = FindPassableNeighbors(location, target)
+        ArgumentNullException.ThrowIfNull(targetAffordanceCheck);
+        ArgumentNullException.ThrowIfNull(schedulePathFactory);
+        ArgumentNullException.ThrowIfNull(routeStepSafetyCheck);
+
+        var candidates = EnumerateArrivalFallbackCandidates(target)
+            .Where(candidate => targetAffordanceCheck(candidate.Tile).IsSafe)
             .OrderBy(p => Math.Abs(p.Tile.X - currentTile.X) + Math.Abs(p.Tile.Y - currentTile.Y));
 
         foreach (var candidate in candidates)
@@ -528,29 +535,46 @@ internal static class BridgeMovementPathProbe
             var route = Probe(
                 currentTile,
                 candidate.Tile,
-                tile => CheckTargetAffordance(location, tile),
-                () => FindSchedulePath(npc, location, currentTile, candidate.Tile),
-                tile => CheckRouteStepSafety(location, tile));
+                targetAffordanceCheck,
+                () => schedulePathFactory(currentTile, candidate.Tile),
+                routeStepSafetyCheck);
             if (route.Status == BridgeRouteProbeStatus.RouteValid)
                 return (candidate.Tile, candidate.Direction, route);
+
+            if (route.Status == BridgeRouteProbeStatus.PathEmpty && IsBoundaryLandingTile(currentTile))
+            {
+                var escaped = TryBuildRouteFromBoundaryLanding(
+                    currentTile,
+                    candidate.Tile,
+                    targetAffordanceCheck,
+                    routeStart => schedulePathFactory(routeStart, candidate.Tile),
+                    routeStepSafetyCheck);
+                if (escaped is not null && escaped.Route.Status == BridgeRouteProbeStatus.RouteValid)
+                    return (candidate.Tile, candidate.Direction, escaped.Route);
+            }
         }
 
         return null;
     }
 
-    private static IEnumerable<(TileDto Tile, int Direction)> FindPassableNeighbors(GameLocation location, TileDto target)
+    public static (TileDto StandTile, int FacingDirection, BridgeRouteProbeResult Route)? FindClosestReachableNeighbor(
+        NPC npc,
+        GameLocation location,
+        TileDto target,
+        TileDto currentTile)
     {
         using var _ = new ScopedTerrainFeatureRemoval(location, target);
-        foreach (var candidate in EnumerateArrivalFallbackCandidates(target))
-        {
-            if (CheckTargetAffordance(location, candidate.Tile).IsSafe)
-                yield return candidate;
-        }
+        return FindClosestReachableNeighbor(
+            target,
+            currentTile,
+            tile => CheckTargetAffordance(location, tile),
+            (start, end) => FindSchedulePath(npc, location, start, end),
+            tile => CheckRouteStepSafety(location, tile));
     }
 
     public static IEnumerable<(TileDto Tile, int Direction)> EnumerateArrivalFallbackCandidates(
         TileDto target,
-        int maxRadius = 3)
+        int maxRadius = MaxArrivalFallbackRadius)
     {
         if (maxRadius < 1)
             yield break;

@@ -190,6 +190,85 @@ public sealed class BridgeMovementPathProbeTests
     }
 
     [TestMethod]
+    public void FindClosestReachableNeighbor_WhenBoundaryLandingCannotPathDirectly_RoutesThroughEscapeTile()
+    {
+        var boundaryLanding = new TileDto(38, 0);
+        var exactTarget = new TileDto(32, 34);
+        var reachableNeighbor = new TileDto(33, 34);
+
+        var result = BridgeMovementPathProbe.FindClosestReachableNeighbor(
+            exactTarget,
+            boundaryLanding,
+            tile => tile == reachableNeighbor
+                ? BridgeTileSafetyCheck.Safe
+                : BridgeTileSafetyCheck.Blocked("target_tile_open_false", "tile_location_open_false"),
+            (start, end) =>
+            {
+                if (start == new TileDto(38, 1) && end == reachableNeighbor)
+                {
+                    return BridgeMovementPathProbe.ToSchedulePath(new[]
+                    {
+                        new TileDto(37, 1),
+                        reachableNeighbor
+                    });
+                }
+
+                return BridgeMovementPathProbe.ToSchedulePath(Array.Empty<TileDto>());
+            },
+            _ => BridgeTileSafetyCheck.Safe);
+
+        Assert.IsNotNull(
+            result,
+            "A post-warp boundary landing should try an in-map escape step before giving up on nearby arrival fallback tiles.");
+        Assert.AreEqual(reachableNeighbor, result!.Value.StandTile);
+        Assert.AreEqual(3, result.Value.FacingDirection);
+        Assert.AreEqual(BridgeRouteProbeStatus.RouteValid, result.Value.Route.Status);
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                new TileDto(38, 1),
+                new TileDto(37, 1),
+                reachableNeighbor
+            },
+            result.Value.Route.Route.ToArray());
+    }
+
+    [TestMethod]
+    public void FindClosestReachableNeighbor_SearchesPastImmediateShorelineBand()
+    {
+        var boundaryLanding = new TileDto(38, 0);
+        var exactTarget = new TileDto(32, 34);
+        var reachableNeighbor = new TileDto(32, 28);
+
+        var result = BridgeMovementPathProbe.FindClosestReachableNeighbor(
+            exactTarget,
+            boundaryLanding,
+            tile => tile == reachableNeighbor
+                ? BridgeTileSafetyCheck.Safe
+                : BridgeTileSafetyCheck.Blocked("target_tile_open_false", "tile_location_open_false"),
+            (start, end) =>
+            {
+                if (start == new TileDto(38, 1) && end == reachableNeighbor)
+                {
+                    return BridgeMovementPathProbe.ToSchedulePath(new[]
+                    {
+                        new TileDto(37, 1),
+                        reachableNeighbor
+                    });
+                }
+
+                return BridgeMovementPathProbe.ToSchedulePath(Array.Empty<TileDto>());
+            },
+            _ => BridgeTileSafetyCheck.Safe);
+
+        Assert.IsNotNull(
+            result,
+            "Beach shoreline anchors can be several tiles away from the closest NPC-standable tile.");
+        Assert.AreEqual(reachableNeighbor, result!.Value.StandTile);
+        Assert.AreEqual(2, result.Value.FacingDirection);
+    }
+
+    [TestMethod]
     public void BuildCrossLocationRouteProbe_ReturnsFirstWarpSegmentWithoutExecutingWarp()
     {
         var currentTile = new TileDto(80, 93);

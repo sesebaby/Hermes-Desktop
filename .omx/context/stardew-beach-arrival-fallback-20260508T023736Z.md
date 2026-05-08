@@ -1,0 +1,29 @@
+# Context Snapshot: Stardew Beach Arrival Fallback
+
+- Task statement: Execute the Ralph repair for Stardew NPC cross-map navigation after manual Desktop testing sent Haley to the Beach.
+- Desired outcome: When a skill/debug action provides a Beach POI coordinate that is not exactly reachable, the host/bridge resolves a nearby reachable arrival tile instead of failing immediately, while preserving the original final target for audit/status.
+- Known evidence:
+  - SMAPI showed Haley successfully crossing `HaleyHouse -> Town -> Beach`.
+  - Failure occurred after `replanning_after_warp;location=Beach` from `Beach:38,0` toward final POI `Beach:32,34`.
+  - Prior POI `Beach:20,35` also failed in live testing; do not revert to it.
+  - Reference mods support location-route + per-map schedule pathing: Market Day `Utility/Schedule.cs:681-739`; BotFramework `WorldParser.cs:198-214`, `LocationParser.cs:131-151`; CustomNPCFixes `Mod.cs:49-50`; WarpSnitch `WarpSnitch.cs:56-94`.
+- Constraints:
+  - Use `superpowers:systematic-debugging` evidence discipline; no random coordinate guessing as the primary fix.
+  - Preserve `finalTarget`; any fallback must be explicitly reported as `resolvedArrivalTarget` / fallback reason.
+  - Do not fake success via `Game1.warpCharacter` or by assigning `npc.controller = new PathFindController(...)`.
+  - Do not loosen unsafe final target validation; fail closed if no reachable candidate exists.
+  - Avoid reading user-sensitive open tab `其他资料/各种密码和url.md`.
+- Unknowns:
+  - Exact Beach coordinate that is reachable in the user's live map.
+- Resolved after follow-up debugging:
+  - Root cause was not the `HaleyHouse -> Town -> Beach` route; the route and natural warp succeeded.
+  - The final arrival fallback was too narrow for `Beach:38,0 -> Beach:32,34`; radius 3 can miss the nearest reachable shoreline stand tile.
+  - `BridgeMovementPathProbe` now defaults arrival fallback search to radius 12 and can route from a boundary landing through an escape tile before testing a fallback candidate.
+  - `BridgeCommandQueue` now logs `task_target_resolved` with `resolvedArrivalTarget=...;fallbackReason=post_warp_arrival_fallback;finalTarget=...`.
+- 2026-05-08 11:20+ log recheck did not show a new Beach failure. The loaded SMAPI DLL hash (`135B0BBB49D8031FA1729B12FA27365093A8BD695E633D52F37FADB342CEF6F6`) differed from the repaired build DLL (`99B871C228B66261C87B44264AFE064BFDF08E3D74C2392546A7DF7BB7BF9B47`), and copying failed because `StardewModdingAPI.exe` had the DLL loaded. Restart SMAPI, copy the repaired DLL, then retest.
+- 2026-05-08 final retest: the restarted SMAPI session loaded the repaired DLL (`99B871C228B66261C87B44264AFE064BFDF08E3D74C2392546A7DF7BB7BF9B47`), the manual Haley -> Beach command completed (`task_completed`), and the visual check was accepted as success. The earlier hash mismatch is historical, not the current state.
+- Likely touchpoints:
+  - `Mods/StardewHermesBridge/Bridge/BridgeMovementPathProbe.cs`
+  - `Mods/StardewHermesBridge/Bridge/BridgeCommandQueue.cs`
+  - `Mods/StardewHermesBridge.Tests/**`
+  - Possibly `src/games/stardew/StardewBridgeDiscovery.cs`, `skills/gaming/stardew-navigation/references/poi/beach-shoreline.md`, and `BridgeDestinationRegistry.cs` only if a verified coordinate replacement is still needed.

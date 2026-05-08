@@ -432,6 +432,25 @@ public sealed class BridgeMoveCommandQueueRegressionTests
     }
 
     [TestMethod]
+    public void PostWarpArrivalFallbackLogsResolvedTargetAndOriginalFinalTarget()
+    {
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(
+            commandQueue,
+            "resolvedArrivalTarget=",
+            "Post-warp fallback must expose the executable arrival tile chosen near an unreachable POI.");
+        StringAssert.Contains(
+            commandQueue,
+            "fallbackReason=post_warp_arrival_fallback",
+            "The log should distinguish host arrival fallback from a user-requested coordinate change.");
+        StringAssert.Contains(
+            commandQueue,
+            "finalTarget=",
+            "The original skill/debug POI must stay visible after resolving a nearby arrival tile.");
+    }
+
+    [TestMethod]
     public void MoveCommandCanKeepStableErrorCodeSeparateFromDiagnosticBlockedReason()
     {
         var command = new StardewHermesBridge.Bridge.BridgeMoveCommand(

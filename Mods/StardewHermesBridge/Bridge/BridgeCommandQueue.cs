@@ -805,8 +805,8 @@ public sealed class BridgeCommandQueue
         {
             var finalTarget = command.FinalTarget?.Tile ?? command.TargetTile;
             var finalProbe = ProbeRoute(npc, currentTile, currentLocation, finalTarget);
-            TileDto? resolvedSegmentTarget = null;
-            int? resolvedFacingDirection = null;
+            TileDto? resolvedArrivalTarget = null;
+            int? resolvedArrivalFacingDirection = null;
             if (finalProbe.Status == BridgeRouteProbeStatus.PathEmpty)
             {
                 var escaped = BridgeMovementPathProbe.TryBuildRouteFromBoundaryLanding(
@@ -828,9 +828,17 @@ public sealed class BridgeCommandQueue
                     currentTile);
                 if (resolved is not null)
                 {
-                    resolvedSegmentTarget = resolved.Value.StandTile;
-                    resolvedFacingDirection = resolved.Value.FacingDirection;
+                    resolvedArrivalTarget = resolved.Value.StandTile;
+                    resolvedArrivalFacingDirection = resolved.Value.FacingDirection;
                     finalProbe = resolved.Value.Route;
+                    _logger.Write(
+                        "task_target_resolved",
+                        command.NpcId,
+                        "move",
+                        command.TraceId,
+                        command.CommandId,
+                        "running",
+                        $"resolvedArrivalTarget={resolved.Value.StandTile.X},{resolved.Value.StandTile.Y};fallbackReason=post_warp_arrival_fallback;finalTarget={command.FinalTarget.Tile.X},{command.FinalTarget.Tile.Y};facing={resolved.Value.FacingDirection}");
                 }
             }
 
@@ -840,14 +848,14 @@ public sealed class BridgeCommandQueue
                 currentLocationName,
                 currentTile,
                 command.LocationName,
-                resolvedSegmentTarget ?? finalTarget);
+                resolvedArrivalTarget ?? finalTarget);
             command.RecordRouteProbe(finalProbeData);
-            var started = resolvedSegmentTarget is null
+            var started = resolvedArrivalTarget is null
                 ? command.TryStartPostWarpFinalTargetSegment(currentLocationName, finalProbe, out var failureCode)
                 : command.TryStartPostWarpFinalTargetSegment(
                     currentLocationName,
-                    resolvedSegmentTarget,
-                    resolvedFacingDirection,
+                    resolvedArrivalTarget,
+                    resolvedArrivalFacingDirection,
                     finalProbe,
                     out failureCode);
             if (!started)

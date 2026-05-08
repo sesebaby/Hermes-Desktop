@@ -23,6 +23,8 @@
 - `dotnet test .\Mods\StardewHermesBridge.Tests\Mods.StardewHermesBridge.Tests.csproj -c Debug --filter "FullyQualifiedName~BridgeMoveCommandQueueRegressionTests|FullyQualifiedName~BridgeMovementPathProbeTests|FullyQualifiedName~BridgeMoveFailureMapperTests"`：26 passed。
 - `dotnet test .\Mods\StardewHermesBridge.Tests\Mods.StardewHermesBridge.Tests.csproj -c Debug`：93 passed。
 - `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~StardewCommandServiceTests|FullyQualifiedName~StardewNpcToolFactoryTests|FullyQualifiedName~NpcLocalExecutorRunnerTests|FullyQualifiedName~NpcLocalActionIntentTests"`：64 passed。
+- 2026-05-08 真实手测：Desktop debug 命令“让海莉去海边”已确认跨地图主链路能走通 `HaleyHouse -> Town -> Beach`，并在 `replanning_after_warp;location=Beach` 进入最终同地图重规划；失败点集中在海滩最终 POI `Beach:32,34` 的可达性，而不是跨地图切换本身。
+- 2026-05-08 11:20 后复核：`SMAPI-latest.txt` 没有新的 `Beach` / `post_warp` / `path_empty` / `task_failed` 命中；当前 SMAPI 进程加载的 mod DLL 哈希为 `135B0BBB49D8031FA1729B12FA27365093A8BD695E633D52F37FADB342CEF6F6`，仓库已构建修复 DLL 哈希为 `99B871C228B66261C87B44264AFE064BFDF08E3D74C2392546A7DF7BB7BF9B47`。同步失败原因是 `StardewModdingAPI.exe` 正在占用 `D:\Stardew Valley\Stardew Valley.v1.6.15\Mods\StardewHermesBridge\StardewHermesBridge.dll`；必须退出/重启 SMAPI 后复制新 DLL，再重测。
 
 当前限制：
 
@@ -75,6 +77,10 @@
 
 路径：`参考项目/Mod参考/Stardew-GitHub-ncarigon-CeruleanStardewMods/Market/MarketDay`
 
+代码地址：
+
+- `Utility/Schedule.cs:681-739`：`PathfindToNextScheduleLocation(...)` 先拿 `getLocationRoute(...)`，再按 hop 逐段取 `getWarpPointTo(...)`，切图后用 `getWarpPointTarget(...)` 接回下一段起点，最后一段仍用 `PathFindController.findPathForNPCSchedules(...)`。
+
 借鉴：
 
 - `Utility/Schedule.cs` 的 `PathfindToNextScheduleLocation(...)` 先算 location route，再逐图生成 `SchedulePathDescription`。
@@ -89,6 +95,12 @@
 #### BotFramework
 
 路径：`参考项目/Mod参考/Stardew-GitHub-andyruwruw-BotFramework`
+
+代码地址：
+
+- `BotFramework/World/WorldParser.cs:198-214`：`ActionToWarp()` 把 world path 拆成下一张地图的 warp 动作。
+- `BotFramework/Locations/LocationParser.cs:131-151`：`WarpToTile(...)` 把 warp 映射成当前地图内可执行 tile。
+- `BotFramework/Actions/ActionTile.cs:11-31`：用动作对象封装导航 tile，而不是直接改写世界状态。
 
 借鉴：
 
@@ -105,6 +117,10 @@
 
 路径：`参考项目/Mod参考/Stardew-GitHub-spacechase0-CustomNPCFixes/Mod.cs`
 
+代码地址：
+
+- `Mod.cs:49-50`：`NPC.populateRoutesFromLocationToLocationList()` 在 save load / day start 后刷新 route cache，避免过期 route/schedule 干扰路径判断。
+
 借鉴：
 
 - route/schedule 失败时先考虑原版 route cache 或 schedule 需要刷新。
@@ -114,6 +130,27 @@
 
 - 不做全 NPC schedule 修复。
 - Stardew 1.6 优先验证 `WarpPathfindingCache`，不能直接照搬旧版本 API。
+
+#### WarpSnitch
+
+路径：`参考项目/Mod参考/Stardew-GitHub-ncarigon-CeruleanStardewMods/WarpSnitch/WarpSnitch`
+
+代码地址：
+
+- `WarpSnitch.cs:56-94`：patch `PathFindController.isPositionImpassableForNPCSchedule` / `findPathForNPCSchedules`，用于把路由和不可达证据写进日志；这里只适合作为诊断参考，不是执行替代。
+
+借鉴：
+
+- 记录 `isPositionImpassableForNPCSchedule(...)` 和 `findPathForNPCSchedules(...)` 的真实调用证据，便于复现和对照。
+- 只做诊断，不接管执行路径。
+
+## 海滩终点解析策略
+
+- `Beach:32,34` 这类 skill / mechanical target 仍然是最终意图，不得直接把 `finalTarget` 改写成 warp tile。
+- 如果 `replanning_after_warp` 后 exact target 在当前海滩图内不可达，宿主应在同地图范围内计算最近可达 `arrival tile`，并把它作为 `resolvedArrivalTarget` / `arrivalFallback` 执行。
+- `Beach:38,0 -> Beach:32,34` 的失败根因是海滩边界落点到海岸 POI 的最近可站 tile 超出旧 `maxRadius=3`；当前修复把 arrival fallback 默认搜索半径提升为 12，并允许从边界落点先走 escape tile 再探测候选点。
+- `finalTarget`、`resolvedArrivalTarget`、`currentSegment` 必须同时保留；状态面和日志要能区分“原始 POI”与“最终落点”。
+- 只有当候选邻点也穷尽后，才返回结构化失败 `target_tile_unreachable`。
 
 ## 完成定义
 
@@ -126,7 +163,7 @@
   - 执行当前地图内到 warp tile 的第一段移动。
   - 到达 warp tile 后等待原版自然切图。
   - 切图后重新计算下一段。
-  - 最终到达 `Beach/x/y` 或给出结构化失败。
+  - 最终到达 `Beach/x/y`；若 exact target 不可达，则宿主解析最近可达 arrival tile，并显式记录 `resolvedArrivalTarget/fallbackReason`；仅在候选穷尽后给出结构化失败。
 - `task_status` 能持续反映 `routeProbe`、当前 phase、当前 segment、失败码或完成证据。
 - 日志可解释每一次移动为什么失败：不是一句自然语言，而是稳定字段。
 - 现有同地图 move、`destinationId` move、NPC 私聊、自主循环不退化。
