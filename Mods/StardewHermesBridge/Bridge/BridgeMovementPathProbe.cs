@@ -122,8 +122,7 @@ internal static class BridgeMovementPathProbe
             new Point(currentTile.X, currentTile.Y),
             new Point(targetTile.X, targetTile.Y),
             location,
-            MaxSchedulePathSteps,
-            npc);
+            MaxSchedulePathSteps);
 
         return ToSchedulePath(rawPath, currentTile);
     }
