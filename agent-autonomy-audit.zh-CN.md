@@ -79,6 +79,8 @@
   宿主不是提供 skill catalog，而是在通过强制性提示替 agent 决定工作流。
 - **为什么越界**:
   skill 应提供“能力和偏好事实”；是否加载、何时加载，本来应该是 agent 的主动判断。现在宿主把“先扫 skill、尽量多加载”提升成硬性行为。
+   用户意见:
+  现状没有问题,不需要修改
 
 ### 5. 私聊 system prompt 直接预编排对话顺序与记忆策略
 - **位置**: `src/games/stardew/StardewPrivateChatOrchestrator.cs:251-261`
@@ -92,6 +94,8 @@
   宿主直接写死了私聊里的处理顺序、何时记忆、何时 session_search、如何组织答复。
 - **为什么越界**:
   这些应由 NPC persona + 当前上下文 + tool/skill 自己驱动，不该由宿主固定成一套对话编排规则。
+    用户意见:
+  现状没有问题,不需要修改
 
 ---
 
