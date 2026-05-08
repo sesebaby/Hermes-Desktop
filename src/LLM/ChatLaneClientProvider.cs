@@ -25,7 +25,7 @@ public sealed class ChatLaneClientProvider
         var reservedConcurrency = _readSetting("delegation", "max_concurrent_children");
         var reservedSpawnDepth = _readSetting("delegation", "max_spawn_depth");
         _logger.LogInformation(
-            "Delegation lane policy is flat-only in v1; effectiveMaxSpawnDepth=1; max_spawn_depth={MaxSpawnDepth}; max_concurrent_children={MaxConcurrentChildren}",
+            "Delegation lane policy is flat-only in v1; max_spawn_depth={MaxSpawnDepth}; max_spawn_depth_status=reserved_not_enforced; max_concurrent_children={MaxConcurrentChildren}; max_concurrent_children_status=reserved_not_enforced",
             string.IsNullOrWhiteSpace(reservedSpawnDepth) ? "-" : reservedSpawnDepth.Trim(),
             string.IsNullOrWhiteSpace(reservedConcurrency) ? "-" : reservedConcurrency.Trim());
     }

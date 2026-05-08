@@ -62,7 +62,7 @@ public class ChatRouteResolverTests
     }
 
     [TestMethod]
-    public void Resolve_DelegationBaseUrlOverride_UsesLaneEndpoint()
+    public void Resolve_DelegationLane_UsesLaneSpecificProviderModelAndBaseUrl()
     {
         var root = CreateRootConfig();
         var values = new Dictionary<(string Section, string Key), string>(StringTupleComparer.OrdinalIgnoreCase)
@@ -84,6 +84,37 @@ public class ChatRouteResolverTests
         Assert.AreEqual("delegation.model", route.Sources.Model);
         Assert.AreEqual("delegation.base_url", route.Sources.BaseUrl);
         Assert.AreEqual("delegation.api_key", route.Sources.ApiKey);
+    }
+
+    [TestMethod]
+    public void ChatLaneClientProvider_LogsMaxSpawnDepthAsReservedFlatOnlySetting()
+    {
+        var root = CreateRootConfig();
+        var values = new Dictionary<(string Section, string Key), string>(StringTupleComparer.OrdinalIgnoreCase)
+        {
+            [("delegation", "provider")] = "openai",
+            [("delegation", "base_url")] = "http://127.0.0.1:1234/v1",
+            [("delegation", "model")] = "qwen3-4b",
+            [("delegation", "max_spawn_depth")] = "3",
+            [("delegation", "max_concurrent_children")] = "2"
+        };
+        var logger = new CapturingLogger<ChatLaneClientProvider>();
+        var provider = new ChatLaneClientProvider(
+            new ChatClientFactory(
+                root,
+                new HttpClient(),
+                NullLogger<ChatClientFactory>.Instance),
+            new ChatRouteResolver(root, Read(values)),
+            logger,
+            Read(values));
+
+        _ = provider;
+
+        var logText = string.Join(Environment.NewLine, logger.Messages);
+        StringAssert.Contains(logText, "flat-only in v1");
+        StringAssert.Contains(logText, "max_spawn_depth=3");
+        StringAssert.Contains(logText, "reserved_not_enforced");
+        Assert.IsFalse(logText.Contains("effectiveMaxSpawnDepth", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -130,6 +161,18 @@ public class ChatRouteResolverTests
         Assert.AreEqual(root.BaseUrl, route.Config.BaseUrl);
         Assert.AreEqual("model.provider", route.Sources.Provider);
         Assert.AreEqual("model.default", route.Sources.Model);
+    }
+
+    [TestMethod]
+    public void SyncStardewNpcConfigScript_LabelsMaxSpawnDepthAsReservedFlatOnlySetting()
+    {
+        var script = ReadRepositoryFile("scripts", "sync-stardew-npc-config.ps1");
+
+        StringAssert.Contains(script, "max_spawn_depth is emitted only as a reserved flat-only v1 marker");
+        StringAssert.Contains(script, "max_spawn_depth is reserved for future nested delegation; flat-only v1 ignores it.");
+        StringAssert.Contains(script, "max_concurrent_children is reserved for future fan-out policy; flat-only v1 ignores it.");
+        StringAssert.Contains(script, "Delegation depth: max_spawn_depth is reserved and ignored by flat-only v1.");
+        Assert.IsFalse(script.Contains("effectiveMaxSpawnDepth", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -216,6 +259,21 @@ public class ChatRouteResolverTests
 
     private static Func<string, string, string?> Read(Dictionary<(string Section, string Key), string> values)
         => (section, key) => values.TryGetValue((section, key), out var value) ? value : null;
+
+    private static string ReadRepositoryFile(params string[] relativePath)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine([directory.FullName, .. relativePath]);
+            if (File.Exists(candidate))
+                return File.ReadAllText(candidate);
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException($"Could not locate repository file: {string.Join(Path.DirectorySeparatorChar, relativePath)}");
+    }
 
     private sealed class StringTupleComparer : IEqualityComparer<(string Section, string Key)>
     {

@@ -8,6 +8,8 @@
   unchanged so player-visible dialogue can stay on the existing cloud model.
   The Stardew autonomy lane is configured to request JSON-object output from
   OpenAI-compatible providers that support response_format, such as DeepSeek.
+  delegation.max_spawn_depth is emitted only as a reserved flat-only v1 marker;
+  current Hermes does not enforce nested delegation depth.
 
 .PARAMETER ConfigPath
   Path to config.yaml. Defaults to %HERMES_HOME%\config.yaml when HERMES_HOME
@@ -169,7 +171,9 @@ Set-TopLevelSection -Lines $lines -SectionName "delegation" -Entries @(
     "model: $Model",
     "auth_mode: $AuthMode",
     "api_key: $ApiKey",
+    "# max_spawn_depth is reserved for future nested delegation; flat-only v1 ignores it.",
     "max_spawn_depth: 1",
+    "# max_concurrent_children is reserved for future fan-out policy; flat-only v1 ignores it.",
     "max_concurrent_children: 1"
 )
 
@@ -187,5 +191,6 @@ Write-Host "NPCs: $EnabledNpcIds" -ForegroundColor DarkGray
 Write-Host "Provider: $Provider" -ForegroundColor DarkGray
 Write-Host "Base URL: $BaseUrl" -ForegroundColor DarkGray
 Write-Host "Delegation Model: $Model" -ForegroundColor DarkGray
+Write-Host "Delegation depth: max_spawn_depth is reserved and ignored by flat-only v1." -ForegroundColor DarkGray
 Write-Host "Autonomy Response Format: $AutonomyResponseFormat" -ForegroundColor DarkGray
 Write-Host "Config: $ConfigPath" -ForegroundColor DarkGray
