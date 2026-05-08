@@ -917,6 +917,137 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
+    public async Task RunOneIterationAsync_WhenActionSlotTimesOut_RecordsTimeoutFactForNextTick()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CapturingChatClient(
+            """
+            {
+              "action": "wait",
+              "reason": "recover after timeout",
+              "waitReason": "I will reconsider after the previous action timed out."
+            }
+            """);
+        var commands = new FakeCommandService();
+        var coordination = new WorldCoordinationService(new ResourceClaimRegistry());
+        var targetTile = new ClaimedTile("Town", 42, 17);
+        Assert.IsTrue(coordination.TryClaimMove("work-1", "haley", "trace-1", targetTile, targetTile, "idem-1").Accepted);
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is recovering after a stale action.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetPendingWorkItemAsync(
+            new NpcRuntimePendingWorkItemSnapshot("work-1", "move", "cmd-1", StardewCommandStatuses.Running, DateTime.UtcNow),
+            CancellationToken.None);
+        await driver.SetActionSlotAsync(
+            new NpcRuntimeActionSlotSnapshot("action", "work-1", "cmd-1", "trace-1", DateTime.UtcNow.AddMinutes(-2), DateTime.UtcNow.AddMinutes(-1)),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"],
+            worldCoordination: coordination);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, commands.CancelRequests.Count);
+        var timeoutSnapshot = supervisor.Snapshot().Single();
+        Assert.IsNull(timeoutSnapshot.Controller.PendingWorkItem);
+        Assert.IsNull(timeoutSnapshot.Controller.ActionSlot);
+        Assert.IsNull(timeoutSnapshot.Controller.NextWakeAtUtc, "Timeout cleanup must not choose a fixed restart cooldown for the parent.");
+        Assert.AreEqual(StardewCommandStatuses.Cancelled, timeoutSnapshot.Controller.LastTerminalCommandStatus?.Status);
+        Assert.AreEqual(StardewBridgeErrorCodes.ActionSlotTimeout, timeoutSnapshot.Controller.LastTerminalCommandStatus?.ErrorCode);
+        Assert.IsTrue(
+            coordination.TryClaimMove("work-2", "penny", "trace-2", targetTile, targetTile, "idem-2").Accepted,
+            "Timed-out actions must release their short resource claim.");
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, chatClient.CapturedRequests.Count);
+        StringAssert.Contains(chatClient.CapturedRequests[0], "action_slot_timeout");
+
+        var logPath = Path.Combine(
+            _tempDir,
+            "runtime",
+            "stardew",
+            "games",
+            "stardew-valley",
+            "saves",
+            "save-42",
+            "npc",
+            "haley",
+            "profiles",
+            "default",
+            "activity",
+            "runtime.jsonl");
+        var records = ReadRuntimeLogRecords(logPath);
+        Assert.IsTrue(records.Any(record =>
+            record.GetProperty("actionType").GetString() == "task_continuity" &&
+            record.GetProperty("target").GetString() == "action_slot_timeout" &&
+            record.GetProperty("stage").GetString() == "terminal" &&
+            record.TryGetProperty("commandId", out var commandId) &&
+            commandId.GetString() == "cmd-1"),
+            "The timeout must be persisted as a structured runtime fact.");
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenActionSlotTimesOutWithoutCommandId_ClearsSlotAndRecordsFact()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var coordination = new WorldCoordinationService(new ResourceClaimRegistry());
+        var targetTile = new ClaimedTile("Town", 42, 17);
+        Assert.IsTrue(coordination.TryClaimMove("work-1", "haley", "trace-1", targetTile, targetTile, "idem-1").Accepted);
+        var adapter = new FakeGameAdapter(
+            new FakeCommandService(),
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is recovering after a stale local action slot.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetPendingWorkItemAsync(
+            new NpcRuntimePendingWorkItemSnapshot("work-1", "move", null, "submitting", DateTime.UtcNow),
+            CancellationToken.None);
+        await driver.SetActionSlotAsync(
+            new NpcRuntimeActionSlotSnapshot("action", "work-1", null, "trace-1", DateTime.UtcNow.AddMinutes(-2), DateTime.UtcNow.AddMinutes(-1)),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"],
+            worldCoordination: coordination);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        var snapshot = supervisor.Snapshot().Single();
+        Assert.IsNull(snapshot.Controller.PendingWorkItem);
+        Assert.IsNull(snapshot.Controller.ActionSlot);
+        Assert.IsNull(snapshot.Controller.NextWakeAtUtc, "A commandless timeout must not synthesize a fixed RetryAfterUtc.");
+        Assert.AreEqual(StardewCommandStatuses.Cancelled, snapshot.Controller.LastTerminalCommandStatus?.Status);
+        Assert.AreEqual(StardewBridgeErrorCodes.ActionSlotTimeout, snapshot.Controller.LastTerminalCommandStatus?.ErrorCode);
+        Assert.IsTrue(coordination.TryClaimMove("work-2", "penny", "trace-2", targetTile, targetTile, "idem-2").Accepted);
+    }
+
+    [TestMethod]
     public async Task RunOneIterationAsync_WhenPendingActionCanBeFoundByIdempotency_RebindsCommandAndPausesAsRunning()
     {
         var discovery = CreateDiscovery("save-42");
@@ -1723,6 +1854,8 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     {
         public List<GameAction> Submitted { get; } = new();
 
+        public List<(string CommandId, string Reason)> CancelRequests { get; } = new();
+
         public virtual Task<GameCommandResult> SubmitAsync(GameAction action, CancellationToken ct)
         {
             Submitted.Add(action);
@@ -1736,7 +1869,10 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             => Task.FromResult<GameCommandStatus?>(null);
 
         public virtual Task<GameCommandStatus> CancelAsync(string commandId, string reason, CancellationToken ct)
-            => Task.FromResult(new GameCommandStatus(commandId, "Penny", "debug", StardewCommandStatuses.Cancelled, 1, reason, null));
+        {
+            CancelRequests.Add((commandId, reason));
+            return Task.FromResult(new GameCommandStatus(commandId, "Penny", "debug", StardewCommandStatuses.Cancelled, 1, reason, null));
+        }
     }
 
     private sealed class FakeCommandService : RecordingCommandService

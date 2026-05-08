@@ -807,16 +807,17 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                     0,
                     StardewBridgeErrorCodes.ActionSlotTimeout,
                     StardewBridgeErrorCodes.ActionSlotTimeout,
-                    UpdatedAtUtc: DateTime.UtcNow,
-                    RetryAfterUtc: DateTime.UtcNow + _budget.Options.EffectiveRestartCooldown);
+                    UpdatedAtUtc: DateTime.UtcNow);
 
+            cancelledStatus = NormalizeActionSlotTimeoutStatus(binding, controller, cancelledStatus);
             await runtimeActions.RecordStatusAsync(cancelledStatus, ct);
+            await WriteActionSlotTimeoutEvidenceAsync(binding, tracker, cancelledStatus, controller.ActionSlot.TraceId, ct);
             await PauseTrackerAsync(
                 tracker,
                 deliveredCursor,
                 StardewBridgeErrorCodes.ActionSlotTimeout,
                 bridgeKey,
-                cancelledStatus.RetryAfterUtc ?? DateTime.UtcNow + _budget.Options.EffectiveRestartCooldown,
+                null,
                 ct);
             return true;
         }
@@ -868,6 +869,52 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             return true;
 
         return true;
+    }
+
+    private static GameCommandStatus NormalizeActionSlotTimeoutStatus(
+        StardewNpcRuntimeBinding binding,
+        NpcRuntimeControllerSnapshot controller,
+        GameCommandStatus status)
+    {
+        var commandId = string.IsNullOrWhiteSpace(status.CommandId)
+            ? controller.ActionSlot?.CommandId ?? controller.ActionSlot?.WorkItemId ?? controller.PendingWorkItem?.CommandId ?? controller.PendingWorkItem?.WorkItemId ?? "action_slot"
+            : status.CommandId;
+        var action = string.IsNullOrWhiteSpace(status.Action)
+            ? controller.PendingWorkItem?.WorkType ?? "action"
+            : status.Action;
+        return status with
+        {
+            CommandId = commandId,
+            NpcId = string.IsNullOrWhiteSpace(status.NpcId) ? binding.Descriptor.NpcId : status.NpcId,
+            Action = action,
+            Status = StardewCommandStatuses.Cancelled,
+            BlockedReason = StardewBridgeErrorCodes.ActionSlotTimeout,
+            ErrorCode = StardewBridgeErrorCodes.ActionSlotTimeout,
+            UpdatedAtUtc = DateTime.UtcNow,
+            RetryAfterUtc = null
+        };
+    }
+
+    private static async Task WriteActionSlotTimeoutEvidenceAsync(
+        StardewNpcRuntimeBinding binding,
+        NpcAutonomyTracker tracker,
+        GameCommandStatus status,
+        string? traceId,
+        CancellationToken ct)
+    {
+        var writer = new NpcRuntimeLogWriter(Path.Combine(tracker.Instance.Namespace.ActivityPath, "runtime.jsonl"));
+        await writer.WriteAsync(new NpcRuntimeLogRecord(
+            DateTime.UtcNow,
+            string.IsNullOrWhiteSpace(traceId) ? status.CommandId : traceId,
+            binding.Descriptor.NpcId,
+            binding.Descriptor.GameId,
+            binding.Descriptor.SessionId,
+            "task_continuity",
+            "action_slot_timeout",
+            "terminal",
+            status.Status,
+            CommandId: status.CommandId,
+            Error: status.ErrorCode ?? status.BlockedReason), ct);
     }
 
     private static async Task WriteCommandTerminalEvidenceAsync(

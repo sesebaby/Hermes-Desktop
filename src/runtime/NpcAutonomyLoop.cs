@@ -1,5 +1,6 @@
 using Hermes.Agent.Core;
 using Hermes.Agent.Game;
+using Hermes.Agent.Games.Stardew;
 using Hermes.Agent.Tasks;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
@@ -182,7 +183,9 @@ public sealed class NpcAutonomyLoop
             decisionSession.State["traceId"] = traceId;
             decisionSession.State["npcId"] = descriptor.NpcId;
             decisionSession.State[StardewAutonomySessionKeys.IsAutonomyTurn] = true;
-            var decisionMessage = BuildDecisionMessage(descriptor);
+            var decisionMessage = BuildDecisionMessage(
+                descriptor,
+                instance?.Snapshot().Controller.LastTerminalCommandStatus);
             _logger?.LogInformation(
                 "NPC autonomy decision request prepared; npc={NpcId}; trace={TraceId}; injectedFacts={FactCount}; messageChars={MessageChars}",
                 descriptor.NpcId,
@@ -242,9 +245,11 @@ public sealed class NpcAutonomyLoop
                string.Equals(body.SmapiName, record.NpcId, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string BuildDecisionMessage(NpcRuntimeDescriptor descriptor)
+    private static string BuildDecisionMessage(
+        NpcRuntimeDescriptor descriptor,
+        GameCommandStatus? lastTerminalCommandStatus = null)
     {
-        return
+        var message =
             $"NPC: {descriptor.DisplayName} ({descriptor.NpcId})\n" +
             "你被唤醒了一轮。你是生活在星露谷里的人，不是宿主替你操控的脚本。\n" +
             "宿主这一次只负责唤醒你；它没有替你观察世界，没有替你选择目标，也没有要求你必须先观察。\n" +
@@ -260,7 +265,27 @@ public sealed class NpcAutonomyLoop
             "idle_micro_action 只能表达原地短动作；不要同时附带 speech、destinationId 或 target，也不要把它改写成 move 或 speak。\n" +
             "如果任务真的被外部条件阻断，用 taskUpdate 把已有 todo 标成 blocked；如果确定做不成，标成 failed；blocked 或 failed 都要写短 reason。\n" +
             "wait 只表示你现在选择暂不推进，不是普通世界动作。";
+        var timeoutFact = BuildActionSlotTimeoutFact(lastTerminalCommandStatus);
+        return timeoutFact is null
+            ? message
+            : message + "\n" + timeoutFact;
     }
+
+    private static string? BuildActionSlotTimeoutFact(GameCommandStatus? status)
+    {
+        if (status is null ||
+            !IsActionSlotTimeout(status))
+        {
+            return null;
+        }
+
+        var commandId = string.IsNullOrWhiteSpace(status.CommandId) ? "-" : status.CommandId;
+        return $"action_slot_timeout: 上一轮行动槽在完成前超时；commandId={commandId}; status={status.Status}。你自己决定下一步是观察、等待、换目标，还是用不同方式继续。";
+    }
+
+    private static bool IsActionSlotTimeout(GameCommandStatus status)
+        => string.Equals(status.ErrorCode, StardewBridgeErrorCodes.ActionSlotTimeout, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status.BlockedReason, StardewBridgeErrorCodes.ActionSlotTimeout, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsToolIterationLimitFallback(string? value)
         => !string.IsNullOrWhiteSpace(value) &&
