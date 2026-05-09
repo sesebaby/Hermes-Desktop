@@ -2,6 +2,7 @@ namespace Hermes.Agent.Games.Stardew;
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using Hermes.Agent.Core;
 using Hermes.Agent.Game;
 using Hermes.Agent.Runtime;
@@ -40,7 +41,6 @@ public static class StardewNpcToolFactory
             new StardewQuestStatusTool(adapter.Queries, descriptor),
             new StardewFarmStatusTool(adapter.Queries, descriptor),
             new StardewRecentActivityTool(recentActivityProvider, descriptor, logger),
-            new StardewMoveTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
             new StardewSpeakTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewOpenPrivateChatTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewTaskStatusTool(adapter.Commands)
@@ -71,19 +71,25 @@ public static class StardewNpcToolFactory
         return (toolSurfacePolicy ?? StardewNpcToolSurfacePolicy.Default).ApplyToLocalExecutor(
         [
             new StardewStatusTool(adapter.Queries, descriptor),
-            new StardewMoveTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
             new StardewNavigateToTileTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
             new StardewIdleMicroActionTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewTaskStatusTool(adapter.Commands)
         ]);
     }
 
-    public static string LocalExecutorToolFingerprint(StardewNpcToolSurfacePolicy? toolSurfacePolicy = null)
-        => NpcToolSurface.FromTools(
-                (toolSurfacePolicy ?? StardewNpcToolSurfacePolicy.Default)
-                .ValidatedLocalExecutorToolNames()
-                .Select(name => new ToolFingerprintProbe(name)))
+    public static string LocalExecutorToolFingerprint(StardewNpcToolSurfacePolicy? toolSurfacePolicy = null, bool includeSkillView = false)
+    {
+        var probes = (toolSurfacePolicy ?? StardewNpcToolSurfacePolicy.Default)
+            .ValidatedLocalExecutorToolNames()
+            .Select(name => new ToolFingerprintProbe(name))
+            .Cast<ITool>()
+            .ToList();
+        if (includeSkillView)
+            probes.Add(new ToolFingerprintProbe("skill_view"));
+
+        return NpcToolSurface.FromTools(probes)
             .Fingerprint;
+    }
 
     private sealed class ToolFingerprintProbe(string name) : ITool
     {
@@ -99,6 +105,185 @@ public static class StardewNpcToolFactory
     }
 }
 
+public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    private static readonly HashSet<string> AllowedActions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "move",
+        "observe",
+        "wait",
+        "task_status",
+        "idle_micro_action",
+        "escalate"
+    };
+
+    private readonly NpcRuntimeDescriptor _descriptor;
+    private readonly NpcRuntimeDriver _runtimeDriver;
+    private readonly ILogger? _logger;
+
+    public NpcDelegateActionTool(
+        NpcRuntimeDescriptor descriptor,
+        NpcRuntimeDriver runtimeDriver,
+        ILogger? logger = null)
+    {
+        _descriptor = descriptor ?? throw new ArgumentNullException(nameof(descriptor));
+        _runtimeDriver = runtimeDriver ?? throw new ArgumentNullException(nameof(runtimeDriver));
+        _logger = logger;
+    }
+
+    public string Name => "npc_delegate_action";
+
+    public string Description => "仅限私聊父 agent 使用。玩家要求现在就做现实世界动作且你决定答应时，先调用本工具把行动意图委托给 NPC 本地执行层，再自然回复玩家。只口头答应不会发生动作。不要在这里写坐标、解析地点或使用 destinationId；不知道路线或坐标也要委托给本地执行层处理。";
+
+    public Type ParametersType => typeof(NpcDelegateActionToolParameters);
+
+    public JsonElement GetParameterSchema()
+        => JsonSerializer.SerializeToElement(new
+        {
+            type = "object",
+            properties = new
+            {
+                action = new
+                {
+                    type = "string",
+                    description = "要委托的简单行动类型：move、observe、wait、task_status、idle_micro_action 或 escalate。"
+                },
+                reason = new
+                {
+                    type = "string",
+                    description = "你为什么接受这个立即行动的简短原因。"
+                },
+                intentText = new
+                {
+                    type = "string",
+                    description = "可选兼容字段。玩家原话或一句自然语言意图；移动请求优先使用 destinationText。"
+                },
+                destinationText = new
+                {
+                    type = "string",
+                    description = "action=move 必填。只写目的地的自然语言说法，例如“海边”或“皮埃尔商店”；不要写坐标、locationName、target 或 destinationId。"
+                },
+                conversationId = new
+                {
+                    type = "string",
+                    description = "可选。已知时填写当前私聊 conversation id。"
+                }
+            },
+            required = new[] { "action", "reason" }
+        });
+
+    public async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+    {
+        var p = (NpcDelegateActionToolParameters)parameters;
+        if (string.IsNullOrWhiteSpace(p.Action) ||
+            !AllowedActions.Contains(p.Action))
+        {
+            return ToolResult.Fail("unsupported action");
+        }
+
+        if (string.IsNullOrWhiteSpace(p.Reason))
+            return ToolResult.Fail("reason is required");
+
+        var traceId = $"trace_delegate_{_descriptor.NpcId}_{Guid.NewGuid():N}";
+        var workItemId = $"ingress_delegate_{_descriptor.NpcId}_{Guid.NewGuid():N}";
+        var action = p.Action.Trim();
+        if (string.Equals(action, "move", StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(p.DestinationText) &&
+            string.IsNullOrWhiteSpace(p.IntentText))
+        {
+            return ToolResult.Fail("destinationText is required for move");
+        }
+
+        var conversationId = string.IsNullOrWhiteSpace(p.ConversationId)
+            ? InferConversationId(p.CurrentSessionId)
+            : p.ConversationId.Trim();
+        var payload = new JsonObject
+        {
+            ["action"] = action,
+            ["reason"] = p.Reason.Trim()
+        };
+        if (!string.IsNullOrWhiteSpace(p.DestinationText))
+            payload["destinationText"] = p.DestinationText.Trim();
+        if (!string.IsNullOrWhiteSpace(p.IntentText))
+            payload["intentText"] = p.IntentText.Trim();
+        if (!string.IsNullOrWhiteSpace(conversationId))
+            payload["conversationId"] = conversationId;
+
+        await _runtimeDriver.EnqueueIngressWorkItemAsync(
+            new NpcRuntimeIngressWorkItemSnapshot(
+                workItemId,
+                "npc_delegated_action",
+                "queued",
+                DateTime.UtcNow,
+                $"idem_delegate_{_descriptor.NpcId}_{Guid.NewGuid():N}",
+                traceId,
+                payload),
+            ct);
+        _runtimeDriver.Instance.SetInboxDepth(_runtimeDriver.Snapshot().IngressWorkItems.Count);
+
+        await new NpcRuntimeLogWriter(Path.Combine(_runtimeDriver.Instance.Namespace.ActivityPath, "runtime.jsonl")).WriteAsync(
+            new NpcRuntimeLogRecord(
+                DateTime.UtcNow,
+                traceId,
+                _descriptor.NpcId,
+                _descriptor.GameId,
+                _descriptor.SessionId,
+                "private_chat_delegation",
+                "npc_delegate_action",
+                "queued",
+                $"workItemId={workItemId};action={action};conversationId={conversationId ?? "-"}"),
+            ct);
+
+        _logger?.LogInformation(
+            "Queued NPC delegated action ingress; npc={NpcId}; trace={TraceId}; workItemId={WorkItemId}; action={Action}; conversationId={ConversationId}",
+            _descriptor.NpcId,
+            traceId,
+            workItemId,
+            action,
+            conversationId ?? "-");
+
+        return ToolResult.Ok(JsonSerializer.Serialize(new
+        {
+            queued = true,
+            workItemId,
+            traceId,
+            action,
+            conversationId
+        }, JsonOptions));
+    }
+
+    private static string? InferConversationId(string? sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return null;
+
+        const string marker = ":private_chat:";
+        var index = sessionId.LastIndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        return index < 0 ? null : sessionId[(index + marker.Length)..];
+    }
+}
+
+public sealed class NpcDelegateActionToolParameters : ISessionAwareToolParameters
+{
+    public required string Action { get; init; }
+
+    public required string Reason { get; init; }
+
+    public string? IntentText { get; init; }
+
+    public string? DestinationText { get; init; }
+
+    public string? ConversationId { get; init; }
+
+    [JsonIgnore]
+    public string? CurrentSessionId { get; set; }
+}
+
 public sealed record StardewNpcToolSurfacePolicy(
     IReadOnlyList<string> ParentToolNames,
     IReadOnlyList<string> LocalExecutorToolNames)
@@ -112,7 +297,6 @@ public sealed record StardewNpcToolSurfacePolicy(
         "stardew_quest_status",
         "stardew_farm_status",
         "stardew_recent_activity",
-        "stardew_move",
         "stardew_speak",
         "stardew_open_private_chat",
         "stardew_task_status"
@@ -121,7 +305,6 @@ public sealed record StardewNpcToolSurfacePolicy(
     private static readonly string[] LocalExecutorCatalog =
     [
         "stardew_status",
-        "stardew_move",
         "stardew_navigate_to_tile",
         "stardew_idle_micro_action",
         "stardew_task_status"
@@ -257,7 +440,7 @@ public sealed class StardewStatusTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_status";
 
-    public string Description => "Read the current Stardew facts for this NPC. This is a passive observation tool.";
+    public string Description => "读取当前 NPC 的星露谷现场事实。这是被动观察工具，不会改变世界。";
 
     public Type ParametersType => typeof(StardewStatusToolParameters);
 
@@ -302,7 +485,7 @@ public sealed class StardewPlayerStatusTool : StardewFactStatusToolBase
 
     public override string Name => "stardew_player_status";
 
-    public override string Description => "Read a detailed natural-language player status report: player location, held item, money, basic clothing/equipment, stamina/health, spouse, and a short inventory summary. Use at most one extra status tool in a normal autonomy turn.";
+    public override string Description => "读取玩家状态报告：玩家位置、手持物、金钱、基础穿着装备、体力生命、配偶和简短背包摘要。普通自主回合最多额外查一个状态工具。";
 
     public override async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
         => Serialize(await RequireStardewQueries().GetPlayerStatusAsync(Descriptor.EffectiveBodyBinding, ct));
@@ -314,7 +497,7 @@ public sealed class StardewProgressStatusTool : StardewFactStatusToolBase
 
     public override string Name => "stardew_progress_status";
 
-    public override string Description => "Read a natural-language game progress report: year, season, day, time, farm name, money, skill levels, mine depth, and house upgrade. Use only when game-stage context matters.";
+    public override string Description => "读取游戏进度报告：年份、季节、日期、时间、农场名、金钱、技能等级、矿井深度和房屋升级。只在需要游戏阶段语境时使用。";
 
     public override async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
         => Serialize(await RequireStardewQueries().GetProgressStatusAsync(Descriptor.EffectiveBodyBinding, ct));
@@ -326,7 +509,7 @@ public sealed class StardewSocialStatusTool : StardewFactStatusToolBase
 
     public override string Name => "stardew_social_status";
 
-    public override string Description => "Read a natural-language social report for this NPC or a named NPC: friendship hearts, talked-today, gift counts, and marriage/spouse status. Use only when relationship context matters.";
+    public override string Description => "读取当前 NPC 或指定 NPC 的社交报告：好感心数、今日是否交谈、送礼次数、婚姻和配偶状态。只在需要关系语境时使用。";
 
     public override Type ParametersType => typeof(StardewSocialStatusToolParameters);
 
@@ -345,7 +528,7 @@ public sealed class StardewQuestStatusTool : StardewFactStatusToolBase
 
     public override string Name => "stardew_quest_status";
 
-    public override string Description => "Read a natural-language quest report with up to five visible player quests. Use only when player tasks or quest context matters.";
+    public override string Description => "读取玩家任务报告，最多包含五个可见任务。只在需要玩家任务或 quest 语境时使用。";
 
     public override async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
         => Serialize(await RequireStardewQueries().GetQuestStatusAsync(Descriptor.EffectiveBodyBinding, ct));
@@ -357,7 +540,7 @@ public sealed class StardewFarmStatusTool : StardewFactStatusToolBase
 
     public override string Name => "stardew_farm_status";
 
-    public override string Description => "Read a natural-language farm report: farm name, date, weather, money, and degraded placeholders for expensive crop/animal scans. Use only when farm context matters.";
+    public override string Description => "读取农场报告：农场名、日期、天气、金钱，以及高成本作物/动物扫描的 degraded 占位信息。只在需要农场语境时使用。";
 
     public override async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
         => Serialize(await RequireStardewQueries().GetFarmStatusAsync(Descriptor.EffectiveBodyBinding, ct));
@@ -378,7 +561,7 @@ public sealed class StardewRecentActivityTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_recent_activity";
 
-    public string Description => "Read this NPC runtime's recent continuity report: recent observations/events, last action status, and active todos. This is not a world-state query; use only to avoid repeating or to resume a prior task.";
+    public string Description => "读取当前 NPC runtime 的最近连续性报告：最近观察/事件、上一行动状态和 active todo。这不是世界状态查询，只用于避免重复或恢复旧任务。";
 
     public Type ParametersType => typeof(StardewStatusToolParameters);
 
@@ -433,116 +616,6 @@ public sealed class StardewRecentActivityTool : ITool, IToolSchemaProvider
     }
 }
 
-public sealed class StardewMoveTool : ITool, IToolSchemaProvider
-{
-    private readonly IGameCommandService _commands;
-    private readonly NpcRuntimeDescriptor _descriptor;
-    private readonly Func<string> _traceIdFactory;
-    private readonly Func<string> _idempotencyKeyFactory;
-    private readonly int _maxStatusPolls;
-    private readonly StardewRuntimeActionController _runtimeActions;
-
-    internal StardewMoveTool(
-        IGameCommandService commands,
-        NpcRuntimeDescriptor descriptor,
-        Func<string> traceIdFactory,
-        Func<string> idempotencyKeyFactory,
-        int maxStatusPolls,
-        StardewRuntimeActionController runtimeActions)
-    {
-        _commands = commands;
-        _descriptor = descriptor;
-        _traceIdFactory = traceIdFactory;
-        _idempotencyKeyFactory = idempotencyKeyFactory;
-        _maxStatusPolls = Math.Max(0, maxStatusPolls);
-        _runtimeActions = runtimeActions;
-    }
-
-    public string Name => "stardew_move";
-
-    public string Description => "Ask this NPC to move to a semantic destination from the latest observation. Copy the exact destination id from a destination[n].destinationId fact. Never invent destinations. Optional thought is a short private-feeling movement thought shown as a non-blocking overhead bubble when the move starts. If a move ends with path_blocked, path_unreachable, invalid_destination_id, or interrupted, observe again or choose a different destinationId instead of retrying the same destination.";
-
-    public Type ParametersType => typeof(StardewMoveToolParameters);
-
-    public JsonElement GetParameterSchema() => StardewNpcToolSchemas.Move();
-
-    public async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
-    {
-        var p = (StardewMoveToolParameters)parameters;
-        if (string.IsNullOrWhiteSpace(p.Destination))
-            return ToolResult.Fail("destination is required — copy the exact destinationId from a destination[n].destinationId fact in the latest observation.");
-
-        var traceId = _traceIdFactory();
-        var payload = new JsonObject
-        {
-            ["destinationId"] = p.Destination
-        };
-        if (!string.IsNullOrWhiteSpace(p.Thought))
-            payload["thought"] = p.Thought;
-
-        var action = new GameAction(
-            _descriptor.NpcId,
-            _descriptor.GameId,
-            GameActionType.Move,
-            traceId,
-            _idempotencyKeyFactory(),
-            new GameActionTarget("destination"),
-            p.Reason,
-            payload,
-            BodyBinding: _descriptor.EffectiveBodyBinding);
-
-        var preparedAction = await _runtimeActions.TryBeginAsync(action, ct);
-        if (preparedAction?.BlockedResult is not null)
-        {
-            return ToolResult.Ok(StardewNpcToolJson.Serialize(new StardewNpcActionToolResult(
-                preparedAction.BlockedResult.Accepted,
-                preparedAction.BlockedResult.CommandId,
-                preparedAction.BlockedResult.Status,
-                preparedAction.BlockedResult.FailureReason,
-                preparedAction.BlockedResult.TraceId,
-                FinalStatus: null,
-                StatusPolls: [])));
-        }
-
-        var commandResult = await _commands.SubmitAsync(action, ct);
-        await _runtimeActions.RecordSubmitResultAsync(preparedAction, commandResult, ct);
-        var statusPolls = await PollUntilTerminalAsync(commandResult, ct);
-        var finalStatus = statusPolls.Count > 0 ? statusPolls[^1] : null;
-
-        return ToolResult.Ok(StardewNpcToolJson.Serialize(new StardewNpcActionToolResult(
-            commandResult.Accepted,
-            commandResult.CommandId,
-            commandResult.Status,
-            commandResult.FailureReason,
-            commandResult.TraceId,
-            finalStatus,
-            statusPolls)));
-    }
-
-    private async Task<IReadOnlyList<GameCommandStatus>> PollUntilTerminalAsync(GameCommandResult commandResult, CancellationToken ct)
-    {
-        if (!commandResult.Accepted ||
-            string.IsNullOrWhiteSpace(commandResult.CommandId) ||
-            StardewRuntimeActionController.IsTerminalStatus(commandResult.Status))
-        {
-            return [];
-        }
-
-        var statuses = new List<GameCommandStatus>();
-        for (var i = 0; i < _maxStatusPolls; i++)
-        {
-            var status = await _commands.GetStatusAsync(commandResult.CommandId, ct);
-            statuses.Add(status);
-            await _runtimeActions.RecordStatusAsync(status, ct);
-
-            if (StardewRuntimeActionController.IsTerminalStatus(status.Status))
-                break;
-        }
-
-        return statuses;
-    }
-}
-
 public sealed class StardewNavigateToTileTool : ITool, IToolSchemaProvider
 {
     private readonly IGameCommandService _commands;
@@ -570,7 +643,7 @@ public sealed class StardewNavigateToTileTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_navigate_to_tile";
 
-    public string Description => "Executor-only mechanical navigation to a concrete Stardew location tile selected by the parent model from disclosed map skill facts. Do not expose this tool to the parent autonomy lane.";
+    public string Description => "仅限本地执行层使用。移动到已经由 stardew-navigation skill 资料披露的具体星露谷地图 tile；不要暴露给父层自主决策 lane。";
 
     public Type ParametersType => typeof(StardewNavigateToTileToolParameters);
 
@@ -584,6 +657,8 @@ public sealed class StardewNavigateToTileTool : ITool, IToolSchemaProvider
 
         var traceId = _traceIdFactory();
         var payload = new JsonObject();
+        if (!string.IsNullOrWhiteSpace(p.Source))
+            payload["targetSource"] = p.Source;
         if (p.FacingDirection is not null)
             payload["facingDirection"] = p.FacingDirection.Value;
         if (!string.IsNullOrWhiteSpace(p.Thought))
@@ -679,7 +754,7 @@ public sealed class StardewSpeakTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_speak";
 
-    public string Description => "Ask this NPC to say a short non-blocking visible line through the Stardew bridge. Nearby players see an overhead bubble; far or cross-map players receive a phone message. Use this to keep the player informed instead of silently doing many move/status turns. The runtime binds npcId, saveId, traceId, and idempotency internally.";
+    public string Description => "让当前 NPC 通过 Stardew bridge 说一句短的非阻塞可见话。附近玩家看到头顶气泡，远处或跨地图玩家收到手机消息。用于让玩家知道你在做什么，不要连续多轮移动/查状态却完全沉默。runtime 会内部绑定 npcId、saveId、traceId 和幂等键。";
 
     public Type ParametersType => typeof(StardewSpeakToolParameters);
 
@@ -741,7 +816,7 @@ public sealed class StardewIdleMicroActionTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_idle_micro_action";
 
-    public string Description => "Executor-only idle micro action tool. Choose only from the approved idle micro action contract already selected by the parent autonomy lane.";
+    public string Description => "仅限本地执行层使用的原地微动作工具。只能从父层 intent 已选择的微动作合同和白名单中执行。";
 
     public Type ParametersType => typeof(StardewIdleMicroActionToolParameters);
 
@@ -796,7 +871,7 @@ public sealed class StardewTaskStatusTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_task_status";
 
-    public string Description => "Read the status of a Stardew command previously returned by an NPC action tool.";
+    public string Description => "读取此前 NPC 行动工具返回的 Stardew command 状态。";
 
     public Type ParametersType => typeof(StardewTaskStatusToolParameters);
 
@@ -836,7 +911,7 @@ public sealed class StardewOpenPrivateChatTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_open_private_chat";
 
-    public string Description => "Open an in-game private chat input for this NPC so the player can type a message. Use this only when the observed facts make private chat appropriate.";
+    public string Description => "为当前 NPC 打开游戏内私聊输入，让玩家可以输入消息。只在已观察事实表明适合私聊时使用。";
 
     public Type ParametersType => typeof(StardewOpenPrivateChatToolParameters);
 
@@ -1167,15 +1242,6 @@ public sealed class StardewSocialStatusToolParameters
     public string? TargetNpcId { get; init; }
 }
 
-public sealed class StardewMoveToolParameters
-{
-    public required string Destination { get; init; }
-
-    public string? Reason { get; init; }
-
-    public string? Thought { get; init; }
-}
-
 public sealed class StardewNavigateToTileToolParameters
 {
     public required string LocationName { get; init; }
@@ -1183,6 +1249,8 @@ public sealed class StardewNavigateToTileToolParameters
     public required int X { get; init; }
 
     public required int Y { get; init; }
+
+    public string? Source { get; init; }
 
     public int? FacingDirection { get; init; }
 
@@ -1253,35 +1321,26 @@ internal static class StardewNpcToolSchemas
             required = Array.Empty<string>()
         }, JsonOptions);
 
-    public static JsonElement Move()
-        => Schema(
-            new Dictionary<string, object>
-            {
-                ["destination"] = new { type = "string", description = "Exact destination identifier from the latest observation's destination[n].destinationId stable key. Never invent destinations." },
-                ["reason"] = new { type = "string", description = "Short reason copied from the destination[n] fact's reason field, or a brief NPC intent aligned with the destination." },
-                ["thought"] = new { type = "string", description = "Optional short inner thought shown as a non-blocking overhead bubble when movement starts. Keep it immersive and under one sentence." }
-            },
-            ["destination"]);
-
     public static JsonElement NavigateToTile()
         => Schema(
             new Dictionary<string, object>
             {
-                ["locationName"] = new { type = "string", description = "Exact Stardew location/map name selected by the parent model from disclosed map skill facts." },
-                ["x"] = new { type = "integer", description = "Target tile X coordinate copied exactly from the parent intent." },
-                ["y"] = new { type = "integer", description = "Target tile Y coordinate copied exactly from the parent intent." },
-                ["facingDirection"] = new { type = "integer", description = "Optional Stardew facing direction copied from the parent intent when supplied." },
-                ["reason"] = new { type = "string", description = "Short reason from the parent intent." },
-                ["thought"] = new { type = "string", description = "Optional short inner thought shown as a non-blocking overhead bubble when movement starts." }
+                ["locationName"] = new { type = "string", description = "从已加载地图 skill 参考资料中选出的星露谷地图名。" },
+                ["x"] = new { type = "integer", description = "从已加载地图 skill 参考资料中逐字复制的目标 tile X 坐标。" },
+                ["y"] = new { type = "integer", description = "从已加载地图 skill 参考资料中逐字复制的目标 tile Y 坐标。" },
+                ["source"] = new { type = "string", description = "披露该坐标的已加载地图 skill reference，例如 map-skill:stardew.navigation.poi.beach-shoreline。" },
+                ["facingDirection"] = new { type = "integer", description = "可选。参考资料或上游意图给出时使用的朝向。" },
+                ["reason"] = new { type = "string", description = "来自上游 intent 的简短原因。" },
+                ["thought"] = new { type = "string", description = "可选。移动开始时显示的简短头顶气泡。" }
             },
-            ["locationName", "x", "y"]);
+            ["locationName", "x", "y", "source"]);
 
     public static JsonElement Speak()
         => Schema(
             new Dictionary<string, object>
             {
-                ["text"] = new { type = "string", description = "Short line for the NPC to say." },
-                ["channel"] = new { type = "string", description = "Delivery channel; defaults to player." }
+                ["text"] = new { type = "string", description = "NPC 要说的一句短话。" },
+                ["channel"] = new { type = "string", description = "发送渠道；默认发给玩家。" }
             },
             ["text"]);
 
@@ -1289,10 +1348,10 @@ internal static class StardewNpcToolSchemas
         => Schema(
             new Dictionary<string, object>
             {
-                ["kind"] = new { type = "string", description = "Approved idle micro action kind selected from the fixed whitelist." },
-                ["animationAlias"] = new { type = "string", description = "Optional allowlisted animation alias when kind is idle_animation_once." },
-                ["intensity"] = new { type = "string", description = "Optional light intensity label from the parent intent." },
-                ["ttlSeconds"] = new { type = "integer", description = "Optional TTL for the idle micro action." }
+                ["kind"] = new { type = "string", description = "从固定白名单中选择的原地微动作类型。" },
+                ["animationAlias"] = new { type = "string", description = "可选。kind 为 idle_animation_once 时使用的白名单动画别名。" },
+                ["intensity"] = new { type = "string", description = "可选。来自上游意图的轻量强度标签。" },
+                ["ttlSeconds"] = new { type = "integer", description = "可选。原地微动作的存活秒数。" }
             },
             ["kind"]);
 
@@ -1300,7 +1359,7 @@ internal static class StardewNpcToolSchemas
         => Schema(
             new Dictionary<string, object>
             {
-                ["commandId"] = new { type = "string", description = "Command id returned by stardew_move or stardew_speak." }
+                ["commandId"] = new { type = "string", description = "长动作工具返回的 command id。" }
             },
             ["commandId"]);
 
@@ -1308,7 +1367,7 @@ internal static class StardewNpcToolSchemas
         => Schema(
             new Dictionary<string, object>
             {
-                ["prompt"] = new { type = "string", description = "Optional short prompt shown or logged with the private chat request." }
+                ["prompt"] = new { type = "string", description = "可选。打开私聊时显示或记录的简短提示。" }
             },
             []);
 
@@ -1316,7 +1375,7 @@ internal static class StardewNpcToolSchemas
         => Schema(
             new Dictionary<string, object>
             {
-                ["targetNpcId"] = new { type = "string", description = "Optional NPC id/name to inspect. Omit to inspect this NPC." }
+                ["targetNpcId"] = new { type = "string", description = "可选。要查看的 NPC id 或名字；省略时查看当前 NPC。" }
             },
             []);
 

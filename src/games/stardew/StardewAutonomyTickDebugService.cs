@@ -225,7 +225,8 @@ public sealed class StardewAutonomyTickDebugService
                         descriptor,
                         runtimeDriver: driver,
                         worldCoordination: _worldCoordination,
-                        logger: _loggerFactory.CreateLogger<StardewMoveTool>()),
+                        logger: _loggerFactory.CreateLogger<StardewNavigateToTileTool>()),
+                    LocalExecutorRuntimeToolFactory: services => [new SkillViewTool(services.SkillManager)],
                     Services: new NpcRuntimeCompositionServices(
                         _chatClient,
                         _loggerFactory,
@@ -235,7 +236,7 @@ public sealed class StardewAutonomyTickDebugService
                     ToolSurface: toolSnapshot.ToolSurface,
                     ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion,
                     SystemPromptSupplement: systemPromptSupplement,
-                    LocalExecutorToolFingerprint: StardewNpcToolFactory.LocalExecutorToolFingerprint()),
+                    LocalExecutorToolFingerprint: StardewNpcToolFactory.LocalExecutorToolFingerprint(includeSkillView: true)),
                 ct);
 
             var tick = await handle.Loop.RunOneTickAsync(handle.Instance, driver.Snapshot().EventCursor, ct);

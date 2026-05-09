@@ -8,6 +8,7 @@ using Hermes.Agent.Skills;
 using Hermes.Agent.Tools;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 public sealed record StardewNpcAutonomyBackgroundOptions(
@@ -467,7 +468,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             if (await TryAdvancePendingActionAsync(binding, tracker, hostAdapter.Commands, deliveredCursor, dispatch.BridgeKey, ct))
                 return;
 
-            if (await TryProcessIngressWorkAsync(binding, tracker, hostAdapter.Commands, deliveredCursor, ct))
+            if (await TryProcessIngressWorkAsync(binding, tracker, hostAdapter, dispatch, deliveredCursor, ct))
                 return;
 
             if (tracker.Instance.TryGetActivePrivateChatSessionLease(out var activeLease) && activeLease is not null)
@@ -527,6 +528,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                         runtimeDriver: tracker.Driver,
                         worldCoordination: _worldCoordination,
                         logger: _logger),
+                    LocalExecutorRuntimeToolFactory: services => [new SkillViewTool(services.SkillManager)],
                     Services: new NpcRuntimeCompositionServices(
                         _chatClient,
                         _loggerFactory,
@@ -536,7 +538,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                     ToolSurface: toolSnapshot.ToolSurface,
                     ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion,
                     SystemPromptSupplement: systemPromptSupplement,
-                    LocalExecutorToolFingerprint: StardewNpcToolFactory.LocalExecutorToolFingerprint()),
+                    LocalExecutorToolFingerprint: StardewNpcToolFactory.LocalExecutorToolFingerprint(includeSkillView: true)),
                 ct);
 
             _logger.LogInformation(
@@ -1003,14 +1005,20 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
     private async Task<bool> TryProcessIngressWorkAsync(
         StardewNpcRuntimeBinding binding,
         NpcAutonomyTracker tracker,
-        IGameCommandService commandService,
+        IGameAdapter hostAdapter,
+        NpcAutonomyDispatch dispatch,
         GameEventCursor deliveredCursor,
         CancellationToken ct)
     {
         var workItem = tracker.Driver.Snapshot().IngressWorkItems
-            .FirstOrDefault(item => string.Equals(item.WorkType, "scheduled_private_chat", StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(item => string.Equals(item.WorkType, "npc_delegated_action", StringComparison.OrdinalIgnoreCase)) ??
+            tracker.Driver.Snapshot().IngressWorkItems
+                .FirstOrDefault(item => string.Equals(item.WorkType, "scheduled_private_chat", StringComparison.OrdinalIgnoreCase));
         if (workItem is null)
             return false;
+
+        if (string.Equals(workItem.WorkType, "npc_delegated_action", StringComparison.OrdinalIgnoreCase))
+            return await TryProcessDelegatedActionIngressWorkAsync(binding, tracker, hostAdapter, dispatch, workItem, deliveredCursor, ct);
 
         var action = new GameAction(
             binding.Descriptor.NpcId,
@@ -1030,13 +1038,157 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             return true;
         }
 
-        var result = await commandService.SubmitAsync(action, ct);
+        var result = await hostAdapter.Commands.SubmitAsync(action, ct);
         await runtimeActions.RecordSubmitResultAsync(preparedAction, result, ct);
         if (result.Accepted || !result.Retryable)
             await tracker.Driver.RemoveIngressWorkItemAsync(workItem.WorkItemId, ct);
 
         await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
         return true;
+    }
+
+    private async Task<bool> TryProcessDelegatedActionIngressWorkAsync(
+        StardewNpcRuntimeBinding binding,
+        NpcAutonomyTracker tracker,
+        IGameAdapter hostAdapter,
+        NpcAutonomyDispatch dispatch,
+        NpcRuntimeIngressWorkItemSnapshot workItem,
+        GameEventCursor deliveredCursor,
+        CancellationToken ct)
+    {
+        var controller = tracker.Driver.Snapshot();
+        if (controller.ActionSlot is not null || controller.PendingWorkItem is not null)
+            return true;
+
+        var payload = workItem.Payload ?? [];
+        var action = ReadPayloadString(payload, "action");
+        var reason = ReadPayloadString(payload, "reason");
+        if (string.IsNullOrWhiteSpace(action) || string.IsNullOrWhiteSpace(reason))
+        {
+            await WriteIngressDiagnosticAsync(
+                binding,
+                tracker,
+                workItem,
+                "malformed",
+                "missing_action_or_reason",
+                ct);
+            await tracker.Driver.RemoveIngressWorkItemAsync(workItem.WorkItemId, ct);
+            await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
+            return true;
+        }
+
+        var intentText = ReadPayloadString(payload, "intentText");
+        var destinationText = ReadPayloadString(payload, "destinationText");
+        if (string.Equals(action, "move", StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(destinationText))
+        {
+            destinationText = intentText;
+        }
+
+        var intentJson = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["action"] = action.Trim(),
+            ["reason"] = string.Equals(action, "move", StringComparison.OrdinalIgnoreCase)
+                ? reason.Trim()
+                : MergeReasonAndIntentText(reason.Trim(), intentText),
+            ["destinationText"] = string.Equals(action, "move", StringComparison.OrdinalIgnoreCase)
+                ? destinationText?.Trim()
+                : null
+        }.Where(pair => pair.Value is not null).ToDictionary(pair => pair.Key, pair => pair.Value));
+
+        var handle = await _runtimeSupervisor.GetOrCreateAutonomyHandleAsync(
+            binding.Descriptor,
+            binding.Pack,
+            _runtimeRoot,
+            new NpcRuntimeAutonomyBindingRequest(
+                ChannelKey: "autonomy",
+                AdapterKey: dispatch.BridgeKey,
+                IncludeMemory: _includeMemory,
+                IncludeUser: _includeUser,
+                MaxToolIterations: _budget.Options.MaxToolIterations,
+                AdapterFactory: () => hostAdapter,
+                GameToolFactory: (adapter, factStore) => StardewNpcToolFactory.CreateDefault(
+                    adapter,
+                    binding.Descriptor,
+                    runtimeDriver: tracker.Driver,
+                    worldCoordination: _worldCoordination,
+                    recentActivityProvider: new StardewRecentActivityProvider(factStore, tracker.Driver),
+                    logger: _logger),
+                LocalExecutorGameToolFactory: (adapter, factStore) => StardewNpcToolFactory.CreateLocalExecutorTools(
+                    adapter,
+                    binding.Descriptor,
+                    runtimeDriver: tracker.Driver,
+                    worldCoordination: _worldCoordination,
+                    logger: _logger),
+                LocalExecutorRuntimeToolFactory: services => [new SkillViewTool(services.SkillManager)],
+                Services: new NpcRuntimeCompositionServices(
+                    _chatClient,
+                    _loggerFactory,
+                    _skillManager,
+                    _cronScheduler,
+                    _delegationChatClient),
+                ToolSurface: NpcToolSurface.FromTools([]),
+                SystemPromptSupplement: _promptSupplementBuilder.Build(binding.Descriptor, tracker.Instance.Namespace, binding.Pack),
+                LocalExecutorToolFingerprint: StardewNpcToolFactory.LocalExecutorToolFingerprint(includeSkillView: true)),
+            ct);
+
+        var tick = await handle.Loop.RunDelegatedIntentAsync(
+            handle.Instance,
+            string.IsNullOrWhiteSpace(workItem.TraceId) ? $"trace_ingress_{Guid.NewGuid():N}" : workItem.TraceId!,
+            intentJson,
+            ct);
+        if (tick.DecisionResponse?.StartsWith("local_executor_completed:", StringComparison.OrdinalIgnoreCase) is true ||
+            tick.DecisionResponse?.StartsWith("local_executor_blocked:", StringComparison.OrdinalIgnoreCase) is true ||
+            tick.DecisionResponse?.StartsWith("local_executor_escalated:", StringComparison.OrdinalIgnoreCase) is true)
+        {
+            await tracker.Driver.RemoveIngressWorkItemAsync(workItem.WorkItemId, ct);
+        }
+
+        await tracker.Driver.AcknowledgeEventCursorAsync(tick.NextEventCursor ?? deliveredCursor, ct);
+        return true;
+    }
+
+    private static Task WriteIngressDiagnosticAsync(
+        StardewNpcRuntimeBinding binding,
+        NpcAutonomyTracker tracker,
+        NpcRuntimeIngressWorkItemSnapshot workItem,
+        string stage,
+        string result,
+        CancellationToken ct)
+    {
+        var writer = new NpcRuntimeLogWriter(Path.Combine(tracker.Instance.Namespace.ActivityPath, "runtime.jsonl"));
+        return writer.WriteAsync(
+            new NpcRuntimeLogRecord(
+                DateTime.UtcNow,
+                string.IsNullOrWhiteSpace(workItem.TraceId) ? workItem.WorkItemId : workItem.TraceId!,
+                binding.Descriptor.NpcId,
+                binding.Descriptor.GameId,
+                binding.Descriptor.SessionId,
+                "ingress",
+                workItem.WorkType,
+                stage,
+                result,
+                CommandId: workItem.WorkItemId,
+                Error: result),
+            ct);
+    }
+
+    private static string? ReadPayloadString(JsonObject payload, string propertyName)
+        => payload.TryGetPropertyValue(propertyName, out var value) && value is JsonValue jsonValue &&
+           jsonValue.TryGetValue<string>(out var text)
+            ? text
+            : null;
+
+    private static string MergeReasonAndIntentText(string reason, string? intentText)
+    {
+        if (string.IsNullOrWhiteSpace(intentText))
+            return reason;
+
+        var trimmedIntent = intentText.Trim();
+        if (reason.Contains(trimmedIntent, StringComparison.OrdinalIgnoreCase))
+            return reason;
+
+        return $"{reason}; player request: {trimmedIntent}";
     }
 
     private static JsonObject ClonePayload(JsonObject? payload)

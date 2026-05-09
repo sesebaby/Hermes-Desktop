@@ -77,10 +77,16 @@ public static class AgentCapabilityAssembler
     public static void RegisterAllTools(
         Agent agent,
         AgentCapabilityServices services,
-        IEnumerable<ITool> discoveredTools)
+        IEnumerable<ITool> discoveredTools,
+        bool discoveredToolsFirst = false)
     {
+        if (discoveredToolsFirst)
+            RegisterDiscoveredTools(agent, services.ToolRegistry, discoveredTools);
+
         RegisterBuiltInTools(agent, services);
-        RegisterDiscoveredTools(agent, services.ToolRegistry, discoveredTools);
+
+        if (!discoveredToolsFirst)
+            RegisterDiscoveredTools(agent, services.ToolRegistry, discoveredTools);
     }
 
     public static PromptBuilder CreatePromptBuilder(AgentPromptServices services)

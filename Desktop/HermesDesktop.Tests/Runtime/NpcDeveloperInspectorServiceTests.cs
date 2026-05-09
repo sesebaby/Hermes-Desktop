@@ -41,7 +41,7 @@ public sealed class NpcDeveloperInspectorServiceTests
                 """{"timestampUtc":"2026-05-07T02:00:00Z","traceId":"trace-a","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"observation","target":"world","stage":"captured","result":"location=Town;tile=52,74"}""",
                 """not-json""",
                 """{"timestampUtc":"2026-05-07T02:00:01Z","traceId":"trace-a","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"diagnostic","target":"local_executor","stage":"selected","result":"action=move;lane=delegation"}""",
-                """{"timestampUtc":"2026-05-07T02:00:02Z","traceId":"trace-a","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"local_executor","target":"stardew_move","stage":"completed","result":"task_move_enqueued","commandId":"cmd-1","executorMode":"model_called"}""",
+                """{"timestampUtc":"2026-05-07T02:00:02Z","traceId":"trace-a","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"local_executor","target":"stardew_navigate_to_tile","stage":"completed","result":"task_move_enqueued","commandId":"cmd-1","executorMode":"model_called"}""",
                 """{"timestampUtc":"2026-05-07T02:00:03Z","traceId":"trace-a","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"task_continuity","target":"command_terminal","stage":"terminal","result":"task_completed","commandId":"cmd-1"}""",
                 """{"timestampUtc":"2026-05-07T02:00:04Z","traceId":"trace-b","npcId":"penny","gameId":"stardew-valley","sessionId":"other","actionType":"diagnostic","target":"ignored","stage":"ignored","result":"ignored"}"""
             ]);
@@ -59,8 +59,8 @@ public sealed class NpcDeveloperInspectorServiceTests
                     new ToolCall
                     {
                         Id = "call-1",
-                        Name = "stardew_move",
-                        Arguments = """{"location":"Beach","tile":{"x":20,"y":15}}"""
+                        Name = "stardew_navigate_to_tile",
+                        Arguments = """{"locationName":"Beach","x":20,"y":15}"""
                     },
                     new ToolCall
                     {
@@ -77,7 +77,7 @@ public sealed class NpcDeveloperInspectorServiceTests
             {
                 Role = "tool",
                 Content = """{"status":"accepted","commandId":"cmd-1"}""",
-                ToolName = "stardew_move",
+                ToolName = "stardew_navigate_to_tile",
                 ToolCallId = "call-1"
             },
             CancellationToken.None);
@@ -151,7 +151,7 @@ public sealed class NpcDeveloperInspectorServiceTests
         Assert.AreEqual("我会去海边。", view.ModelReplies[0].Content);
         Assert.AreEqual("需要选择 Beach 的明确坐标。", view.ModelReplies[0].Reasoning);
         Assert.AreEqual(2, view.ToolCalls.Count);
-        Assert.AreEqual("stardew_move", view.ToolCalls[0].Name);
+        Assert.AreEqual("stardew_navigate_to_tile", view.ToolCalls[0].Name);
         StringAssert.Contains(view.ToolCalls[0].Arguments, "Beach");
         StringAssert.Contains(view.ToolCalls[0].Result, "cmd-1");
         Assert.AreEqual(1, view.Delegations.Count);
@@ -281,9 +281,9 @@ public sealed class NpcDeveloperInspectorServiceTests
         await File.WriteAllLinesAsync(
             Path.Combine(npcNamespace.ActivityPath, "runtime.jsonl"),
             [
-                """{"timestampUtc":"2026-05-07T02:00:00Z","traceId":"trace-a","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"local_executor","target":"stardew_move","stage":"completed","result":"Beach route probe failed","commandId":"cmd-1","error":"route_miss"}""",
+                """{"timestampUtc":"2026-05-07T02:00:00Z","traceId":"trace-a","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"local_executor","target":"stardew_navigate_to_tile","stage":"completed","result":"Beach route probe failed","commandId":"cmd-1","error":"route_miss"}""",
                 """{"timestampUtc":"2026-05-07T02:00:01Z","traceId":"trace-a","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"diagnostic","target":"local_executor","stage":"selected","result":"action=wait","commandId":"cmd-2"}""",
-                """{"timestampUtc":"2026-05-07T02:00:02Z","traceId":"trace-b","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"local_executor","target":"stardew_move","stage":"completed","result":"Town route probe failed","commandId":"cmd-1","error":"route_miss"}"""
+                """{"timestampUtc":"2026-05-07T02:00:02Z","traceId":"trace-b","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"local_executor","target":"stardew_navigate_to_tile","stage":"completed","result":"Town route probe failed","commandId":"cmd-1","error":"route_miss"}"""
             ]);
         var service = new NpcDeveloperInspectorService(
             new NpcDeveloperInspectorOptions { RuntimeLogMaxLines = 20 },
@@ -341,7 +341,7 @@ public sealed class NpcDeveloperInspectorServiceTests
         await File.WriteAllTextAsync(npcNamespace.SoulFilePath, "SOUL secret should not be exported.");
         await File.WriteAllLinesAsync(
             Path.Combine(npcNamespace.ActivityPath, "runtime.jsonl"),
-            ["""{"timestampUtc":"2026-05-07T02:00:00Z","traceId":"trace-a","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"local_executor","target":"stardew_move","stage":"completed","result":"ok","commandId":"cmd-1"}"""]);
+            ["""{"timestampUtc":"2026-05-07T02:00:00Z","traceId":"trace-a","npcId":"haley","gameId":"stardew-valley","sessionId":"npc-session","actionType":"local_executor","target":"stardew_navigate_to_tile","stage":"completed","result":"ok","commandId":"cmd-1"}"""]);
         Directory.CreateDirectory(Path.Combine(_tempDir, "logs"));
         await File.WriteAllTextAsync(
             Path.Combine(_tempDir, "logs", "hermes.log"),

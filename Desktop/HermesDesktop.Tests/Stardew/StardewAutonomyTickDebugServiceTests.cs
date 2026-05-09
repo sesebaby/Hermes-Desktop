@@ -129,7 +129,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             !message.Contains("## Skills (mandatory)", StringComparison.Ordinal) &&
             !message.Contains("full stardew places encyclopedia fixture", StringComparison.Ordinal)));
         Assert.IsTrue(chatClient.SystemMessages.Any(message =>
-            message.Contains("host does not observe or choose the first step for you", StringComparison.Ordinal) &&
+            message.Contains("宿主不会替你观察，也不会替你选择第一步", StringComparison.Ordinal) &&
             !message.Contains("Decide small next actions from observed game facts", StringComparison.Ordinal) &&
             !message.Contains("Use the available game tools to inspect the world before acting", StringComparison.Ordinal)));
 
@@ -162,8 +162,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             "Haley is in her room.",
             [
                 "location=HaleyHouse",
-                "tile=8,7",
-                "destination[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out,destinationId=haley_house.bedroom_mirror"
+                "tile=8,7"
             ]));
         var service = new StardewAutonomyTickDebugService(
             new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
@@ -193,17 +192,16 @@ public sealed class StardewAutonomyTickDebugServiceTests
             message.Contains("## Stardew Runtime Contract", StringComparison.Ordinal));
         StringAssert.Contains(systemPrompt, "### stardew-world");
         StringAssert.Contains(systemPrompt, "compact-contract-owner: stardew-world");
-        StringAssert.Contains(systemPrompt, "destination[n]");
         StringAssert.Contains(systemPrompt, "skill_view(name=\"stardew-world\", file_path=\"references/stardew-places.md\")");
         StringAssert.Contains(systemPrompt, "### stardew-navigation");
         StringAssert.Contains(systemPrompt, "compact-contract-owner: stardew-navigation");
-        StringAssert.Contains(systemPrompt, "`stardew_move(destination, reason)`");
-        StringAssert.Contains(systemPrompt, "destination=<destinationId 精确值>");
         StringAssert.Contains(systemPrompt, "target(locationName,x,y,source)");
-        StringAssert.Contains(systemPrompt, "skill_view(name=\"stardew-navigation\", file_path=\"references/index.md\")");
+        StringAssert.Contains(systemPrompt, "`references/index.md`");
         StringAssert.Contains(systemPrompt, "stardew_navigate_to_tile");
-        StringAssert.Contains(systemPrompt, "executor-only");
-        StringAssert.Contains(systemPrompt, "destinationId");
+        StringAssert.Contains(systemPrompt, "本地 executor");
+        Assert.IsFalse(systemPrompt.Contains("destination[n]", StringComparison.Ordinal));
+        Assert.IsFalse(systemPrompt.Contains("stardew_move", StringComparison.Ordinal));
+        Assert.IsFalse(systemPrompt.Contains("destinationId", StringComparison.Ordinal));
         Assert.IsFalse(
             chatClient.ToolNames.Contains("stardew_navigate_to_tile", StringComparer.OrdinalIgnoreCase),
             "Mechanical tile navigation must be described as an executor-only contract, not exposed as a parent tool.");
@@ -302,11 +300,10 @@ public sealed class StardewAutonomyTickDebugServiceTests
             message.Contains("## Stardew Runtime Contract", StringComparison.Ordinal));
         StringAssert.Contains(systemPrompt, "### stardew-social");
         StringAssert.Contains(systemPrompt, "`stardew_speak`");
-        StringAssert.Contains(systemPrompt, "移动开始");
-        StringAssert.Contains(systemPrompt, "移动到达");
-        StringAssert.Contains(systemPrompt, "闲置");
-        StringAssert.Contains(systemPrompt, "任务状态");
-        StringAssert.Contains(systemPrompt, "玩家指令优先级最高");
+        StringAssert.Contains(systemPrompt, "移动开始、移动到达、闲置、任务状态是主要反馈槽位");
+        StringAssert.Contains(systemPrompt, "玩家直接提出的请求优先关注");
+        StringAssert.Contains(systemPrompt, "stardew-navigation");
+        Assert.IsFalse(systemPrompt.Contains("stardew_move", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -353,11 +350,11 @@ public sealed class StardewAutonomyTickDebugServiceTests
         var systemPrompt = chatClient.SystemMessages.First(message =>
             message.Contains("## Stardew Runtime Contract", StringComparison.Ordinal));
         StringAssert.Contains(systemPrompt, "### stardew-task-continuity");
-        StringAssert.Contains(systemPrompt, "玩家给你以后要兑现的约定");
-        StringAssert.Contains(systemPrompt, "先回应玩家，再恢复原来的任务");
+        StringAssert.Contains(systemPrompt, "玩家给你以后要兑现的约定时，按角色判断是否接受；接受后用 `todo` 记录短句");
+        StringAssert.Contains(systemPrompt, "私聊里答应“现在就做”的现实世界动作，必须用 `npc_delegate_action` 委托");
+        StringAssert.Contains(systemPrompt, "stardew_navigate_to_tile");
         StringAssert.Contains(systemPrompt, "stardew_task_status");
         StringAssert.Contains(systemPrompt, "memory");
-        StringAssert.Contains(systemPrompt, "session_search");
         Assert.IsFalse(
             systemPrompt.Contains("mc ", StringComparison.Ordinal),
             "Stardew continuity guidance must borrow HermesCraft's behavior pattern without leaking Minecraft command text.");
@@ -465,6 +462,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
     public async Task RunOneTickAsync_MissingRequiredSkillFileFailsWithSkillIdAndPath()
     {
         File.Delete(Path.Combine(_gamingSkillRoot, "stardew-navigation.md"));
+        Directory.Delete(Path.Combine(_gamingSkillRoot, "stardew-navigation"), recursive: true);
         var service = new StardewAutonomyTickDebugService(
             new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
                 new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
@@ -678,7 +676,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithParentMoveIntentExecutesStardewMoveToolWithoutInjectedCandidates()
+    public async Task RunOneTickAsync_WithParentMoveIntentExecutesSkillResolvedTileNavigationWithoutInjectedCandidates()
     {
         var commands = new FakeCommandService();
         var chatClient = new ToolSnapshotChatClient(
@@ -686,16 +684,19 @@ public sealed class StardewAutonomyTickDebugServiceTests
             {
               "action": "move",
               "reason": "stand somewhere bright and visible in town",
-              "destinationId": "town.fountain",
-              "allowedActions": ["move", "observe", "wait", "task_status"],
+              "destinationText": "town fountain",
               "escalate": false
             }
             """);
         var delegationChatClient = new ToolSnapshotChatClient(
             new StreamEvent.ToolUseComplete(
-                "call-move",
-                "stardew_move",
-                Json("""{"destination":"town.fountain","reason":"stand somewhere bright and visible in town"}""")));
+                "call-skill-root",
+                "skill_view",
+                Json("""{"name":"stardew-navigation","file_path":"references/index.md"}""")),
+            new StreamEvent.ToolUseComplete(
+                "call-nav",
+                "stardew_navigate_to_tile",
+                Json("""{"locationName":"Town","x":42,"y":17,"source":"test.navigation.town.fountain","facingDirection":2,"reason":"stand somewhere bright and visible in town"}""")));
         var queries = new FakeQueryService(new GameObservation(
             "haley",
             "stardew-valley",
@@ -704,9 +705,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             [
                 "location=Town",
                 "tile=42,17",
-                "isAvailableForControl=true",
-                "destination[0]=label=Town fountain,locationName=Town,x=42,y=17,tags=public|photogenic,reason=stand somewhere bright and visible in town,destinationId=town.fountain,facingDirection=2",
-                "nearby[0]=locationName=Town,x=43,y=17,reason=same_location_safe_reposition"
+                "isAvailableForControl=true"
             ]));
         var service = new StardewAutonomyTickDebugService(
             new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
@@ -733,7 +732,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
         var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
 
         Assert.IsTrue(result.Success, result.FailureReason);
-        Assert.AreEqual("local_executor_completed:stardew_move", result.DecisionResponse);
+        Assert.AreEqual("local_executor_completed:stardew_navigate_to_tile", result.DecisionResponse);
         Assert.IsFalse(
             chatClient.UserMessages.Any(message => message.Contains("destinationId=town.fountain", StringComparison.Ordinal)),
             "The host must not preload observed destination ids into the parent autonomy prompt.");
@@ -741,12 +740,15 @@ public sealed class StardewAutonomyTickDebugServiceTests
             chatClient.UserMessages.Any(message => message.Contains("nearby[0]", StringComparison.Ordinal)),
             "The host must not preload host-generated nearby movement affordances into the parent autonomy prompt.");
         CollectionAssert.DoesNotContain(chatClient.ToolNames.ToArray(), "stardew_move");
-        CollectionAssert.Contains(delegationChatClient.ToolNames.ToArray(), "stardew_move");
+        CollectionAssert.DoesNotContain(delegationChatClient.ToolNames.ToArray(), "stardew_move");
+        Assert.IsTrue(delegationChatClient.ToolNamesByCall.Any(names => names.Contains("skill_view")));
+        CollectionAssert.Contains(delegationChatClient.ToolNames.ToArray(), "stardew_navigate_to_tile");
         Assert.IsNotNull(commands.LastAction);
         Assert.AreEqual(GameActionType.Move, commands.LastAction.Type);
-        Assert.AreEqual("town.fountain", commands.LastAction.Payload?["destinationId"]?.ToString());
-        Assert.IsNull(commands.LastAction.Target.LocationName);
-        Assert.IsNull(commands.LastAction.Target.Tile);
+        Assert.IsFalse(commands.LastAction.Payload?.ContainsKey("destinationId") is true);
+        Assert.AreEqual("Town", commands.LastAction.Target.LocationName);
+        Assert.AreEqual(42, commands.LastAction.Target.Tile?.X);
+        Assert.AreEqual(17, commands.LastAction.Target.Tile?.Y);
     }
 
     [TestMethod]
@@ -776,8 +778,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             [
                 "location=HaleyHouse",
                 "tile=8,7",
-                "isAvailableForControl=true",
-                "destination[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out,destinationId=haley_house.bedroom_mirror"
+                "isAvailableForControl=true"
             ]));
         var service = new StardewAutonomyTickDebugService(
             new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
@@ -825,8 +826,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             [
                 "location=Town",
                 "tile=42,17",
-                "isAvailableForControl=true",
-                "destination[0]=label=Town fountain,locationName=Town,x=42,y=20,tags=public|photogenic,reason=stand somewhere pretty,destinationId=town.fountain"
+                "isAvailableForControl=true"
             ]));
         var events = new FakeEventSource([
             new GameEventRecord("evt-1", "player_nearby", "haley", DateTime.UtcNow, "The player walked near Haley.")
@@ -955,6 +955,24 @@ public sealed class StardewAutonomyTickDebugServiceTests
             - stardew-navigation fixture compact contract
             - `skill_view(name="stardew-navigation", file_path="references/index.md")`
             """);
+        var navigationRoot = Path.Combine(gamingSkillRoot, "stardew-navigation");
+        Directory.CreateDirectory(Path.Combine(navigationRoot, "references"));
+        File.WriteAllText(
+            Path.Combine(navigationRoot, "SKILL.md"),
+            """
+            ---
+            name: stardew-navigation
+            description: Test navigation skill for local executor target resolution.
+            ---
+            stardew-navigation test guidance
+
+            ## Compact Contract
+            - stardew-navigation fixture compact contract
+            - `references/index.md`
+            """);
+        File.WriteAllText(
+            Path.Combine(navigationRoot, "references", "index.md"),
+            "`target(locationName=Town,x=42,y=17,source=test.navigation.town.fountain)`");
         var taskContinuityRoot = Path.Combine(gamingSkillRoot, "stardew-task-continuity");
         Directory.CreateDirectory(taskContinuityRoot);
         File.WriteAllText(Path.Combine(taskContinuityRoot, "SKILL.md"), "stardew-task-continuity test guidance");
@@ -1108,6 +1126,8 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
         public List<string> ToolNames { get; } = new();
 
+        public List<IReadOnlyList<string>> ToolNamesByCall { get; } = [];
+
         public List<string> SystemMessages { get; } = new();
 
         public List<string> UserMessages { get; } = new();
@@ -1169,6 +1189,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             {
                 ToolNames.Clear();
                 ToolNames.AddRange((tools ?? []).Select(tool => tool.Name));
+                ToolNamesByCall.Add(ToolNames.ToArray());
                 SystemMessages.Clear();
                 if (!string.IsNullOrWhiteSpace(systemPrompt))
                     SystemMessages.Add(systemPrompt);

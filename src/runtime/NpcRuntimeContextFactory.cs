@@ -15,15 +15,14 @@ namespace Hermes.Agent.Runtime;
 public sealed class NpcRuntimeContextFactory
 {
     private const string DefaultInteractiveSystemPromptSupplement =
-        "You are acting as a Stardew Valley NPC runtime. Use NPC-local context and explicit tool results, " +
-        "keep continuity inside this NPC namespace, and use the registered tools available in this session.";
+        "你正在作为星露谷 NPC runtime 行动。使用当前 NPC 自己的上下文和明确的工具结果，" +
+        "把连续性保持在这个 NPC namespace 内，并按需要使用本会话注册的工具。";
 
     private const string DefaultAutonomySystemPromptSupplement =
-        "You are acting as a Stardew Valley NPC autonomy parent runtime. The host only wakes you; it does not " +
-        "choose for you or preload world facts. You are a person living in Stardew Valley, so decide your own " +
-        "next action from your own perspective, keep continuity inside this NPC namespace, and return one JSON " +
-        "intent contract only. You must return raw JSON without prose or markdown. Mechanical actions are executed " +
-        "by the host and local executor.";
+        "你正在作为星露谷 NPC 自主父层 runtime 行动。宿主只负责唤醒你，不替你选择，也不预载世界事实。" +
+        "你是生活在星露谷里的人，要从自己的视角决定下一步行动，把连续性保持在这个 NPC namespace 内，" +
+        "并且只返回一个 JSON intent contract。必须返回 raw JSON，不要自然语言解释或 Markdown。" +
+        "机械动作由宿主和本地 executor 执行。";
 
     public NpcRuntimeContextBundle Create(
         NpcNamespace npcNamespace,
@@ -74,16 +73,17 @@ public sealed class NpcRuntimeContextFactory
             includeMemory: includeMemory,
             includeUser: includeUser));
         var isAutonomyChannel = string.Equals(channelKey, "autonomy", StringComparison.OrdinalIgnoreCase);
+        var isPrivateChatChannel = string.Equals(channelKey, "private_chat", StringComparison.OrdinalIgnoreCase);
         var promptBuilder = AgentCapabilityAssembler.CreatePromptBuilder(new AgentPromptServices
         {
             SkillManager = skillManager,
             MemoryAvailable = includeMemory || includeUser,
-            IncludeSkillsMandatoryCatalog = !isAutonomyChannel,
+            IncludeSkillsMandatoryCatalog = !isAutonomyChannel && !isPrivateChatChannel,
             UseStardewNpcRuntimePrompt = isAutonomyChannel,
-            IncludeMemoryGuidance = !isAutonomyChannel,
+            IncludeMemoryGuidance = !isAutonomyChannel && !isPrivateChatChannel,
             IncludeSessionSearchGuidance = !isAutonomyChannel,
-            IncludeSkillsGuidance = !isAutonomyChannel,
-            IncludeRuntimeFactsGuidance = !isAutonomyChannel,
+            IncludeSkillsGuidance = !isAutonomyChannel && !isPrivateChatChannel,
+            IncludeRuntimeFactsGuidance = !isAutonomyChannel && !isPrivateChatChannel,
             SupplementalSystemPrompt = BuildSystemPromptSupplement(isAutonomyChannel, systemPromptSupplement)
         });
         var contextManager = new ContextManager(

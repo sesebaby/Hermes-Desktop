@@ -7,6 +7,7 @@ using Hermes.Agent.Runtime;
 using Hermes.Agent.Skills;
 using Hermes.Agent.Tools;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 
 public sealed class StardewPrivateChatOrchestrator : IDisposable
 {
@@ -41,7 +42,8 @@ public sealed class StardewPrivateChatOrchestrator : IDisposable
                 ToCoreReopenPolicy(stardewOptions.ReopenPolicy),
                 stardewOptions.MaxTurnsPerSession,
                 stardewOptions.MaxOpenAttempts,
-                SessionLeaseCoordinator: sessionLeaseCoordinator));
+                SessionLeaseCoordinator: sessionLeaseCoordinator,
+                ReplyTimeout: stardewOptions.ReplyTimeout));
     }
 
     public StardewPrivateChatState State => ToStardewState(_inner.State);
@@ -205,41 +207,113 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
         if (string.IsNullOrWhiteSpace(request.SaveId))
             throw new ArgumentException("Save id is required.", nameof(request));
 
+        var logger = _loggerFactory.CreateLogger<StardewNpcPrivateChatAgentRunner>();
+        var stopwatch = Stopwatch.StartNew();
         var saveId = request.SaveId.Trim();
-        var binding = _bindingResolver.Resolve(request.NpcId, saveId);
-        var descriptor = binding.Descriptor;
-        var toolSnapshot = _toolSnapshotProvider.Capture();
-        var handle = await _runtimeSupervisor.GetOrCreatePrivateChatHandleAsync(
-            descriptor,
-            binding.Pack,
-            _runtimeRoot,
-            new NpcRuntimeAgentBindingRequest(
-                ChannelKey: "private_chat",
-                SystemPromptSupplement: BuildPrivateChatSystemPrompt(descriptor.DisplayName),
-                IncludeMemory: _includeMemory,
-                IncludeUser: _includeUser,
-                MaxToolIterations: _maxToolIterations,
-                Services: new NpcRuntimeCompositionServices(
-                    _chatClient,
-                    _loggerFactory,
-                    _skillManager,
-                    _cronScheduler,
-                    _delegationChatClient),
-                ToolSurface: toolSnapshot.ToolSurface,
-                ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion),
-            ct);
+        try
+        {
+            var binding = _bindingResolver.Resolve(request.NpcId, saveId);
+            var descriptor = binding.Descriptor;
+            var runtimeDriver = await _runtimeSupervisor.GetOrCreateDriverAsync(descriptor, _runtimeRoot, ct);
+            var toolSnapshot = _toolSnapshotProvider.Capture();
+            var privateChatToolSurface = NpcToolSurface.FromTools(
+            [
+                new NpcDelegateActionTool(
+                    descriptor,
+                    runtimeDriver,
+                    _loggerFactory.CreateLogger<NpcDelegateActionTool>()),
+                ..toolSnapshot.ToolSurface.Tools
+            ]);
+            var sessionId = $"{descriptor.SessionId}:private_chat:{request.ConversationId}";
+            logger.LogInformation(
+                "Stardew private-chat parent agent started; npc={NpcId}; saveId={SaveId}; conversationId={ConversationId}; sessionId={SessionId}; playerTextChars={PlayerTextChars}; toolCount={ToolCount}; toolSurfaceVersion={ToolSurfaceVersion}; maxToolIterations={MaxToolIterations}",
+                descriptor.NpcId,
+                saveId,
+                request.ConversationId,
+                sessionId,
+                request.PlayerText.Length,
+                privateChatToolSurface.Tools.Count,
+                toolSnapshot.SnapshotVersion,
+                _maxToolIterations);
+            var handle = await _runtimeSupervisor.GetOrCreatePrivateChatHandleAsync(
+                descriptor,
+                binding.Pack,
+                _runtimeRoot,
+                new NpcRuntimeAgentBindingRequest(
+                    ChannelKey: "private_chat",
+                    SystemPromptSupplement: BuildPrivateChatSystemPrompt(descriptor.DisplayName),
+                    IncludeMemory: _includeMemory,
+                    IncludeUser: _includeUser,
+                    MaxToolIterations: _maxToolIterations,
+                    Services: new NpcRuntimeCompositionServices(
+                        _chatClient,
+                        _loggerFactory,
+                        _skillManager,
+                        _cronScheduler,
+                        _delegationChatClient),
+                    ToolSurface: privateChatToolSurface,
+                    ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion),
+                ct);
 
-        var response = await handle.Agent.ChatAsync(
-            BuildPrivateChatMessage(descriptor.DisplayName, request.PlayerText),
-            new Session
+            var chatSession = new Session
             {
-                Id = $"{descriptor.SessionId}:private_chat:{request.ConversationId}",
+                Id = sessionId,
                 ToolSessionId = descriptor.SessionId,
                 Platform = descriptor.AdapterId
-            },
-            ct);
+            };
+            var response = await handle.Agent.ChatAsync(
+                BuildPrivateChatMessage(descriptor.DisplayName, request.PlayerText),
+                chatSession,
+                ct);
+            if (ShouldRetryImmediateActionDelegation(request.PlayerText, response, chatSession))
+            {
+                logger.LogInformation(
+                    "Stardew private-chat accepted immediate action without delegation; retrying once; npc={NpcId}; saveId={SaveId}; conversationId={ConversationId}; sessionId={SessionId}",
+                    descriptor.NpcId,
+                    saveId,
+                    request.ConversationId,
+                    sessionId);
+                response = await handle.Agent.ChatAsync(
+                    BuildPrivateChatDelegationCorrectionMessage(request.PlayerText),
+                    chatSession,
+                    ct);
+            }
+            stopwatch.Stop();
+            logger.LogInformation(
+                "Stardew private-chat parent agent completed; npc={NpcId}; saveId={SaveId}; conversationId={ConversationId}; sessionId={SessionId}; responseChars={ResponseChars}; durationMs={DurationMs}",
+                descriptor.NpcId,
+                saveId,
+                request.ConversationId,
+                sessionId,
+                response.Length,
+                stopwatch.ElapsedMilliseconds);
 
-        return new NpcPrivateChatReply(response.Trim());
+            return new NpcPrivateChatReply(response.Trim());
+        }
+        catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            stopwatch.Stop();
+            logger.LogWarning(
+                ex,
+                "Stardew private-chat parent agent timed out; npc={NpcId}; saveId={SaveId}; conversationId={ConversationId}; durationMs={DurationMs}",
+                request.NpcId,
+                saveId,
+                request.ConversationId,
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            logger.LogWarning(
+                ex,
+                "Stardew private-chat parent agent failed; npc={NpcId}; saveId={SaveId}; conversationId={ConversationId}; durationMs={DurationMs}",
+                request.NpcId,
+                saveId,
+                request.ConversationId,
+                stopwatch.ElapsedMilliseconds);
+            throw;
+        }
     }
 
     private static string BuildPrivateChatMessage(string displayName, string playerText)
@@ -250,6 +324,10 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
 
     private static string BuildPrivateChatSystemPrompt(string displayName)
         =>
+            "如果玩家现在就请你做一件会改变游戏世界的事，而你决定答应，必须先调用 npc_delegate_action，把 action、reason 和 destinationText 交给本地执行层；再自然回复玩家。只口头答应不会让动作发生。\n" +
+            "npc_delegate_action 不是地点解析器。私聊父 agent 不要写坐标，不要写 destinationId；地点含义和坐标由本地 executor 通过 skill_view 读取 stardew-navigation 后决定。\n" +
+            "你不知道坐标、路线、当前地图或能不能到达时，也不要向玩家追问路线；只要你愿意答应这个立即行动，就把目的地自然语言短语作为 destinationText 委托给 npc_delegate_action，由本地执行层处理移动和失败恢复。\n" +
+            "玩家说“现在去某地”“一起去某地”“带我去某地”这类即时请求时，如果你接受，action 填 move，destinationText 只写目的地说法，例如“海边”；不要写 target、locationName、x、y、source 或 destinationId。\n" +
             $"你是星露谷里的 {displayName}，现在正在和玩家私聊。\n" +
             "玩家找你说话时，你先像角色本人一样自然回应，不要装成助手。\n" +
             "如果玩家给了以后要兑现的约定、邀请、请求或共同计划，你自己判断要不要接；接了就用 todo 记到长期任务里。\n" +
@@ -259,6 +337,37 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
             "如果任务做不了或被卡住，要把 todo 标成 blocked 或 failed，并写清短 reason；能告诉玩家时，要直接告诉玩家卡在哪里。\n" +
             "最终回复会显示在玩家手机私聊里，必须直接对玩家说话；不要写内心独白、旁白、动作描写或只给自己看的想法。\n" +
             "不要把工具过程讲给玩家听，不要输出标签、markdown 或系统说明。";
+
+    private static string BuildPrivateChatDelegationCorrectionMessage(string playerText)
+        =>
+            "纠错：刚才的回复接受了即时行动，但没有调用 npc_delegate_action，所以游戏世界不会发生动作。\n" +
+            "现在如果你仍然接受玩家这个立即行动请求，必须先调用 npc_delegate_action，action 填 move，destinationText 只写目的地自然语言短语；工具调用后再给玩家一句自然回复。\n" +
+            "不要解析坐标，不要写 destinationId，不要只说“我现在过去”。\n\n" +
+            $"Player: {playerText}";
+
+    private static bool ShouldRetryImmediateActionDelegation(string playerText, string response, Session session)
+    {
+        if (!LooksLikeImmediateMoveRequest(playerText) ||
+            !LooksLikeAcceptedImmediateAction(response))
+        {
+            return false;
+        }
+
+        return !session.Messages.Any(message =>
+            message.ToolCalls?.Any(call => string.Equals(call.Name, "npc_delegate_action", StringComparison.OrdinalIgnoreCase)) ?? false);
+    }
+
+    private static bool LooksLikeImmediateMoveRequest(string text)
+        => ContainsAny(text, "现在", "马上", "立刻", "这就", "now", "right now") &&
+           ContainsAny(text, "去", "过去", "走", "前往", "一起", "带我", "go", "come", "head", "海边", "沙滩", "beach");
+
+    private static bool LooksLikeAcceptedImmediateAction(string text)
+        => ContainsAny(text, "现在", "马上", "这就", "过去", "出发", "走吧", "now", "right now", "head", "coming") &&
+           !ContainsAny(text, "不能", "不行", "没法", "抱歉", "sorry", "can't", "cannot");
+
+    private static bool ContainsAny(string text, params string[] values)
+        => !string.IsNullOrWhiteSpace(text) &&
+           values.Any(value => text.Contains(value, StringComparison.OrdinalIgnoreCase));
 }
 
 public sealed class StardewPrivateChatRuntimeAdapter : IDisposable
@@ -401,7 +510,8 @@ public sealed record StardewPrivateChatOptions(
     int MaxOpenAttempts = 60,
     TimeSpan PollInterval = default,
     NpcBodyBinding? BodyBinding = null,
-    Func<string, NpcBodyBinding>? BodyBindingResolver = null);
+    Func<string, NpcBodyBinding>? BodyBindingResolver = null,
+    TimeSpan ReplyTimeout = default);
 
 public enum PrivateChatReopenPolicy
 {

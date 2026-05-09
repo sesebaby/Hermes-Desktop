@@ -356,10 +356,10 @@ public class NpcAutonomyLoopTests
             {
                 Assert.IsTrue(records.Any(doc =>
                     doc.RootElement.GetProperty("actionType").GetString() == "diagnostic" &&
-                    doc.RootElement.GetProperty("target").GetString() == "stardew_move" &&
+                    doc.RootElement.GetProperty("target").GetString() == "stardew_navigate_to_tile" &&
                     doc.RootElement.GetProperty("stage").GetString() == "warning" &&
-                    doc.RootElement.GetProperty("result").GetString() == "narrative_move_without_stardew_move"),
-                    "A movement-looking final reply without a stardew_move tool call should be visible in runtime.jsonl.");
+                    doc.RootElement.GetProperty("result").GetString() == "narrative_move_without_navigation_tool"),
+                    "A movement-looking final reply without a navigation tool call should be visible in runtime.jsonl.");
             }
             finally
             {
@@ -403,8 +403,8 @@ public class NpcAutonomyLoopTests
                             new ToolCall
                             {
                                 Id = "call-move",
-                                Name = "stardew_move",
-                                Arguments = """{"destination":"beach.pier","reason":"continue the beach promise"}"""
+                                Name = "stardew_navigate_to_tile",
+                                Arguments = """{"locationName":"Beach","x":45,"y":34,"source":"test skill fixture","reason":"continue the beach promise"}"""
                             },
                             new ToolCall
                             {
@@ -424,7 +424,7 @@ public class NpcAutonomyLoopTests
                     {
                         Role = "tool",
                         ToolCallId = "call-move",
-                        ToolName = "stardew_move",
+                        ToolName = "stardew_navigate_to_tile",
                         Content = """{"accepted":true,"commandId":"cmd-blocked","status":"queued","failureReason":null,"traceId":"trace-continuity","finalStatus":{"commandId":"cmd-blocked","npcId":"haley","action":"move","status":"blocked","progress":1,"blockedReason":"path_blocked","errorCode":"path_blocked"}}"""
                     });
                     session.AddMessage(new Message
@@ -450,7 +450,7 @@ public class NpcAutonomyLoopTests
                         "stardew-valley",
                         DateTime.UtcNow,
                         "Haley is trying to continue a player promise.",
-                        ["location=Town", "destination[0]=destinationId=beach.pier,reason=continue the beach promise"])),
+                        ["location=Town", "promise=continue the beach promise"])),
                     new FakeEventSource([])),
                 new NpcObservationFactStore(),
                 agent,
@@ -796,16 +796,16 @@ public class NpcAutonomyLoopTests
                 {
                   "action": "move",
                   "reason": "meet the player near Pierre",
-                  "destinationId": "PierreShop",
+                  "destinationText": "Pierre",
                   "escalate": false
                 }
                 """;
             var localExecutor = new FakeLocalExecutorRunner(new NpcLocalExecutorResult(
-                Target: "stardew_move",
+                Target: "stardew_navigate_to_tile",
                 Stage: "completed",
                 Result: "queued",
-                DecisionResponse: "local_executor_completed:stardew_move",
-                MemorySummary: "tried moving to PierreShop; command queued; reason: meet the player near Pierre",
+                DecisionResponse: "local_executor_completed:stardew_navigate_to_tile",
+                MemorySummary: "navigation command queued; reason: meet the player near Pierre",
                 CommandId: "cmd-move-1"));
             var loop = new NpcAutonomyLoop(
                 new FakeGameAdapter(
@@ -815,7 +815,7 @@ public class NpcAutonomyLoopTests
                         "stardew-valley",
                         DateTime.UtcNow,
                         "Haley can move to Pierre.",
-                        ["location=Town", "destination[0].destinationId=PierreShop"])),
+                        ["location=Town"])),
                     new FakeEventSource([])),
                 new NpcObservationFactStore(),
                 new FakeAgent(() => { }, parentContract),
@@ -828,15 +828,16 @@ public class NpcAutonomyLoopTests
             Assert.AreEqual(1, localExecutor.CallCount);
             Assert.IsNotNull(localExecutor.LastIntent);
             Assert.AreEqual(NpcLocalActionKind.Move, localExecutor.LastIntent.Action);
-            Assert.AreEqual("PierreShop", localExecutor.LastIntent.DestinationId);
-            Assert.AreEqual("local_executor_completed:stardew_move", result.DecisionResponse);
+            Assert.IsNull(localExecutor.LastIntent.DestinationId);
+            Assert.AreEqual("Pierre", localExecutor.LastIntent.DestinationText);
+            Assert.AreEqual("local_executor_completed:stardew_navigate_to_tile", result.DecisionResponse);
 
             var records = ReadRuntimeLogRecords(logPath);
             AssertLogRecord(records, "diagnostic", "intent_contract", "accepted", "action=move;reason=meet the player near Pierre");
-            AssertLogRecord(records, "diagnostic", "parent_tool_surface", "verified", "registered_tools=0;stardew_move=0;stardew_task_status=0;stardew_speak=0;todo=0;agent=0");
+            AssertLogRecord(records, "diagnostic", "parent_tool_surface", "verified", "registered_tools=0;stardew_navigate_to_tile=0;stardew_task_status=0;stardew_speak=0;todo=0;agent=0");
             AssertLogRecord(records, "diagnostic", "local_executor", "selected", "action=move;lane=delegation");
-            AssertLogRecord(records, "local_executor", "stardew_move", "completed", "queued", "cmd-move-1");
-            AssertLogRecordExecutorMode(records, "local_executor", "stardew_move", "model_called");
+            AssertLogRecord(records, "local_executor", "stardew_navigate_to_tile", "completed", "queued", "cmd-move-1");
+            AssertLogRecordExecutorMode(records, "local_executor", "stardew_navigate_to_tile", "model_called");
 
             var entries = await memoryManager.ReadEntriesAsync("memory", CancellationToken.None);
             Assert.AreEqual(0, entries.Count);
@@ -1011,7 +1012,7 @@ public class NpcAutonomyLoopTests
                 {
                   "action": "move",
                   "reason": "meet player",
-                  "destinationId": "PierreShop",
+                  "destinationText": "player",
                   "speech": {
                     "shouldSpeak": true,
                     "channel": "player",
@@ -1028,7 +1029,7 @@ public class NpcAutonomyLoopTests
                         "stardew-valley",
                         DateTime.UtcNow,
                         "Haley can move to Pierre.",
-                        ["location=Town", "destination[0].destinationId=PierreShop"])),
+                        ["location=Town"])),
                     new FakeEventSource([])),
                 new NpcObservationFactStore(),
                 new FakeAgent(() => { }, parentContract),
@@ -1036,16 +1037,16 @@ public class NpcAutonomyLoopTests
                 localExecutorRunner: new FakeLocalExecutorRunner(new NpcLocalExecutorResult(
                     "local_executor",
                     "blocked",
-                    "no_tool_call",
-                    "local_executor_blocked:no_tool_call",
-                    Error: "no_tool_call",
+                    "executor_protocol_violation",
+                    "local_executor_blocked:executor_protocol_violation",
+                    Error: "executor_protocol_violation",
                     ExecutorMode: "blocked")),
                 traceIdFactory: () => "trace-speech-blocked");
 
             await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
 
             var records = ReadRuntimeLogRecords(logPath);
-            AssertLogRecord(records, "local_executor", "local_executor", "blocked", "no_tool_call");
+            AssertLogRecord(records, "local_executor", "local_executor", "blocked", "executor_protocol_violation");
             AssertLogRecordExecutorMode(records, "local_executor", "local_executor", "blocked");
             AssertLogRecord(records, "host_action", "stardew_speak", "submitted", "queued", "cmd-fallback");
             Assert.IsFalse(records.Any(record =>
@@ -1060,7 +1061,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithMechanicalMoveIntent_WritesStructuredTargetSource()
+    public async Task RunOneTickAsync_WithMechanicalMoveIntent_EscalatesBeforeLocalExecutor()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-target-source-tests", Guid.NewGuid().ToString("N"));
         try
@@ -1074,6 +1075,7 @@ public class NpcAutonomyLoopTests
                 {
                   "action": "move",
                   "reason": "go to the beach",
+                  "destinationText": "beach",
                   "target": {
                     "locationName": "Beach",
                     "x": 32,
@@ -1107,21 +1109,13 @@ public class NpcAutonomyLoopTests
                 localExecutorRunner: localExecutor,
                 traceIdFactory: () => "trace-target-source");
 
-            await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+            var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
 
-            Assert.AreEqual(1, localExecutor.CallCount);
-            Assert.IsNotNull(localExecutor.LastIntent?.Target);
-            Assert.AreEqual("Beach", localExecutor.LastIntent.Target.LocationName);
-            Assert.AreEqual("map-skill:stardew.navigation.poi.beach.shoreline", localExecutor.LastIntent.Target.Source);
+            Assert.AreEqual(0, localExecutor.CallCount);
+            Assert.AreEqual("local_executor_escalated:move_target_not_supported", result.DecisionResponse);
 
             var records = ReadRuntimeLogRecords(logPath);
-            AssertLogRecord(records, "local_executor", "stardew_navigate_to_tile", "completed", "queued", "cmd-nav-1");
-            AssertLogRecordExecutorMode(records, "local_executor", "stardew_navigate_to_tile", "host_deterministic");
-            AssertLogRecordTargetSource(
-                records,
-                "local_executor",
-                "stardew_navigate_to_tile",
-                "map-skill:stardew.navigation.poi.beach.shoreline");
+            AssertLogRecord(records, "diagnostic", "intent_contract", "rejected", "move_target_not_supported");
         }
         finally
         {
@@ -1203,10 +1197,10 @@ public class NpcAutonomyLoopTests
             var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
             var memoryManager = ns.CreateMemoryManager(new FakeChatClient(), NullLogger<MemoryManager>.Instance);
             var localExecutor = new FakeLocalExecutorRunner(new NpcLocalExecutorResult(
-                Target: "stardew_move",
+                Target: "stardew_navigate_to_tile",
                 Stage: "completed",
                 Result: "queued",
-                DecisionResponse: "local_executor_completed:stardew_move"));
+                DecisionResponse: "local_executor_completed:stardew_navigate_to_tile"));
             var loop = new NpcAutonomyLoop(
                 new FakeGameAdapter(
                     new CountingCommandService(),

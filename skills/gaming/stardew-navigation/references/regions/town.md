@@ -1,13 +1,13 @@
-# Town Region
+# 小镇区域
 
-Use this file after the navigation index when the intended destination is the town square, fountain, shops, clinic path, or a visible public meeting point.
+当意图是去小镇广场、喷泉、商店、诊所道路或公共可见集合点时，在导航索引之后读取本文件。
 
-## POI References
+## POI 参考
 
-- Town square / fountain: load `references/poi/town-square.md`.
+- 小镇广场 / 喷泉：读取 `references/poi/town-square.md`。
 
-## Notes
+## 说明
 
-- Internal location name: `Town`.
-- Town exits may connect to Beach and other vanilla locations through bridge cross-map navigation.
-- This region file does not authorize a mechanical coordinate target by itself. Load a POI file before emitting one.
+- 内部地图名：`Town`。
+- 小镇出口可能通过 bridge 的跨地图导航连接到 Beach 和其他原版地点。
+- 本 region 文件本身不授权机械坐标 target。输出 target 前必须读取 POI 文件。

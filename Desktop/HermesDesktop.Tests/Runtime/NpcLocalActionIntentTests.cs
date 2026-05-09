@@ -7,7 +7,7 @@ namespace HermesDesktop.Tests.Runtime;
 public sealed class NpcLocalActionIntentTests
 {
     [TestMethod]
-    public void TryParse_WhenMoveHasDestinationId_AcceptsContract()
+    public void TryParse_WhenMoveHasDestinationId_RejectsContract()
     {
         var ok = NpcLocalActionIntent.TryParse(
             """
@@ -21,21 +21,44 @@ public sealed class NpcLocalActionIntentTests
             out var intent,
             out var error);
 
-        Assert.IsTrue(ok, error);
-        Assert.IsNotNull(intent);
-        Assert.AreEqual(NpcLocalActionKind.Move, intent.Action);
-        Assert.AreEqual("PierreShop", intent.DestinationId);
-        Assert.AreEqual("meet the player near Pierre", intent.Reason);
+        Assert.IsFalse(ok);
+        Assert.IsNull(intent);
+        Assert.AreEqual("move_destinationId_not_supported", error);
     }
 
     [TestMethod]
-    public void TryParse_WhenMoveHasMechanicalTarget_AcceptsContract()
+    public void TryParse_WhenMoveHasNoTarget_AcceptsExecutorResolvedContract()
+    {
+        var ok = NpcLocalActionIntent.TryParse(
+            """
+            {
+              "action": "move",
+              "reason": "meet the player at the beach now",
+              "destinationText": "海边",
+              "escalate": false
+            }
+            """,
+            out var intent,
+            out var error);
+
+        Assert.IsTrue(ok, error);
+        Assert.IsNotNull(intent);
+        Assert.AreEqual(NpcLocalActionKind.Move, intent.Action);
+        Assert.IsNull(intent.DestinationId);
+        Assert.IsNull(intent.Target);
+        Assert.AreEqual("海边", intent.DestinationText);
+        Assert.AreEqual("meet the player at the beach now", intent.Reason);
+    }
+
+    [TestMethod]
+    public void TryParse_WhenMoveHasMechanicalTarget_RejectsContract()
     {
         var ok = NpcLocalActionIntent.TryParse(
             """
             {
               "action": "move",
               "reason": "go to the beach",
+              "destinationText": "beach",
               "target": {
                 "locationName": "Beach",
                 "x": 20,
@@ -48,15 +71,9 @@ public sealed class NpcLocalActionIntentTests
             out var intent,
             out var error);
 
-        Assert.IsTrue(ok, error);
-        Assert.IsNotNull(intent);
-        Assert.AreEqual(NpcLocalActionKind.Move, intent.Action);
-        Assert.IsNotNull(intent.Target);
-        Assert.AreEqual("Beach", intent.Target.LocationName);
-        Assert.AreEqual(20, intent.Target.X);
-        Assert.AreEqual(35, intent.Target.Y);
-        Assert.AreEqual(2, intent.Target.FacingDirection);
-        Assert.AreEqual("map-skill:stardew.navigation.poi.beach.shoreline", intent.Target.Source);
+        Assert.IsFalse(ok);
+        Assert.IsNull(intent);
+        Assert.AreEqual("move_target_not_supported", error);
     }
 
     [TestMethod]
@@ -166,11 +183,11 @@ public sealed class NpcLocalActionIntentTests
 
     [DataTestMethod]
     [DataRow("not json", "intent_contract_invalid")]
-    [DataRow("""{"action":"move","reason":"go"}""", "move_target_required")]
-    [DataRow("""{"action":"move","reason":"go","target":{"x":20,"y":35,"source":"map-skill:beach"}}""", "target_location_required")]
-    [DataRow("""{"action":"move","reason":"go","target":{"locationName":"Beach","y":35,"source":"map-skill:beach"}}""", "target_x_required")]
-    [DataRow("""{"action":"move","reason":"go","target":{"locationName":"Beach","x":20,"source":"map-skill:beach"}}""", "target_y_required")]
-    [DataRow("""{"action":"move","reason":"go","target":{"locationName":"Beach","x":20,"y":35}}""", "target_source_required")]
+    [DataRow("""{"action":"move","reason":"go"}""", "move_destinationText_required")]
+    [DataRow("""{"action":"move","reason":"go","destinationText":"beach","target":{"x":20,"y":35,"source":"map-skill:beach"}}""", "move_target_not_supported")]
+    [DataRow("""{"action":"move","reason":"go","destinationText":"beach","target":{"locationName":"Beach","y":35,"source":"map-skill:beach"}}""", "move_target_not_supported")]
+    [DataRow("""{"action":"move","reason":"go","destinationText":"beach","target":{"locationName":"Beach","x":20,"source":"map-skill:beach"}}""", "move_target_not_supported")]
+    [DataRow("""{"action":"move","reason":"go","destinationText":"beach","target":{"locationName":"Beach","x":20,"y":35}}""", "move_target_not_supported")]
     [DataRow("""{"action":"gift","reason":"give flowers"}""", "action_not_allowed")]
     [DataRow("""{"action":"wait","reason":"wait","speech":{"shouldSpeak":true}}""", "speech_text_required")]
     [DataRow("""{"action":"wait","reason":"wait","taskUpdate":{"taskId":"1","status":"done"}}""", "task_update_status_not_allowed")]

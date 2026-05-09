@@ -316,9 +316,9 @@ public class StardewAutonomyContextBudgetTests
             {
                 Role = "assistant",
                 Content = new string('a', 2600),
-                ToolCalls = [new ToolCall { Id = "latest", Name = "stardew_move", Arguments = new string('x', 2600) }]
+                ToolCalls = [new ToolCall { Id = "latest", Name = "stardew_navigate_to_tile", Arguments = new string('x', 2600) }]
             },
-            new() { Role = "tool", ToolName = "stardew_move", ToolCallId = "latest", Content = new string('t', 2600) },
+            new() { Role = "tool", ToolName = "stardew_navigate_to_tile", ToolCallId = "latest", Content = new string('t', 2600) },
             new() { Role = "user", Content = currentUser }
         };
 
@@ -467,9 +467,9 @@ public class StardewAutonomyContextBudgetTests
             {
                 Role = "assistant",
                 Content = new string('a', 1600),
-                ToolCalls = [new ToolCall { Id = "latest", Name = "stardew_move", Arguments = new string('x', 1600) }]
+                ToolCalls = [new ToolCall { Id = "latest", Name = "stardew_navigate_to_tile", Arguments = new string('x', 1600) }]
             },
-            new() { Role = "tool", ToolName = "stardew_move", ToolCallId = "latest", Content = new string('t', 1600) },
+            new() { Role = "tool", ToolName = "stardew_navigate_to_tile", ToolCallId = "latest", Content = new string('t', 1600) },
             new() { Role = "user", Content = currentUser }
         };
 
@@ -499,11 +499,11 @@ public class StardewAutonomyContextBudgetTests
                 Content = "latest request without continuation keywords",
                 ToolCalls =
                 [
-                    new ToolCall { Id = "latest-move", Name = "stardew_move", Arguments = """{"destination":"Town"}""" },
+                    new ToolCall { Id = "latest-move", Name = "stardew_navigate_to_tile", Arguments = """{"locationName":"Town","x":42,"y":17}""" },
                     new ToolCall { Id = "latest-task", Name = "stardew_task_status", Arguments = "{}" }
                 ]
             },
-            new() { Role = "tool", ToolName = "stardew_move", ToolCallId = "latest-move", Content = "move result survives" },
+            new() { Role = "tool", ToolName = "stardew_navigate_to_tile", ToolCallId = "latest-move", Content = "move result survives" },
             new() { Role = "tool", ToolName = "stardew_task_status", ToolCallId = "latest-task", Content = "task result survives" },
             new() { Role = "user", Content = "current decision" }
         };
@@ -576,7 +576,7 @@ public class StardewAutonomyContextBudgetTests
         var messages = new List<Message>
         {
             new() { Role = "system", Content = "system" },
-            new() { Role = "tool", ToolName = "stardew_move", ToolCallId = "orphan-call", Content = new string('o', 7000) },
+            new() { Role = "tool", ToolName = "stardew_navigate_to_tile", ToolCallId = "orphan-call", Content = new string('o', 7000) },
             new()
             {
                 Role = "assistant",

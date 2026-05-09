@@ -245,17 +245,20 @@ public sealed class TodoToolTests
     {
         var description = new TodoTool(new SessionTodoStore()).Description;
 
-        StringAssert.Contains(description, "complex tasks");
-        StringAssert.Contains(description, "3+ steps");
-        StringAssert.Contains(description, "Call with no parameters to read");
-        StringAssert.Contains(description, "List order is priority");
-        StringAssert.Contains(description, "Only ONE item in_progress");
-        StringAssert.Contains(description, "Mark items completed immediately");
+        StringAssert.Contains(description, "当前会话");
+        StringAssert.Contains(description, "3 步以上");
+        StringAssert.Contains(description, "现在就执行");
+        StringAssert.Contains(description, "npc_delegate_action");
+        StringAssert.Contains(description, "不传参数表示读取");
+        StringAssert.Contains(description, "列表顺序代表优先级");
+        StringAssert.Contains(description, "只能有一个 in_progress");
+        StringAssert.Contains(description, "完成后立刻标 completed");
         StringAssert.Contains(description, "cancel");
-        StringAssert.Contains(description, "Always returns the full current list");
+        StringAssert.Contains(description, "完整的当前任务列表");
         StringAssert.Contains(description, "blocked");
         StringAssert.Contains(description, "failed");
         StringAssert.Contains(description, "reason");
+        StringAssert.DoesNotMatch(description, new System.Text.RegularExpressions.Regex(@"\bManage your task list\b"));
     }
 
     [TestMethod]

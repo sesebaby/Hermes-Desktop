@@ -78,6 +78,23 @@ public sealed class NpcAutonomyLoop
         return result;
     }
 
+    public async Task<NpcAutonomyTickResult> RunDelegatedIntentAsync(
+        NpcRuntimeInstance instance,
+        string traceId,
+        string intentJson,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        ArgumentException.ThrowIfNullOrWhiteSpace(traceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(intentJson);
+
+        var route = await RunLocalExecutorAsync(instance, instance.Descriptor, [], traceId, intentJson, ct);
+        await WriteActivityAsync(instance.Descriptor, traceId, 0, route.DecisionResponse, ct);
+        instance.RecordTrace(traceId);
+        await WriteInstanceTaskContinuityEvidenceAsync(instance, traceId, ct);
+        return new NpcAutonomyTickResult(instance.Descriptor.NpcId, traceId, 0, 0, route.DecisionResponse, instance.Snapshot().Controller.EventCursor);
+    }
+
     private async Task<NpcAutonomyTickResult> RunOneTickForInstanceAsync(
         NpcRuntimeInstance instance,
         GameEventCursor eventCursor,
@@ -257,15 +274,16 @@ public sealed class NpcAutonomyLoop
             "不要声称已经看见、到达、完成或知道当前世界状态，除非那来自你自己已有的上下文或后续工具执行结果。\n" +
             "低风险动作只输出一个 JSON object 交给本地执行层，不要直接写工具参数或假装已经做完。\n" +
             "必须只输出 raw JSON object；不要 Markdown code fence，不要解释文字，不要在 JSON 前后添加任何自然语言。\n" +
-            "JSON schema 固定为 {\"action\":\"move|observe|wait|task_status|idle_micro_action|escalate\",\"reason\":\"short reason\",\"destinationId\":\"optional semantic move\",\"target\":{\"locationName\":\"required for mechanical move\",\"x\":0,\"y\":0,\"facingDirection\":\"optional\",\"source\":\"required disclosed map skill id\"},\"commandId\":\"optional for task_status\",\"observeTarget\":\"optional for observe\",\"waitReason\":\"optional for wait\",\"idleMicroAction\":{\"kind\":\"required for idle_micro_action\",\"animationAlias\":\"optional only when kind=idle_animation_once\",\"intensity\":\"optional\",\"ttlSeconds\":0},\"speech\":{\"shouldSpeak\":false,\"channel\":\"player|overhead|private\",\"text\":\"optional short line\"},\"taskUpdate\":{\"taskId\":\"optional existing todo id\",\"status\":\"pending|in_progress|blocked|completed|failed|cancelled\",\"reason\":\"optional short reason\"},\"escalate\":false}。\n" +
+            "JSON schema 固定为 {\"action\":\"move|observe|wait|task_status|idle_micro_action|escalate\",\"reason\":\"简短原因\",\"destinationText\":\"move 必填；只写自然语言目的地，不写坐标\",\"commandId\":\"task_status 可选\",\"observeTarget\":\"observe 可选\",\"waitReason\":\"wait 可选\",\"idleMicroAction\":{\"kind\":\"idle_micro_action 必填\",\"animationAlias\":\"仅当 kind=idle_animation_once 时可选\",\"intensity\":\"可选\",\"ttlSeconds\":0},\"speech\":{\"shouldSpeak\":false,\"channel\":\"player|overhead|private\",\"text\":\"可选短句\"},\"taskUpdate\":{\"taskId\":\"可选 existing todo id\",\"status\":\"pending|in_progress|blocked|completed|failed|cancelled\",\"reason\":\"可选短原因\"},\"escalate\":false}。\n" +
             "只输出所选 action 需要的字段；不要输出 null、空字符串或无关字段，尤其不要在非 escalate 动作里输出 escalate=false。\n" +
-            "机械 target 只表达父层决策；本地 executor 会用 executor-only stardew_navigate_to_tile 执行，父层不要写工具参数或调用该工具。\n" +
+            "move 只表达父层的目的地意图；本地 executor 会用 skill_view 读取 stardew-navigation 后再用 executor-only stardew_navigate_to_tile 执行，父层不要写工具参数或调用该工具。\n" +
             "如果只是查长动作进度，action=task_status 且 commandId 必须来自已有命令。\n" +
             "如果你只是想在原地做一个短暂可见的小动作，用 action=idle_micro_action，并提供 idleMicroAction.kind；可选 kind 只有 emote_happy、emote_question、emote_sleepy、emote_music、look_left、look_right、look_up、look_down、look_around、tiny_hop、tiny_shake、idle_pose、idle_animation_once。\n" +
-            "idle_micro_action 只能表达原地短动作；不要同时附带 speech、destinationId 或 target，也不要把它改写成 move 或 speak。\n" +
+            "idle_micro_action 只能表达原地短动作；不要同时附带 speech 或 target，也不要把它改写成 move 或 speak。\n" +
             "如果任务真的被外部条件阻断，用 taskUpdate 把已有 todo 标成 blocked；如果确定做不成，标成 failed；blocked 或 failed 都要写短 reason。\n" +
             "wait 只表示你现在选择暂不推进，不是普通世界动作。";
         var timeoutFact = BuildActionSlotTimeoutFact(lastTerminalCommandStatus);
+        message += "\nMOVE CONTRACT OVERRIDE: for action=move, the parent decision JSON must include destinationText with only the natural-language destination phrase, and must not include target, locationName, x, y, facingDirection, source, destinationId, or any mechanical map coordinates. The parent only chooses action=move, reason, and destinationText. The local executor is the only layer allowed to resolve locations, and it must do that by reading stardew-navigation with skill_view before calling executor-only navigation tools.";
         return timeoutFact is null
             ? message
             : message + "\n" + timeoutFact;
@@ -373,7 +391,7 @@ public sealed class NpcAutonomyLoop
             traceId,
             "parent_tool_surface",
             "verified",
-            "registered_tools=0;stardew_move=0;stardew_task_status=0;stardew_speak=0;todo=0;agent=0",
+            "registered_tools=0;stardew_navigate_to_tile=0;stardew_task_status=0;stardew_speak=0;todo=0;agent=0",
             null,
             ct);
         await WriteDiagnosticAsync(
@@ -593,7 +611,7 @@ public sealed class NpcAutonomyLoop
         if (_logWriter is null ||
             string.IsNullOrWhiteSpace(decisionResponse) ||
             !LooksLikePhysicalMovement(decisionResponse) ||
-            HasToolCall(decisionSession, "stardew_move"))
+            HasToolCall(decisionSession, "stardew_navigate_to_tile"))
         {
             return;
         }
@@ -605,9 +623,9 @@ public sealed class NpcAutonomyLoop
             descriptor.GameId,
             descriptor.SessionId,
             "diagnostic",
-            "stardew_move",
+            "stardew_navigate_to_tile",
             "warning",
-            "narrative_move_without_stardew_move",
+            "narrative_move_without_navigation_tool",
             Error: Truncate(decisionResponse, 300)), ct);
     }
 
@@ -963,7 +981,7 @@ public sealed class NpcAutonomyLoop
             : new ToolResultEvidence(null, null);
 
     private static bool IsStardewActionTool(ToolCall call)
-        => string.Equals(call.Name, "stardew_move", StringComparison.OrdinalIgnoreCase) ||
+        => string.Equals(call.Name, "stardew_navigate_to_tile", StringComparison.OrdinalIgnoreCase) ||
            IsFeedbackTool(call);
 
     private static bool IsFeedbackTool(ToolCall call)
@@ -1005,7 +1023,7 @@ public sealed class NpcAutonomyLoop
     }
 
     private static bool HasAnyStardewActionToolCall(Session? session)
-        => HasToolCall(session, "stardew_move") ||
+        => HasToolCall(session, "stardew_navigate_to_tile") ||
            HasToolCall(session, "stardew_speak") ||
            HasToolCall(session, "stardew_open_private_chat");
 

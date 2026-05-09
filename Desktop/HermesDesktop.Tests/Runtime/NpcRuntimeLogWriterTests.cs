@@ -57,7 +57,7 @@ public class NpcRuntimeLogWriterTests
                 "stardew-valley",
                 "session-1",
                 "local_executor",
-                "stardew_move",
+                "stardew_navigate_to_tile",
                 "completed",
                 "queued",
                 ExecutorMode: "model_called"), CancellationToken.None);
@@ -120,7 +120,7 @@ public class NpcRuntimeLogWriterTests
               "gameId": "stardew-valley",
               "sessionId": "session-1",
               "actionType": "local_executor",
-              "target": "stardew_move",
+              "target": "stardew_navigate_to_tile",
               "stage": "completed",
               "result": "queued"
             }

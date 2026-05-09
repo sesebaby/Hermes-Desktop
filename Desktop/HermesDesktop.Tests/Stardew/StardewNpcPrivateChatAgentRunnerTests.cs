@@ -130,6 +130,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
 
         Assert.AreEqual("我记着，明天见。", reply.Text);
         Assert.IsTrue(client.SawChineseContinuityGuidance, "Private chat prompt must use Chinese plain-language continuity guidance.");
+        Assert.IsTrue(client.SawImmediateDelegationGuidance, "Private chat prompt must explain accepted immediate world actions require npc_delegate_action.");
         Assert.IsTrue(client.SawDirectPlayerReplyGuidance, "Private chat prompt must force a direct reply to the player, not inner monologue.");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
         Assert.IsTrue(runtimeSupervisor.TryGetTaskView(haleySnapshot.SessionId, out var longTermTaskView));
@@ -139,6 +140,81 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         Assert.IsTrue(runtimeSupervisor.TryGetTaskView($"{haleySnapshot.SessionId}:private_chat:conversation-promise", out var privateChatTaskView));
         Assert.IsNotNull(privateChatTaskView);
         Assert.AreEqual(0, privateChatTaskView.ActiveSnapshot.Todos.Count);
+    }
+
+    [TestMethod]
+    public async Task ReplyAsync_WhenImmediateActionAccepted_QueuesDelegatedActionIngress()
+    {
+        var runtimeSupervisor = new NpcRuntimeSupervisor();
+        var client = new DelegateActionThenFinalChatClient();
+        var runner = CreateRunner(client, runtimeSupervisor);
+
+        var reply = await runner.ReplyAsync(
+            new NpcPrivateChatRequest("haley", "save-1", "conversation-beach", "go to the beach now"),
+            CancellationToken.None);
+
+        Assert.AreEqual("I'll head there now.", reply.Text);
+        Assert.IsTrue(client.SawDelegateActionTool, "Private chat tool surface must include npc_delegate_action.");
+        var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
+        var ingress = haleySnapshot.Controller.IngressWorkItems.Single();
+        Assert.AreEqual("npc_delegated_action", ingress.WorkType);
+        Assert.AreEqual("queued", ingress.Status);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(ingress.TraceId));
+        Assert.IsFalse(string.IsNullOrWhiteSpace(ingress.WorkItemId));
+        Assert.AreEqual("move", ingress.Payload?["action"]?.GetValue<string>());
+        Assert.AreEqual("meet the player at the beach now", ingress.Payload?["reason"]?.GetValue<string>());
+        Assert.AreEqual("beach", ingress.Payload?["destinationText"]?.GetValue<string>());
+        Assert.IsNull(ingress.Payload?["intentText"]);
+        Assert.AreEqual("conversation-beach", ingress.Payload?["conversationId"]?.GetValue<string>());
+    }
+
+    [TestMethod]
+    public async Task ReplyAsync_PrivateChatToolSurface_PrioritizesImmediateDelegationOverTodo()
+    {
+        var runtimeSupervisor = new NpcRuntimeSupervisor();
+        var client = new DelegateActionThenFinalChatClient();
+        var runner = CreateRunner(client, runtimeSupervisor);
+
+        await runner.ReplyAsync(
+            new NpcPrivateChatRequest("haley", "save-1", "conversation-beach", "海莉，我们现在去海边吧。"),
+            CancellationToken.None);
+
+        var delegateIndex = client.FirstToolNames.FindIndex(name => name == "npc_delegate_action");
+        var todoIndex = client.FirstToolNames.FindIndex(name => name == "todo");
+        Assert.IsTrue(delegateIndex >= 0, "私聊工具面必须包含 npc_delegate_action。");
+        Assert.IsTrue(todoIndex >= 0, "私聊工具面必须包含 todo。");
+        Assert.IsTrue(delegateIndex < todoIndex, "立即行动委托工具必须排在 todo 前，避免模型把现在就做的请求只记成待办。");
+        var todoDefinition = client.FirstToolDefinitions.Single(tool => tool.Name == "todo");
+        StringAssert.Contains(todoDefinition.Description, "当前会话");
+        StringAssert.Contains(todoDefinition.Description, "现在就执行");
+        StringAssert.Contains(todoDefinition.Description, "npc_delegate_action");
+        StringAssert.DoesNotMatch(todoDefinition.Description, new System.Text.RegularExpressions.Regex(@"\bManage your task list\b"));
+    }
+
+    [TestMethod]
+    public async Task ReplyAsync_WhenImmediateMoveAcceptedWithoutDelegation_RetriesAndQueuesDelegatedAction()
+    {
+        var runtimeSupervisor = new NpcRuntimeSupervisor();
+        var client = new FirstAcceptsWithoutDelegatingThenDelegatesChatClient();
+        var runner = CreateRunner(client, runtimeSupervisor);
+
+        var reply = await runner.ReplyAsync(
+            new NpcPrivateChatRequest("haley", "save-1", "conversation-corrective", "海莉，我们现在去海边吧。"),
+            CancellationToken.None);
+
+        Assert.AreEqual("好，我现在过去。", reply.Text);
+        Assert.AreEqual(3, client.CompleteWithToolsCalls, "第一次口头答应但未委托后，应触发一次纠错工具轮，再自然回复。");
+        Assert.IsTrue(
+            client.MessagesByCall.Skip(1).Any(messages => messages.Any(message =>
+                message.Role == "user" &&
+                (message.Content?.Contains("刚才的回复接受了即时行动，但没有调用 npc_delegate_action", StringComparison.Ordinal) ?? false))),
+            "纠错重试必须明确指出接受即时行动但缺少 npc_delegate_action。");
+        var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
+        var ingress = haleySnapshot.Controller.IngressWorkItems.Single();
+        Assert.AreEqual("npc_delegated_action", ingress.WorkType);
+        Assert.AreEqual("move", ingress.Payload?["action"]?.GetValue<string>());
+        Assert.AreEqual("海边", ingress.Payload?["destinationText"]?.GetValue<string>());
+        Assert.IsNull(ingress.Payload?["intentText"]);
     }
 
     [TestMethod]
@@ -424,6 +500,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         private int _calls;
 
         public bool SawChineseContinuityGuidance { get; private set; }
+        public bool SawImmediateDelegationGuidance { get; private set; }
         public bool SawDirectPlayerReplyGuidance { get; private set; }
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
@@ -441,6 +518,11 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                 message.Content.Contains("玩家找你说话时", StringComparison.Ordinal) &&
                 message.Content.Contains("todo", StringComparison.Ordinal) &&
                 message.Content.Contains("不要把工具过程讲给玩家听", StringComparison.Ordinal));
+            SawImmediateDelegationGuidance |= snapshot.Any(message =>
+                string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase) &&
+                message.Content.Contains("npc_delegate_action", StringComparison.Ordinal) &&
+                message.Content.Contains("只口头答应不会让动作发生", StringComparison.Ordinal) &&
+                message.Content.Contains("不要写 destinationId", StringComparison.Ordinal));
             SawDirectPlayerReplyGuidance |= snapshot.Any(message =>
                 string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase) &&
                 message.Content.Contains("最终回复会显示在玩家手机私聊里", StringComparison.Ordinal) &&
@@ -465,6 +547,143 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             }
 
             return Task.FromResult(new ChatResponse { Content = "我记着，明天见。", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class DelegateActionThenFinalChatClient : IChatClient
+    {
+        private int _calls;
+
+        public bool SawDelegateActionTool { get; private set; }
+        public List<string> FirstToolNames { get; } = new();
+        public List<ToolDefinition> FirstToolDefinitions { get; } = new();
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            _calls++;
+            var toolSnapshot = tools.ToList();
+            if (_calls == 1)
+            {
+                FirstToolNames.AddRange(toolSnapshot.Select(tool => tool.Name));
+                FirstToolDefinitions.AddRange(toolSnapshot);
+            }
+
+            SawDelegateActionTool |= toolSnapshot.Any(tool => string.Equals(tool.Name, "npc_delegate_action", StringComparison.Ordinal));
+            if (_calls == 1)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = "delegate-action",
+                            Name = "npc_delegate_action",
+                            Arguments = """
+                            {
+                              "action": "move",
+                              "reason": "meet the player at the beach now",
+                              "destinationText": "beach",
+                              "conversationId": "conversation-beach"
+                            }
+                            """
+                        }
+                    ]
+                });
+            }
+
+            return Task.FromResult(new ChatResponse { Content = "I'll head there now.", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class FirstAcceptsWithoutDelegatingThenDelegatesChatClient : IChatClient
+    {
+        public int CompleteWithToolsCalls { get; private set; }
+        public List<IReadOnlyList<Message>> MessagesByCall { get; } = [];
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            CompleteWithToolsCalls++;
+            MessagesByCall.Add(messages.ToArray());
+            if (CompleteWithToolsCalls == 1)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    Content = "好，我现在过去。",
+                    FinishReason = "stop"
+                });
+            }
+
+            if (CompleteWithToolsCalls == 2)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = "delegate-after-correction",
+                            Name = "npc_delegate_action",
+                            Arguments = """
+                            {
+                              "action": "move",
+                              "reason": "现在陪玩家去海边",
+                              "destinationText": "海边",
+                              "conversationId": "conversation-corrective"
+                            }
+                            """
+                        }
+                    ]
+                });
+            }
+
+            return Task.FromResult(new ChatResponse { Content = "好，我现在过去。", FinishReason = "stop" });
         }
 
         public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)

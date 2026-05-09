@@ -134,23 +134,27 @@ public sealed class PrivateChatOrchestrator : IDisposable
             return;
 
         _state = PrivateChatState.WaitingAgentReply;
+        var npcId = _activeNpcId!;
+        var conversationId = _conversationId;
+        var replySource = _options.Policy.ExtractReplySource(record);
         try
         {
             PrivateChatAgentReply reply;
             try
             {
+                using var replyTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                replyTimeoutCts.CancelAfter(_options.EffectiveReplyTimeout);
                 reply = await _agentRunner.ReplyAsync(
-                    new PrivateChatAgentRequest(_activeNpcId!, _options.Policy.SaveId, _conversationId, playerText),
-                    ct);
+                    new PrivateChatAgentRequest(npcId, _options.Policy.SaveId, conversationId, playerText),
+                    replyTimeoutCts.Token);
             }
             catch
             {
-                var failureSource = _options.Policy.ExtractReplySource(record);
                 await SubmitSpeakAsync(
-                    _activeNpcId!,
+                    npcId,
                     "AI connection failed. Check Hermes provider settings.",
-                    _conversationId,
-                    failureSource,
+                    conversationId,
+                    replySource,
                     ct,
                     messageKind: "system_error");
                 EndSession();
@@ -164,8 +168,7 @@ public sealed class PrivateChatOrchestrator : IDisposable
             }
 
             _state = PrivateChatState.ShowingReply;
-            var replySource = _options.Policy.ExtractReplySource(record);
-            var speakResult = await SubmitSpeakAsync(_activeNpcId!, reply.Text, _conversationId, replySource, ct);
+            var speakResult = await SubmitSpeakAsync(npcId, reply.Text, conversationId, replySource, ct);
             _turns++;
             if (!speakResult.Accepted || ShouldEndAfterReply())
             {

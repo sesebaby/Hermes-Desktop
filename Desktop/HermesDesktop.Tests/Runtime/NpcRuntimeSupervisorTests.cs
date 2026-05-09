@@ -468,20 +468,28 @@ public class NpcRuntimeSupervisorTests
             {
               "action": "move",
               "reason": "meet player",
-              "destinationId": "PierreShop",
+              "destinationText": "beach",
               "escalate": false
             }
             """;
         var autonomyClient = new ParentIntentChatClient(parentContract);
         var delegationClient = new DelegationToolCallChatClient(
             new StreamEvent.ToolUseComplete(
-                "call-move",
-                "stardew_move",
-                Json("""{"destination":"PierreShop","reason":"meet player"}""")));
-        var moveTool = new RecordingTool(
-            "stardew_move",
-            typeof(MoveParameters),
-            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-move-1","status":"queued"}"""));
+                "call-skill",
+                "skill_view",
+                Json("""{"name":"stardew-navigation","file_path":"references/poi/beach-shoreline.md"}""")),
+            new StreamEvent.ToolUseComplete(
+                "call-nav",
+                "stardew_navigate_to_tile",
+                Json("""{"locationName":"Beach","x":32,"y":34,"source":"map-skill:stardew.navigation.poi.beach-shoreline","reason":"meet player"}""")));
+        var skillTool = new RecordingTool(
+            "skill_view",
+            typeof(SkillViewParameters),
+            ToolResult.Ok("""{"success":true,"content":"`target(locationName=Beach,x=32,y=34,source=map-skill:stardew.navigation.poi.beach-shoreline)`"}"""));
+        var navigateTool = new RecordingTool(
+            "stardew_navigate_to_tile",
+            typeof(NavigateToTileParameters),
+            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-nav-1","status":"queued"}"""));
         var services = new NpcRuntimeCompositionServices(
             autonomyClient,
             NullLoggerFactory.Instance,
@@ -503,12 +511,13 @@ public class NpcRuntimeSupervisorTests
                 GameToolFactory: (adapter, factStore) =>
                 [
                     new FakeTool("stardew_status"),
-                    new FakeTool("stardew_move")
+                    new FakeTool("stardew_navigate_to_tile")
                 ],
-                LocalExecutorGameToolFactory: (adapter, factStore) => [moveTool],
+                LocalExecutorGameToolFactory: (adapter, factStore) => [navigateTool],
+                LocalExecutorRuntimeToolFactory: services => [skillTool],
                 Services: services,
                 ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
-                LocalExecutorToolFingerprint: NpcToolSurface.FromTools([moveTool]).Fingerprint),
+                LocalExecutorToolFingerprint: NpcToolSurface.FromTools([skillTool, navigateTool]).Fingerprint),
             CancellationToken.None);
 
         var result = await handle.Loop.RunOneTickAsync(
@@ -518,17 +527,18 @@ public class NpcRuntimeSupervisorTests
                 "stardew-valley",
                 DateTime.UtcNow,
                 "Haley can move to Pierre.",
-                ["location=Town", "destination[0].destinationId=PierreShop"]),
+                ["location=Town"]),
             new GameEventBatch([], new GameEventCursor()),
             CancellationToken.None);
 
-        Assert.AreEqual("local_executor_completed:stardew_move", result.DecisionResponse);
+        Assert.AreEqual("local_executor_completed:stardew_navigate_to_tile", result.DecisionResponse);
         Assert.AreEqual(1, autonomyClient.CompleteCalls);
         Assert.AreEqual(0, autonomyClient.CompleteWithToolsCalls);
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_move");
-        Assert.AreEqual(1, delegationClient.StructuredStreamCalls);
-        CollectionAssert.Contains(delegationClient.LastToolNames.ToArray(), "stardew_move");
-        Assert.AreEqual(1, moveTool.ExecuteCalls);
+        Assert.AreEqual(2, delegationClient.StructuredStreamCalls);
+        CollectionAssert.Contains(delegationClient.LastToolNames.ToArray(), "stardew_navigate_to_tile");
+        Assert.IsTrue(delegationClient.ToolNamesByCall.Any(names => names.Contains("skill_view")));
+        Assert.AreEqual(1, navigateTool.ExecuteCalls);
     }
 
     [TestMethod]
@@ -542,13 +552,13 @@ public class NpcRuntimeSupervisorTests
             {
               "action": "move",
               "reason": "meet player",
-              "destinationId": "PierreShop",
+              "destinationText": "beach",
               "escalate": false
             }
             """);
-        var moveTool = new RecordingTool(
-            "stardew_move",
-            typeof(MoveParameters),
+        var navigateTool = new RecordingTool(
+            "stardew_navigate_to_tile",
+            typeof(NavigateToTileParameters),
             ToolResult.Ok("""{"accepted":true,"commandId":"cmd-move-1","status":"queued"}"""));
         var services = new NpcRuntimeCompositionServices(
             autonomyClient,
@@ -570,12 +580,13 @@ public class NpcRuntimeSupervisorTests
                 GameToolFactory: (adapter, factStore) =>
                 [
                     new FakeTool("stardew_status"),
-                    new FakeTool("stardew_move")
+                    new FakeTool("stardew_navigate_to_tile")
                 ],
-                LocalExecutorGameToolFactory: (adapter, factStore) => [moveTool],
+                LocalExecutorGameToolFactory: (adapter, factStore) => [navigateTool],
+                LocalExecutorRuntimeToolFactory: services => [new RecordingTool("skill_view", typeof(SkillViewParameters), ToolResult.Ok("{}"))],
                 Services: services,
                 ToolSurface: NpcToolSurface.FromTools([]),
-                LocalExecutorToolFingerprint: NpcToolSurface.FromTools([moveTool]).Fingerprint),
+                LocalExecutorToolFingerprint: NpcToolSurface.FromTools([new FakeTool("skill_view"), navigateTool]).Fingerprint),
             CancellationToken.None);
 
         var result = await handle.Loop.RunOneTickAsync(
@@ -585,13 +596,13 @@ public class NpcRuntimeSupervisorTests
                 "stardew-valley",
                 DateTime.UtcNow,
                 "Haley can move to Pierre.",
-                ["location=Town", "destination[0].destinationId=PierreShop"]),
+                ["location=Town"]),
             new GameEventBatch([], new GameEventCursor()),
             CancellationToken.None);
 
         Assert.AreEqual("local_executor_blocked:local_executor_unavailable", result.DecisionResponse);
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_move");
-        Assert.AreEqual(0, moveTool.ExecuteCalls);
+        Assert.AreEqual(0, navigateTool.ExecuteCalls);
     }
 
     [TestMethod]
@@ -1347,10 +1358,11 @@ public class NpcRuntimeSupervisorTests
         }
     }
 
-    private sealed class DelegationToolCallChatClient(StreamEvent.ToolUseComplete toolUse) : IChatClient
+    private sealed class DelegationToolCallChatClient(params StreamEvent.ToolUseComplete[] toolUses) : IChatClient
     {
         public int StructuredStreamCalls { get; private set; }
         public List<string> LastToolNames { get; } = new();
+        public List<IReadOnlyList<string>> ToolNamesByCall { get; } = [];
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
             => Task.FromResult("unused");
@@ -1376,8 +1388,9 @@ public class NpcRuntimeSupervisorTests
             StructuredStreamCalls++;
             LastToolNames.Clear();
             LastToolNames.AddRange((tools ?? []).Select(tool => tool.Name));
+            ToolNamesByCall.Add(LastToolNames.ToArray());
             await Task.Yield();
-            yield return toolUse;
+            yield return toolUses[Math.Min(StructuredStreamCalls - 1, toolUses.Length - 1)];
             yield return new StreamEvent.MessageComplete("stop");
         }
     }
@@ -1444,6 +1457,14 @@ public class NpcRuntimeSupervisorTests
     private sealed class MoveParameters
     {
         public required string Destination { get; init; }
+        public string? Reason { get; init; }
+    }
+
+    private sealed class NavigateToTileParameters
+    {
+        public required string LocationName { get; init; }
+        public required int X { get; init; }
+        public required int Y { get; init; }
         public string? Reason { get; init; }
     }
 

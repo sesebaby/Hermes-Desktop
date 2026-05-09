@@ -1,12 +1,12 @@
-# Beach Shoreline POI
+# 海边海岸线 POI
 
-Use this when the intent is "go to the beach", "walk by the ocean", "shoreline", "sunny photo spot", or a quiet reflective beach destination.
+当意图是“去海边”“去沙滩”“到海边走走”“去海岸线”“找一个阳光好的拍照点”或安静的水边目的地时，使用本 POI。
 
-## Mechanical Target
+## 机械目标
 
 `target(locationName=Beach,x=32,y=34,source=map-skill:stardew.navigation.poi.beach-shoreline)`
 
-## Use
+## 使用
 
-- Good for Haley when she wants a bright, pretty, open place.
-- After emitting this target, the parent must let the host/local executor run it and then monitor `stardew_task_status`.
+- 适合海莉想去明亮、漂亮、开阔的地方。
+- 本地 executor 读取到这个 target 后，调用 `stardew_navigate_to_tile` 执行；之后用 `stardew_task_status` 查看进度。

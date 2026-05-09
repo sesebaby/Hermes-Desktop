@@ -26,13 +26,13 @@ public class TodoTool : ITool, IToolSchemaProvider
     public virtual string Name => "todo";
 
     public string Description =>
-        "Manage your task list for the current session. Use for complex tasks with 3+ steps or when the user provides multiple tasks. " +
-        "Call with no parameters to read the current list. Provide a todos array to create/update items. " +
-        "merge=false replaces the entire list with a fresh plan; merge=true updates existing items by id and adds new ones. " +
-        "Each item has id, content, status, and optional reason. Status values: pending, in_progress, completed, cancelled, blocked, or failed. " +
-        "List order is priority. Only ONE item in_progress at a time. " +
-        "Mark items completed immediately when done. If something cannot continue, use blocked or failed with a short reason. " +
-        "Always returns the full current list.";
+        "管理当前会话的任务列表。适合记录以后要兑现的承诺、3 步以上的复杂任务，或玩家一次给出的多个任务。 " +
+        "如果玩家要求现在就执行会改变外部世界或游戏世界的动作，不要只写 todo；应先使用当前场景提供的执行或委托工具，例如 npc_delegate_action。 " +
+        "不传参数表示读取当前列表；传 todos 数组表示创建或更新任务。 " +
+        "merge=false 表示用新列表替换全部任务；merge=true 表示按 id 更新已有任务并追加新任务。 " +
+        "每个任务包含 id、content、status，可选 reason。status 可为 pending、in_progress、completed、cancelled、blocked 或 failed。 " +
+        "列表顺序代表优先级；同一时间只能有一个 in_progress。完成后立刻标 completed；无法继续时用 blocked 或 failed 并写短 reason。 " +
+        "工具总是返回完整的当前任务列表。";
 
     public Type ParametersType => typeof(TodoToolParameters);
 

@@ -299,9 +299,15 @@ public sealed class NpcRuntimeSupervisor
         NpcRuntimeAutonomyBindingRequest request,
         IGameAdapter adapter,
         NpcObservationFactStore factStore)
-        => request.LocalExecutorGameToolFactory is null
-            ? NpcToolSurface.FromTools([])
-            : NpcToolSurface.FromTools(request.LocalExecutorGameToolFactory(adapter, factStore));
+    {
+        var tools = new List<ITool>();
+        if (request.LocalExecutorGameToolFactory is not null)
+            tools.AddRange(request.LocalExecutorGameToolFactory(adapter, factStore));
+        if (request.LocalExecutorRuntimeToolFactory is not null)
+            tools.AddRange(request.LocalExecutorRuntimeToolFactory(request.Services));
+
+        return NpcToolSurface.FromTools(tools);
+    }
 
     private static INpcLocalExecutorRunner? CreateLocalExecutorRunner(
         NpcRuntimeCompositionServices services,
@@ -366,7 +372,8 @@ public sealed class NpcRuntimeSupervisor
                     CheckpointDirectory = Path.Combine(instance.Namespace.RuntimeRoot, "checkpoints"),
                     MemoryAvailable = includeMemory || includeUser
                 },
-                tools);
+                tools,
+                discoveredToolsFirst: string.Equals(channelKey, "private_chat", StringComparison.OrdinalIgnoreCase));
         }
 
         return new NpcRuntimeAgentHandle(

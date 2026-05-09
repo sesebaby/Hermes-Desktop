@@ -86,7 +86,8 @@ public class StardewQueryServiceTests
         CollectionAssert.Contains(observation.Facts.ToList(), "playerHeldItem=Sunflower");
         CollectionAssert.Contains(observation.Facts.ToList(), "isAvailableForControl=true");
         CollectionAssert.Contains(observation.Facts.ToList(), "currentCommandId=cmd-1");
-        Assert.IsTrue(observation.Facts.Any(fact => fact.Contains("destinationId=town.fountain", StringComparison.Ordinal)), "Observed destination facts should include destinationId as the stable key.");
+        Assert.IsFalse(observation.Facts.Any(fact => fact.StartsWith("destination[", StringComparison.Ordinal)), "NPC product observations must not preload destination candidates.");
+        Assert.IsFalse(observation.Facts.Any(fact => fact.Contains("destinationId=", StringComparison.Ordinal)), "NPC product observations must not preload destination ids.");
     }
 
     [TestMethod]
@@ -228,7 +229,7 @@ public class StardewQueryServiceTests
     }
 
     [TestMethod]
-    public async Task ObserveAsync_MapsNearbyTilesIntoMachineReadableFacts()
+    public async Task ObserveAsync_DoesNotMapNearbyTilesIntoNpcProductFacts()
     {
         var client = new FakeSmapiClient();
         client.StatusResponse = new StardewBridgeResponse<StardewNpcStatusData>(
@@ -262,20 +263,11 @@ public class StardewQueryServiceTests
 
         var observation = await service.ObserveAsync("haley", CancellationToken.None);
 
-        var nearbyFacts = observation.Facts
-            .Where(fact => fact.StartsWith("nearby[", StringComparison.Ordinal))
-            .ToArray();
-        Assert.AreEqual(3, nearbyFacts.Length, "Autonomy facts should expose at most three current safe nearby tiles.");
-        CollectionAssert.Contains(
-            nearbyFacts,
-            "nearby[0]=locationName=HaleyHouse,x=9,y=7,reason=same_location_safe_reposition");
-        CollectionAssert.Contains(
-            nearbyFacts,
-            "nearby[1]=locationName=HaleyHouse,x=8,y=8,reason=same_location_safe_reposition");
+        Assert.IsFalse(observation.Facts.Any(fact => fact.StartsWith("nearby[", StringComparison.Ordinal)), "NPC product observations must not preload nearby movement candidates.");
     }
 
     [TestMethod]
-    public async Task ObserveAsync_MapsDestinationsIntoMachineReadableFacts()
+    public async Task ObserveAsync_DoesNotMapDestinationsIntoNpcProductFacts()
     {
         var client = new FakeSmapiClient();
         client.StatusResponse = new StardewBridgeResponse<StardewNpcStatusData>(
@@ -309,19 +301,8 @@ public class StardewQueryServiceTests
 
         var observation = await service.ObserveAsync("haley", CancellationToken.None);
 
-        var destinationFacts = observation.Facts
-            .Where(fact => fact.StartsWith("destination[", StringComparison.Ordinal))
-            .ToArray();
-        Assert.AreEqual(4, destinationFacts.Length, "All valid destinations should be exposed (up to 5).");
-        CollectionAssert.Contains(
-            destinationFacts,
-            "destination[0]=label=Bedroom mirror,locationName=HaleyHouse,x=6,y=4,tags=home|photogenic,reason=check her look before going out,destinationId=haley_house.bedroom_mirror");
-        CollectionAssert.Contains(
-            destinationFacts,
-            "destination[2]=label=Front door,locationName=HaleyHouse,x=15,y=8,tags=transition|outdoor,reason=consider going outside,destinationId=haley_house.front_door");
-        Assert.IsTrue(
-            destinationFacts.All(fact => fact.Contains("destinationId=", StringComparison.Ordinal)),
-            "Executable destination facts must always include destinationId.");
+        Assert.IsFalse(observation.Facts.Any(fact => fact.StartsWith("destination[", StringComparison.Ordinal)), "NPC product observations must not preload destination candidates.");
+        Assert.IsFalse(observation.Facts.Any(fact => fact.Contains("destinationId=", StringComparison.Ordinal)), "NPC product observations must not preload destination ids.");
     }
 
     [TestMethod]

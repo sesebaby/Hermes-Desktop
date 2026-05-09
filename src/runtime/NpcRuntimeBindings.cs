@@ -83,6 +83,7 @@ public sealed record NpcRuntimeAutonomyBindingRequest(
     long ToolSurfaceSnapshotVersion = 0,
     string? SystemPromptSupplement = null,
     Func<IGameAdapter, NpcObservationFactStore, IEnumerable<ITool>>? LocalExecutorGameToolFactory = null,
+    Func<NpcRuntimeCompositionServices, IEnumerable<ITool>>? LocalExecutorRuntimeToolFactory = null,
     string? LocalExecutorToolFingerprint = null)
 {
     public NpcRuntimeAutonomyBindingRequest(
@@ -110,6 +111,7 @@ public sealed record NpcRuntimeAutonomyBindingRequest(
             ToolSurfaceSnapshotVersion,
             SystemPromptSupplement,
             null,
+            null,
             null)
     {
         ArgumentNullException.ThrowIfNull(GameToolFactory);
@@ -127,7 +129,7 @@ public sealed record NpcRuntimeAutonomyBindingRequest(
         ArgumentNullException.ThrowIfNull(GameToolFactory);
         Services.Validate();
         ArgumentNullException.ThrowIfNull(ToolSurface);
-        if (LocalExecutorGameToolFactory is not null &&
+        if ((LocalExecutorGameToolFactory is not null || LocalExecutorRuntimeToolFactory is not null) &&
             string.IsNullOrWhiteSpace(LocalExecutorToolFingerprint))
         {
             throw new ArgumentException(

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using Hermes.Agent.Core;
 using Hermes.Agent.Game;
@@ -79,7 +79,6 @@ public class StardewNpcToolFactoryTests
                 "stardew_quest_status",
                 "stardew_farm_status",
                 "stardew_recent_activity",
-                "stardew_move",
                 "stardew_speak",
                 "stardew_open_private_chat",
                 "stardew_task_status"
@@ -88,11 +87,7 @@ public class StardewNpcToolFactoryTests
 
         Assert.IsFalse(tools.Any(tool => tool.Name is "agent" or "todo" or "memory" or "ask_user" or "schedule_cron"));
 
-        var moveSchema = ((IToolSchemaProvider)tools.Single(tool => tool.Name == "stardew_move")).GetParameterSchema().GetRawText();
-        Assert.IsFalse(moveSchema.Contains("npcId", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(moveSchema.Contains("saveId", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(moveSchema.Contains("traceId", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(moveSchema.Contains("idempotencyKey", StringComparison.OrdinalIgnoreCase));
+        CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_move");
     }
 
     [TestMethod]
@@ -106,7 +101,6 @@ public class StardewNpcToolFactoryTests
             new[]
             {
                 "stardew_status",
-                "stardew_move",
                 "stardew_navigate_to_tile",
                 "stardew_idle_micro_action",
                 "stardew_task_status"
@@ -287,215 +281,6 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
-    public void MoveToolDescription_RequiresDestinationId()
-    {
-        var tools = StardewNpcToolFactory.CreateDefault(
-            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
-            CreateDescriptor("haley"));
-        var moveTool = (IToolSchemaProvider)tools.Single(tool => tool.Name == "stardew_move");
-        var description = tools.Single(tool => tool.Name == "stardew_move").Description;
-        var moveSchema = moveTool.GetParameterSchema().GetRawText();
-
-        StringAssert.Contains(description, "destination");
-        StringAssert.Contains(description, "destination[n].destinationId");
-        StringAssert.Contains(description, "latest observation");
-        StringAssert.Contains(description, "Never invent destinations");
-        StringAssert.Contains(description, "path_blocked");
-        StringAssert.Contains(description, "path_unreachable");
-        Assert.IsFalse(description.Contains("destination[n]." + "label", StringComparison.Ordinal));
-        Assert.IsFalse(description.Contains("nearby[n]", StringComparison.Ordinal));
-        Assert.IsFalse(description.Contains("tile", StringComparison.OrdinalIgnoreCase), "Move tool description must not expose tile fields as public inputs.");
-        Assert.IsFalse(description.Contains("facingDirection", StringComparison.OrdinalIgnoreCase), "Move tool description must not expose facing direction as a public input.");
-
-        using var document = JsonDocument.Parse(moveSchema);
-        var properties = document.RootElement.GetProperty("properties");
-        Assert.IsTrue(properties.TryGetProperty("destination", out _));
-        Assert.IsFalse(properties.TryGetProperty("label", out _));
-        Assert.IsFalse(properties.TryGetProperty("x", out _));
-        Assert.IsFalse(properties.TryGetProperty("y", out _));
-        Assert.IsFalse(properties.TryGetProperty("tile", out _));
-        Assert.IsFalse(properties.TryGetProperty("facingDirection", out _));
-        var destinationDescription = GetSchemaPropertyDescription(moveSchema, "destination");
-        StringAssert.Contains(destinationDescription, "destination[n].destinationId");
-        Assert.IsFalse(destinationDescription.Contains("destination[n]." + "label", StringComparison.Ordinal));
-        Assert.IsFalse(destinationDescription.Contains("tile", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(destinationDescription.Contains("facingDirection", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(destinationDescription.Contains("coordinate", StringComparison.OrdinalIgnoreCase));
-        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "reason"), "Short reason");
-        StringAssert.Contains(GetSchemaPropertyDescription(moveSchema, "thought"), "overhead bubble");
-    }
-
-    [TestMethod]
-    public async Task MoveTool_WithRuntimeDriver_ReleasesClaimAfterTerminalPathBlockedStatus()
-    {
-        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-tool-path-blocked-tests", Guid.NewGuid().ToString("N"));
-        try
-        {
-            var commands = new CapturingCommandService(
-                [
-                    new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null),
-                    new GameCommandStatus(
-                        "cmd-1",
-                        "haley",
-                        "move",
-                        StardewCommandStatuses.Failed,
-                        0,
-                        "path_blocked:HaleyHouse:7,7;step_tile_open_false",
-                        StardewBridgeErrorCodes.PathBlocked)
-                ]);
-            var supervisor = new NpcRuntimeSupervisor();
-            var driver = await supervisor.GetOrCreateDriverAsync(CreateDescriptor("haley"), tempDir, CancellationToken.None);
-            var coordination = new WorldCoordinationService(new ResourceClaimRegistry());
-            var tools = StardewNpcToolFactory.CreateDefault(
-                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
-                CreateDescriptor("haley"),
-                traceIdFactory: () => "trace-move",
-                idempotencyKeyFactory: () => "idem-move",
-                runtimeDriver: driver,
-                worldCoordination: coordination);
-            var moveTool = tools.Single(tool => tool.Name == "stardew_move");
-
-            var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
-            {
-                Destination = "haley_house.front_door"
-            }, CancellationToken.None);
-
-            Assert.IsTrue(result.Success);
-            Assert.AreEqual(2, commands.StatusCalls);
-            var snapshot = driver.Snapshot();
-            Assert.IsNull(snapshot.PendingWorkItem);
-            Assert.IsNull(snapshot.ActionSlot);
-            Assert.IsTrue(
-                coordination.TryClaimMove("work-2", "penny", "trace-2", new ClaimedTile("HaleyHouse", 15, 8), null, "idem-2").Accepted,
-                "Terminal failed/path_blocked must release the short claim so the next action does not get action_slot_busy.");
-        }
-        finally
-        {
-            if (Directory.Exists(tempDir))
-                Directory.Delete(tempDir, recursive: true);
-        }
-    }
-
-    [TestMethod]
-    public async Task MoveTool_BindsRuntimeIdentityAndSubmitsThroughCommandService()
-    {
-        var commands = new CapturingCommandService();
-        var tools = StardewNpcToolFactory.CreateDefault(
-            new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
-            CreateDescriptor("haley"),
-            traceIdFactory: () => "trace-move",
-            idempotencyKeyFactory: () => "idem-move");
-        var moveTool = tools.Single(tool => tool.Name == "stardew_move");
-
-        var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
-        {
-            Destination = "town.fountain",
-            Reason = "inspect the town board"
-        }, CancellationToken.None);
-
-        Assert.IsTrue(result.Success);
-        Assert.IsNotNull(commands.LastAction);
-        Assert.AreEqual("haley", commands.LastAction.NpcId);
-        Assert.AreEqual("Haley", commands.LastAction.BodyBinding?.TargetEntityId);
-        Assert.AreEqual("Haley", commands.LastAction.BodyBinding?.SmapiName);
-        Assert.AreEqual("stardew-valley", commands.LastAction.GameId);
-        Assert.AreEqual(GameActionType.Move, commands.LastAction.Type);
-        Assert.AreEqual("trace-move", commands.LastAction.TraceId);
-        Assert.AreEqual("idem-move", commands.LastAction.IdempotencyKey);
-        Assert.AreEqual("destination", commands.LastAction.Target.Kind);
-        Assert.IsNull(commands.LastAction.Target.LocationName);
-        Assert.IsNull(commands.LastAction.Target.Tile);
-        Assert.AreEqual("town.fountain", commands.LastAction.Payload?["destinationId"]?.ToString());
-        Assert.AreEqual("cmd-1", JsonDocument.Parse(result.Content).RootElement.GetProperty("commandId").GetString());
-    }
-
-    [TestMethod]
-    public async Task MoveTool_WithThoughtPassesMoveThoughtToBridgePayload()
-    {
-        var commands = new CapturingCommandService();
-        var tools = StardewNpcToolFactory.CreateDefault(
-            new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
-            CreateDescriptor("haley"),
-            traceIdFactory: () => "trace-move",
-            idempotencyKeyFactory: () => "idem-move");
-        var moveTool = tools.Single(tool => tool.Name == "stardew_move");
-
-        var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
-        {
-            Destination = "town.fountain",
-            Reason = "inspect the fountain",
-            Thought = "喷泉边的光线正好。"
-        }, CancellationToken.None);
-
-        Assert.IsTrue(result.Success);
-        Assert.IsNotNull(commands.LastAction);
-        Assert.AreEqual("喷泉边的光线正好。", commands.LastAction.Payload?["thought"]?.ToString());
-    }
-
-    [TestMethod]
-    public async Task MoveTool_WhenDestinationIdIsProvided_SubmitsWithoutObservationOrCoordinateTarget()
-    {
-        var commands = new CapturingCommandService();
-        var queries = new FakeQueryService(
-        [
-            "destination[0]=label=Town fountain,locationName=Town,x=42,y=17,tags=public|photogenic,reason=stand somewhere bright and visible in town,destinationId=town.fountain,facingDirection=2"
-        ]);
-        var tools = StardewNpcToolFactory.CreateDefault(
-            new FakeGameAdapter(commands, queries, new FakeEventSource()),
-            CreateDescriptor("haley"),
-            traceIdFactory: () => "trace-move",
-            idempotencyKeyFactory: () => "idem-move");
-        var moveTool = tools.Single(tool => tool.Name == "stardew_move");
-
-        var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
-        {
-            Destination = "town.fountain",
-            Reason = "inspect the fountain"
-        }, CancellationToken.None);
-
-        Assert.IsTrue(result.Success);
-        Assert.IsNotNull(commands.LastAction);
-        Assert.AreEqual(0, queries.ObserveCalls, "Move tool must not re-observe or parse destination facts.");
-        Assert.AreEqual("destination", commands.LastAction.Target.Kind);
-        Assert.IsNull(commands.LastAction.Target.LocationName);
-        Assert.IsNull(commands.LastAction.Target.Tile);
-        Assert.AreEqual("town.fountain", commands.LastAction.Payload?["destinationId"]?.ToString());
-    }
-
-    [TestMethod]
-    public async Task MoveTool_WhenLabelIsProvided_SubmitsItAsDestinationIdAndLetsBridgeReject()
-    {
-        var commands = new CapturingCommandService(submitResult: new GameCommandResult(
-            false,
-            "",
-            StardewCommandStatuses.Failed,
-            "invalid_destination_id",
-            "trace-move"));
-        var tools = StardewNpcToolFactory.CreateDefault(
-            new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
-            CreateDescriptor("haley"),
-            traceIdFactory: () => "trace-move",
-            idempotencyKeyFactory: () => "idem-move");
-        var moveTool = tools.Single(tool => tool.Name == "stardew_move");
-
-        var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
-        {
-            Destination = "Town fountain",
-            Reason = "label should not be locally resolved"
-        }, CancellationToken.None);
-
-        Assert.IsTrue(result.Success);
-        Assert.IsNotNull(commands.LastAction);
-        Assert.AreEqual("Town fountain", commands.LastAction.Payload?["destinationId"]?.ToString());
-        Assert.IsNull(commands.LastAction.Target.LocationName);
-        Assert.IsNull(commands.LastAction.Target.Tile);
-        using var doc = JsonDocument.Parse(result.Content);
-        Assert.AreEqual(false, doc.RootElement.GetProperty("accepted").GetBoolean());
-        Assert.AreEqual(StardewCommandStatuses.Failed, doc.RootElement.GetProperty("status").GetString());
-        Assert.AreEqual("invalid_destination_id", doc.RootElement.GetProperty("failureReason").GetString());
-    }
-
-    [TestMethod]
     public async Task SpeakTool_BindsRuntimeIdentityAndSubmitsThroughCommandService()
     {
         var commands = new CapturingCommandService();
@@ -532,9 +317,9 @@ public class StardewNpcToolFactoryTests
             CreateDescriptor("haley"));
         var speakTool = tools.Single(tool => tool.Name == "stardew_speak");
 
-        StringAssert.Contains(speakTool.Description, "non-blocking");
-        StringAssert.Contains(speakTool.Description, "overhead bubble");
-        StringAssert.Contains(speakTool.Description, "phone message");
+        StringAssert.Contains(speakTool.Description, "非阻塞");
+        StringAssert.Contains(speakTool.Description, "头顶气泡");
+        StringAssert.Contains(speakTool.Description, "手机消息");
     }
 
     [TestMethod]
@@ -561,124 +346,6 @@ public class StardewNpcToolFactoryTests
         Assert.AreEqual("trace-private-chat", commands.LastAction.TraceId);
         Assert.AreEqual("idem-private-chat", commands.LastAction.IdempotencyKey);
         Assert.AreEqual("Want to keep chatting?", commands.LastAction.Payload?["prompt"]?.ToString());
-    }
-
-    [TestMethod]
-    public async Task MoveTool_PollsTaskStatusUntilTerminal()
-    {
-        var commands = new CapturingCommandService(
-            [
-                new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null),
-                new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Completed, 1, null, null)
-            ]);
-        var tools = StardewNpcToolFactory.CreateDefault(
-            new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
-            CreateDescriptor("haley"),
-            traceIdFactory: () => "trace-move",
-            idempotencyKeyFactory: () => "idem-move");
-        var moveTool = tools.Single(tool => tool.Name == "stardew_move");
-
-        var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
-        {
-            Destination = "town.fountain"
-        }, CancellationToken.None);
-
-        Assert.IsTrue(result.Success);
-        Assert.AreEqual(2, commands.StatusCalls);
-        using var doc = JsonDocument.Parse(result.Content);
-        Assert.AreEqual("cmd-1", doc.RootElement.GetProperty("commandId").GetString());
-        Assert.AreEqual(StardewCommandStatuses.Completed, doc.RootElement.GetProperty("finalStatus").GetProperty("status").GetString());
-    }
-
-    [TestMethod]
-    public async Task MoveTool_WithRuntimeDriver_ReleasesClaimAfterTerminalStatus()
-    {
-        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-tool-runtime-tests", Guid.NewGuid().ToString("N"));
-        try
-        {
-            var commands = new CapturingCommandService(
-                [
-                    new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null),
-                    new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Completed, 1, null, null)
-                ]);
-            var supervisor = new NpcRuntimeSupervisor();
-            var driver = await supervisor.GetOrCreateDriverAsync(CreateDescriptor("haley"), tempDir, CancellationToken.None);
-            var coordination = new WorldCoordinationService(new ResourceClaimRegistry());
-            var tools = StardewNpcToolFactory.CreateDefault(
-                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
-                CreateDescriptor("haley"),
-                traceIdFactory: () => "trace-move",
-                idempotencyKeyFactory: () => "idem-move",
-                runtimeDriver: driver,
-                worldCoordination: coordination);
-            var moveTool = tools.Single(tool => tool.Name == "stardew_move");
-
-            var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
-            {
-                Destination = "town.fountain"
-            }, CancellationToken.None);
-
-            Assert.IsTrue(result.Success);
-            Assert.AreEqual(2, commands.StatusCalls);
-            var snapshot = driver.Snapshot();
-            Assert.IsNull(snapshot.PendingWorkItem);
-            Assert.IsNull(snapshot.ActionSlot);
-            Assert.IsTrue(
-                coordination.TryClaimMove("work-2", "penny", "trace-2", new ClaimedTile("Town", 42, 17), null, "idem-2").Accepted,
-                "Terminal completion must release the short claim so another NPC can use the same tile.");
-        }
-        finally
-        {
-            if (Directory.Exists(tempDir))
-                Directory.Delete(tempDir, recursive: true);
-        }
-    }
-
-    [TestMethod]
-    public async Task MoveTool_WithRuntimeDriver_ReleasesClaimAfterInterruptedTerminalStatus()
-    {
-        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-tool-interrupted-tests", Guid.NewGuid().ToString("N"));
-        try
-        {
-            var commands = new CapturingCommandService(
-                [
-                    new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null),
-                    new GameCommandStatus("cmd-1", "haley", "move", "interrupted", 1, null, null)
-                ]);
-            var supervisor = new NpcRuntimeSupervisor();
-            var driver = await supervisor.GetOrCreateDriverAsync(CreateDescriptor("haley"), tempDir, CancellationToken.None);
-            var coordination = new WorldCoordinationService(new ResourceClaimRegistry());
-            var tools = StardewNpcToolFactory.CreateDefault(
-                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
-                CreateDescriptor("haley"),
-                traceIdFactory: () => "trace-move",
-                idempotencyKeyFactory: () => "idem-move",
-                runtimeDriver: driver,
-                worldCoordination: coordination);
-            var moveTool = tools.Single(tool => tool.Name == "stardew_move");
-
-            var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
-            {
-                Destination = "town.fountain"
-            }, CancellationToken.None);
-
-            Assert.IsTrue(result.Success);
-            Assert.AreEqual(2, commands.StatusCalls);
-            var snapshot = driver.Snapshot();
-            Assert.IsNull(snapshot.PendingWorkItem);
-            Assert.IsNull(snapshot.ActionSlot);
-            Assert.IsNotNull(snapshot.LastTerminalCommandStatus);
-            Assert.AreEqual("cmd-1", snapshot.LastTerminalCommandStatus.CommandId);
-            Assert.AreEqual(StardewCommandStatuses.Interrupted, snapshot.LastTerminalCommandStatus.Status);
-            Assert.IsTrue(
-                coordination.TryClaimMove("work-2", "penny", "trace-2", new ClaimedTile("Town", 42, 17), null, "idem-2").Accepted,
-                "Interrupted terminal status must also release the short claim and clear runtime slots.");
-        }
-        finally
-        {
-            if (Directory.Exists(tempDir))
-                Directory.Delete(tempDir, recursive: true);
-        }
     }
 
     [TestMethod]
@@ -754,51 +421,6 @@ public class StardewNpcToolFactoryTests
             var claims = registry.Snapshot();
             Assert.AreEqual(1, claims.Count, "Accepted move should keep exactly one claim after rekey.");
             Assert.AreEqual("cmd-1", claims[0].CommandId, "Claim identity should be upgraded from work item id to command id after accept.");
-        }
-        finally
-        {
-            if (Directory.Exists(tempDir))
-                Directory.Delete(tempDir, recursive: true);
-        }
-    }
-
-    [TestMethod]
-    public async Task MoveTool_WithDestinationOnlyClaimDoesNotConflictWithLegacyTileClaim()
-    {
-        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-tool-conflict-tests", Guid.NewGuid().ToString("N"));
-        try
-        {
-            var commands = new CapturingCommandService();
-            var supervisor = new NpcRuntimeSupervisor();
-            var driver = await supervisor.GetOrCreateDriverAsync(CreateDescriptor("haley"), tempDir, CancellationToken.None);
-            var coordination = new WorldCoordinationService(new ResourceClaimRegistry());
-            var reserved = coordination.TryClaimMove("work-existing", "penny", "trace-existing", new ClaimedTile("Town", 42, 17), null, "idem-existing");
-            Assert.IsTrue(reserved.Accepted);
-            var tools = StardewNpcToolFactory.CreateDefault(
-                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
-                CreateDescriptor("haley"),
-                traceIdFactory: () => "trace-move",
-                idempotencyKeyFactory: () => "idem-move",
-                runtimeDriver: driver,
-                worldCoordination: coordination);
-            var moveTool = tools.Single(tool => tool.Name == "stardew_move");
-
-            var result = await moveTool.ExecuteAsync(new StardewMoveToolParameters
-            {
-                Destination = "town.fountain"
-            }, CancellationToken.None);
-
-            Assert.IsTrue(result.Success);
-            Assert.IsNotNull(commands.LastAction);
-            var snapshot = driver.Snapshot();
-            Assert.IsNotNull(snapshot.PendingWorkItem);
-            Assert.IsNotNull(snapshot.ActionSlot);
-            Assert.IsFalse(snapshot.NextWakeAtUtc.HasValue);
-            using var doc = JsonDocument.Parse(result.Content);
-            Assert.AreEqual(StardewCommandStatuses.Queued, doc.RootElement.GetProperty("status").GetString());
-            Assert.IsTrue(
-                coordination.TryClaimMove("work-2", "penny", "trace-2", new ClaimedTile("Town", 42, 17), null, "idem-2").Accepted is false,
-                "The legacy tile claim remains reserved; destination-only move claims do not pretend to own resolved Bridge coordinates.");
         }
         finally
         {

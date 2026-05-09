@@ -15,6 +15,7 @@ public enum NpcLocalActionKind
 public sealed record NpcLocalActionIntent(
     NpcLocalActionKind Action,
     string Reason,
+    string? DestinationText = null,
     string? DestinationId = null,
     string? CommandId = null,
     string? ObserveTarget = null,
@@ -117,16 +118,35 @@ public sealed record NpcLocalActionIntent(
         }
 
         var destinationId = ReadString(root, "destinationId");
-        if (!TryReadMoveTarget(root, out var target, out error))
-            return false;
-
         if (action is NpcLocalActionKind.Move &&
-            string.IsNullOrWhiteSpace(destinationId) &&
-            target is null)
+            !string.IsNullOrWhiteSpace(destinationId))
         {
-            error = "move_target_required";
+            error = "move_destinationId_not_supported";
             return false;
         }
+
+        var destinationText = ReadString(root, "destinationText");
+        if (action is NpcLocalActionKind.Move)
+        {
+            if (string.IsNullOrWhiteSpace(destinationText))
+            {
+                error = "move_destinationText_required";
+                return false;
+            }
+
+            if (root.TryGetProperty("target", out var moveTarget) &&
+                moveTarget.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+            {
+                error = "move_target_not_supported";
+                return false;
+            }
+        }
+        else if (!TryReadMoveTarget(root, out _, out error))
+        {
+            return false;
+        }
+
+        NpcLocalMoveTargetIntent? target = null;
 
         var commandId = ReadString(root, "commandId");
         if (action is NpcLocalActionKind.TaskStatus && string.IsNullOrWhiteSpace(commandId))
@@ -147,7 +167,8 @@ public sealed record NpcLocalActionIntent(
         intent = new NpcLocalActionIntent(
             action,
             ReadString(root, "reason") ?? "",
-            destinationId,
+            string.IsNullOrWhiteSpace(destinationText) ? null : destinationText.Trim(),
+            null,
             commandId,
             ReadString(root, "observeTarget"),
             ReadString(root, "waitReason"),

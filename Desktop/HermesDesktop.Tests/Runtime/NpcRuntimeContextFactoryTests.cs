@@ -42,7 +42,7 @@ public class NpcRuntimeContextFactoryTests
             CancellationToken.None);
 
         Assert.AreEqual(Path.Combine(ns.SoulHomePath, "SOUL.md"), bundle.SoulService.SoulFilePath);
-        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("Stardew Valley NPC runtime", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("星露谷 NPC runtime", StringComparison.Ordinal));
         Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains(SystemPrompts.RuntimeFactsGuidance, StringComparison.Ordinal));
         Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("## Skills (mandatory)", StringComparison.Ordinal));
         Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("npc-memory-skill", StringComparison.Ordinal));
@@ -74,9 +74,9 @@ public class NpcRuntimeContextFactoryTests
 
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("## Skills (mandatory)", StringComparison.Ordinal));
         Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("session_search", StringComparison.Ordinal));
-        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("return one JSON intent contract only", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("只返回一个 JSON intent contract", StringComparison.Ordinal));
         Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("raw JSON", StringComparison.OrdinalIgnoreCase));
-        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("Mechanical actions are executed by the host and local executor", StringComparison.Ordinal));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("机械动作由宿主和本地 executor 执行", StringComparison.Ordinal));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("Do not call tools", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains(SystemPrompts.RuntimeFactsGuidance, StringComparison.Ordinal));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("use the registered tools available in this session", StringComparison.OrdinalIgnoreCase));
@@ -84,6 +84,40 @@ public class NpcRuntimeContextFactoryTests
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("native desktop environment", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("browser automation", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("web search tools", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(messages.Any(message =>
+            message.Role == "system" &&
+            message.Content.Contains("[Agent Identity]", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task Create_PrivateChatChannel_OmitsGlobalSkillsMandatoryIndexButKeepsInteractiveContinuity()
+    {
+        var ns = new NpcNamespace(_tempDir, "stardew-valley", "save-1", "haley", "default");
+        var factory = new NpcRuntimeContextFactory();
+        var skillManager = CreateSkillManager();
+
+        var bundle = factory.Create(
+            ns,
+            new FakeChatClient(),
+            NullLoggerFactory.Instance,
+            skillManager,
+            channelKey: "private_chat",
+            systemPromptSupplement: "如果玩家现在就请求行动，先委托给 npc_delegate_action。",
+            includeMemory: true,
+            includeUser: true);
+        var messages = await bundle.ContextManager.PrepareContextAsync(
+            "sdv_save-1_haley_default:private_chat:conversation-1",
+            "海莉，我们现在去海边吧。",
+            retrievedContext: null,
+            CancellationToken.None);
+
+        Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("## Skills (mandatory)", StringComparison.Ordinal));
+        Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("npc-memory-skill", StringComparison.Ordinal));
+        Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains(SystemPrompts.RuntimeFactsGuidance, StringComparison.Ordinal));
+        Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("Skills that aren't maintained become liabilities", StringComparison.Ordinal));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("npc_delegate_action", StringComparison.Ordinal));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("你正在作为星露谷 NPC runtime 行动", StringComparison.Ordinal));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("如果玩家现在就请求行动", StringComparison.Ordinal));
         Assert.IsTrue(messages.Any(message =>
             message.Role == "system" &&
             message.Content.Contains("[Agent Identity]", StringComparison.Ordinal)));

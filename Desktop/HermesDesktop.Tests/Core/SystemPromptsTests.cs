@@ -15,8 +15,8 @@ public sealed class SystemPromptsTests
         var prompt = SystemPrompts.LoadStardewNpcRuntimePrompt(repositoryRoot);
 
         Assert.AreEqual(File.ReadAllText(assetPath).Trim(), prompt);
-        StringAssert.Contains(prompt, "Stardew Valley NPC runtime");
-        StringAssert.Contains(prompt, "explicit tool results");
+        StringAssert.Contains(prompt, "星露谷 NPC runtime");
+        StringAssert.Contains(prompt, "明确的工具结果");
     }
 
     [TestMethod]
@@ -29,7 +29,7 @@ public sealed class SystemPromptsTests
             var prompt = SystemPrompts.LoadStardewNpcRuntimePrompt(tempRoot);
 
             Assert.AreEqual(SystemPrompts.StardewNpcRuntimeFallback, prompt);
-            StringAssert.Contains(prompt, "Stardew Valley NPC runtime");
+            StringAssert.Contains(prompt, "星露谷 NPC runtime");
         }
         finally
         {

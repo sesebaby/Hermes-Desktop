@@ -507,6 +507,8 @@ public partial class App : Application
                     skillsProvenancePath,
                     skillsQuarantineDir);
             }
+
+            ReconcileStardewGamingSkills(skillsDir);
         }
         catch (Exception ex)
         {
@@ -1062,30 +1064,41 @@ public partial class App : Application
             .ToList();
     }
 
-    /// <summary>Find the repo's skills/ directory by walking up from the build output to find .git or skills/.</summary>
+    /// <summary>Find the bundled skills directory from configured workspace/current/build roots.</summary>
     private static string? FindRepoSkillsDir()
-    {
-        // Walk up from build output to find the repo root (contains .git or skills/)
-        var dir = AppContext.BaseDirectory;
-        for (int i = 0; i < 10 && dir is not null; i++)
-        {
-            var skillsCandidate = Path.Combine(dir, "skills");
-            if (Directory.Exists(skillsCandidate) && Directory.Exists(Path.Combine(dir, ".git")))
-            {
-                System.Diagnostics.Debug.WriteLine($"Found repo skills at: {skillsCandidate}");
-                return skillsCandidate;
-            }
-            // Also check for skills/ without .git (user may have extracted without git)
-            if (Directory.Exists(skillsCandidate) && Directory.EnumerateDirectories(skillsCandidate).Any())
-            {
-                System.Diagnostics.Debug.WriteLine($"Found skills dir at: {skillsCandidate}");
-                return skillsCandidate;
-            }
-            dir = Path.GetDirectoryName(dir);
-        }
+        => BundledSkillRootDiscovery.FindBundledSkillsDir(
+            AppContext.BaseDirectory,
+            Environment.CurrentDirectory,
+            Environment.GetEnvironmentVariable("HERMES_DESKTOP_WORKSPACE"));
 
-        System.Diagnostics.Debug.WriteLine("Could not find bundled skills directory");
-        return null;
+    private static void ReconcileStardewGamingSkills(string activeSkillsDir)
+    {
+        var sourceGamingRoots = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "skills", "gaming"),
+            FindRepoSkillsDir() is { } repoSkillsDir ? Path.Combine(repoSkillsDir, "gaming") : null
+        }
+        .Where(root => !string.IsNullOrWhiteSpace(root) && Directory.Exists(root))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+        if (sourceGamingRoots.Length == 0)
+            return;
+
+        var requiredSkillIds = new[]
+        {
+            "stardew-core",
+            "stardew-navigation",
+            "stardew-social",
+            "stardew-task-continuity",
+            "stardew-world"
+        };
+
+        BundledSkillRootDiscovery.ReconcileRequiredSkillDirectories(
+            activeSkillsDir,
+            sourceGamingRoots!,
+            "gaming",
+            requiredSkillIds);
     }
 
     /// <summary>

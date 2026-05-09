@@ -1057,6 +1057,127 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
+    public async Task RunOneIterationAsync_WithDelegatedActionIngress_PreservesDestinationTextForLocalExecutor()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var delegationClient = new CapturingStreamingChatClient(
+            new StreamEvent.ToolUseComplete(
+                "call-skill",
+                "skill_view",
+                Json("""{"name":"stardew-navigation"}""")),
+            new StreamEvent.ToolUseComplete(
+                "call-nav",
+                "stardew_navigate_to_tile",
+                Json("""{"locationName":"Beach","x":32,"y":34,"reason":"meet the player at the beach now"}""")));
+        var commands = new FakeCommandService();
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley has a private-chat delegated action.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.EnqueueIngressWorkItemAsync(
+            new NpcRuntimeIngressWorkItemSnapshot(
+                "ingress-delegate-1",
+                "npc_delegated_action",
+                "queued",
+                DateTime.UtcNow,
+                "idem-delegate-1",
+                "trace-delegate-1",
+                new()
+                {
+                    ["action"] = "move",
+                    ["reason"] = "meet the player at the beach now",
+                    ["intentText"] = "go to the beach now"
+                }),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            new CountingChatClient("unused"),
+            supervisor,
+            enabledNpcIds: ["haley"],
+            delegationChatClient: delegationClient);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, delegationClient.StructuredStreamCalls);
+        Assert.IsTrue(
+            delegationClient.UserMessages.Any(message => message.Contains("\"destinationText\":\"go to the beach now\"", StringComparison.Ordinal)),
+            "Delegated private-chat movement must pass the destination text as a first-class move field instead of host-parsing it away.");
+        Assert.IsFalse(
+            delegationClient.UserMessages.Any(message => message.Contains("player request: go to the beach now", StringComparison.Ordinal)),
+            "Move ingress must not hide the destination phrase inside reason; the local executor only gets destinationText.");
+        Assert.AreEqual(0, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WithMalformedDelegatedActionIngress_DropsWithDiagnostic()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var delegationClient = new CapturingStreamingChatClient();
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.EnqueueIngressWorkItemAsync(
+            new NpcRuntimeIngressWorkItemSnapshot(
+                "ingress-bad-1",
+                "npc_delegated_action",
+                "queued",
+                DateTime.UtcNow,
+                "idem-bad-1",
+                "trace-bad-1",
+                new()
+                {
+                    ["intentText"] = "go to the beach now"
+                }),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => new FakeGameAdapter(
+                new FakeCommandService(),
+                new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "Haley has malformed ingress.", ["location=Town"])),
+                new FakeEventSource([])),
+            new CountingChatClient("unused"),
+            supervisor,
+            enabledNpcIds: ["haley"],
+            delegationChatClient: delegationClient);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, delegationClient.StructuredStreamCalls);
+        Assert.AreEqual(0, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
+        var logPath = Path.Combine(
+            _tempDir,
+            "runtime",
+            "stardew",
+            "games",
+            "stardew-valley",
+            "saves",
+            "save-42",
+            "npc",
+            "haley",
+            "profiles",
+            "default",
+            "activity",
+            "runtime.jsonl");
+        var records = ReadRuntimeLogRecords(logPath);
+        Assert.IsTrue(records.Any(record =>
+            record.GetProperty("actionType").GetString() == "ingress" &&
+            record.GetProperty("target").GetString() == "npc_delegated_action" &&
+            record.GetProperty("stage").GetString() == "malformed" &&
+            record.GetProperty("result").GetString() == "missing_action_or_reason"));
+    }
+
+    [TestMethod]
     public async Task RunOneIterationAsync_WhenPendingActionCanBeFoundByIdempotency_RebindsCommandAndPausesAsRunning()
     {
         var discovery = CreateDiscovery("save-42");
@@ -1540,6 +1661,12 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
 
     private static FakeDiscovery CreateDiscovery(string saveId)
         => new(CreateSnapshot(saveId));
+
+    private static JsonElement Json(string value)
+    {
+        using var document = JsonDocument.Parse(value);
+        return document.RootElement.Clone();
+    }
 
     private static StardewBridgeDiscoverySnapshot CreateSnapshot(string saveId, DateTimeOffset? startedAtUtc = null)
         => new(
@@ -2065,6 +2192,54 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         {
             await Task.CompletedTask;
             yield break;
+        }
+    }
+
+    private sealed class CapturingStreamingChatClient : IChatClient
+    {
+        private readonly Queue<StreamEvent> _events;
+
+        public CapturingStreamingChatClient(params StreamEvent[] events)
+        {
+            _events = new Queue<StreamEvent>(events);
+        }
+
+        public int StructuredStreamCalls { get; private set; }
+
+        public List<string> UserMessages { get; } = [];
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("unused");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+            => Task.FromResult(new ChatResponse { Content = "unused", FinishReason = "stop" });
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            StructuredStreamCalls++;
+            UserMessages.Clear();
+            UserMessages.AddRange(messages
+                .Where(message => string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase))
+                .Select(message => message.Content));
+
+            while (_events.Count > 0)
+            {
+                await Task.Yield();
+                yield return _events.Dequeue();
+            }
         }
     }
 

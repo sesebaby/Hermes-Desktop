@@ -7,7 +7,14 @@ public sealed record PrivateChatOrchestratorOptions(
     int MaxOpenAttempts = 60,
     IPrivateChatSessionLeaseCoordinator? SessionLeaseCoordinator = null,
     string SessionLeaseOwner = "private_chat",
-    string SessionLeaseReason = "private_chat_session_active");
+    string SessionLeaseReason = "private_chat_session_active",
+    TimeSpan ReplyTimeout = default)
+{
+    public TimeSpan EffectiveReplyTimeout =>
+        ReplyTimeout > TimeSpan.Zero
+            ? ReplyTimeout
+            : TimeSpan.FromSeconds(60);
+}
 
 public sealed record PrivateChatPolicy(
     string NpcId,
