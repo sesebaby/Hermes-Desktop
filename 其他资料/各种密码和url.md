@@ -63,3 +63,9 @@ for chunk in completion:
             print("\n" + "=" * 20 + "完整回复" + "=" * 20)
             is_answering = True
         print(delta.content, end="", flush=True)
+
+### 以下是deepseek的资料
+
+apikey:sk-c31cd9809d1c40afa26ab230f99bf6c0
+base_url (OpenAI)	https://api.deepseek.com
+model:deepseek-v4-flash
