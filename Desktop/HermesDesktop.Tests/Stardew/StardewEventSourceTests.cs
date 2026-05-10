@@ -67,6 +67,68 @@ public class StardewEventSourceTests
         Assert.AreEqual(14L, batch.NextCursor.Sequence);
     }
 
+    [TestMethod]
+    public async Task PollBatchAsync_WhenCursorEventIdIsAheadOfSequence_RebasesBeforePolling()
+    {
+        var at = new DateTime(2026, 5, 10, 13, 28, 37, DateTimeKind.Utc);
+        var client = new FakeSmapiClient();
+        client.EventResponse = new StardewBridgeResponse<StardewEventPollData>(
+            true,
+            "trace-events",
+            "req-events",
+            null,
+            null,
+            new StardewEventPollData(
+                [
+                    new StardewEventData(
+                        "evt_000000000001",
+                        "vanilla_dialogue_completed",
+                        "Haley",
+                        at,
+                        "Haley vanilla dialogue completed.",
+                        Sequence: 1)
+                ],
+                NextSequence: 1),
+            null,
+            null);
+        var source = new StardewEventSource(client, "save-1");
+
+        var batch = await source.PollBatchAsync(new GameEventCursor("evt_000000000003", 1), CancellationToken.None);
+
+        var envelope = (StardewBridgeEnvelope<StardewEventPollQuery>)client.LastEnvelope!;
+        Assert.IsNull(envelope.Payload.Since);
+        Assert.IsNull(envelope.Payload.Sequence);
+        Assert.AreEqual(1, batch.Records.Count);
+        Assert.AreEqual("vanilla_dialogue_completed", batch.Records[0].EventType);
+        Assert.AreEqual("evt_000000000001", batch.NextCursor.Since);
+        Assert.AreEqual(1L, batch.NextCursor.Sequence);
+    }
+
+    [TestMethod]
+    public async Task PollBatchAsync_WhenBridgeSequenceRollsBackOnEmptyResponse_ReturnsRootCursorForRebase()
+    {
+        var client = new FakeSmapiClient();
+        client.EventResponse = new StardewBridgeResponse<StardewEventPollData>(
+            true,
+            "trace-events",
+            "req-events",
+            null,
+            null,
+            new StardewEventPollData([], NextSequence: 1),
+            null,
+            null);
+        var source = new StardewEventSource(client, "save-1");
+
+        var batch = await source.PollBatchAsync(new GameEventCursor("evt_000000000003", 3), CancellationToken.None);
+
+        var envelope = (StardewBridgeEnvelope<StardewEventPollQuery>)client.LastEnvelope!;
+        Assert.AreEqual("evt_000000000003", envelope.Payload.Since);
+        Assert.AreEqual(3L, envelope.Payload.Sequence);
+        Assert.AreEqual(0, batch.Records.Count);
+        Assert.IsNull(batch.NextCursor.Since);
+        Assert.IsNull(batch.NextCursor.Sequence);
+    }
+
     private sealed class FakeSmapiClient : ISmapiModApiClient
     {
         public string? LastRoute { get; private set; }

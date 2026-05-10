@@ -18,6 +18,7 @@ keywords:
 - Sometimes no private chat opens at all after a click, with no visible player feedback.
 - SMAPI logs show `vanilla_dialogue_completed_fact` or `vanilla_dialogue_unavailable_fact`, but Desktop logs show no matching `action_open_private_chat_*` command.
 - Desktop host logs can show a persisted `sourceSequence` higher than the current bridge event buffer sequence, followed by empty event batches.
+- Desktop host logs can also show an internally inconsistent cursor such as `sourceCursor=evt_000000000003; sourceSequence=1`; this lets the bridge skip the first lower-sequence private-chat trigger because sequence is the primary cursor.
 
 ## trigger_scope
 
@@ -32,6 +33,7 @@ keywords:
 - Private chat ingress was consumed by the same background loop cadence as NPC autonomy. The default host poll interval was 20 seconds, so player-facing UI open could wait for the next autonomy poll.
 - The host persisted a shared source cursor per save but did not persist which bridge instance produced that cursor. When SMAPI/bridge restarted for the same save, the new in-memory event buffer could restart at a lower sequence while Desktop reused the old higher sequence and skipped new click events.
 - The same-save bridge rebind reset needed to rebase only the shared host cursor, not NPC tracker cursors. Tracker cursor preservation is correct for NPC autonomy continuity, but shared private chat ingress must poll the new bridge from root.
+- `GameEventCursor.Advance` can combine the previous `Since` event id with a lower `NextSequence` from a reset bridge empty batch, producing a mixed old-id/new-sequence cursor. Because `BridgeEventBuffer.ResolveStartIndex` prioritizes `sequence`, `evt_000000000003/1` polls after sequence 1 and misses `evt_000000000001`.
 - The `vanilla_dialogue_unavailable` fallback path recorded an event that Desktop would use to open private chat, but it did not show the same non-blocking pending HUD as the normal vanilla completion path.
 
 ## bad_fix_paths
@@ -50,12 +52,14 @@ keywords:
 - Private chat ingress event types must bypass autonomy cooldown gates when needed: `vanilla_dialogue_completed`, `vanilla_dialogue_unavailable`, `player_private_message_submitted`, `player_private_message_cancelled`, and `private_chat_reply_closed`.
 - Persist the bridge identity (`bridge_key`) with host shared cursor state.
 - On same-save bridge identity changes, reset shared host source cursor and staged batch to root for the new bridge while preserving NPC tracker cursors.
+- Normalize impossible canonical event cursors before bridge polling: if `Since` parses as `evt_N` and `N > Sequence`, rebase the shared poll to root so current-buffer lower sequence events are not skipped.
+- When an empty poll response returns a `NextSequence` lower than the submitted cursor sequence, return a root cursor instead of preserving the old `Since`; otherwise the next tick can keep sending an impossible mixed cursor.
 - Preserve old host cursor and initial drain state when adding `bridge_key` to an existing state row; schema migration must not silently rewind an existing bridge.
 - The fallback `RecordDialogueFollowUpUnavailable` path must show `_overlay.SetPrivateChatPending(npcName)` before Desktop/core opens private chat.
 
 ## verification_evidence
 
-- `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug -p:UseSharedCompilation=false --filter "FullyQualifiedName~StardewNpcAutonomyBackgroundServiceTests|FullyQualifiedName~StardewRuntimeHostStateStoreTests|FullyQualifiedName~StardewPrivateChatOrchestratorTests|FullyQualifiedName~StardewEventSourceTests"` passed 65/65.
+- `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug -p:UseSharedCompilation=false --filter "FullyQualifiedName~StardewNpcAutonomyBackgroundServiceTests|FullyQualifiedName~StardewRuntimeHostStateStoreTests|FullyQualifiedName~StardewPrivateChatOrchestratorTests|FullyQualifiedName~StardewEventSourceTests"` passed 67/67.
 - `dotnet test .\Mods\StardewHermesBridge.Tests\Mods.StardewHermesBridge.Tests.csproj -c Debug --filter "FullyQualifiedName~RawDialogueDisplayRegressionTests|FullyQualifiedName~BridgeEventBufferTests"` passed 23/23.
 - `dotnet build .\Desktop\HermesDesktop\HermesDesktop.csproj -c Debug -p:Platform=x64 -p:UseSharedCompilation=false` succeeded with existing Stardew bridge warnings only.
 - Regression coverage includes fast default host poll cadence, no repeated LLM turns on empty fast polls, same-save lower-sequence bridge rebind processing private chat trigger, `bridge_key` migration preserving cursor state, and fallback pending HUD display.

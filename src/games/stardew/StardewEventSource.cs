@@ -21,6 +21,7 @@ public sealed class StardewEventSource : IGameEventSource
     public async Task<GameEventBatch> PollBatchAsync(GameEventCursor cursor, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(cursor);
+        var pollCursor = NormalizeCursorForPoll(cursor);
 
         var envelope = new StardewBridgeEnvelope<StardewEventPollQuery>(
             $"req_{Guid.NewGuid():N}",
@@ -28,7 +29,7 @@ public sealed class StardewEventSource : IGameEventSource
             _npcId,
             _saveId,
             null,
-            new StardewEventPollQuery(cursor.Since, _npcId, cursor.Sequence));
+            new StardewEventPollQuery(pollCursor.Since, _npcId, pollCursor.Sequence));
 
         var response = await _client.SendAsync<StardewEventPollQuery, StardewEventPollData>(
             StardewBridgeRoutes.EventsPoll,
@@ -39,10 +40,50 @@ public sealed class StardewEventSource : IGameEventSource
             throw new InvalidOperationException(response.Error?.Code ?? $"stardew_query_failed:{StardewBridgeRoutes.EventsPoll}");
 
         var records = response.Data.Events.Select(ToGameEventRecord).ToArray();
-        var nextCursor = GameEventCursor.Advance(cursor, records, response.Data.NextSequence);
+        var nextCursor = BuildNextCursor(pollCursor, records, response.Data.NextSequence);
         return new GameEventBatch(records, nextCursor);
     }
 
     private static GameEventRecord ToGameEventRecord(StardewEventData data)
         => new(data.EventId, data.EventType, data.NpcId, data.TimestampUtc, data.Summary, data.CorrelationId, data.Payload, data.Sequence);
+
+    private static GameEventCursor NormalizeCursorForPoll(GameEventCursor cursor)
+        => IsCanonicalEventIdAheadOfSequence(cursor.Since, cursor.Sequence)
+            ? new GameEventCursor()
+            : cursor;
+
+    private static GameEventCursor BuildNextCursor(
+        GameEventCursor cursor,
+        IReadOnlyList<GameEventRecord> records,
+        long? nextSequence)
+    {
+        if (records.Count == 0 &&
+            cursor.Sequence.HasValue &&
+            nextSequence.HasValue &&
+            nextSequence.Value < cursor.Sequence.Value)
+        {
+            return new GameEventCursor();
+        }
+
+        return GameEventCursor.Advance(cursor, records, nextSequence);
+    }
+
+    private static bool IsCanonicalEventIdAheadOfSequence(string? eventId, long? sequence)
+        => sequence.HasValue &&
+           TryParseCanonicalEventSequence(eventId, out var eventSequence) &&
+           eventSequence > sequence.Value;
+
+    private static bool TryParseCanonicalEventSequence(string? eventId, out long sequence)
+    {
+        sequence = 0;
+        const string Prefix = "evt_";
+        if (string.IsNullOrWhiteSpace(eventId) ||
+            !eventId.StartsWith(Prefix, StringComparison.Ordinal) ||
+            eventId.Length == Prefix.Length)
+        {
+            return false;
+        }
+
+        return long.TryParse(eventId[Prefix.Length..], out sequence);
+    }
 }
