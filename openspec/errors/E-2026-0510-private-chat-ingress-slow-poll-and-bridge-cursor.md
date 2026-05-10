@@ -1,7 +1,7 @@
 ---
 id: E-2026-0510-private-chat-ingress-slow-poll-and-bridge-cursor
 title: Stardew private chat ingress was delayed or skipped by slow host polling and stale bridge cursor state
-updated_at: 2026-05-10
+updated_at: 2026-05-11
 keywords:
   - stardew
   - private_chat
@@ -56,6 +56,18 @@ keywords:
 - When an empty poll response returns a `NextSequence` lower than the submitted cursor sequence, return a root cursor instead of preserving the old `Since`; otherwise the next tick can keep sending an impossible mixed cursor.
 - Preserve old host cursor and initial drain state when adding `bridge_key` to an existing state row; schema migration must not silently rewind an existing bridge.
 - The fallback `RecordDialogueFollowUpUnavailable` path must show `_overlay.SetPrivateChatPending(npcName)` before Desktop/core opens private chat.
+
+## prompt_lessons
+
+- Treat `PrivateChatInputMenu` opening as immediate UI ingress, not an NPC autonomy decision. If it takes more than one fast poll after `vanilla_dialogue_completed_fact` or `vanilla_dialogue_unavailable_fact`, debug event ingestion first.
+- Ask for the timestamp chain in this order: SMAPI click/fact log, Desktop host batch log, Desktop `/action/open_private_chat` result, then bridge `action_open_private_chat_*`. Do not start with LLM/autonomy logs when the action was never submitted.
+- When logs show a SMAPI fact but no Desktop action, inspect `sourceCursor`, `sourceSequence`, `nextCursor`, and `nextSequence`. Mixed values such as `evt_000000000003/1` are a cursor consistency bug, not a slow model.
+- Remember that `BridgeEventBuffer` prioritizes `sequence` over `since`; a mismatched lower `sequence` can skip the current bridge's first click event even if `since` looks newer.
+- Do not suggest phone overlay, host text parsing, or LLM decision gating as fixes for missing immediate input. `/action/open_private_chat` must remain the `PrivateChatInputMenu` path and return `input_menu_opened`.
+
+## diagnostic_prompt_template
+
+When private chat does not open immediately after clicking an NPC, first align SMAPI fact logs with Desktop host batch/action logs. If SMAPI recorded `vanilla_dialogue_completed_fact` or `vanilla_dialogue_unavailable_fact` but Desktop did not submit `/action/open_private_chat` within one to two seconds, prioritize `StardewEventSource` and host shared cursor state. Check whether `Since` and `Sequence` disagree or whether bridge `NextSequence` rolled back. Do not first blame LLM latency, NPC autonomy, or private-chat reply generation.
 
 ## verification_evidence
 
