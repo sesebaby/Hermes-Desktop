@@ -56,13 +56,13 @@ Comparison of Hermes.CS (C#) with NousResearch/hermes-agent (Python upstream).
 | Coordinator service | Present | src/coordinator/coordinatorservice.cs -- multi-agent coordination |
 | Brief system | Present | src/briefs/BriefService.cs, TaskBrief.cs -- task briefing |
 | Hook system | Present | src/hooks/HookSystem.cs -- lifecycle hooks |
-| Buddy system | Present | src/buddy/buddy.cs -- companion agent |
+| Buddy system | Historical | Removed from the current game-platform product surface |
 
 ## Architecture Differences
 
 The Python upstream is a CLI-first agent. Hermes.CS adds:
 - **Desktop shell** -- WinUI 3 with ChatPage, AgentPage, SettingsPage, MemoryPage, SkillsPage
-- **Panel system** -- AgentPanel, BuddyPanel, MemoryPanel, SessionPanel, SkillsPanel, TaskPanel
+- **Panel system** -- AgentPanel, MemoryPanel, SessionPanel, SkillsPanel, TaskPanel
 - **Session recording** -- SessionRecorder for replay
 - **File browser** -- FileBrowserPanel for workspace navigation
 - **Search index** -- SessionSearchIndex for transcript search

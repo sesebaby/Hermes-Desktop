@@ -3,8 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace HermesDesktop.Tests.Helpers;
 
 /// <summary>
-/// Tests for the pure-C# formatting and mapping logic introduced in the new panels
-/// added by this PR (SessionPanel, MemoryPanel, SkillsPanel, BuddyPanel).
+/// Tests for the pure-C# formatting and mapping logic used by the shell panels.
 /// These are extracted copies of private static methods, validated to match the
 /// expected behavior described in each panel's code-behind.
 /// </summary>
@@ -245,82 +244,6 @@ public class MemoryPanelFormatAgeTests
         var result = FormatAge(DateTime.UtcNow.AddSeconds(-30));
 
         Assert.AreEqual("just now", result, "FormatAge does NOT break down to minutes unlike FormatTimeAgo");
-    }
-}
-
-[TestClass]
-public class BuddyPanelGetRarityColorTests
-{
-    // Mirrors BuddyPanel.GetRarityColor (private static) — returns a color code for rarity
-    // We test the color values (ARGB) based on the code:
-    // "legendary" -> 255,255,200,50
-    // "rare"      -> 255,100,140,220
-    // "uncommon"  -> 255,100,200,100
-    // _           -> 255,140,140,140
-    private static (byte A, byte R, byte G, byte B) GetRarityArgb(string rarity) =>
-        rarity.ToLowerInvariant() switch
-        {
-            "legendary" => (255, 255, 200, 50),
-            "rare" => (255, 100, 140, 220),
-            "uncommon" => (255, 100, 200, 100),
-            _ => (255, 140, 140, 140)
-        };
-
-    [TestMethod]
-    public void GetRarityColor_Legendary_ReturnsGoldishColor()
-    {
-        var (a, r, g, b) = GetRarityArgb("legendary");
-        Assert.AreEqual(255, a);
-        Assert.AreEqual(255, r);
-        Assert.AreEqual(200, g);
-        Assert.AreEqual(50, b);
-    }
-
-    [TestMethod]
-    public void GetRarityColor_Rare_ReturnsBluishColor()
-    {
-        var (a, r, g, b) = GetRarityArgb("rare");
-        Assert.AreEqual(255, a);
-        Assert.AreEqual(100, r);
-        Assert.AreEqual(140, g);
-        Assert.AreEqual(220, b);
-    }
-
-    [TestMethod]
-    public void GetRarityColor_Uncommon_ReturnsGreenishColor()
-    {
-        var (a, r, g, b) = GetRarityArgb("uncommon");
-        Assert.AreEqual(255, a);
-        Assert.AreEqual(100, r);
-        Assert.AreEqual(200, g);
-        Assert.AreEqual(100, b);
-    }
-
-    [TestMethod]
-    public void GetRarityColor_Common_ReturnsGrayColor()
-    {
-        var (a, r, g, b) = GetRarityArgb("common");
-        Assert.AreEqual(255, a);
-        Assert.AreEqual(140, r);
-        Assert.AreEqual(140, g);
-        Assert.AreEqual(140, b);
-    }
-
-    [TestMethod]
-    public void GetRarityColor_Unknown_ReturnsGrayColor()
-    {
-        var (_, r, g, b) = GetRarityArgb("epic");
-        Assert.AreEqual(140, r);
-        Assert.AreEqual(140, g);
-        Assert.AreEqual(140, b);
-    }
-
-    [TestMethod]
-    public void GetRarityColor_CaseInsensitive_LegendaryUppercase()
-    {
-        var (a, r, g, b) = GetRarityArgb("LEGENDARY");
-        Assert.AreEqual(255, a);
-        Assert.AreEqual(255, r); // Golden
     }
 }
 

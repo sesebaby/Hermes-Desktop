@@ -1,5 +1,7 @@
 # Hermes.C# - Complete Architecture Blueprint
 
+> Historical note: this blueprint predates the current Hermes-Desktop game-platform architecture and may describe removed or unimplemented systems such as Buddy and AutoDreamService. Use AGENTS.md and current source code as the implementation authority.
+
 **Vision**: Build a **teammate**, not a tool. Persistent, proactive, coordinated, crash-proof.
 
 **Date**: 2026-04-03  

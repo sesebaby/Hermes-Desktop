@@ -9,7 +9,6 @@ using Hermes.Agent.Memory;
 using Hermes.Agent.Skills;
 using Hermes.Agent.Permissions;
 using Hermes.Agent.Tasks;
-using Hermes.Agent.Buddy;
 using Hermes.Agent.Context;
 using Hermes.Agent.Search;
 using Hermes.Agent.Agents;
@@ -329,7 +328,6 @@ public partial class App : Application
             Path.Combine(projectDir, "memory"),
             Path.Combine(projectDir, "skills"),
             Path.Combine(projectDir, "tasks"),
-            Path.Combine(projectDir, "buddy"),
             Path.Combine(projectDir, "agents"),
             Path.Combine(projectDir, "analytics"),
         })
@@ -545,13 +543,6 @@ public partial class App : Application
             tasksDir,
             sp.GetRequiredService<ILogger<TaskManager>>()));
         services.AddSingleton<ICronScheduler, InMemoryCronScheduler>();
-
-        // Buddy service (persisted to buddy/buddy.json under the project dir)
-        var buddyDir = Path.Combine(projectDir, "buddy");
-        var buddyConfigPath = Path.Combine(buddyDir, "buddy.json");
-        services.AddSingleton(sp => new BuddyService(
-            buddyConfigPath,
-            sp.GetRequiredService<IChatClient>()));
 
         // Wiki system (persistent knowledge base)
         var wikiConfig = new Hermes.Agent.Wiki.WikiConfig();

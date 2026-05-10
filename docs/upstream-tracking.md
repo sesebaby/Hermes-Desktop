@@ -1,6 +1,8 @@
 # Upstream Tracking: NousResearch Hermes Agent → Hermes.CS Desktop
 
-## Current Parity
+> Historical note: upstream parity notes may mention features that are no longer part of the current Hermes-Desktop product surface, including Buddy. Use AGENTS.md and current source code as the implementation authority.
+
+## Historical Parity Snapshot
 - **Upstream version:** v0.7.0 (2026.4.3)
 - **Last synced:** 2026-04-04
 - **Upstream repo:** https://github.com/NousResearch/hermes-agent
@@ -53,7 +55,7 @@
 | `agent/display.py` | Desktop UI controls | ✅ Reimplemented as WinUI |
 | `hermes_cli/skin_engine.py` | `App.xaml` theme system | ✅ Reimplemented as XAML resources |
 | `hermes_cli/banner.py` | `DashboardPage.xaml` hero section | ✅ Reimplemented |
-| `src/buddy/buddy.cs` | `src/buddy/buddy.cs` | ✅ C# original (not in upstream) |
+| `src/buddy/buddy.cs` | `src/buddy/buddy.cs` | Historical: removed from current product surface |
 | `src/coordinator/` | `src/coordinator/coordinatorservice.cs` | ✅ C# original (not in upstream) |
 | `src/agents/agentservice.cs` | `src/agents/agentservice.cs` | ✅ C# original (multi-agent teams) |
 | `src/hooks/HookSystem.cs` | `src/hooks/HookSystem.cs` | ✅ C# original |

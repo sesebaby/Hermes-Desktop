@@ -1,5 +1,7 @@
 # 🎉 Hermes.C# Build Complete!
 
+> Historical note: this document predates the current Hermes-Desktop game-platform architecture and may describe removed or retired systems such as Buddy and the old AutoDream service. Use AGENTS.md and current source code as the implementation authority.
+
 **Date**: 2026-04-03  
 **Status**: ✅ **BUILD SUCCESSFUL**
 

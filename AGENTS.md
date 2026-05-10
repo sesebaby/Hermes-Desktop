@@ -150,7 +150,7 @@
 
 ### 1. Desktop 是组合根，不是薄壳
 
-- `Desktop/HermesDesktop/App.xaml.cs` 负责注册目录结构、DI、主 agent、子 agent、MCP、Dreamer、NPC runtime、权限、Buddy、wiki、analytics、任务系统与工具注册。
+- `Desktop/HermesDesktop/App.xaml.cs` 负责注册目录结构、DI、主 agent、子 agent、MCP、Dreamer、NPC runtime、权限、wiki、analytics、任务系统与工具注册。
 - 桌面应用不是“套一层聊天 UI”。当前产品价值就在本地宿主：本地 agent 生命周期、skills、Dreamer、NPC runtime、权限、日志、workspace、配置都由它承载。
 
 ### 2. `src/` 是核心运行时，Desktop 负责装配
@@ -163,10 +163,10 @@
 - `src/agents`、`src/coordinator`：subagent、worktree/remote isolation、多 worker 编排。
 - `src/mcp`：MCP client、transport、tool discovery。
 - `src/tasks`：宿主级任务系统、session todo projection / archive。
-- `src/dreamer`、`src/dream`：Dreamer 背景系统与旧 AutoDream 代码。
+- `src/dreamer`：Dreamer 背景系统；旧 AutoDream 服务源码已移除。
 - `src/runtime`：Desktop/NPC 共享装配、NPC runtime host/supervisor、autonomy loop 等。
 - `src/games/stardew`：Stardew bridge 对接、私聊、autonomy、debug、world coordination。
-- `src/wiki`、`src/buddy`、`src/soul`、`src/plugins`：知识库、伙伴系统、身份系统、插件系统。
+- `src/wiki`、`src/soul`、`src/plugins`：知识库、身份系统、插件系统。
 
 ### 3. Desktop agent 与 NPC agent 走同一套能力装配
 
@@ -176,11 +176,11 @@
 
 ### 4. UI 只是宿主前台，不是全部系统
 
-- `MainWindow` 是导航壳，当前主导航项：`Dashboard`、`Chat`、`Agent`、`Skills`、`Memory`、`Buddy`、`Settings`。
-- `ChatPage` 是主工作台，绑定 `HermesChatService`，并包含 `Sessions / Tasks / Replay / Buddy` 等侧边面板。
+- `MainWindow` 是导航壳，当前主导航项：`Dashboard`、`Chat`、`Agent`、`Skills`、`Memory`、`Settings`。
+- `ChatPage` 是主工作台，绑定 `HermesChatService`，并包含 `Sessions / Tasks / Replay` 等侧边面板。
 - `DashboardPage` 聚合 session/tool/skill/LLM、Dreamer、NPC runtime、logs/path 快捷入口。
 - `AgentPage` 是 soul / user / saved agents / NPC runtime 的配置与调试工作台。
-- `SkillsPage`、`MemoryPage`、`BuddyPage`、`SettingsPage` 各自有真实功能，不是占位页。
+- `SkillsPage`、`MemoryPage`、`SettingsPage` 各自有真实功能，不是占位页。
 
 ## 核心运行时主线
 
@@ -273,13 +273,11 @@
 - `todo` / `todo_write`：`src/Tools/TodoWriteTool.cs`，`todo_write` 是兼容 alias。
 - `checkpoint`：`src/Tools/CheckpointTool.cs`，支持创建、恢复、列出目录快照。
 
-### G. wiki / soul / buddy / plugin
+### G. wiki / soul / plugin
 
 - `wiki`：`App.xaml.cs` 已注册 `WikiConfig`、`LocalWikiStorage`、`WikiSearchIndex`、`WikiManager`。
 - `soul`：`SoulService`、`SoulExtractor`、`SoulRegistry`、`AgentProfileManager` 已接入桌面宿主。
-- `buddy`：`src/buddy/Buddy.cs` + `BuddyService` 已实现 deterministic gacha、AI soul 生成、持久化、ASCII renderer，桌面中有 `BuddyPage` 和 `BuddyPanel`。
 - `plugin`：`PluginManager` 与 `BuiltinMemoryPlugin` 已接线，memory plugin block 会进入系统 prompt。
-- `Buddy` 当前应理解为“已接线的本地伙伴/身份数据能力 + 桌面入口”，不要写成完整社交 agent 子系统。
 
 ### H. 权限、workspace 与运行时状态
 
@@ -309,7 +307,7 @@
 
 ### 1. Desktop 不是“只包 Hermes CLI 的前端”
 
-- 当前桌面宿主自己装配 transcript、memory、skills、wiki、plugin、agent、subagent、coordinator、MCP、Dreamer、NPC runtime、permission、Buddy。
+- 当前桌面宿主自己装配 transcript、memory、skills、wiki、plugin、agent、subagent、coordinator、MCP、Dreamer、NPC runtime、permission。
 - 所以做设计或排障时，不要先入为主地把问题归因到“UI 只是壳，逻辑都在外面”。
 
 ### 2. NPC runtime 不是第二套 Hermes
@@ -336,7 +334,7 @@
 - `AgentService`、`CoordinatorService`
 - MCP client discovery 与工具注册
 - Dreamer 背景循环
-- wiki / soul / buddy / plugin / analytics
+- wiki / soul / plugin / analytics
 - Stardew NPC runtime、private chat、自主循环、runtime workspace 观测
 
 ### 已有代码，但文档里不要夸大
@@ -351,7 +349,7 @@
 
 - `SendMessageTool` 没有现成实现。
 - `MailboxService` / `TeamManager` 更像底层雏形，不要把它们当成已经完整接通的 agent 间消息系统。
-- `src/dream/AutoDreamService.cs` 有代码，但当前桌面默认不走它；不要把它误判成现在线上主链路。
+- 旧 AutoDream 服务源码已移除；当前桌面默认 Dream 主链路是 `DreamerService` / `StartDreamerBackground(...)`。
 - 任何只在 docs / openspec / `.omx` 计划里的未来设计，不要写成已实现。
 - README 里仍提到的 sidecar 表述，如果跟当前 C# 主链冲突，以代码为准。
 

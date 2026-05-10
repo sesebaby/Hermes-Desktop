@@ -1,5 +1,7 @@
 # Session Management, Crash Recovery & Context Switching
 
+> Historical note: this reference predates the current Hermes-Desktop game-platform architecture and may describe retired AutoDream concepts. Use AGENTS.md and current source code as the implementation authority.
+
 **Source**: Reference architecture analysis
 **Date**: 2026-04-03
 **Purpose**: Capture session persistence, crash recovery, and lossless context switching for Hermes.C#

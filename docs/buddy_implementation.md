@@ -1,6 +1,8 @@
 # Buddy System Implementation
 
-**Status**: ✅ Complete  
+> Historical note: Buddy was removed from the current Hermes-Desktop product surface during the 2026-05-10 game-platform boundary cleanup. This document is retained as historical implementation reference only.
+
+**Status**: Historical / removed from current product surface
 **Location**: `src/Buddy/Buddy.cs`
 
 ---

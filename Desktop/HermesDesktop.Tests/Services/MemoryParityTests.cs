@@ -985,15 +985,23 @@ public sealed class MemoryParityTests
     }
 
     [TestMethod]
-    public void DesktopStartup_DoesNotRegisterAutoDreamServiceByDefault()
+    public void DesktopStartup_UsesDreamerServiceAsDefaultDreamPath()
     {
         var appSourcePath = FindSourceFile("HermesDesktop", "App.xaml.cs");
         var appSource = File.ReadAllText(appSourcePath);
+        var autoDreamSourcePath = Path.Combine(
+            FindRepositoryRoot(),
+            "src",
+            "dream",
+            "AutoDreamService.cs");
+        var dreamerSourcePath = FindSourceFile("src", "dreamer", "DreamerService.cs");
+        var dreamerSource = File.ReadAllText(dreamerSourcePath);
 
-        StringAssert.Contains(appSource, "StartDreamerBackground");
-        StringAssert.Contains(appSource, "DreamerService");
+        Assert.IsFalse(File.Exists(autoDreamSourcePath), "The retired AutoDreamService source file must not be restored.");
         Assert.IsFalse(appSource.Contains("AutoDreamService", StringComparison.Ordinal),
-            "AutoDreamService must remain dormant unless a separate scoped task explicitly enables it.");
+            "Desktop startup must not reference the retired AutoDreamService path.");
+        StringAssert.Contains(appSource, "StartDreamerBackground");
+        StringAssert.Contains(dreamerSource, "DreamerService");
     }
 
     [TestMethod]
@@ -1365,6 +1373,17 @@ public sealed class MemoryParityTests
         }
 
         throw new FileNotFoundException("Could not find source file from test output directory.", relativePath);
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "HermesDesktop.sln")))
+                return dir.FullName;
+        }
+
+        throw new DirectoryNotFoundException("Could not find repository root from test output directory.");
     }
 
     private sealed class RecordingPreCompressPlugin : PluginBase

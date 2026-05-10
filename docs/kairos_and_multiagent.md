@@ -1,5 +1,7 @@
 # KAIROS & Multi-Agent Systems Deep Dive
 
+> Historical note: this reference predates the current Hermes-Desktop game-platform architecture and may describe retired AutoDream concepts. Use AGENTS.md and current source code as the implementation authority.
+
 **Source**: Reference architecture analysis
 **Date**: 2026-04-03
 **Purpose**: Complete specification of KAIROS proactive mode and multi-agent orchestration for Hermes.C#

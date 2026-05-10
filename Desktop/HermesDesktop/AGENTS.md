@@ -112,7 +112,7 @@
 ### `MainWindow`
 
 - 这是原生导航壳，不承载业务逻辑。
-- 当前主导航项：`Dashboard`、`Chat`、`Agent`、`Skills`、`Memory`、`Buddy`、`Settings`。
+- 当前主导航项：`Dashboard`、`Chat`、`Agent`、`Skills`、`Memory`、`Settings`。
 
 ### `Views/ChatPage.xaml`
 
@@ -210,7 +210,7 @@
   - 写本地 digest
 - `DreamerRoom` 工作区位于 `HERMES_HOME/dreamer/`。
 - Dashboard 和 Settings 都已接入 Dreamer 状态与配置。
-- `AutoDreamService` 虽然代码存在，但**不是当前 Desktop 启动主链路**。
+- 旧 AutoDream 服务源码已移除；当前 Desktop 启动主链路是 `DreamerService` / `StartDreamerBackground(...)`。
 
 ### Stardew / NPC runtime
 
@@ -248,7 +248,7 @@
 - 不要再沿用“x86 / ARM64 当前都支持”的旧模板说法；当前项目文件写的是 `x64`。
 - 不要把 MSIX 注册流当成唯一开发路径；日常开发以 `run-dev.ps1` 和根目录 `run-desktop.ps1` 为准。
 - 不要把 README 里 sidecar 的旧描述当成当前聊天主线事实；当前代码是 pure C#。
-- 不要把 `AutoDreamService`、mailbox/team、多 agent 扩展设计或 `.omx` 计划中的内容写成“已实现”。
+- 不要把旧 AutoDream 服务、mailbox/team、多 agent 扩展设计或 `.omx` 计划中的内容写成“已实现”。
 - 如果 instruction file 中存在模板化的泛用表述，与当前 `.csproj`、启动脚本或 `App.xaml.cs` 冲突，以真实代码和脚本为准。
 
 ## 日志与排障入口

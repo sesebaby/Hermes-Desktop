@@ -97,14 +97,6 @@
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem
-                    x:Name="BuddyNavItem"
-                    x:Uid="BuddyNavItem"
-                    Tag="buddy">
-                    <NavigationViewItem.Icon>
-                        <SymbolIcon Symbol="Emoji2" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem
                     x:Name="SettingsNavItem"
                     x:Uid="SettingsNavItem"
                     Tag="settings">

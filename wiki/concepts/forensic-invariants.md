@@ -78,7 +78,7 @@ Ten behavioral invariants identified from upstream analysis. Status tracked as: 
 - Agent fires `RecordMistakeAsync` on tool failure (fire-and-forget Task.Run)
 - MistakeEntry: Context, Mistake, Correction, Lesson
 - Last 5 entries injected into soul context
-- AutoDreamService consolidates learnings every 10 minutes
+- Retired AutoDreamService is no longer part of the current product path; current learning records are written through direct `SoulService` integration.
 
 ## INV-010: Deterministic Tool-Call IDs
 

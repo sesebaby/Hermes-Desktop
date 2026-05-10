@@ -21,7 +21,7 @@ This document is a **reconnaissance and research summary** for migrating Hermes 
 | **`SettingsPage.xaml`** | **Largest surface** (~160+ `Text="` / `Content="` / `PlaceholderText="` hits). Labels, section titles, `ComboBoxItem` labels, helper copy, buttons. |
 | **`DashboardPage.xaml`** | KPI cards, section headers, buttons (`Test Connection`, `Open Chat`), empty state, system paths section. |
 | **`ChatPage.xaml`** | Header (`Hermes Agent`, `New Chat`), `Reasoning` expander label, thinking line, input chrome. **DataTemplate** contains `Text="Reasoning"` — special case (below). |
-| **Other pages / panels** | `AgentPage`, `MemoryPage`, `BuddyPage`, `SkillsPage`, `SessionPanel`, `AgentPanel`, `TaskPanel`, `ReplayPanel`, `MemoryPanel`, `SkillsPanel`, `BuddyPanel`, `ToolCallCard`, `ApprovalCard`, `PermissionDialog`, `CodeBlockView` (remainder). |
+| **Other pages / panels** | `AgentPage`, `MemoryPage`, `SkillsPage`, `SessionPanel`, `AgentPanel`, `TaskPanel`, `ReplayPanel`, `MemoryPanel`, `SkillsPanel`, `ToolCallCard`, `ApprovalCard`, `PermissionDialog`, `CodeBlockView` (remainder). |
 
 ### Hardcoded in code-behind (must move to `ResourceLoader` or stay format-only)
 
@@ -31,7 +31,6 @@ This document is a **reconnaissance and research summary** for migrating Hermes 
 | `DashboardPage.xaml.cs` | `TestConnectionResult`: `"Testing..."`, `"Not configured"` |
 | `ChatPage.xaml.cs` | `SessionIdLabel`: `"New Session"` |
 | `MemoryPage.xaml.cs` | `"Saved!"`, badge `"0"` |
-| `BuddyPanel.xaml.cs` / `BuddyPage.xaml.cs` | Error / badge copy |
 | `CodeBlockView.xaml.cs` | `"Copied!"` / `"Copy"` |
 | `ReplayPanel.xaml.cs` | `Play` / `Stop` (could stay symbolic + localize) |
 | `App.xaml.cs` | `ContentDialog`: `Permission Required`, `Allow` / `Deny` |

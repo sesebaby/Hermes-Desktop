@@ -4,7 +4,7 @@ type: system
 tags: [soul, identity, learning]
 created: 2026-04-09
 updated: 2026-04-09
-sources: [src/soul/SoulService.cs, src/soul/SoulModels.cs, src/soul/SoulExtractor.cs, src/soul/AgentProfile.cs, src/dream/autodreamservice.cs]
+sources: [src/soul/SoulService.cs, src/soul/SoulModels.cs, src/soul/SoulExtractor.cs, src/soul/AgentProfile.cs]
 ---
 
 # Soul System
@@ -60,13 +60,9 @@ The template defines Hermes as a native Windows AI agent with:
 - Working style: read before edit, search first, test changes, minimal changes
 - Communication: lead with answer, treat users as intelligent adults
 
-## AutoDreamService
+## Retired AutoDreamService
 
-Background service (`BackgroundService`) running every 10 minutes:
-- Scans session transcripts for learnings
-- Uses SoulExtractor to find mistakes, habits, and user profile signals
-- Consolidates into persistent soul files
-- Enabled via config flag
+The old `AutoDreamService` source path has been removed from the current product. Current desktop startup uses the Dreamer background path (`StartDreamerBackground(...)` / `DreamerService`) and direct `SoulService` integration; do not describe the retired service as a live consolidation loop.
 
 ## Integration Points
 
@@ -78,7 +74,6 @@ Background service (`BackgroundService`) running every 10 minutes:
 - `src/soul/SoulService.cs` -- main service (~310 lines)
 - `src/soul/SoulModels.cs` -- MistakeEntry, HabitEntry, SoulFileType
 - `src/soul/SoulExtractor.cs` -- extracts learnings from transcripts
-- `src/dream/autodreamservice.cs` -- background consolidation
 
 ## See Also
 - [[context-management]]

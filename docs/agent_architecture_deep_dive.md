@@ -1,5 +1,7 @@
 # Agent Architecture Deep Dive - Key Learnings for Hermes.C#
 
+> Historical note: this reference predates the current Hermes-Desktop game-platform architecture and may describe removed or retired systems such as Buddy. Use AGENTS.md and current source code as the implementation authority.
+
 **Source**: Reference architecture analysis
 **Date**: 2026-04-03
 **Purpose**: Capture critical implementation details for Hermes.C# tools

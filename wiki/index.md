@@ -19,7 +19,7 @@ Comprehensive reference for the Hermes.CS codebase -- a native Windows AI agent 
 | [[systems/context-management]] | PromptBuilder 6-layer architecture, TokenBudget, SessionState, compaction |
 | [[systems/llm-providers]] | IChatClient, OpenAiClient, AnthropicClient, credential rotation, fallback |
 | [[systems/tool-system]] | ITool interface, 27+ tools, parallel execution with 8-worker semaphore |
-| [[systems/soul-system]] | SoulService, SOUL.md/USER.md, mistakes.jsonl, habits.jsonl, AutoDreamService |
+| [[systems/soul-system]] | SoulService, SOUL.md/USER.md, mistakes.jsonl, habits.jsonl |
 | [[systems/skill-system]] | SkillManager, YAML frontmatter, SkillInvoker, validation, atomic writes |
 | [[systems/memory-system]] | MemoryManager, LLM-based relevance filtering, freshness warnings |
 | [[systems/transcript-system]] | TranscriptStore, WriteThrough JSONL, activity log, session resume |

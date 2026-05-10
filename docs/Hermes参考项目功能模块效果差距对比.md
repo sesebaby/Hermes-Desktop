@@ -29,9 +29,9 @@
 
 这些点本身不是“功能差距”，但如果先看错当前实现边界，后面的差距判断和下一步方案就会跑偏。
 
-### 1. Dreamer 当前主线是后台 walk / signal / build / digest，不是默认启用 AutoDreamService
+### 1. Dreamer 当前主线是后台 walk / signal / build / digest，不是旧 AutoDreamService
 
-当前桌面宿主真正启动的是 Dreamer 后台循环：周期读取 transcript / inbox / RSS，做 walk、signal scoring、build trigger 和本地 digest 写入。`AutoDreamService` 虽然代码存在，但不是当前 Desktop 默认启动主链。
+当前桌面宿主真正启动的是 Dreamer 后台循环：周期读取 transcript / inbox / RSS，做 walk、signal scoring、build trigger 和本地 digest 写入。旧 `AutoDreamService` 源码已移除，不是当前 Desktop 默认启动主链。
 
 这意味着：
 

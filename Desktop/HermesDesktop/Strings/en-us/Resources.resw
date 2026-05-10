@@ -134,10 +134,6 @@
   <data name="MemoryNavItem.Content" xml:space="preserve">
     <value>Memory</value>
   </data>
-  <data name="BuddyNavItem.Content" xml:space="preserve">
-    <value>Buddy</value>
-  </data>
-  
   <data name="SettingsNavItem.Content" xml:space="preserve">
     <value>Settings</value>
   </data>
