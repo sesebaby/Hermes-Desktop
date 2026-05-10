@@ -226,7 +226,9 @@ public sealed class NpcAutonomyLoop
         if (IsToolIterationLimitFallback(decisionResponse))
             decisionResponse = null;
 
-        if (_localExecutorRunner is not null && !string.IsNullOrWhiteSpace(decisionResponse))
+        if (_localExecutorRunner is not null &&
+            ShouldRouteToLocalExecutor(decisionResponse, decisionSession) &&
+            decisionResponse is not null)
         {
             var route = await RunLocalExecutorAsync(
                 instance,
@@ -272,18 +274,16 @@ public sealed class NpcAutonomyLoop
             "宿主这一次只负责唤醒你；它没有替你观察世界，没有替你选择目标，也没有要求你必须先观察。\n" +
             "你要像生活在星露谷里的人一样，自己决定下一步该做什么；宿主不会替你规定是否观察、等待、移动、说话、推进任务或做闲置动作。\n" +
             "不要声称已经看见、到达、完成或知道当前世界状态，除非那来自你自己已有的上下文或后续工具执行结果。\n" +
-            "低风险动作只输出一个 JSON object 交给本地执行层，不要直接写工具参数或假装已经做完。\n" +
-            "必须只输出 raw JSON object；不要 Markdown code fence，不要解释文字，不要在 JSON 前后添加任何自然语言。\n" +
-            "JSON schema 固定为 {\"action\":\"move|observe|wait|task_status|idle_micro_action|escalate\",\"reason\":\"简短原因\",\"destinationText\":\"move 必填；只写自然语言目的地，不写坐标\",\"commandId\":\"task_status 可选\",\"observeTarget\":\"observe 可选\",\"waitReason\":\"wait 可选\",\"idleMicroAction\":{\"kind\":\"idle_micro_action 必填\",\"animationAlias\":\"仅当 kind=idle_animation_once 时可选\",\"intensity\":\"可选\",\"ttlSeconds\":0},\"speech\":{\"shouldSpeak\":false,\"channel\":\"player|overhead|private\",\"text\":\"可选短句\"},\"taskUpdate\":{\"taskId\":\"可选 existing todo id\",\"status\":\"pending|in_progress|blocked|completed|failed|cancelled\",\"reason\":\"可选短原因\"},\"escalate\":false}。\n" +
-            "只输出所选 action 需要的字段；不要输出 null、空字符串或无关字段，尤其不要在非 escalate 动作里输出 escalate=false。\n" +
-            "move 只表达父层的目的地意图；本地 executor 会用 skill_view 读取 stardew-navigation 后再用 executor-only stardew_navigate_to_tile 执行，父层不要写工具参数或调用该工具。\n" +
-            "如果只是查长动作进度，action=task_status 且 commandId 必须来自已有命令。\n" +
+            "如果决定移动，先用 skill_view 读取 stardew-navigation 及其 references/index.md、相关 region/POI 文件；只有资料明确给出 target(locationName,x,y,source) 后，才调用 stardew_navigate_to_tile，并原样填写这些字段。\n" +
+            "不要把玩家自然语言地点直接当 locationName，不要编造坐标，不要使用 destinationId。\n" +
+            "stardew_navigate_to_tile 只是提交真实动作；真实移动、跨地图行走、等待切图和失败码都由宿主与 Stardew bridge 执行，并通过工具结果返回给你。\n" +
+            "如果只是查长动作进度，调用 stardew_task_status 且 commandId 必须来自已有命令。\n" +
             "如果你只是想在原地做一个短暂可见的小动作，用 action=idle_micro_action，并提供 idleMicroAction.kind；可选 kind 只有 emote_happy、emote_question、emote_sleepy、emote_music、look_left、look_right、look_up、look_down、look_around、tiny_hop、tiny_shake、idle_pose、idle_animation_once。\n" +
             "idle_micro_action 只能表达原地短动作；不要同时附带 speech 或 target，也不要把它改写成 move 或 speak。\n" +
             "如果任务真的被外部条件阻断，用 taskUpdate 把已有 todo 标成 blocked；如果确定做不成，标成 failed；blocked 或 failed 都要写短 reason。\n" +
             "wait 只表示你现在选择暂不推进，不是普通世界动作。";
         var timeoutFact = BuildActionSlotTimeoutFact(lastTerminalCommandStatus);
-        message += "\nMOVE CONTRACT OVERRIDE: for action=move, the parent decision JSON must include destinationText with only the natural-language destination phrase, and must not include target, locationName, x, y, facingDirection, source, destinationId, or any mechanical map coordinates. The parent only chooses action=move, reason, and destinationText. The local executor is the only layer allowed to resolve locations, and it must do that by reading stardew-navigation with skill_view before calling executor-only navigation tools.";
+        message += "\nMOVE TOOL CONTRACT: parent autonomy owns target resolution. Use skill_view to load stardew-navigation and the smallest relevant reference files, then call stardew_navigate_to_tile with the exact target(locationName,x,y,source). The host executes the real action and the tool result is the feedback channel.";
         return timeoutFact is null
             ? message
             : message + "\n" + timeoutFact;
@@ -308,6 +308,17 @@ public sealed class NpcAutonomyLoop
     private static bool IsToolIterationLimitFallback(string? value)
         => !string.IsNullOrWhiteSpace(value) &&
            value.StartsWith("I've reached the maximum number of tool call iterations.", StringComparison.Ordinal);
+
+    private static bool ShouldRouteToLocalExecutor(string? decisionResponse, Session? decisionSession)
+    {
+        if (string.IsNullOrWhiteSpace(decisionResponse))
+            return false;
+
+        if (decisionResponse.TrimStart().StartsWith("{", StringComparison.Ordinal))
+            return true;
+
+        return !SessionHasAnyToolCalls(decisionSession);
+    }
 
     private async Task WriteActivityAsync(
         NpcRuntimeDescriptor descriptor,
@@ -1020,6 +1031,16 @@ public sealed class NpcAutonomyLoop
         return session.Messages.Any(message =>
             string.Equals(message.ToolName, toolName, StringComparison.OrdinalIgnoreCase) ||
             (message.ToolCalls?.Any(toolCall => string.Equals(toolCall.Name, toolName, StringComparison.OrdinalIgnoreCase)) ?? false));
+    }
+
+    private static bool SessionHasAnyToolCalls(Session? session)
+    {
+        if (session is null)
+            return false;
+
+        return session.Messages.Any(message =>
+            !string.IsNullOrWhiteSpace(message.ToolName) ||
+            message.ToolCalls is { Count: > 0 });
     }
 
     private static bool HasAnyStardewActionToolCall(Session? session)

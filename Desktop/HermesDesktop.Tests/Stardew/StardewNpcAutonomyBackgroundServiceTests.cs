@@ -138,7 +138,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
-    public async Task RunOneIterationAsync_AutonomyParentHasNoDirectAgentToolSurface()
+    public async Task RunOneIterationAsync_AutonomyParentHasControlledActionToolSurface()
     {
         var discovery = CreateDiscovery("save-42");
         var chatClient = new CountingChatClient("I will wait near the library.");
@@ -181,12 +181,13 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 ToolSurface: NpcToolSurface.FromTools([])),
             CancellationToken.None);
 
-        Assert.AreEqual(0, handle.AgentHandle.Agent.Tools.Count);
+        Assert.AreEqual(3, handle.AgentHandle.Agent.Tools.Count);
+        Assert.IsTrue(handle.AgentHandle.Agent.Tools.ContainsKey("skill_view"));
+        Assert.IsTrue(handle.AgentHandle.Agent.Tools.ContainsKey("stardew_status"));
+        Assert.IsTrue(handle.AgentHandle.Agent.Tools.ContainsKey("stardew_navigate_to_tile"));
         Assert.IsFalse(handle.AgentHandle.Agent.Tools.ContainsKey("agent"));
         Assert.IsFalse(handle.AgentHandle.Agent.Tools.ContainsKey("todo"));
         Assert.IsFalse(handle.AgentHandle.Agent.Tools.ContainsKey("memory"));
-        Assert.IsFalse(handle.AgentHandle.Agent.Tools.ContainsKey("stardew_status"));
-        Assert.IsFalse(handle.AgentHandle.Agent.Tools.ContainsKey("stardew_navigate_to_tile"));
     }
 
     [TestMethod]
@@ -1114,7 +1115,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             "Delegated private-chat movement must pass the destination text as a first-class move field instead of host-parsing it away.");
         Assert.IsFalse(
             delegationClient.UserMessages.Any(message => message.Contains("player request: go to the beach now", StringComparison.Ordinal)),
-            "Move ingress must not hide the destination phrase inside reason; the local executor only gets destinationText.");
+            "Move ingress must not hide the destination phrase inside reason; the delegated move path must receive destinationText as the explicit place phrase.");
         Assert.AreEqual(0, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
     }
 

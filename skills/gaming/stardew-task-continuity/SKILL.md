@@ -26,7 +26,7 @@ description: 星露谷 NPC 任务连续性：当 NPC 需要接住玩家承诺、
 ## 接到现在就做的请求
 
 - 玩家让你“现在去”“现在做”“带我去”“一起去”这类会改变游戏世界的事时，先判断角色会不会答应。
-- 如果答应，先调用 `npc_delegate_action`，把动作意图交给 autonomy/local executor。
+- 如果答应，优先由当前父层 agent 使用相关工具提交动作；只有私聊等无法直接行动的入口才用 `npc_delegate_action` 转交 autonomy。
 - 委托内容写自然短句，保留玩家原始地点或目标说法；不要在父层硬猜坐标。
 - 委托后可以用角色口吻短句回应玩家，但不要把口头回应当成动作完成。
 - 如果只是以后再做，写 `todo`；如果是现在就执行，必须委托。
@@ -41,7 +41,7 @@ description: 星露谷 NPC 任务连续性：当 NPC 需要接住玩家承诺、
 ## 推进任务
 
 - 每次自主行动前，先看当前观察事实和 active todo。
-- 需要移动时走 `stardew-navigation`：父层用 `npc_delegate_action` 委托移动意图，本地 executor 用 `skill_view` 读取地图资料并调用 `stardew_navigate_to_tile`。
+- 需要移动时走 `stardew-navigation`：父层用 `skill_view` 读取地图资料并调用 `stardew_navigate_to_tile`，工具结果作为行动反馈。
 - 长动作开始后，用 `stardew_task_status` 查进度，直到完成、失败、阻塞、取消或需要重新观察。
 - 不要盲等，也不要连续重复同一个已经失败的动作。
 

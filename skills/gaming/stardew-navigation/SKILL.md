@@ -8,9 +8,9 @@ description: 星露谷 NPC 本地执行层导航：当 NPC 需要把自然语言
 ## Compact Contract
 
 - compact-contract-owner: stardew-navigation
-- 移动是 agent-native：地点意义通过 skill 资料解析，实际移动只由本地 executor 调用 `stardew_navigate_to_tile`。
+- 移动是 agent-native：父层 agent 通过 skill 资料解析地点意义并调用 `stardew_navigate_to_tile`；实际移动仍由宿主和 bridge 执行。
 - 私聊父 agent 答应“现在去某地”时，用 `npc_delegate_action` 委托 `action=move`；父层不要直接拿移动权限。
-- 本地 executor 收到自然语言地点后，先加载本技能，再加载 `references/index.md`，再加载相关 region 和 POI 文件。
+- 父层 agent 收到自然语言地点后，先加载本技能，再加载 `references/index.md`，再加载相关 region 和 POI 文件。
 - 只有已经加载的 POI/reference 文件可以提供最终 `target(locationName,x,y,source)`。
 - 绝对不要编造坐标。目标缺失、有歧义或未加载时，返回 blocked/escalate，不要猜。
 - 长动作进度只用 `stardew_task_status` 查询。
@@ -19,7 +19,7 @@ description: 星露谷 NPC 本地执行层导航：当 NPC 需要把自然语言
 
 ## 职责边界
 
-私聊或自主父 agent 只决定“要不要移动、为什么移动”。本地 executor 负责读取地图 skill、解析地点和执行机械导航。宿主不替 agent 解析自然语言地点。
+私聊或自主父 agent 决定“要不要移动、为什么移动”，并负责读取地图 skill、解析地点和调用导航工具。宿主不替 agent 解析自然语言地点，只负责执行已明确的机械 target。
 
 `stardew-world` 解释地点的社会和世界意义；本技能只在需要真实移动时读取地图参考，并只使用已披露 reference 里的坐标。
 
@@ -27,11 +27,11 @@ description: 星露谷 NPC 本地执行层导航：当 NPC 需要把自然语言
 
 ## 硬规则：移动不是叙述文本
 
-物理移动不会因为说“我现在过去”就发生。只要要改变 NPC 在游戏世界中的位置，就必须走本地 executor 的导航工具链。
+物理移动不会因为说“我现在过去”就发生。只要要改变 NPC 在游戏世界中的位置，就必须调用导航工具链。
 
 - 如果你看到或准备写描述物理移动的词（“走到”“去”“前往”“返回”“离开”“接近”），使用本技能的移动流程。
 - 父 agent 答应“现在去某地”时，应先用 `npc_delegate_action` 委托 `action=move`，不要只回复。
-- 本地 executor 收到 move 意图后，必须用 `skill_view` 读取本技能和地图参考文件。
+- 父层 agent 决定 move 后，必须用 `skill_view` 读取本技能和地图参考文件。
 - 如果没有调用 `stardew_navigate_to_tile`，不要声称 NPC 已到达或正在移动。
 - `stardew_speak` 只负责说话，不能移动 NPC。
 - 不使用 `destinationId`；地点解析走 skill 资料和 `stardew_navigate_to_tile` 单轨。
@@ -46,7 +46,7 @@ description: 星露谷 NPC 本地执行层导航：当 NPC 需要把自然语言
 
 ## 机械目标规则
 
-`stardew_navigate_to_tile` 只属于本地 executor。它需要：
+`stardew_navigate_to_tile` 是父层 agent 可调用的机械动作工具。它需要：
 
 - `locationName`
 - `x`
@@ -73,7 +73,7 @@ description: 星露谷 NPC 本地执行层导航：当 NPC 需要把自然语言
 
 - 确认地点坐标来自已经加载的 reference 文件。
 - 确认目标不是普通寒暄或只需要说话的社交回应。
-- 确认父层已经把“现在执行”的请求交给本地 executor，或者当前就是本地 executor 在执行 active todo。
+- 确认父层已经决定“现在执行”，并且当前是在处理 active todo 或当前轮行动。
 - 跟踪 `commandId`、状态、失败原因和 `traceId`。
 
 ## 失败处理

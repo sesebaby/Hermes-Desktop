@@ -220,10 +220,10 @@ public class NpcAutonomyLoopTests
         StringAssert.Contains(agent.LastMessage, "不要声称已经看见");
         StringAssert.Contains(agent.LastMessage, "wait 只表示你现在选择暂不推进");
         StringAssert.Contains(agent.LastMessage, "blocked 或 failed");
-        StringAssert.Contains(agent.LastMessage, "\"taskUpdate\"");
-        StringAssert.Contains(agent.LastMessage, "只输出一个 JSON object");
-        StringAssert.Contains(agent.LastMessage, "\"action\"");
-        StringAssert.Contains(agent.LastMessage, "executor-only stardew_navigate_to_tile");
+        StringAssert.Contains(agent.LastMessage, "skill_view");
+        StringAssert.Contains(agent.LastMessage, "target(locationName,x,y,source)");
+        StringAssert.Contains(agent.LastMessage, "stardew_navigate_to_tile");
+        StringAssert.Contains(agent.LastMessage, "工具结果返回给你");
         StringAssert.Contains(agent.LastMessage, "idle_micro_action");
         StringAssert.Contains(agent.LastMessage, "idleMicroAction");
         StringAssert.Contains(agent.LastMessage, "idle_micro_action 只能表达原地短动作");

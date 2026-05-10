@@ -30,7 +30,10 @@ public sealed record NpcToolSurface(IReadOnlyList<ITool> Tools, string Fingerpri
     {
         ArgumentNullException.ThrowIfNull(tools);
 
-        var toolList = tools.ToArray();
+        var toolList = tools
+            .GroupBy(tool => tool.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
         var fingerprint = string.Join(
             "|",
             toolList

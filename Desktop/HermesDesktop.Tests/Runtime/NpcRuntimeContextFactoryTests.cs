@@ -74,13 +74,13 @@ public class NpcRuntimeContextFactoryTests
 
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("## Skills (mandatory)", StringComparison.Ordinal));
         Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("session_search", StringComparison.Ordinal));
-        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("只返回一个 JSON intent contract", StringComparison.Ordinal));
-        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("raw JSON", StringComparison.OrdinalIgnoreCase));
-        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("机械动作由宿主和本地 executor 执行", StringComparison.Ordinal));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("skill_view", StringComparison.Ordinal));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("target(locationName,x,y,source)", StringComparison.Ordinal));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("真实移动仍由宿主和 Stardew bridge 执行", StringComparison.Ordinal));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("Do not call tools", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains(SystemPrompts.RuntimeFactsGuidance, StringComparison.Ordinal));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("use the registered tools available in this session", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("stardew_navigate_to_tile", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("stardew_navigate_to_tile", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("native desktop environment", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("browser automation", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("web search tools", StringComparison.OrdinalIgnoreCase));

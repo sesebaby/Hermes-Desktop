@@ -106,10 +106,11 @@ public sealed class StardewAutonomyTickDebugServiceTests
         Assert.AreEqual("local_executor_completed:wait", result.DecisionResponse);
         Assert.IsNull(queries.LastNpcId);
 
-        Assert.AreEqual(0, chatClient.ToolNames.Count, "Parent autonomy lane must decide intent without direct tool calls.");
+        Assert.IsTrue(chatClient.ToolNames.Count > 0, "Parent autonomy lane uses a restricted tool surface so tool results stay in its transcript.");
         CollectionAssert.DoesNotContain(chatClient.ToolNames.ToArray(), "stardew_move");
-        CollectionAssert.DoesNotContain(chatClient.ToolNames.ToArray(), "stardew_navigate_to_tile");
-        CollectionAssert.DoesNotContain(chatClient.ToolNames.ToArray(), "stardew_task_status");
+        CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "skill_view");
+        CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "stardew_navigate_to_tile");
+        CollectionAssert.Contains(chatClient.ToolNames.ToArray(), "stardew_task_status");
 
         Assert.IsTrue(chatClient.SystemMessages.Any(message =>
             message.Contains("## Persona Facts", StringComparison.Ordinal) &&
@@ -198,13 +199,13 @@ public sealed class StardewAutonomyTickDebugServiceTests
         StringAssert.Contains(systemPrompt, "target(locationName,x,y,source)");
         StringAssert.Contains(systemPrompt, "`references/index.md`");
         StringAssert.Contains(systemPrompt, "stardew_navigate_to_tile");
-        StringAssert.Contains(systemPrompt, "本地 executor");
+        StringAssert.Contains(systemPrompt, "stardew_navigate_to_tile");
         Assert.IsFalse(systemPrompt.Contains("destination[n]", StringComparison.Ordinal));
         Assert.IsFalse(systemPrompt.Contains("stardew_move", StringComparison.Ordinal));
         Assert.IsFalse(systemPrompt.Contains("destinationId", StringComparison.Ordinal));
-        Assert.IsFalse(
+        Assert.IsTrue(
             chatClient.ToolNames.Contains("stardew_navigate_to_tile", StringComparer.OrdinalIgnoreCase),
-            "Mechanical tile navigation must be described as an executor-only contract, not exposed as a parent tool.");
+            "Mechanical tile navigation must be a parent-callable tool so the tool result stays in the parent transcript.");
         Assert.IsFalse(
             systemPrompt.Contains("stardew-world test guidance", StringComparison.Ordinal),
             "Repo-backed prompt supplement coverage must use the real skills/gaming root, not fixture-only text.");
@@ -962,7 +963,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             """
             ---
             name: stardew-navigation
-            description: Test navigation skill for local executor target resolution.
+            description: Test navigation skill for parent target resolution.
             ---
             stardew-navigation test guidance
 

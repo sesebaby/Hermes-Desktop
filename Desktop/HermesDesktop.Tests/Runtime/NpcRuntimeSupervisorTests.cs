@@ -391,13 +391,13 @@ public class NpcRuntimeSupervisorTests
 
         Assert.AreEqual(1, privateChatClient.CompleteWithToolsCalls);
         Assert.AreEqual(0, privateChatClient.StructuredStreamCalls);
-        Assert.AreEqual(1, autonomyClient.CompleteCalls);
-        Assert.AreEqual(0, autonomyClient.CompleteWithToolsCalls);
+        Assert.AreEqual(0, autonomyClient.CompleteCalls);
+        Assert.AreEqual(1, autonomyClient.CompleteWithToolsCalls);
         Assert.AreEqual(0, autonomyClient.StructuredStreamCalls);
     }
 
     [TestMethod]
-    public async Task GetOrCreateAutonomyHandleAsync_ParentUsesContractOnlyWithoutRegisteredTools()
+    public async Task GetOrCreateAutonomyHandleAsync_ParentUsesRestrictedStardewAndSkillTools()
     {
         var supervisor = new NpcRuntimeSupervisor();
         var pack = CreatePack("haley", "Haley");
@@ -424,20 +424,20 @@ public class NpcRuntimeSupervisorTests
                 GameToolFactory: (adapter, factStore) =>
                 [
                     new FakeTool("stardew_status"),
-                    new FakeTool("stardew_move"),
+                    new FakeTool("stardew_navigate_to_tile"),
                     new FakeTool("stardew_task_status"),
                     new FakeTool("stardew_speak")
                 ],
                 LocalExecutorGameToolFactory: (adapter, factStore) =>
                 [
-                    new FakeTool("stardew_move"),
+                    new FakeTool("stardew_navigate_to_tile"),
                     new FakeTool("stardew_task_status")
                 ],
                 Services: services,
                 ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
                 LocalExecutorToolFingerprint: NpcToolSurface.FromTools(
                 [
-                    new FakeTool("stardew_move"),
+                    new FakeTool("stardew_navigate_to_tile"),
                     new FakeTool("stardew_task_status")
                 ]).Fingerprint),
             CancellationToken.None);
@@ -447,18 +447,20 @@ public class NpcRuntimeSupervisorTests
             new Session { Id = $"{descriptor.SessionId}:autonomy:test" },
             CancellationToken.None);
 
-        Assert.AreEqual(1, autonomyClient.CompleteCalls);
-        Assert.AreEqual(0, autonomyClient.CompleteWithToolsCalls);
-        Assert.AreEqual(0, autonomyClient.LastToolNames.Count);
-        CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_status");
-        CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_speak");
+        Assert.AreEqual(0, autonomyClient.CompleteCalls);
+        Assert.AreEqual(1, autonomyClient.CompleteWithToolsCalls);
+        CollectionAssert.Contains(autonomyClient.LastToolNames.ToArray(), "skill_view");
+        CollectionAssert.Contains(autonomyClient.LastToolNames.ToArray(), "stardew_status");
+        CollectionAssert.Contains(autonomyClient.LastToolNames.ToArray(), "stardew_speak");
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "mcp_tool_a");
-        CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_move");
-        CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_task_status");
+        CollectionAssert.Contains(autonomyClient.LastToolNames.ToArray(), "stardew_navigate_to_tile");
+        CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "agent");
+        CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "todo");
+        CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "memory");
     }
 
     [TestMethod]
-    public async Task GetOrCreateAutonomyHandleAsync_LocalExecutorRunnerUsesDelegationClientAndRestrictedTools()
+    public async Task GetOrCreateAutonomyHandleAsync_JsonIntentStillUsesDelegationCompatibilityPath()
     {
         var supervisor = new NpcRuntimeSupervisor();
         var pack = CreatePack("haley", "Haley");
@@ -520,25 +522,102 @@ public class NpcRuntimeSupervisorTests
                 LocalExecutorToolFingerprint: NpcToolSurface.FromTools([skillTool, navigateTool]).Fingerprint),
             CancellationToken.None);
 
-        var result = await handle.Loop.RunOneTickAsync(
-            descriptor,
-            new GameObservation(
-                "haley",
-                "stardew-valley",
-                DateTime.UtcNow,
-                "Haley can move to Pierre.",
-                ["location=Town"]),
-            new GameEventBatch([], new GameEventCursor()),
+        var result = await handle.Loop.RunDelegatedIntentAsync(
+            handle.Instance,
+            "trace-delegated-json",
+            parentContract,
             CancellationToken.None);
 
         Assert.AreEqual("local_executor_completed:stardew_navigate_to_tile", result.DecisionResponse);
-        Assert.AreEqual(1, autonomyClient.CompleteCalls);
+        Assert.AreEqual(0, autonomyClient.CompleteCalls);
         Assert.AreEqual(0, autonomyClient.CompleteWithToolsCalls);
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_move");
         Assert.AreEqual(2, delegationClient.StructuredStreamCalls);
         CollectionAssert.Contains(delegationClient.LastToolNames.ToArray(), "stardew_navigate_to_tile");
         Assert.IsTrue(delegationClient.ToolNamesByCall.Any(names => names.Contains("skill_view")));
         Assert.AreEqual(1, navigateTool.ExecuteCalls);
+    }
+
+    [TestMethod]
+    public async Task GetOrCreateAutonomyHandleAsync_MoveToolResultStaysInParentTranscriptWithoutDelegation()
+    {
+        var supervisor = new NpcRuntimeSupervisor();
+        var pack = CreatePack("haley", "Haley");
+        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
+        var autonomyClient = new ToolCallingParentChatClient(
+            new ToolCall
+            {
+                Id = "call-skill",
+                Name = "skill_view",
+                Arguments = """{"name":"stardew-navigation","file_path":"references/poi/beach-shoreline.md"}"""
+            },
+            new ToolCall
+            {
+                Id = "call-nav",
+                Name = "stardew_navigate_to_tile",
+                Arguments = """{"locationName":"Beach","x":32,"y":34,"source":"map-skill:stardew.navigation.poi.beach-shoreline","reason":"meet player"}"""
+            });
+        var delegationClient = new DelegationToolCallChatClient(
+            new StreamEvent.ToolUseComplete(
+                "unexpected",
+                "stardew_navigate_to_tile",
+                Json("""{"locationName":"Town","x":1,"y":1,"source":"unexpected"}""")));
+        var skillTool = new RecordingTool(
+            "skill_view",
+            typeof(SkillViewParameters),
+            ToolResult.Ok("""{"success":true,"content":"`target(locationName=Beach,x=32,y=34,source=map-skill:stardew.navigation.poi.beach-shoreline)`"}"""));
+        var navigateTool = new RecordingTool(
+            "stardew_navigate_to_tile",
+            typeof(NavigateToTileParameters),
+            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-nav-1","status":"queued"}"""));
+        var services = new NpcRuntimeCompositionServices(
+            autonomyClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            DelegationChatClient: delegationClient);
+
+        var handle = await supervisor.GetOrCreateAutonomyHandleAsync(
+            descriptor,
+            pack,
+            _tempDir,
+            new NpcRuntimeAutonomyBindingRequest(
+                ChannelKey: "autonomy",
+                AdapterKey: "bridge-a",
+                IncludeMemory: true,
+                IncludeUser: true,
+                MaxToolIterations: 3,
+                AdapterFactory: () => new FakeGameAdapter(),
+                GameToolFactory: (adapter, factStore) => [skillTool, navigateTool],
+                LocalExecutorGameToolFactory: (adapter, factStore) => [new FakeTool("stardew_navigate_to_tile")],
+                LocalExecutorRuntimeToolFactory: services => [new FakeTool("skill_view")],
+                Services: services,
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
+                LocalExecutorToolFingerprint: NpcToolSurface.FromTools([new FakeTool("skill_view"), new FakeTool("stardew_navigate_to_tile")]).Fingerprint),
+            CancellationToken.None);
+
+        var result = await handle.Loop.RunOneTickAsync(
+            descriptor,
+            new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley wants to meet the player at the beach.",
+                ["location=Town"]),
+            new GameEventBatch([], new GameEventCursor()),
+            CancellationToken.None);
+
+        Assert.AreEqual("move submitted", result.DecisionResponse);
+        Assert.AreEqual(3, autonomyClient.CompleteWithToolsCalls);
+        Assert.IsTrue(autonomyClient.ToolNamesByCall.Any(names => names.Contains("skill_view")));
+        Assert.IsTrue(autonomyClient.ToolNamesByCall.Any(names => names.Contains("stardew_navigate_to_tile")));
+        Assert.AreEqual(0, delegationClient.StructuredStreamCalls);
+        Assert.AreEqual(1, skillTool.ExecuteCalls);
+        Assert.AreEqual(1, navigateTool.ExecuteCalls);
+        CollectionAssert.Contains(
+            autonomyClient.ToolResultNames.ToArray(),
+            "stardew_navigate_to_tile",
+            "The navigation tool result must be appended to the parent autonomy transcript.");
     }
 
     [TestMethod]
@@ -1392,6 +1471,57 @@ public class NpcRuntimeSupervisorTests
             await Task.Yield();
             yield return toolUses[Math.Min(StructuredStreamCalls - 1, toolUses.Length - 1)];
             yield return new StreamEvent.MessageComplete("stop");
+        }
+    }
+
+    private sealed class ToolCallingParentChatClient(params ToolCall[] toolCalls) : IChatClient
+    {
+        private int _completeWithToolsCalls;
+
+        public int CompleteWithToolsCalls => _completeWithToolsCalls;
+        public List<IReadOnlyList<string>> ToolNamesByCall { get; } = [];
+        public List<string> ToolResultNames { get; } = [];
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("unused");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            _completeWithToolsCalls++;
+            ToolNamesByCall.Add(tools.Select(tool => tool.Name).ToArray());
+            ToolResultNames.AddRange(messages
+                .Where(message => string.Equals(message.Role, "tool", StringComparison.OrdinalIgnoreCase))
+                .Select(message => message.ToolName ?? ""));
+
+            if (_completeWithToolsCalls <= toolCalls.Length)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls = [toolCalls[_completeWithToolsCalls - 1]]
+                });
+            }
+
+            return Task.FromResult(new ChatResponse { Content = "move submitted", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
         }
     }
 

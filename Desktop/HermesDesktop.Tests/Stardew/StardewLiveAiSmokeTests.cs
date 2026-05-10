@@ -65,7 +65,7 @@ public sealed class StardewLiveAiSmokeTests
                 Content =
                     "你是海莉，正在和玩家私聊。所有提示词和回答都用中文。" +
                     "如果玩家现在就请你做一件会改变游戏世界的事，而你决定答应，必须先调用 npc_delegate_action，把 action、reason 和 destinationText 交给本地执行层；再自然回复玩家。" +
-                    "npc_delegate_action 不是地点解析器。不要写坐标，不要写 destinationId；地点含义和坐标由本地 executor 通过 skill_view 读取 stardew-navigation 后决定。" +
+                    "npc_delegate_action 不是地点解析器。不要写坐标，不要写 destinationId；私聊委托入口后续会由 NPC 行动链路解析地点并执行。" +
                     "移动时 destinationText 只写目的地自然语言短语，例如“海边”；不要写 target、locationName、x、y、source。" +
                     "如果只是以后才兑现的约定，用 todo；如果是现在就执行，必须委托。"
             },
@@ -141,7 +141,7 @@ public sealed class StardewLiveAiSmokeTests
         var executorClient = new OpenAiClient(config.Executor, httpClient);
         var navigateTool = new CaptureTool(
             "stardew_navigate_to_tile",
-            "仅限本地执行层使用。移动到已经由 stardew-navigation skill 资料披露的具体星露谷地图 tile；不要暴露给父层自主决策 lane。",
+            "移动到已经由 stardew-navigation skill 资料披露的具体星露谷地图 tile；真实移动由宿主和 Stardew bridge 执行。",
             typeof(NavigateToTileParameters));
         var runner = new NpcLocalExecutorRunner(
             executorClient,

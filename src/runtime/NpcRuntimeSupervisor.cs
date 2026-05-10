@@ -251,6 +251,7 @@ public sealed class NpcRuntimeSupervisor
         var factStore = new NpcObservationFactStore();
         var localExecutorToolSurface = CreateLocalExecutorToolSurface(request, adapter, factStore);
         var localExecutorRunner = CreateLocalExecutorRunner(request.Services, localExecutorToolSurface);
+        var combinedToolSurface = CreateAutonomyParentToolSurface(request, adapter, factStore);
         var rebindKey = BuildRebindKey(
             request.ChannelKey,
             request.AdapterKey,
@@ -260,8 +261,8 @@ public sealed class NpcRuntimeSupervisor
             request.MaxToolIterations,
             request.ToolSurfaceSnapshotVersion,
             request.ToolSurface.Fingerprint,
+            combinedToolSurface.Fingerprint,
             localExecutorToolSurface.Fingerprint);
-        var combinedToolSurface = NpcToolSurface.FromTools([]);
         var agentHandle = CreateAgentHandle(
             instance,
             request.ChannelKey,
@@ -309,6 +310,18 @@ public sealed class NpcRuntimeSupervisor
         return NpcToolSurface.FromTools(tools);
     }
 
+    private static NpcToolSurface CreateAutonomyParentToolSurface(
+        NpcRuntimeAutonomyBindingRequest request,
+        IGameAdapter adapter,
+        NpcObservationFactStore factStore)
+    {
+        var tools = new List<ITool>();
+        tools.AddRange(request.GameToolFactory(adapter, factStore));
+        tools.Add(new SkillViewTool(request.Services.SkillManager));
+
+        return NpcToolSurface.FromTools(tools);
+    }
+
     private static INpcLocalExecutorRunner? CreateLocalExecutorRunner(
         NpcRuntimeCompositionServices services,
         NpcToolSurface localExecutorToolSurface)
@@ -349,7 +362,7 @@ public sealed class NpcRuntimeSupervisor
         var agent = new NpcAgentFactory().Create(
             services.ChatClient,
             context,
-            Enumerable.Empty<ITool>(),
+            registerCapabilities ? Enumerable.Empty<ITool>() : tools,
             services.LoggerFactory,
             maxToolIterations: maxToolIterations);
 

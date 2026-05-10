@@ -9,4 +9,4 @@
 ## 使用
 
 - 适合海莉想去明亮、漂亮、开阔的地方。
-- 本地 executor 读取到这个 target 后，调用 `stardew_navigate_to_tile` 执行；之后用 `stardew_task_status` 查看进度。
+- 父层 agent 读取到这个 target 后，调用 `stardew_navigate_to_tile` 执行；之后用 `stardew_task_status` 查看进度。

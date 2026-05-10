@@ -324,9 +324,9 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
 
     private static string BuildPrivateChatSystemPrompt(string displayName)
         =>
-            "如果玩家现在就请你做一件会改变游戏世界的事，而你决定答应，必须先调用 npc_delegate_action，把 action、reason 和 destinationText 交给本地执行层；再自然回复玩家。只口头答应不会让动作发生。\n" +
-            "npc_delegate_action 不是地点解析器。私聊父 agent 不要写坐标，不要写 destinationId；地点含义和坐标由本地 executor 通过 skill_view 读取 stardew-navigation 后决定。\n" +
-            "你不知道坐标、路线、当前地图或能不能到达时，也不要向玩家追问路线；只要你愿意答应这个立即行动，就把目的地自然语言短语作为 destinationText 委托给 npc_delegate_action，由本地执行层处理移动和失败恢复。\n" +
+            "如果玩家现在就请你做一件会改变游戏世界的事，而你决定答应，必须先调用 npc_delegate_action，把 action、reason 和 destinationText 交给 NPC 行动链路；再自然回复玩家。只口头答应不会让动作发生。\n" +
+            "npc_delegate_action 不是地点解析器。私聊父 agent 不要写坐标，不要写 destinationId；它只保留玩家的自然语言目的地，后续由 NPC 行动链路解析地点并执行。\n" +
+            "你不知道坐标、路线、当前地图或能不能到达时，也不要向玩家追问路线；只要你愿意答应这个立即行动，就把目的地自然语言短语作为 destinationText 委托给 npc_delegate_action，由行动链路处理移动和失败恢复。\n" +
             "玩家说“现在去某地”“一起去某地”“带我去某地”这类即时请求时，如果你接受，action 填 move，destinationText 只写目的地说法，例如“海边”；不要写 target、locationName、x、y、source 或 destinationId。\n" +
             $"你是星露谷里的 {displayName}，现在正在和玩家私聊。\n" +
             "玩家找你说话时，你先像角色本人一样自然回应，不要装成助手。\n" +

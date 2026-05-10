@@ -41,6 +41,7 @@ public static class StardewNpcToolFactory
             new StardewQuestStatusTool(adapter.Queries, descriptor),
             new StardewFarmStatusTool(adapter.Queries, descriptor),
             new StardewRecentActivityTool(recentActivityProvider, descriptor, logger),
+            new StardewNavigateToTileTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
             new StardewSpeakTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewOpenPrivateChatTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewTaskStatusTool(adapter.Commands)
@@ -138,7 +139,7 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
 
     public string Name => "npc_delegate_action";
 
-    public string Description => "仅限私聊父 agent 使用。玩家要求现在就做现实世界动作且你决定答应时，先调用本工具把行动意图委托给 NPC 本地执行层，再自然回复玩家。只口头答应不会发生动作。不要在这里写坐标、解析地点或使用 destinationId；不知道路线或坐标也要委托给本地执行层处理。";
+    public string Description => "仅限私聊父 agent 使用。玩家要求现在就做现实世界动作且你决定答应时，先调用本工具把行动意图委托给 NPC 行动链路，再自然回复玩家。只口头答应不会发生动作。不要在这里写坐标、解析地点或使用 destinationId；不知道路线或坐标也要委托处理。";
 
     public Type ParametersType => typeof(NpcDelegateActionToolParameters);
 
@@ -297,6 +298,7 @@ public sealed record StardewNpcToolSurfacePolicy(
         "stardew_quest_status",
         "stardew_farm_status",
         "stardew_recent_activity",
+        "stardew_navigate_to_tile",
         "stardew_speak",
         "stardew_open_private_chat",
         "stardew_task_status"
@@ -643,7 +645,7 @@ public sealed class StardewNavigateToTileTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_navigate_to_tile";
 
-    public string Description => "仅限本地执行层使用。移动到已经由 stardew-navigation skill 资料披露的具体星露谷地图 tile；不要暴露给父层自主决策 lane。";
+    public string Description => "移动到已经由 stardew-navigation skill 资料披露的具体星露谷地图 tile。父层 autonomy 负责解析 target 并调用本工具；真实移动、跨地图行走和失败结果由宿主与 Stardew bridge 执行并返回。";
 
     public Type ParametersType => typeof(StardewNavigateToTileToolParameters);
 

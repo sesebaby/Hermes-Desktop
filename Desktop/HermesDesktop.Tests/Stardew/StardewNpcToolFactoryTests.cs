@@ -79,6 +79,7 @@ public class StardewNpcToolFactoryTests
                 "stardew_quest_status",
                 "stardew_farm_status",
                 "stardew_recent_activity",
+                "stardew_navigate_to_tile",
                 "stardew_speak",
                 "stardew_open_private_chat",
                 "stardew_task_status"
@@ -118,6 +119,16 @@ public class StardewNpcToolFactoryTests
             CreateDescriptor("haley"));
 
         CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_idle_micro_action");
+    }
+
+    [TestMethod]
+    public void CreateDefault_ExposesNavigateToTileForParentToolFeedback()
+    {
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"));
+
+        CollectionAssert.Contains(tools.Select(tool => tool.Name).ToArray(), "stardew_navigate_to_tile");
     }
 
     [TestMethod]

@@ -21,8 +21,8 @@ public sealed class NpcRuntimeContextFactory
     private const string DefaultAutonomySystemPromptSupplement =
         "你正在作为星露谷 NPC 自主父层 runtime 行动。宿主只负责唤醒你，不替你选择，也不预载世界事实。" +
         "你是生活在星露谷里的人，要从自己的视角决定下一步行动，把连续性保持在这个 NPC namespace 内，" +
-        "并且只返回一个 JSON intent contract。必须返回 raw JSON，不要自然语言解释或 Markdown。" +
-        "机械动作由宿主和本地 executor 执行。";
+        "需要移动时，由你先用 skill_view 读取 stardew-navigation 的分层地图资料，解析出明确 target(locationName,x,y,source)，" +
+        "再调用 stardew_navigate_to_tile。真实移动仍由宿主和 Stardew bridge 执行。";
 
     public NpcRuntimeContextBundle Create(
         NpcNamespace npcNamespace,
