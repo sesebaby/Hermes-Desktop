@@ -1,0 +1,22 @@
+{
+  "active": false,
+  "current_phase": "complete",
+  "completed_at": "2026-05-06T15:55:00Z",
+  "lifecycle_outcome": "finished",
+  "run_outcome": "finish",
+  "task_description": "stardew npc local executor v1 hardening execution",
+  "context_snapshot_path": ".omx/context/stardew-npc-low-cost-wake-routing-20260506T153921Z.md",
+  "architect_verdict": "APPROVED",
+  "focused_tests": "84 passed",
+  "build": "dotnet build Desktop/HermesDesktop/HermesDesktop.csproj Debug x64 succeeded with 1 existing Stardew x64 warning",
+  "full_tests": "skipped per user request",
+  "verification": [
+    "dotnet test .\\Desktop\\HermesDesktop.Tests\\HermesDesktop.Tests.csproj -c Debug --filter \"FullyQualifiedName~HermesDesktop.Tests.Runtime.NpcAutonomyLoopTests\" => 28 passed",
+    "dotnet test .\\Desktop\\HermesDesktop.Tests\\HermesDesktop.Tests.csproj -c Debug --filter \"FullyQualifiedName~HermesDesktop.Tests.Runtime.NpcLocalExecutorRunnerTests\" => 10 passed",
+    "dotnet test .\\Desktop\\HermesDesktop.Tests\\HermesDesktop.Tests.csproj -c Debug --no-build --filter \"Name=Constructor_WithoutExplicitPollInterval_UsesLowCostIdleCadence|Name=Constructor_WithExplicitPollInterval_PreservesOverride|Name=CronTaskDue_WhenTaskBelongsToNpcSession_AppendsDurableIngressBeforeSubmitting|Name=RunOneIterationAsync_WhenPendingActionIsRunning_PausesWithoutStartingNewChat\" => 4 passed"
+  ],
+  "not_tested": [
+    "Full StardewNpcAutonomyBackgroundServiceTests class timed out; narrowed to directly affected methods per user constraint not to run broad tests.",
+    "Full test suite not run by user request."
+  ]
+}

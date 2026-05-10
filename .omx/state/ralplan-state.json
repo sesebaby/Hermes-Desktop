@@ -1,0 +1,98 @@
+{
+  "active": false,
+  "current_phase": "slice_real_route_probe_complete",
+  "run_outcome": "finish",
+  "architect_status": "complete",
+  "architect_verdict": "APPROVE_AFTER_EXECUTION_EVIDENCE",
+  "next_step": "start a new execution branch for the next selected slice",
+  "required_redlines": [
+    "expand prompt acceptance to skills/gaming/stardew-navigation/SKILL.md and skills/gaming/stardew-world/SKILL.md",
+    "remove accepted=true from route_probe example and keep route_probe status-surface only",
+    "pin target.source as audit-only: TargetSource fields only, not tool args or bridge MovePayload"
+  ],
+  "critic_gate": "passed",
+  "reason": "artifact redlines resolved and routeProbe implementation slice committed",
+  "missing_redlines": [],
+  "needs_user_or_planner_update": false,
+  "required_artifacts": [
+    ".omx/specs/stardew-npc-cross-map-navigation-minimal-probe.md",
+    ".omx/plans/产品需求文档-stardew-npc-跨地图导航最小探针.md",
+    ".omx/plans/测试规范-stardew-npc-跨地图导航最小探针.md"
+  ],
+  "resume_condition": "new user command selects the next slice",
+  "formal_verdict_on_current_artifacts": "APPROVE_AFTER_REDLINE_RESOLUTION",
+  "completed_at": "2026-05-07T01:15:00.000Z",
+  "formalized_on_current_artifacts": true,
+  "next_required_step": "none for this ralplan branch",
+  "resolved_redlines": [
+    "prompt/skill acceptance includes skills/gaming/stardew-navigation/SKILL.md and skills/gaming/stardew-world/SKILL.md",
+    "route_probe examples are status-surface only and no accepted=true remains",
+    "target.source audit-only boundary documented as TargetSource fields only, not tool args or bridge MovePayload"
+  ],
+  "remaining_redlines": [],
+  "blocking_evidence": [],
+  "iteration": 6,
+  "last_turn_at": "2026-05-07T01:02:00.692Z",
+  "task_description": "Stardew NPC 跨地图导航最小探针已完成到真实 routeProbe；下一小步另起分支。",
+  "artifact_redlines_resolved": [
+    "route_probe example no longer includes accepted=true in .omx/specs/stardew-npc-cross-map-navigation-minimal-probe.md",
+    "prompt/skill acceptance scope now names skills/gaming/stardew-navigation/SKILL.md and skills/gaming/stardew-world/SKILL.md",
+    "target.source audit-only boundary remains documented"
+  ],
+  "commit_evidence": [
+    "f605663c mechanical target host deterministic executor",
+    "acd64419 routeProbe on task status surface"
+  ],
+  "next_recommended_slice": "Implement real cross-map routeProbe: route + nextSegment/warp tile probe, no warpCharacter execution.",
+  "do_not_commit": [
+    ".omx/state/session.json",
+    ".tmp_research/"
+  ],
+  "note": "Plan/spec artifacts are locally ignored by .git/info/exclude; keep execution evidence in state/memory and commit tracked source/test changes only.",
+  "completed_commit": "8815ac97",
+  "completed_slice": "Bridge cross-location move now computes task_status routeProbe using WarpPathfindingCache.GetLocationRoute, currentLocation.getWarpPointTo, and existing schedule path probe; command still blocks cross_location_unsupported pending transition state machine.",
+  "verification": [
+    "dotnet test .\\Mods\\StardewHermesBridge.Tests\\Mods.StardewHermesBridge.Tests.csproj -c Debug --filter \"FullyQualifiedName~BridgeMoveCommandQueueRegressionTests|FullyQualifiedName~BridgeMovementPathProbeTests|FullyQualifiedName~BridgeMoveFailureMapperTests\" => 26 passed",
+    "dotnet test .\\Mods\\StardewHermesBridge.Tests\\Mods.StardewHermesBridge.Tests.csproj -c Debug => 89 passed",
+    "dotnet test .\\Desktop\\HermesDesktop.Tests\\HermesDesktop.Tests.csproj -c Debug --filter \"FullyQualifiedName~StardewCommandServiceTests|FullyQualifiedName~StardewNpcToolFactoryTests|FullyQualifiedName~NpcLocalExecutorRunnerTests|FullyQualifiedName~NpcLocalActionIntentTests\" => 64 passed"
+  ],
+  "reference_mods": [
+    "Market Day: PathfindToNextScheduleLocation/getWarpPointTo/getWarpPointTarget segment model",
+    "BotFramework: world route graph vs map tile path layering",
+    "CustomNPCFixes: NPC.populateRoutesFromLocationToLocationList route-cache sensitivity"
+  ],
+  "next_options": [
+    {
+      "option": "live_probe_validation",
+      "reason": "最快验证真实 SMAPI 环境中 Town->Beach 是否返回 route_found/warp_to_next_location，不改变执行状态机",
+      "recommended": true
+    },
+    {
+      "option": "first_segment_execution",
+      "reason": "让 route_found 后先走当前地图到 warp tile，但仍不自动过图，能小步推进执行能力",
+      "recommended": false
+    },
+    {
+      "option": "full_transition_state_machine",
+      "reason": "一次做完整跨地图移动，但会触及过图、落点、恢复、重试和日志状态机，风险最大",
+      "recommended": false
+    }
+  ],
+  "dirty_worktree_expected": [
+    ".omx/state/session.json",
+    ".omx runtime/context/wiki artifacts",
+    ".tmp_research/"
+  ],
+  "lifecycle_outcome": "finished",
+  "completed_commits": [
+    "7bf20112 Track OMX cross-map navigation planning artifacts",
+    "f605663c mechanical target host deterministic executor",
+    "acd64419 routeProbe on task status surface",
+    "8815ac97 real bridge cross-map routeProbe before execution"
+  ],
+  "latest_verification": [
+    "Mods.StardewHermesBridge.Tests full: 89 passed",
+    "Desktop Stardew/local executor focused tests: 64 passed"
+  ],
+  "stop_condition": "Ralplan branch completed: artifact redlines resolved, implementation slice committed and verified. Next slice should be a new execution branch."
+}

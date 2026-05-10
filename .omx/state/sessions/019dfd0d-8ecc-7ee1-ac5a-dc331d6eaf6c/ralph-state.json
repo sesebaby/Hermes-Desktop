@@ -1,0 +1,22 @@
+{
+  "active": false,
+  "mode": "ralph",
+  "current_phase": "complete",
+  "started_at": "2026-05-06T13:50:00Z",
+  "updated_at": "2026-05-06T13:48:42.515Z",
+  "session_id": "019dfd0d-8ecc-7ee1-ac5a-dc331d6eaf6c",
+  "turn_id": "019dfd8c-4602-7d43-9c1e-f22603484b3d",
+  "iteration": 1,
+  "max_iterations": 10,
+  "task_description": "Execute Stardew NPC local executor v1 hardening plan",
+  "context_snapshot_path": ".omx/context/stardew-npc-local-executor-v1-20260506T132054Z.md",
+  "plan_path": ".omx/plans/stardew-npc-local-executor-v1-consensus-plan.md",
+  "phase": "pre_tdd",
+  "owner_omx_session_id": "019dfd0d-8ecc-7ee1-ac5a-dc331d6eaf6c",
+  "run_outcome": "finish",
+  "completed_at": "2026-05-06T14:35:00Z",
+  "lifecycle_outcome": "finished",
+  "fresh_focused_tests": "dotnet test Desktop/HermesDesktop.Tests -c Debug --no-build filtered local executor suite => 84 passed",
+  "full_tests": "skipped per user request",
+  "architect_verdict": "APPROVED"
+}

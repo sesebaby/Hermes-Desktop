@@ -1,6 +1,2 @@
-# Runtime-only OMX artifacts.
-# Project documents under `.omx/` are intended to be versioned; the repo root
-# `.gitignore` explicitly re-includes `.omx/**` to override local excludes.
-logs/
-state/
-/*.json
+# `.omx/` contents are intentionally versioned in this repository.
+# Do not ignore files here.

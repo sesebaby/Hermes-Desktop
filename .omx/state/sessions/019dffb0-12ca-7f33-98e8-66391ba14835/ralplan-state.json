@@ -1,0 +1,17 @@
+{
+  "active": false,
+  "mode": "ralplan",
+  "current_phase": "complete",
+  "started_at": "2026-05-06T23:47:09.386Z",
+  "updated_at": "2026-05-06T23:47:09.386Z",
+  "session_id": "019dffb0-12ca-7f33-98e8-66391ba14835",
+  "turn_id": "019dffb0-12ee-7482-8931-daa096a1168e",
+  "run_outcome": "finish",
+  "lifecycle_outcome": "finished",
+  "completed_at": "2026-05-07T01:24:30Z",
+  "task_description": "陈旧 session 级 ralplan 状态收尾：全局 ralplan 已完成，跨地图导航完成计划已提交。",
+  "reason": "Global ralplan is inactive/finished; this session-scoped state was stale and could keep stop hooks active.",
+  "completed_artifact": ".omx/plans/stardew-npc-cross-map-navigation-completion-plan.md",
+  "completed_commit": "7c2d4f17",
+  "stop_condition": "Planning handoff complete; next work starts from Phase 0/Phase 1 as a new execution branch."
+}

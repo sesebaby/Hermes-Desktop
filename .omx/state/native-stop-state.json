@@ -1,0 +1,20 @@
+{
+  "sessions": {
+    "019dfd0d-8ecc-7ee1-ac5a-dc331d6eaf6c": {
+      "last_signature": "skill-stop|019dfd0d-8ecc-7ee1-ac5a-dc331d6eaf6c|no-thread|019dfded-bafc-7740-b86f-cb8121c68654|C:\\Users\\Administrator\\.codex\\sessions\\2026\\05\\06\\rollout-2026-05-06T19-30-17-019dfd0d-8ecc-7ee1-ac5a-dc331d6eaf6c.jsonl|'ralplan' ' omx state ralplan state json' 'active false current_phase complete' 'skill active' complete ' omx plans stardew npc low cost wake routing implementation plan md' ralplan ralph|skill_ralplan_planning_continue_artifact",
+      "updated_at": "2026-05-06T15:54:51.047Z"
+    },
+    "019dffb0-12ca-7f33-98e8-66391ba14835": {
+      "last_signature": "skill-stop|019dffb0-12ca-7f33-98e8-66391ba14835|no-thread|019dffb0-12ee-7482-8931-daa096a1168e|C:\\Users\\Administrator\\.codex\\sessions\\2026\\05\\07\\rollout-2026-05-07T07-47-02-019dffb0-12ca-7f33-98e8-66391ba14835.jsonl|'iterate' 'ralplan' ' omx specs stardew npc cross map navigation minimal probe md' ' omx plans stardew npc md' ' omx plans stardew npc md' ' omx specs stardew npc cross map navigation minimal probe md 352' ' accepted true' prompt 'skills gaming stardew navigation skill md' 'skills gaming stardew world skill md' planning review|skill_ralplan_planning_continue_artifact",
+      "updated_at": "2026-05-07T00:14:58.080Z"
+    },
+    "019dffc0-ff87-7180-9009-ba1d24114bbb": {
+      "last_signature": "skill-stop|019dffc0-ff87-7180-9009-ba1d24114bbb|no-thread|019dffc0-ffa4-7912-91a3-6d3bf2a84b93|C:\\Users\\Administrator\\.codex\\sessions\\2026\\05\\07\\rollout-2026-05-07T08-05-31-019dffc0-ff87-7180-9009-ba1d24114bbb.jsonl|iterate ' omx plans ' stardew npc md d githubpro hermes desktop omx plans stardew npc md 78 'target locationname x y source' 'source' 'stardew_navigate_to_tile' bridge payload 'npclocalexecutorresult targetsource' 'npcruntimelogrecord targetsource' spec d githubpro hermes desktop omx specs stardew npc cross map navigation minimal probe md 237 prd d githubpro hermes desktop omx plans stardew npc md 107 prompt ownership prompt supplement builder 1 npcautonomyloop cs d githubpro hermes desktop src runtime npcautonomyloop cs 277 parent decision json 2 skills gaming stardew navigation skill md d githubpro hermes desktop skills gaming stardew navigation skill md 12 skills gaming stardew world skill md d githubpro hermes desktop skills gaming stardew world skill md 41 3 stardewnpcautonomypromptsupplementbuilder cs d githubpro hermes desktop src games stardew stardewnpcautonomypromptsupplementbuilder cs 224 4 prompt repo skill fixture critic 'approve'|skill_ralplan_planning_continue_artifact",
+      "updated_at": "2026-05-07T00:14:39.235Z"
+    },
+    "019dff33-adbb-7983-8e67-ee13ae07893b": {
+      "last_signature": "skill-stop|019dff33-adbb-7983-8e67-ee13ae07893b|no-thread|019e0004-7920-7db1-869a-0975fdff5c7e|C:\\Users\\Administrator\\.codex\\sessions\\2026\\05\\07\\rollout-2026-05-07T05-31-10-019dff33-adbb-7983-8e67-ee13ae07893b.jsonl|'7c2d4f17 plan the full stardew cross map navigation handoff' stardew npc md d githubpro hermes desktop omx plans stardew npc md hermes smapi 'town beach' route probe stardew npc cross map navigation completion plan md d githubpro hermes desktop omx plans stardew npc cross map navigation completion plan md phase 0 phase 6 'git diff cached check' 'dotnet test' ' omx state session json' ' omx archives ' ' omx context ' ' tmp_research ' 'phase 0' smapi 'town beach' 'routeprobe route_found' 'phase 1'|skill_ralplan_architect_iterate_revising_plan_continue_artifact",
+      "updated_at": "2026-05-07T01:24:26.995Z"
+    }
+  }
+}

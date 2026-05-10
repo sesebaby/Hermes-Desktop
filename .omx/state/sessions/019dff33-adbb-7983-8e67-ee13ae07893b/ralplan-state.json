@@ -1,0 +1,28 @@
+{
+  "active": false,
+  "mode": "ralplan",
+  "current_phase": "complete",
+  "started_at": "2026-05-06T23:22:45.527Z",
+  "updated_at": "2026-05-06T23:22:45.527Z",
+  "session_id": "019dff33-adbb-7983-8e67-ee13ae07893b",
+  "turn_id": "019dff99-d4f4-7613-9bb9-cec1a57da56a",
+  "task_description": "为 Stardew NPC 跨地图导航最小探针编写执行计划并小步实现提交",
+  "user_approved_execution": true,
+  "must_not_ask_for_confirmation": true,
+  "must_commit_incrementally": true,
+  "iteration": 1,
+  "architect_verdict": "ITERATE",
+  "required_changes": [
+    "move contract must be destinationId-or-target closed loop",
+    "mechanical target path must be host-deterministic or enforce exact parent-intent argument matching",
+    "first slice should not claim cross-map probe until route probe included"
+  ],
+  "run_outcome": "finish",
+  "lifecycle_outcome": "finished",
+  "completed_at": "2026-05-07T01:23:42Z",
+  "reason": "Stale session-scoped ralplan state resolved after global ralplan was already finished and handoff plan commit 7c2d4f17 was created.",
+  "completed_artifact": ".omx/plans/stardew-npc-cross-map-navigation-completion-plan.md",
+  "completed_commit": "7c2d4f17",
+  "followup_commit_observed": "ad4347d3",
+  "stop_condition": "Planning handoff is complete; next work should start from the completion plan Phase 0/Phase 1 as a new execution branch."
+}

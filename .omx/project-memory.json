@@ -1,0 +1,72 @@
+{
+  "directives": [
+    {
+      "directive": "用户偏好：当用户要求在方案选择中给判断时，直接给推荐方案并说明理由，不只罗列选项。默认中文、简洁、白话。",
+      "priority": "normal",
+      "timestamp": "2026-05-06T15:04:18.317Z"
+    },
+    {
+      "directive": "在本仓库讨论 Stardew/NPC 架构、计划或实现前，先阅读/对齐 `openspec/project.md`，尤其遵守：宿主只提供事实、事件、工具、确认、执行结果、必要许可/安全门控/状态编排，不替 NPC 决策，不把观察事实自动转换成行动。",
+      "priority": "high",
+      "timestamp": "2026-05-06T15:12:22.152Z"
+    },
+    {
+      "directive": "用户要求方案选择必须给出选项、各自理由和明确推荐；不要只问开放问题或只罗列选项。默认中文、简洁、白话。",
+      "priority": "high",
+      "context": "User explicitly corrected deep-interview question format on 2026-05-07.",
+      "timestamp": "2026-05-06T21:39:54.521Z"
+    },
+    {
+      "directive": "用户要求以后说话必须全中文；代码标识符、文件路径、命令、API 名称可保留原文。",
+      "priority": "high",
+      "context": "User explicitly corrected language preference on 2026-05-07.",
+      "timestamp": "2026-05-06T21:43:01.864Z"
+    },
+    {
+      "directive": "星露谷地图技能必须采用细粒度分层披露，避免一次性注入过多地图/坐标导致模型上下文爆掉。地图知识应按总览、区域、地图、地点、入口出口、坐标候选、限制/失败恢复等层级逐步加载。",
+      "priority": "high",
+      "context": "用户在跨地图移动深访中明确要求：地图 skill 一定要分层披露，而且要分得很详细。",
+      "timestamp": "2026-05-06T22:03:34.262Z"
+    },
+    {
+      "directive": "星露谷跨地图移动设计中，本地小模型能力边界必须很薄：不主动加载地图技能，不深度理解地图；主模型负责选目标名称/地图/坐标/理由，宿主从分层地图技能或索引裁剪最小导航包，本地小模型只在导航包内调用观察、移动、状态查询或失败升级。",
+      "priority": "high",
+      "context": "用户在跨地图移动深访中指出本地小模型思考能力弱，主模型已给地点名称和坐标后，不应再让小模型加载技能。",
+      "timestamp": "2026-05-06T22:10:11.181Z"
+    },
+    {
+      "directive": "涉及外部平台、游戏接口、框架、SDK 或不确定运行时能力的方案设计前，必须先查官方文档和本仓库已有参考实现；不能只凭推断给可行性结论。结论要区分“文档已确认”“源码已验证”“需要原型验证”。",
+      "priority": "high",
+      "context": "用户在星露谷跨地图移动讨论中要求把“先查文档”写入记忆，作为重要原则。",
+      "timestamp": "2026-05-06T22:16:43.432Z"
+    },
+    {
+      "directive": "涉及 SMAPI、Stardew Valley 内部 API、OpenAI/API 或任何外部 SDK/依赖的方案判断，必须先查官方文档、迁移文档、源码或可信参考实现并标注证据；不得仅凭记忆或旧文档下结论。",
+      "priority": "high",
+      "timestamp": "2026-05-06T22:34:31.162Z"
+    },
+    {
+      "directive": "涉及 Stardew NPC 移动、日程、寻路、跨地图导航的任何方案/spec/实现计划，必须显式写明参考 mod 名称、本地路径、借鉴点和不照搬的边界；优先列 `Market Day`、`BotFramework`、`CustomNPCFixes`，必要时补 `NPCMaker-CS` 作为 schedule 数据格式参考。",
+      "priority": "high",
+      "timestamp": "2026-05-06T23:02:56.893Z"
+    },
+    {
+      "directive": "涉及 SMAPI / Stardew API / 外部 SDK 的实现前，必须先查官方或一手文档并把约束写入方案；不得只凭旧计划或记忆改代码。",
+      "priority": "high",
+      "timestamp": "2026-05-07T00:53:25.796Z"
+    },
+    {
+      "directive": "AGENTS.md 是本项目基本情况和操作约束的权威入口；处理本仓库任务前需要先阅读并遵守适用层级的 AGENTS.md，尤其修改 Desktop/HermesDesktop/** 前还要阅读子目录 AGENTS.md 及其要求的 .github/instructions/*.instructions.md。",
+      "priority": "high",
+      "context": "用户于 2026-05-10 明确要求写入项目记忆：agent.md 是项目基本情况，需要先阅读。",
+      "timestamp": "2026-05-10T17:47:38.474+08:00"
+    }
+  ],
+  "notes": [
+    {
+      "category": "architecture",
+      "content": "Stardew NPC navigation reference mods downloaded under `参考项目/Mod参考`: `Stardew-GitHub-ncarigon-CeruleanStardewMods` (Market Day; patches `findPathForNPCSchedules`, `parseMasterSchedule`, reimplements `PathfindToNextScheduleLocation` and `GetLocationRoute`), `Stardew-GitHub-andyruwruw-BotFramework` (world/location graph route over warps + target/action framework), `Stardew-GitHub-spacechase0-CustomNPCFixes` (route/schedule refresh via `populateRoutesFromLocationToLocationList`, `getSchedule`, `checkSchedule`), `Stardew-GitHub-TamKungZ-NPCMaker-CS` (schedule JSON generator; useful for data format only).",
+      "timestamp": "2026-05-06T22:46:34.519Z"
+    }
+  ]
+}

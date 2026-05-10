@@ -1,0 +1,6 @@
+{
+  "last_turn_at": "2026-05-07T01:27:11.334Z",
+  "turn_count": 93,
+  "last_progress_at": "2026-05-07T01:27:11.334Z",
+  "last_agent_output": "已处理停止钩子：全局和所有 session 级 `ralplan` 状态现在都是 `active=false / complete / finished`。\n\n当前 Git 状态干净，最新提交是 `a"
+}

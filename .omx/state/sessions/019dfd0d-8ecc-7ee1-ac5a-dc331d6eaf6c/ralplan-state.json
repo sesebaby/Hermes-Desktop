@@ -1,0 +1,25 @@
+{
+  "active": false,
+  "mode": "ralplan",
+  "current_phase": "complete",
+  "started_at": "2026-05-06T15:35:09.447Z",
+  "updated_at": "2026-05-06T15:35:09.447Z",
+  "session_id": "019dfd0d-8ecc-7ee1-ac5a-dc331d6eaf6c",
+  "turn_id": "019dfded-bafc-7740-b86f-cb8121c68654",
+  "completed_at": "2026-05-06T16:02:30Z",
+  "lifecycle_outcome": "finished",
+  "run_outcome": "finish",
+  "artifact": ".omx/plans/stardew-npc-low-cost-wake-routing-implementation-plan.md",
+  "execution_handoff": "ralph executed automatically per user approval",
+  "global_ralplan_state": ".omx/state/ralplan-state.json",
+  "verification": [
+    "NpcAutonomyLoopTests 28 passed",
+    "NpcLocalExecutorRunnerTests 10 passed",
+    "Stardew directly related methods 4 passed",
+    "git diff --check no whitespace errors"
+  ],
+  "not_tested": [
+    "Full test suite skipped per user request",
+    "Full StardewNpcAutonomyBackgroundServiceTests class timed out; narrowed to directly affected methods"
+  ]
+}
