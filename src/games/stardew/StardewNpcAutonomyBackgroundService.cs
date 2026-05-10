@@ -1130,10 +1130,26 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
 
         var intentText = ReadPayloadString(payload, "intentText");
         var destinationText = ReadPayloadString(payload, "destinationText");
+        var conversationId = ReadPayloadString(payload, "conversationId");
         if (string.Equals(action, "move", StringComparison.OrdinalIgnoreCase) &&
             string.IsNullOrWhiteSpace(destinationText))
         {
             destinationText = intentText;
+        }
+
+        if (string.Equals(action, "move", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(conversationId) &&
+            !HasPrivateChatReplyClosed(dispatch.SharedEventBatch, binding.Descriptor, conversationId))
+        {
+            await WriteIngressDiagnosticAsync(
+                binding,
+                tracker,
+                workItem,
+                "deferred",
+                "waiting_private_chat_reply_closed",
+                ct);
+            await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
+            return true;
         }
 
         var intentJson = JsonSerializer.Serialize(new Dictionary<string, object?>
@@ -1229,6 +1245,30 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
            jsonValue.TryGetValue<string>(out var text)
             ? text
             : null;
+
+    private static bool HasPrivateChatReplyClosed(
+        GameEventBatch batch,
+        NpcRuntimeDescriptor descriptor,
+        string conversationId)
+    {
+        foreach (var record in batch.Records)
+        {
+            if (!string.Equals(record.EventType, "private_chat_reply_closed", StringComparison.OrdinalIgnoreCase) ||
+                !IsRelevantToRuntime(descriptor, record))
+            {
+                continue;
+            }
+
+            if (record.Payload is null)
+                continue;
+
+            var closedConversationId = ReadPayloadString(record.Payload, "conversationId");
+            if (string.Equals(closedConversationId, conversationId.Trim(), StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
 
     private static string MergeReasonAndIntentText(string reason, string? intentText)
     {

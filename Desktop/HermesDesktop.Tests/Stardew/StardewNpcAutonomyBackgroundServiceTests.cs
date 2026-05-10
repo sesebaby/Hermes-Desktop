@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Hermes.Agent.Core;
 using Hermes.Agent.Game;
 using Hermes.Agent.Games.Stardew;
@@ -1145,6 +1146,82 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         Assert.IsFalse(
             delegationClient.UserMessages.Any(message => message.Contains("player request: go to the beach now", StringComparison.Ordinal)),
             "Move ingress must not hide the destination phrase inside reason; the delegated move path must receive destinationText as the explicit place phrase.");
+        Assert.AreEqual(0, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WithDelegatedMoveBeforePrivateChatReplyClosed_DefersIngressWithoutStartingExecutor()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var delegationClient = new CapturingStreamingChatClient(
+            new StreamEvent.ToolUseComplete(
+                "call-skill",
+                "skill_view",
+                Json("""{"name":"stardew-navigation","file_path":"references/poi/beach-shoreline.md"}""")),
+            new StreamEvent.ToolUseComplete(
+                "call-nav",
+                "stardew_navigate_to_tile",
+                Json("""{"locationName":"Beach","x":32,"y":34,"source":"map-skill:stardew.navigation.poi.beach-shoreline","reason":"meet the player at the beach now"}""")));
+        var commands = new FakeCommandService();
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley has a private-chat delegated action.",
+                ["location=Town"])),
+            new ScriptedEventSource(
+                new GameEventBatch([], new GameEventCursor(null, 0)),
+                new GameEventBatch(
+                    [
+                        new GameEventRecord(
+                            "evt-reply-closed-1",
+                            "private_chat_reply_closed",
+                            "Haley",
+                            DateTime.UtcNow,
+                            "Haley private chat reply closed.",
+                            Payload: new JsonObject { ["conversationId"] = "conversation-beach" },
+                            Sequence: 1)
+                    ],
+                    new GameEventCursor("evt-reply-closed-1", 1))));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.EnqueueIngressWorkItemAsync(
+            new NpcRuntimeIngressWorkItemSnapshot(
+                "ingress-delegate-wait-reply",
+                "npc_delegated_action",
+                "queued",
+                DateTime.UtcNow,
+                "idem-delegate-wait-reply",
+                "trace-delegate-wait-reply",
+                new()
+                {
+                    ["action"] = "move",
+                    ["reason"] = "meet the player at the beach now",
+                    ["destinationText"] = "海边",
+                    ["conversationId"] = "conversation-beach"
+                }),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            new CountingChatClient("unused"),
+            supervisor,
+            enabledNpcIds: ["haley"],
+            delegationChatClient: delegationClient);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, delegationClient.StructuredStreamCalls);
+        Assert.AreEqual(0, commands.Submitted.Count);
+        Assert.AreEqual(1, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, delegationClient.StructuredStreamCalls);
         Assert.AreEqual(0, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
     }
 
