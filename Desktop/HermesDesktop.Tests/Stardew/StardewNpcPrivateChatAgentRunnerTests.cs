@@ -130,7 +130,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
 
         Assert.AreEqual("我记着，明天见。", reply.Text);
         Assert.IsTrue(client.SawChineseContinuityGuidance, "Private chat prompt must use Chinese plain-language continuity guidance.");
-        Assert.IsTrue(client.SawImmediateDelegationGuidance, "Private chat prompt must explain accepted immediate world actions require npc_delegate_action.");
+        Assert.IsTrue(client.SawImmediateDelegationGuidance, "Private chat prompt must explain accepted immediate world actions require a skill-grounded npc_delegate_action target.");
         Assert.IsTrue(client.SawDirectPlayerReplyGuidance, "Private chat prompt must force a direct reply to the player, not inner monologue.");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
         Assert.IsTrue(runtimeSupervisor.TryGetTaskView(haleySnapshot.SessionId, out var longTermTaskView));
@@ -163,7 +163,13 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         Assert.IsFalse(string.IsNullOrWhiteSpace(ingress.WorkItemId));
         Assert.AreEqual("move", ingress.Payload?["action"]?.GetValue<string>());
         Assert.AreEqual("meet the player at the beach now", ingress.Payload?["reason"]?.GetValue<string>());
-        Assert.AreEqual("beach", ingress.Payload?["destinationText"]?.GetValue<string>());
+        var target = ingress.Payload?["target"]?.AsObject();
+        Assert.IsNotNull(target, "Private-chat move delegation must carry the parent-resolved mechanical target.");
+        Assert.AreEqual("Beach", target["locationName"]?.GetValue<string>());
+        Assert.AreEqual(32, target["x"]?.GetValue<int>());
+        Assert.AreEqual(34, target["y"]?.GetValue<int>());
+        Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", target["source"]?.GetValue<string>());
+        Assert.IsNull(ingress.Payload?["destinationText"]);
         Assert.IsNull(ingress.Payload?["intentText"]);
         Assert.AreEqual("conversation-beach", ingress.Payload?["conversationId"]?.GetValue<string>());
     }
@@ -213,7 +219,13 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         var ingress = haleySnapshot.Controller.IngressWorkItems.Single();
         Assert.AreEqual("npc_delegated_action", ingress.WorkType);
         Assert.AreEqual("move", ingress.Payload?["action"]?.GetValue<string>());
-        Assert.AreEqual("海边", ingress.Payload?["destinationText"]?.GetValue<string>());
+        var target = ingress.Payload?["target"]?.AsObject();
+        Assert.IsNotNull(target, "Corrective retry must delegate the resolved mechanical target, not natural-language destinationText.");
+        Assert.AreEqual("Beach", target["locationName"]?.GetValue<string>());
+        Assert.AreEqual(32, target["x"]?.GetValue<int>());
+        Assert.AreEqual(34, target["y"]?.GetValue<int>());
+        Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", target["source"]?.GetValue<string>());
+        Assert.IsNull(ingress.Payload?["destinationText"]);
         Assert.IsNull(ingress.Payload?["intentText"]);
     }
 
@@ -522,7 +534,8 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                 string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase) &&
                 message.Content.Contains("npc_delegate_action", StringComparison.Ordinal) &&
                 message.Content.Contains("只口头答应不会让动作发生", StringComparison.Ordinal) &&
-                message.Content.Contains("不要写 destinationId", StringComparison.Ordinal));
+                message.Content.Contains("skill_view", StringComparison.Ordinal) &&
+                message.Content.Contains("target(locationName,x,y,source)", StringComparison.Ordinal));
             SawDirectPlayerReplyGuidance |= snapshot.Any(message =>
                 string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase) &&
                 message.Content.Contains("最终回复会显示在玩家手机私聊里", StringComparison.Ordinal) &&
@@ -606,7 +619,12 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                             {
                               "action": "move",
                               "reason": "meet the player at the beach now",
-                              "destinationText": "beach",
+                              "target": {
+                                "locationName": "Beach",
+                                "x": 32,
+                                "y": 34,
+                                "source": "map-skill:stardew.navigation.poi.beach-shoreline"
+                              },
                               "conversationId": "conversation-beach"
                             }
                             """
@@ -674,7 +692,12 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                             {
                               "action": "move",
                               "reason": "现在陪玩家去海边",
-                              "destinationText": "海边",
+                              "target": {
+                                "locationName": "Beach",
+                                "x": 32,
+                                "y": 34,
+                                "source": "map-skill:stardew.navigation.poi.beach-shoreline"
+                              },
                               "conversationId": "conversation-corrective"
                             }
                             """

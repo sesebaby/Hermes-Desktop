@@ -1129,15 +1129,10 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         }
 
         var intentText = ReadPayloadString(payload, "intentText");
-        var destinationText = ReadPayloadString(payload, "destinationText");
         var conversationId = ReadPayloadString(payload, "conversationId");
-        if (string.Equals(action, "move", StringComparison.OrdinalIgnoreCase) &&
-            string.IsNullOrWhiteSpace(destinationText))
-        {
-            destinationText = intentText;
-        }
+        var isMove = string.Equals(action, "move", StringComparison.OrdinalIgnoreCase);
 
-        if (string.Equals(action, "move", StringComparison.OrdinalIgnoreCase) &&
+        if (isMove &&
             !string.IsNullOrWhiteSpace(conversationId) &&
             !HasPrivateChatReplyClosed(dispatch.SharedEventBatch, binding.Descriptor, conversationId))
         {
@@ -1152,15 +1147,65 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             return true;
         }
 
+        if (isMove)
+        {
+            if (!TryReadMoveTarget(payload, out var target, out var targetError))
+            {
+                await WriteIngressDiagnosticAsync(
+                    binding,
+                    tracker,
+                    workItem,
+                    "malformed",
+                    targetError,
+                    ct);
+                await tracker.Driver.RemoveIngressWorkItemAsync(workItem.WorkItemId, ct);
+                await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
+                return true;
+            }
+
+            var moveTarget = target!;
+            var runtimeActions = new StardewRuntimeActionController(tracker.Driver, _worldCoordination, null, null);
+            var movePayload = new JsonObject
+            {
+                ["targetSource"] = moveTarget.Source
+            };
+            if (moveTarget.FacingDirection is not null)
+                movePayload["facingDirection"] = moveTarget.FacingDirection.Value;
+
+            var moveAction = new GameAction(
+                binding.Descriptor.NpcId,
+                binding.Descriptor.GameId,
+                GameActionType.Move,
+                string.IsNullOrWhiteSpace(workItem.TraceId) ? $"trace_ingress_{Guid.NewGuid():N}" : workItem.TraceId!,
+                string.IsNullOrWhiteSpace(workItem.IdempotencyKey) ? $"idem_ingress_{Guid.NewGuid():N}" : workItem.IdempotencyKey!,
+                new GameActionTarget(
+                    "tile",
+                    moveTarget.LocationName,
+                    new GameTile(moveTarget.X, moveTarget.Y)),
+                reason.Trim(),
+                movePayload,
+                BodyBinding: binding.Descriptor.EffectiveBodyBinding);
+
+            var preparedAction = await runtimeActions.TryBeginAsync(moveAction, ct);
+            if (preparedAction?.BlockedResult is not null)
+            {
+                await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
+                return true;
+            }
+
+            var result = await hostAdapter.Commands.SubmitAsync(moveAction, ct);
+            await runtimeActions.RecordSubmitResultAsync(preparedAction, result, ct);
+            if (result.Accepted || !result.Retryable)
+                await tracker.Driver.RemoveIngressWorkItemAsync(workItem.WorkItemId, ct);
+
+            await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
+            return true;
+        }
+
         var intentJson = JsonSerializer.Serialize(new Dictionary<string, object?>
         {
             ["action"] = action.Trim(),
-            ["reason"] = string.Equals(action, "move", StringComparison.OrdinalIgnoreCase)
-                ? reason.Trim()
-                : MergeReasonAndIntentText(reason.Trim(), intentText),
-            ["destinationText"] = string.Equals(action, "move", StringComparison.OrdinalIgnoreCase)
-                ? destinationText?.Trim()
-                : null
+            ["reason"] = MergeReasonAndIntentText(reason.Trim(), intentText)
         }.Where(pair => pair.Value is not null).ToDictionary(pair => pair.Key, pair => pair.Value));
 
         var handle = await _runtimeSupervisor.GetOrCreateAutonomyHandleAsync(
@@ -1246,6 +1291,63 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             ? text
             : null;
 
+    private static bool TryReadMoveTarget(JsonObject payload, out DelegatedMoveTarget? target, out string error)
+    {
+        target = default;
+        error = "";
+        if (!payload.TryGetPropertyValue("target", out var targetNode) ||
+            targetNode is not JsonObject targetObject)
+        {
+            error = "move_target_required";
+            return false;
+        }
+
+        var locationName = ReadPayloadString(targetObject, "locationName");
+        var source = ReadPayloadString(targetObject, "source");
+        if (string.IsNullOrWhiteSpace(locationName))
+        {
+            error = "target_location_required";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            error = "target_source_required";
+            return false;
+        }
+
+        if (!TryReadPayloadInt(targetObject, "x", out var x))
+        {
+            error = "target_x_required";
+            return false;
+        }
+
+        if (!TryReadPayloadInt(targetObject, "y", out var y))
+        {
+            error = "target_y_required";
+            return false;
+        }
+
+        var facingDirection = TryReadPayloadInt(targetObject, "facingDirection", out var facing)
+            ? facing
+            : (int?)null;
+        target = new DelegatedMoveTarget(
+            locationName.Trim(),
+            x,
+            y,
+            source.Trim(),
+            facingDirection);
+        return true;
+    }
+
+    private static bool TryReadPayloadInt(JsonObject payload, string propertyName, out int value)
+    {
+        value = default;
+        return payload.TryGetPropertyValue(propertyName, out var node) &&
+               node is JsonValue jsonValue &&
+               jsonValue.TryGetValue<int>(out value);
+    }
+
     private static bool HasPrivateChatReplyClosed(
         GameEventBatch batch,
         NpcRuntimeDescriptor descriptor,
@@ -1293,6 +1395,13 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
 
         return clone;
     }
+
+    private sealed record DelegatedMoveTarget(
+        string LocationName,
+        int X,
+        int Y,
+        string Source,
+        int? FacingDirection);
 
     private static GameEventBatch FilterBatchForRuntime(
         NpcRuntimeDescriptor descriptor,

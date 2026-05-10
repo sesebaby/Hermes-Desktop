@@ -139,7 +139,7 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
 
     public string Name => "npc_delegate_action";
 
-    public string Description => "仅限私聊父 agent 使用。玩家要求现在就做现实世界动作且你决定答应时，先调用本工具把行动意图委托给 NPC 行动链路，再自然回复玩家。只口头答应不会发生动作。不要在这里写坐标、解析地点或使用 destinationId；不知道路线或坐标也要委托处理。";
+    public string Description => "仅限私聊父 agent 使用。玩家要求现在就做现实世界动作且你决定答应时，先调用本工具把行动意图委托给宿主执行，再自然回复玩家。只口头答应不会发生动作。action=move 时必须先用 skill_view 读取 stardew-navigation 分层资料，并把已加载 POI 给出的 target(locationName,x,y,source) 原样传入 target；不要使用 destinationId 或编造坐标。";
 
     public Type ParametersType => typeof(NpcDelegateActionToolParameters);
 
@@ -162,12 +162,21 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
                 intentText = new
                 {
                     type = "string",
-                    description = "可选兼容字段。玩家原话或一句自然语言意图；移动请求优先使用 destinationText。"
+                    description = "可选兼容字段。玩家原话或一句自然语言意图；action=move 的执行目标以 target 为准。"
                 },
-                destinationText = new
+                target = new
                 {
-                    type = "string",
-                    description = "action=move 必填。只写目的地的自然语言说法，例如“海边”或“皮埃尔商店”；不要写坐标、locationName、target 或 destinationId。"
+                    type = "object",
+                    description = "action=move 必填。必须来自已加载 stardew-navigation POI/reference 的机械目标；不要编造。",
+                    properties = new
+                    {
+                        locationName = new { type = "string", description = "已加载 POI/reference 给出的地图名。" },
+                        x = new { type = "integer", description = "已加载 POI/reference 给出的 tile X。" },
+                        y = new { type = "integer", description = "已加载 POI/reference 给出的 tile Y。" },
+                        source = new { type = "string", description = "披露该坐标的已加载 skill reference。" },
+                        facingDirection = new { type = "integer", description = "可选朝向。" }
+                    },
+                    required = new[] { "locationName", "x", "y", "source" }
                 },
                 conversationId = new
                 {
@@ -194,10 +203,9 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
         var workItemId = $"ingress_delegate_{_descriptor.NpcId}_{Guid.NewGuid():N}";
         var action = p.Action.Trim();
         if (string.Equals(action, "move", StringComparison.OrdinalIgnoreCase) &&
-            string.IsNullOrWhiteSpace(p.DestinationText) &&
-            string.IsNullOrWhiteSpace(p.IntentText))
+            !TryValidateMoveTarget(p.Target, out var targetError))
         {
-            return ToolResult.Fail("destinationText is required for move");
+            return ToolResult.Fail(targetError);
         }
 
         var conversationId = string.IsNullOrWhiteSpace(p.ConversationId)
@@ -208,8 +216,18 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
             ["action"] = action,
             ["reason"] = p.Reason.Trim()
         };
-        if (!string.IsNullOrWhiteSpace(p.DestinationText))
-            payload["destinationText"] = p.DestinationText.Trim();
+        if (p.Target is not null)
+        {
+            payload["target"] = new JsonObject
+            {
+                ["locationName"] = p.Target.LocationName.Trim(),
+                ["x"] = p.Target.X,
+                ["y"] = p.Target.Y,
+                ["source"] = p.Target.Source.Trim()
+            };
+            if (p.Target.FacingDirection is not null)
+                ((JsonObject)payload["target"]!)["facingDirection"] = p.Target.FacingDirection.Value;
+        }
         if (!string.IsNullOrWhiteSpace(p.IntentText))
             payload["intentText"] = p.IntentText.Trim();
         if (!string.IsNullOrWhiteSpace(conversationId))
@@ -258,6 +276,30 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
         }, JsonOptions));
     }
 
+    private static bool TryValidateMoveTarget(NpcDelegateMoveTargetParameters? target, out string error)
+    {
+        if (target is null)
+        {
+            error = "target is required for move";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(target.LocationName))
+        {
+            error = "target.locationName is required for move";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(target.Source))
+        {
+            error = "target.source is required for move";
+            return false;
+        }
+
+        error = "";
+        return true;
+    }
+
     private static string? InferConversationId(string? sessionId)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
@@ -277,12 +319,27 @@ public sealed class NpcDelegateActionToolParameters : ISessionAwareToolParameter
 
     public string? IntentText { get; init; }
 
+    public NpcDelegateMoveTargetParameters? Target { get; init; }
+
     public string? DestinationText { get; init; }
 
     public string? ConversationId { get; init; }
 
     [JsonIgnore]
     public string? CurrentSessionId { get; set; }
+}
+
+public sealed class NpcDelegateMoveTargetParameters
+{
+    public required string LocationName { get; init; }
+
+    public required int X { get; init; }
+
+    public required int Y { get; init; }
+
+    public required string Source { get; init; }
+
+    public int? FacingDirection { get; init; }
 }
 
 public sealed record StardewNpcToolSurfacePolicy(

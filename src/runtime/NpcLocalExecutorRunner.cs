@@ -234,20 +234,6 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
                         });
                         if (execution.NavigationTargetCue is not null)
                         {
-                            var targetMatch = ValidateNavigationTargetMatchesIntent(intent, execution.NavigationTargetCue);
-                            if (targetMatch is not null)
-                            {
-                                diagnostics.Add(targetMatch.Diagnostic);
-                                return Block(
-                                    "local_executor",
-                                    targetMatch.Error,
-                                    targetMatch.Error,
-                                    targetMatch.MemorySummary) with
-                                {
-                                    Diagnostics = diagnostics
-                                };
-                            }
-
                             messages.Add(new Message
                             {
                                 Role = "user",
@@ -543,71 +529,6 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
             $"刚才的 stardew_navigate_to_tile 没有执行，因为参数和已加载 skill target 不一致。已加载 {expected}。下一步必须调用 stardew_navigate_to_tile，并原样填写 locationName、x、y、source。");
     }
 
-    private static NavigationTargetIntentValidation? ValidateNavigationTargetMatchesIntent(
-        NpcLocalActionIntent intent,
-        NavigationTargetCue loadedTarget)
-    {
-        if (intent.Action is not NpcLocalActionKind.Move ||
-            string.IsNullOrWhiteSpace(intent.DestinationText))
-        {
-            return null;
-        }
-
-        if (NavigationTargetMatchesDestination(intent.DestinationText, loadedTarget))
-            return null;
-
-        var destinationText = intent.DestinationText.Trim();
-        return new NavigationTargetIntentValidation(
-            "navigation_target_mismatch",
-            $"target=local_executor stage=blocked result=navigation_target_mismatch;destinationText={destinationText};source={loadedTarget.Source}",
-            $"loaded target {loadedTarget.Source} does not match destinationText '{destinationText}'");
-    }
-
-    private static bool NavigationTargetMatchesDestination(string destinationText, NavigationTargetCue loadedTarget)
-    {
-        var destination = destinationText.Trim();
-        var normalizedDestination = NormalizeNavigationText(destination);
-        var normalizedSource = NormalizeNavigationText(loadedTarget.Source);
-        var normalizedLocation = NormalizeNavigationText(loadedTarget.LocationName);
-
-        if (normalizedDestination.Length == 0)
-            return true;
-
-        if (normalizedSource.Contains(normalizedDestination, StringComparison.Ordinal) ||
-            normalizedLocation.Contains(normalizedDestination, StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        foreach (var aliasGroup in NavigationDestinationAliasGroups)
-        {
-            if (!aliasGroup.Any(alias => DestinationContainsAlias(destination, alias)))
-                continue;
-
-            return aliasGroup.Any(alias =>
-                normalizedSource.Contains(NormalizeNavigationText(alias), StringComparison.Ordinal) ||
-                normalizedLocation.Contains(NormalizeNavigationText(alias), StringComparison.Ordinal));
-        }
-
-        return true;
-    }
-
-    private static bool DestinationContainsAlias(string destinationText, string alias)
-    {
-        var normalizedDestination = NormalizeNavigationText(destinationText);
-        var normalizedAlias = NormalizeNavigationText(alias);
-        if (normalizedAlias.Length == 0)
-            return false;
-
-        return normalizedDestination.Contains(normalizedAlias, StringComparison.Ordinal);
-    }
-
-    private static string NormalizeNavigationText(string value)
-        => new(value
-            .Where(char.IsLetterOrDigit)
-            .Select(char.ToLowerInvariant)
-            .ToArray());
-
     private static string SerializeIntent(NpcLocalActionIntent intent)
     {
         var values = new Dictionary<string, object?>
@@ -834,11 +755,6 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
         string ToolResult,
         string UserReminder);
 
-    private sealed record NavigationTargetIntentValidation(
-        string Error,
-        string Diagnostic,
-        string MemorySummary);
-
     private sealed record ToolExecutionResult(
         NpcLocalExecutorResult Result,
         string ToolContent,
@@ -858,12 +774,4 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
     [GeneratedRegex(@"target\(\s*locationName\s*=\s*(?<locationName>[^,\)]+)\s*,\s*x\s*=\s*(?<x>-?\d+)\s*,\s*y\s*=\s*(?<y>-?\d+)\s*,\s*source\s*=\s*(?<source>[^,\)]+)\s*\)", RegexOptions.CultureInvariant)]
     private static partial Regex NavigationTargetPattern();
 
-    private static readonly string[][] NavigationDestinationAliasGroups =
-    [
-        ["海边", "沙滩", "海岸", "码头", "潮池", "beach", "shore", "shoreline", "dock", "tidepool"],
-        ["小镇", "广场", "喷泉", "town", "square", "fountain"],
-        ["商店", "皮埃尔", "pierre", "store"],
-        ["诊所", "clinic"],
-        ["图书馆", "博物馆", "library", "museum"]
-    ];
 }

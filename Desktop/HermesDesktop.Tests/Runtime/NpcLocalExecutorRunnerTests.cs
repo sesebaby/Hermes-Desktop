@@ -610,48 +610,6 @@ public sealed class NpcLocalExecutorRunnerTests
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_WithMoveIntentAndMismatchedSkillTarget_BlocksWithoutSubmittingNavigation()
-    {
-        var chatClient = RecordingChatClient.WithEventsByCall(
-            [
-                [
-                    new StreamEvent.ToolUseComplete(
-                        "call-skill-town",
-                        "skill_view",
-                        Json("""{"name":"stardew-navigation","file_path":"references/poi/town-square.md"}"""))
-                ]
-            ]);
-        var skillTool = new RecordingTool(
-            "skill_view",
-            typeof(SkillViewParameters),
-            ToolResult.Ok("""{"success":true,"content":"`target(locationName=Town,x=42,y=17,source=map-skill:stardew.navigation.poi.town-square)`"}"""));
-        var navigateTool = new RecordingTool(
-            "stardew_navigate_to_tile",
-            typeof(NavigateToTileParameters),
-            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-town","status":"queued"}"""));
-        var runner = new NpcLocalExecutorRunner(chatClient, [skillTool, navigateTool]);
-
-        var result = await runner.ExecuteAsync(
-            CreateDescriptor("haley"),
-            new NpcLocalActionIntent(NpcLocalActionKind.Move, "玩家邀请海莉现在去海边", DestinationText: "海边"),
-            [CreateObservationFact("Player asked Haley to go to the beach now.", "intentText=海莉，我们现在去海边吧")],
-            "trace-mismatched-target",
-            CancellationToken.None);
-
-        Assert.AreEqual(1, skillTool.ExecuteCalls);
-        Assert.AreEqual(0, navigateTool.ExecuteCalls);
-        Assert.AreEqual("blocked", result.Stage);
-        Assert.AreEqual("navigation_target_mismatch", result.Error);
-        Assert.AreEqual("local_executor_blocked:navigation_target_mismatch", result.DecisionResponse);
-        CollectionAssert.Contains(
-            result.Diagnostics.ToArray(),
-            "target=skill_view stage=completed result=navigation_target_loaded;locationName=Town;x=42;y=17;source=map-skill:stardew.navigation.poi.town-square");
-        CollectionAssert.Contains(
-            result.Diagnostics.ToArray(),
-            "target=local_executor stage=blocked result=navigation_target_mismatch;destinationText=海边;source=map-skill:stardew.navigation.poi.town-square");
-    }
-
-    [TestMethod]
     public async Task ExecuteAsync_WithMoveSkillTargetLoaded_AddsNavigationTargetReminder()
     {
         var chatClient = RecordingChatClient.WithEventsByCall(

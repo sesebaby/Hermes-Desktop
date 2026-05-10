@@ -28,6 +28,11 @@ public sealed class StardewLiveAiSmokeTests
     private const string ExecutorApiKeyEnv = "HERMES_STARDEW_LIVE_AI_EXECUTOR_API_KEY";
     private const string ExecutorAuthModeEnv = "HERMES_STARDEW_LIVE_AI_EXECUTOR_AUTH_MODE";
 
+    private static readonly JsonSerializerOptions ToolArgumentJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     private string _tempDir = null!;
     private SkillManager _skillManager = null!;
 
@@ -55,8 +60,9 @@ public sealed class StardewLiveAiSmokeTests
         var parentClient = new OpenAiClient(config.Parent, httpClient);
         var delegateTool = new CaptureTool(
             "npc_delegate_action",
-            "仅限私聊父 agent 使用。玩家要求现在就做现实世界动作且你决定答应时，先调用本工具把行动意图委托给 NPC 本地执行层，再自然回复玩家。只口头答应不会发生动作。不要在这里写坐标、解析地点或使用 destinationId。",
+            "仅限私聊父 agent 使用。玩家要求现在就做现实世界动作且你决定答应时，先调用本工具把行动意图委托给宿主执行，再自然回复玩家。只口头答应不会发生动作。action=move 时必须先用 skill_view 读取 stardew-navigation 分层资料，并把已加载 POI 给出的 target(locationName,x,y,source) 原样传入 target；不要使用 destinationId 或编造坐标。",
             typeof(DelegateActionParameters));
+        var skillViewTool = new SkillViewTool(_skillManager);
         var messages = new List<Message>
         {
             new()
@@ -64,9 +70,9 @@ public sealed class StardewLiveAiSmokeTests
                 Role = "system",
                 Content =
                     "你是海莉，正在和玩家私聊。所有提示词和回答都用中文。" +
-                    "如果玩家现在就请你做一件会改变游戏世界的事，而你决定答应，必须先调用 npc_delegate_action，把 action、reason 和 destinationText 交给本地执行层；再自然回复玩家。" +
-                    "npc_delegate_action 不是地点解析器。不要写坐标，不要写 destinationId；私聊委托入口后续会由 NPC 行动链路解析地点并执行。" +
-                    "移动时 destinationText 只写目的地自然语言短语，例如“海边”；不要写 target、locationName、x、y、source。" +
+                    "如果玩家现在就请你做一件会改变游戏世界的事，而你决定答应，必须先调用 npc_delegate_action，再自然回复玩家。" +
+                    "action=move 时，必须先用 skill_view 读取 stardew-navigation、references/index.md、相关 region 和最具体的 POI 文件。" +
+                    "只有已加载 POI/reference 明确给出 target(locationName,x,y,source) 后，才调用 npc_delegate_action；不要使用 destinationId，不要编造坐标。" +
                     "如果只是以后才兑现的约定，用 todo；如果是现在就执行，必须委托。"
             },
             new()
@@ -75,20 +81,26 @@ public sealed class StardewLiveAiSmokeTests
                 Content = "海莉，我们现在去海边吧。"
             }
         };
+        var tools = new[] { BuildToolDefinition(skillViewTool), BuildToolDefinition(delegateTool) };
 
-        var response = await parentClient.CompleteWithToolsAsync(
+        var response = await RunLiveToolLoopAsync(
+            parentClient,
             messages,
-            [BuildToolDefinition(delegateTool)],
-            new CancellationTokenSource(TimeSpan.FromSeconds(90)).Token);
+            tools,
+            (toolCall, token) => ExecuteLiveSmokeToolAsync(toolCall, skillViewTool, delegateTool, token),
+            maxIterations: 5,
+            new CancellationTokenSource(TimeSpan.FromSeconds(120)).Token);
 
         var toolCall = response.ToolCalls?.FirstOrDefault(call => call.Name == "npc_delegate_action");
         Assert.IsNotNull(toolCall, BuildFailure("真实父层模型没有调用 npc_delegate_action", response));
         using var args = JsonDocument.Parse(toolCall.Arguments);
         Assert.AreEqual("move", args.RootElement.GetProperty("action").GetString());
-        Assert.IsTrue(
-            ContainsAny(ReadStringProperty(args.RootElement, "destinationText"), "海边", "沙滩", "beach"),
-            $"destinationText 应保留玩家地点说法，实际参数：{toolCall.Arguments}");
-        Assert.IsFalse(args.RootElement.TryGetProperty("target", out _), $"父层不应给机械 target。实际参数：{toolCall.Arguments}");
+        var target = args.RootElement.GetProperty("target");
+        Assert.AreEqual("Beach", ReadStringProperty(target, "locationName"), $"父层应传入已加载 POI target。实际参数：{toolCall.Arguments}");
+        Assert.AreEqual(32, ReadIntProperty(target, "x"), $"父层应传入已加载 POI target。实际参数：{toolCall.Arguments}");
+        Assert.AreEqual(34, ReadIntProperty(target, "y"), $"父层应传入已加载 POI target。实际参数：{toolCall.Arguments}");
+        Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", ReadStringProperty(target, "source"), $"父层应传入已加载 POI target。实际参数：{toolCall.Arguments}");
+        Assert.IsFalse(args.RootElement.TryGetProperty("destinationText", out _), $"私聊 move 不应再传 destinationText。实际参数：{toolCall.Arguments}");
     }
 
     [TestMethod]
@@ -128,9 +140,13 @@ public sealed class StardewLiveAiSmokeTests
             !ingress.Payload!.TryGetPropertyValue("conversationId", out var conversationNode) ||
             string.Equals(conversationNode?.GetValue<string>(), "conversation-beach", StringComparison.Ordinal),
             $"conversationId 可以由工具从 session 推断；如果模型显式填写，必须正确。payload={ingress.Payload.ToJsonString()}");
-        Assert.IsTrue(
-            ContainsAny(ingress.Payload?["destinationText"]?.GetValue<string>(), "海边", "沙滩", "beach"),
-            $"委托参数应以 destinationText 保留玩家地点说法。payload={ingress.Payload?.ToJsonString()}");
+        var target = ingress.Payload?["target"]?.AsObject();
+        Assert.IsNotNull(target, $"委托参数应携带父层解析出的机械 target。payload={ingress.Payload?.ToJsonString()}");
+        Assert.AreEqual("Beach", target["locationName"]?.GetValue<string>());
+        Assert.AreEqual(32, target["x"]?.GetValue<int>());
+        Assert.AreEqual(34, target["y"]?.GetValue<int>());
+        Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", target["source"]?.GetValue<string>());
+        Assert.IsNull(ingress.Payload?["destinationText"]);
     }
 
     [TestMethod]
@@ -291,6 +307,70 @@ public sealed class StardewLiveAiSmokeTests
         };
     }
 
+    private static async Task<ChatResponse> RunLiveToolLoopAsync(
+        IChatClient client,
+        List<Message> messages,
+        IReadOnlyList<ToolDefinition> tools,
+        Func<ToolCall, CancellationToken, Task<ToolResult>> executeTool,
+        int maxIterations,
+        CancellationToken ct)
+    {
+        ChatResponse response = new();
+        for (var i = 0; i < maxIterations; i++)
+        {
+            response = await client.CompleteWithToolsAsync(messages, tools, ct);
+            if (!response.HasToolCalls)
+                return response;
+
+            messages.Add(new Message
+            {
+                Role = "assistant",
+                Content = response.Content ?? "",
+                ToolCalls = response.ToolCalls
+            });
+
+            foreach (var toolCall in response.ToolCalls!)
+            {
+                var result = await executeTool(toolCall, ct);
+                messages.Add(new Message
+                {
+                    Role = "tool",
+                    Content = result.Content,
+                    ToolCallId = toolCall.Id,
+                    ToolName = toolCall.Name
+                });
+            }
+
+            if (response.ToolCalls.Any(call => string.Equals(call.Name, "npc_delegate_action", StringComparison.OrdinalIgnoreCase)))
+                return response;
+        }
+
+        return response;
+    }
+
+    private static async Task<ToolResult> ExecuteLiveSmokeToolAsync(
+        ToolCall toolCall,
+        SkillViewTool skillViewTool,
+        CaptureTool delegateTool,
+        CancellationToken ct)
+    {
+        if (string.Equals(toolCall.Name, "skill_view", StringComparison.OrdinalIgnoreCase))
+        {
+            var parameters = JsonSerializer.Deserialize<SkillViewParameters>(toolCall.Arguments, ToolArgumentJsonOptions)
+                ?? new SkillViewParameters { Name = "stardew-navigation" };
+            return await skillViewTool.ExecuteAsync(parameters, ct);
+        }
+
+        if (string.Equals(toolCall.Name, "npc_delegate_action", StringComparison.OrdinalIgnoreCase))
+        {
+            var parameters = JsonSerializer.Deserialize<DelegateActionParameters>(toolCall.Arguments, ToolArgumentJsonOptions)
+                ?? new DelegateActionParameters();
+            return await delegateTool.ExecuteAsync(parameters, ct);
+        }
+
+        return ToolResult.Fail($"unexpected tool: {toolCall.Name}");
+    }
+
     private static string BuildFailure(string prefix, ChatResponse response)
         => $"{prefix}。finish={response.FinishReason}; content={response.Content}; toolCalls={string.Join(",", response.ToolCalls?.Select(call => call.Name) ?? [])}";
 
@@ -432,11 +512,23 @@ public sealed class StardewLiveAiSmokeTests
                     {
                         action = new { type = "string", description = "行动类型，移动时填 move。" },
                         reason = new { type = "string", description = "你为什么接受这个立即行动的简短原因。" },
-                        destinationText = new { type = "string", description = "移动目的地自然语言短语，例如“海边”；不要写坐标或 target。" },
-                        intentText = new { type = "string", description = "可选兼容字段。优先使用 destinationText。" },
+                        target = new
+                        {
+                            type = "object",
+                            description = "移动时必填。来自已加载 stardew-navigation POI/reference 的机械 target；不要编造。",
+                            properties = new
+                            {
+                                locationName = new { type = "string", description = "已加载 POI/reference 给出的地图名。" },
+                                x = new { type = "integer", description = "已加载 POI/reference 给出的 tile X。" },
+                                y = new { type = "integer", description = "已加载 POI/reference 给出的 tile Y。" },
+                                source = new { type = "string", description = "披露该坐标的已加载 skill reference。" }
+                            },
+                            required = new[] { "locationName", "x", "y", "source" }
+                        },
+                        intentText = new { type = "string", description = "可选兼容字段；action=move 的执行目标以 target 为准。" },
                         conversationId = new { type = "string", description = "可选。私聊 conversation id。" }
                     },
-                    required = new[] { "action", "reason", "destinationText" }
+                    required = new[] { "action", "reason", "target" }
                 });
             }
 
@@ -457,11 +549,22 @@ public sealed class StardewLiveAiSmokeTests
 
         public string Reason { get; init; } = "";
 
-        public string DestinationText { get; init; } = "";
+        public DelegateMoveTargetParameters? Target { get; init; }
 
         public string? IntentText { get; init; }
 
         public string? ConversationId { get; init; }
+    }
+
+    private sealed class DelegateMoveTargetParameters
+    {
+        public string LocationName { get; init; } = "";
+
+        public int X { get; init; }
+
+        public int Y { get; init; }
+
+        public string Source { get; init; } = "";
     }
 
     private sealed class NavigateToTileParameters

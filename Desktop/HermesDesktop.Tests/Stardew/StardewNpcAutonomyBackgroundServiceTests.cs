@@ -1088,18 +1088,10 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
-    public async Task RunOneIterationAsync_WithDelegatedActionIngress_PreservesDestinationTextForLocalExecutor()
+    public async Task RunOneIterationAsync_WithDelegatedMoveTarget_SubmitsHostMoveWithoutLocalExecutor()
     {
         var discovery = CreateDiscovery("save-42");
-        var delegationClient = new CapturingStreamingChatClient(
-            new StreamEvent.ToolUseComplete(
-                "call-skill",
-                "skill_view",
-                Json("""{"name":"stardew-navigation"}""")),
-            new StreamEvent.ToolUseComplete(
-                "call-nav",
-                "stardew_navigate_to_tile",
-                Json("""{"locationName":"Beach","x":32,"y":34,"reason":"meet the player at the beach now"}""")));
+        var delegationClient = new CapturingStreamingChatClient();
         var commands = new FakeCommandService();
         var adapter = new FakeGameAdapter(
             commands,
@@ -1126,7 +1118,14 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 {
                     ["action"] = "move",
                     ["reason"] = "meet the player at the beach now",
-                    ["intentText"] = "go to the beach now"
+                    ["target"] = new JsonObject
+                    {
+                        ["locationName"] = "Beach",
+                        ["x"] = 32,
+                        ["y"] = 34,
+                        ["source"] = "map-skill:stardew.navigation.poi.beach-shoreline",
+                        ["facingDirection"] = 2
+                    }
                 }),
             CancellationToken.None);
         var service = CreateService(
@@ -1139,13 +1138,16 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
 
         await service.RunOneIterationAsync(CancellationToken.None);
 
-        Assert.AreEqual(1, delegationClient.StructuredStreamCalls);
-        Assert.IsTrue(
-            delegationClient.UserMessages.Any(message => message.Contains("\"destinationText\":\"go to the beach now\"", StringComparison.Ordinal)),
-            "Delegated private-chat movement must pass the destination text as a first-class move field instead of host-parsing it away.");
-        Assert.IsFalse(
-            delegationClient.UserMessages.Any(message => message.Contains("player request: go to the beach now", StringComparison.Ordinal)),
-            "Move ingress must not hide the destination phrase inside reason; the delegated move path must receive destinationText as the explicit place phrase.");
+        Assert.AreEqual(0, delegationClient.StructuredStreamCalls, "Private-chat move with a mechanical target must not call the delegation/local-executor model.");
+        Assert.AreEqual(1, commands.Submitted.Count);
+        var submitted = commands.Submitted.Single();
+        Assert.AreEqual(GameActionType.Move, submitted.Type);
+        Assert.AreEqual("tile", submitted.Target.Kind);
+        Assert.AreEqual("Beach", submitted.Target.LocationName);
+        Assert.AreEqual(new GameTile(32, 34), submitted.Target.Tile);
+        Assert.AreEqual("meet the player at the beach now", submitted.Reason);
+        Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", submitted.Payload?["targetSource"]?.GetValue<string>());
+        Assert.AreEqual(2, submitted.Payload?["facingDirection"]?.GetValue<int>());
         Assert.AreEqual(0, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
     }
 
@@ -1201,7 +1203,13 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 {
                     ["action"] = "move",
                     ["reason"] = "meet the player at the beach now",
-                    ["destinationText"] = "海边",
+                    ["target"] = new JsonObject
+                    {
+                        ["locationName"] = "Beach",
+                        ["x"] = 32,
+                        ["y"] = 34,
+                        ["source"] = "map-skill:stardew.navigation.poi.beach-shoreline"
+                    },
                     ["conversationId"] = "conversation-beach"
                 }),
             CancellationToken.None);
@@ -1221,7 +1229,8 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
 
         await service.RunOneIterationAsync(CancellationToken.None);
 
-        Assert.AreEqual(1, delegationClient.StructuredStreamCalls);
+        Assert.AreEqual(0, delegationClient.StructuredStreamCalls);
+        Assert.AreEqual(1, commands.Submitted.Count);
         Assert.AreEqual(0, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
     }
 
