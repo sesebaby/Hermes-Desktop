@@ -116,7 +116,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             _tempDir);
         _services.Add(service);
 
-        Assert.AreEqual(TimeSpan.FromSeconds(20), service.PollInterval);
+        Assert.AreEqual(TimeSpan.FromSeconds(1), service.PollInterval);
     }
 
     [TestMethod]
@@ -135,6 +135,30 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             pollInterval: TimeSpan.FromMilliseconds(10));
 
         Assert.AreEqual(TimeSpan.FromMilliseconds(10), service.PollInterval);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenHostPollsEmptyBeforeAutonomyWake_DoesNotRunSecondLlmTurn()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("I will wait near the library.");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"],
+            autonomyWakeInterval: TimeSpan.FromMinutes(1));
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(
+            1,
+            chatClient.CompleteWithToolsCalls,
+            "Fast host polling must not turn an empty autonomy wake into one LLM call per poll interval.");
     }
 
     [TestMethod]
@@ -247,7 +271,8 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             _ => adapter,
             chatClient,
             supervisor,
-            enabledNpcIds: ["haley"]);
+            enabledNpcIds: ["haley"],
+            autonomyWakeInterval: TimeSpan.FromMilliseconds(1));
 
         await service.RunOneIterationAsync(CancellationToken.None);
 
@@ -283,7 +308,8 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             _ => adapter,
             chatClient,
             supervisor,
-            enabledNpcIds: ["haley"]);
+            enabledNpcIds: ["haley"],
+            autonomyWakeInterval: TimeSpan.FromMilliseconds(1));
 
         await service.RunOneIterationAsync(CancellationToken.None);
 
@@ -516,7 +542,10 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         await chatClient.WaitForCallCountAsync(2, TimeSpan.FromSeconds(1));
 
         var retried = supervisor.Snapshot().Single();
-        Assert.AreEqual(NpcAutonomyLoopState.Running, retried.AutonomyLoopState);
+        Assert.AreEqual(
+            NpcAutonomyLoopState.Running,
+            retried.AutonomyLoopState,
+            $"Retry left loop paused. reason={retried.PauseReason}; nextWake={retried.Controller.NextWakeAtUtc:o}; calls={chatClient.CompleteWithToolsCalls}");
         Assert.AreEqual(2, chatClient.CompleteWithToolsCalls);
     }
 
@@ -1369,6 +1398,51 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
+    public async Task RunOneIterationAsync_WhenBridgeRebindsWithLowerSequence_RebasesHostCursorSoPrivateChatTriggerIsProcessed()
+    {
+        var startedAt = DateTimeOffset.UtcNow;
+        var discovery = new MutableDiscovery(CreateSnapshot("save-42", startedAt));
+        var chatClient = new CountingChatClient("I will wait near the library.");
+        var commands = new RecordingCommandService();
+        var events = new CursorAwareEventSource(
+            new Dictionary<string, GameEventBatch?>
+            {
+                ["<root>"] = new GameEventBatch(
+                    [
+                        new GameEventRecord("evt-11", "time_changed", "haley", DateTime.UtcNow, "old bridge event", Sequence: 11)
+                    ],
+                    new GameEventCursor("evt-11", 14)),
+                ["14"] = new GameEventBatch(Array.Empty<GameEventRecord>(), new GameEventCursor("evt-11", 1)),
+                ["<new-bridge-root>"] = new GameEventBatch(
+                    [
+                        new GameEventRecord("evt-2", "vanilla_dialogue_completed", "Haley", DateTime.UtcNow.AddSeconds(1), "Haley finished vanilla dialogue.", Sequence: 2)
+                    ],
+                    new GameEventCursor("evt-2", 2))
+            });
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is idle.",
+                ["location=Town"])),
+            events);
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(discovery, _ => adapter, chatClient, supervisor, enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+        discovery.SetSnapshot(CreateSnapshot("save-42", startedAt.AddSeconds(5)));
+        await service.RunOneIterationAsync(CancellationToken.None);
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        CollectionAssert.AreEqual(
+            new long?[] { null, null, 2 },
+            events.SeenCursors.Select(cursor => cursor.Sequence).ToArray());
+        Assert.AreEqual(1, commands.Submitted.Count(action => action.Type == GameActionType.OpenPrivateChat));
+    }
+
+    [TestMethod]
     public async Task RunOneIterationAsync_WhenInitialAttachPollsEmptyBatch_NextPrivateChatTriggerIsProcessed()
     {
         var discovery = CreateDiscovery("save-42");
@@ -1614,7 +1688,8 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         ICronScheduler? cronScheduler = null,
         INpcPrivateChatAgentRunner? privateChatAgentRunner = null,
         IChatClient? delegationChatClient = null,
-        TimeSpan? pollInterval = null)
+        TimeSpan? pollInterval = null,
+        TimeSpan? autonomyWakeInterval = null)
     {
         var service = new StardewNpcAutonomyBackgroundService(
             discovery,
@@ -1634,7 +1709,10 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             budget ?? new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(MaxToolIterations: 2, MaxConcurrentLlmRequests: 1, MaxRestartsPerScene: 2)),
             worldCoordination ?? new WorldCoordinationService(new ResourceClaimRegistry()),
             NullLogger<StardewNpcAutonomyBackgroundService>.Instance,
-            new StardewNpcAutonomyBackgroundOptions(enabledNpcIds, pollInterval ?? TimeSpan.FromMilliseconds(10)),
+            new StardewNpcAutonomyBackgroundOptions(
+                enabledNpcIds,
+                pollInterval ?? TimeSpan.FromMilliseconds(10),
+                autonomyWakeInterval ?? TimeSpan.FromMilliseconds(10)),
             true,
             true,
             _tempDir,
@@ -1980,6 +2058,9 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         {
             SeenCursors.Add(cursor);
             var key = cursor.Sequence?.ToString() ?? "<root>";
+            if (SeenCursors.Count > 1 && cursor.Sequence is null && _batches.ContainsKey("<new-bridge-root>"))
+                key = "<new-bridge-root>";
+
             if (_batches.TryGetValue(key, out var batch) && batch is not null)
                 return batch;
 

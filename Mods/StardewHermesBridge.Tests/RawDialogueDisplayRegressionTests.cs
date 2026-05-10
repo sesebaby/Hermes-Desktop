@@ -99,6 +99,21 @@ public class RawDialogueDisplayRegressionTests
     }
 
     [TestMethod]
+    public void FormalNpcClickUnavailablePathShowsNonBlockingPendingHudBeforeAgentOpensPrivateChat()
+    {
+        var modEntry = ReadRepositoryFile("Mods", "StardewHermesBridge", "ModEntry.cs");
+        var methodStart = modEntry.IndexOf("private void RecordDialogueFollowUpUnavailable", StringComparison.Ordinal);
+        var methodEnd = modEntry.IndexOf("private void RecordPrivateChatReplyClosedFromInputDialogue", methodStart, StringComparison.Ordinal);
+        Assert.IsTrue(methodStart >= 0 && methodEnd > methodStart, "Could not locate RecordDialogueFollowUpUnavailable.");
+        var method = modEntry[methodStart..methodEnd];
+
+        StringAssert.Contains(
+            method,
+            "_overlay.SetPrivateChatPending(npcName)",
+            "If vanilla dialogue cannot be observed but Desktop/core will still open private chat, the player must get immediate visible pending feedback.");
+    }
+
+    [TestMethod]
     public void PrivateChatEventsCarryConversationPayloadAndThinkingHud()
     {
         var commandModels = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandModels.cs");

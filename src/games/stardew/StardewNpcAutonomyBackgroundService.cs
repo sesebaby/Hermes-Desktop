@@ -13,11 +13,14 @@ using System.Text.Json.Nodes;
 
 public sealed record StardewNpcAutonomyBackgroundOptions(
     IReadOnlyCollection<string> EnabledNpcIds,
-    TimeSpan PollInterval = default);
+    TimeSpan PollInterval = default,
+    TimeSpan AutonomyWakeInterval = default);
 
 public sealed class StardewNpcAutonomyBackgroundService : IDisposable
 {
-    internal static TimeSpan DefaultPollInterval { get; } = TimeSpan.FromSeconds(20);
+    internal static TimeSpan DefaultPollInterval { get; } = TimeSpan.FromSeconds(1);
+
+    internal static TimeSpan DefaultAutonomyWakeInterval { get; } = TimeSpan.FromSeconds(20);
 
     private readonly object _gate = new();
     private readonly IStardewBridgeDiscovery _discovery;
@@ -42,6 +45,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
     private readonly bool _includeUser;
     private readonly Dictionary<string, NpcAutonomyTracker> _trackers = new(StringComparer.OrdinalIgnoreCase);
     private readonly TimeSpan _pollInterval;
+    private readonly TimeSpan _autonomyWakeInterval;
     private CancellationTokenSource? _cts;
     private Task? _loopTask;
     private string? _bridgeKey;
@@ -144,6 +148,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 .Select(id => id.Trim()),
             StringComparer.OrdinalIgnoreCase);
         _pollInterval = options.PollInterval == default ? DefaultPollInterval : options.PollInterval;
+        _autonomyWakeInterval = options.AutonomyWakeInterval == default ? DefaultAutonomyWakeInterval : options.AutonomyWakeInterval;
         _cronScheduler.TaskDue += OnCronTaskDue;
     }
 
@@ -236,11 +241,11 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             return;
         }
 
-        var hostStateStore = await GetOrCreateHostStateStoreAsync(saveId, ct);
+        var bridgeKey = BuildBridgeKey(snapshot, saveId);
+        var hostStateStore = await GetOrCreateHostStateStoreAsync(saveId, bridgeKey, ct);
         var hostState = await hostStateStore.LoadAsync(ct);
         _bridgeEventCursor = hostState.SourceCursor;
 
-        var bridgeKey = BuildBridgeKey(snapshot, saveId);
         if (!string.Equals(bridgeKey, _bridgeKey, StringComparison.Ordinal))
         {
             if (_enabledNpcIds.Count > 0)
@@ -335,7 +340,9 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                     bridgeKey,
                     snapshot,
                     npcEventBatch,
-                    sharedEventBatch.NextCursor),
+                    sharedEventBatch.NextCursor,
+                    HasPrivateChatIngress(sharedEventBatch),
+                    HasHostProgress(hostState.SourceCursor, sharedEventBatch)),
                 ct);
             workerTasks?.Add(workerTask);
         }
@@ -477,7 +484,11 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 return;
             }
 
-            if (controller.NextWakeAtUtc.HasValue && DateTime.UtcNow < controller.NextWakeAtUtc.Value)
+            if (!dispatch.HasPrivateChatIngress &&
+                !dispatch.HasHostProgress &&
+                !dispatch.WasQueuedBehindActiveWorker &&
+                controller.NextWakeAtUtc.HasValue &&
+                DateTime.UtcNow < controller.NextWakeAtUtc.Value)
             {
                 await PauseTrackerAsync(tracker, deliveredCursor, "restart_cooldown", dispatch.BridgeKey, controller.NextWakeAtUtc, ct);
                 return;
@@ -593,6 +604,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             await tracker.Driver.SetControllerStateAsync(tick.NextEventCursor ?? deliveredCursor, null, ct);
             tracker.RestartCount = 0;
             handle.Instance.MarkAutonomyRunning(dispatch.BridgeKey, handle.RebindGeneration, DateTime.UtcNow);
+            await tracker.Driver.SetNextWakeAtUtcAsync(DateTime.UtcNow + _autonomyWakeInterval, ct);
             dispatchStopwatch.Stop();
             _logger.LogInformation(
                 "Stardew autonomy NPC dispatch completed; npc={NpcId}; startedAtUtc={StartedAtUtc:o}; durationMs={DurationMs}; result=llm_turn_completed",
@@ -693,14 +705,22 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
     private static string BuildBridgeKey(StardewBridgeDiscoverySnapshot snapshot, string saveId)
         => $"{snapshot.Options.Host}:{snapshot.Options.Port}:{snapshot.StartedAtUtc:O}:{saveId}";
 
-    private async Task<StardewRuntimeHostStateStore> GetOrCreateHostStateStoreAsync(string saveId, CancellationToken ct)
+    private async Task<StardewRuntimeHostStateStore> GetOrCreateHostStateStoreAsync(string saveId, string bridgeKey, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(saveId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(bridgeKey);
         ct.ThrowIfCancellationRequested();
 
         if (_hostStateStore is not null &&
             string.Equals(_attachedSaveId, saveId, StringComparison.OrdinalIgnoreCase))
         {
+            var currentState = await _hostStateStore.LoadAsync(ct);
+            if (!string.Equals(currentState.BridgeKey, bridgeKey, StringComparison.Ordinal))
+            {
+                await _hostStateStore.ResetForBridgeAsync(bridgeKey, currentState.InitialPrivateChatHistoryDrained, ct);
+                _bridgeEventCursor = new GameEventCursor(null);
+            }
+
             return _hostStateStore;
         }
 
@@ -713,6 +733,17 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         _attachedSaveId = saveId;
         _hostStateStore = new StardewRuntimeHostStateStore(BuildHostStateDbPath(saveId));
         var hostState = await _hostStateStore.LoadAsync(ct);
+        if (string.IsNullOrWhiteSpace(hostState.BridgeKey))
+        {
+            await _hostStateStore.SetBridgeKeyAsync(bridgeKey, ct);
+            hostState = await _hostStateStore.LoadAsync(ct);
+        }
+        else if (!string.Equals(hostState.BridgeKey, bridgeKey, StringComparison.Ordinal))
+        {
+            await _hostStateStore.ResetForBridgeAsync(bridgeKey, hostState.InitialPrivateChatHistoryDrained, ct);
+            hostState = await _hostStateStore.LoadAsync(ct);
+        }
+
         _bridgeEventCursor = hostState.SourceCursor;
         return _hostStateStore;
     }
@@ -998,6 +1029,26 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         => string.Equals(left.Since, right.Since, StringComparison.Ordinal) &&
            left.Sequence == right.Sequence;
 
+    private static bool HasPrivateChatIngress(GameEventBatch batch)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+
+        return batch.Records.Any(record =>
+            string.Equals(record.EventType, "vanilla_dialogue_completed", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(record.EventType, "vanilla_dialogue_unavailable", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(record.EventType, "player_private_message_submitted", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(record.EventType, "player_private_message_cancelled", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(record.EventType, "private_chat_reply_closed", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool HasHostProgress(GameEventCursor sourceCursor, GameEventBatch batch)
+    {
+        ArgumentNullException.ThrowIfNull(sourceCursor);
+        ArgumentNullException.ThrowIfNull(batch);
+
+        return batch.Records.Count > 0 || !CursorsEqual(sourceCursor, batch.NextCursor);
+    }
+
     private static bool MatchesNpcSession(string scheduledSessionId, string runtimeSessionId)
         => string.Equals(scheduledSessionId, runtimeSessionId, StringComparison.OrdinalIgnoreCase) ||
            scheduledSessionId.StartsWith(runtimeSessionId + ":", StringComparison.OrdinalIgnoreCase);
@@ -1263,6 +1314,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         private readonly CancellationTokenSource _workerCts = new();
         private readonly Func<NpcAutonomyTracker, NpcAutonomyDispatch, CancellationToken, Task> _dispatchRunner;
         private NpcAutonomyDispatch? _pendingDispatch;
+        private bool _isDispatching;
         private bool _stopped;
 
         public NpcAutonomyTracker(
@@ -1294,6 +1346,9 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 shouldSignal = _pendingDispatch is null;
                 if (_pendingDispatch is null)
                 {
+                    if (_isDispatching)
+                        dispatch.MarkQueuedBehindActiveWorker();
+
                     _pendingDispatch = dispatch;
                 }
                 else
@@ -1342,6 +1397,9 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                         if (dispatch is null)
                             break;
 
+                        lock (_gate)
+                            _isDispatching = true;
+
                         try
                         {
                             await _dispatchRunner(this, dispatch, ct);
@@ -1357,6 +1415,11 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                         {
                             dispatch.TrySetException(ex);
                             Instance.RecordError(ex.Message);
+                        }
+                        finally
+                        {
+                            lock (_gate)
+                                _isDispatching = false;
                         }
                     }
                 }
@@ -1399,12 +1462,16 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             string bridgeKey,
             StardewBridgeDiscoverySnapshot snapshot,
             GameEventBatch sharedEventBatch,
-            GameEventCursor deliveredCursor)
+            GameEventCursor deliveredCursor,
+            bool hasPrivateChatIngress,
+            bool hasHostProgress)
         {
             BridgeKey = bridgeKey;
             Snapshot = snapshot;
             SharedEventBatch = sharedEventBatch;
             DeliveredCursor = deliveredCursor;
+            HasPrivateChatIngress = hasPrivateChatIngress;
+            HasHostProgress = hasHostProgress;
             var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             _completions = [completion];
             CompletionTask = completion.Task;
@@ -1418,7 +1485,16 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
 
         public GameEventCursor DeliveredCursor { get; private set; }
 
+        public bool HasPrivateChatIngress { get; private set; }
+
+        public bool HasHostProgress { get; private set; }
+
+        public bool WasQueuedBehindActiveWorker { get; private set; }
+
         public Task CompletionTask { get; }
+
+        public void MarkQueuedBehindActiveWorker()
+            => WasQueuedBehindActiveWorker = true;
 
         public void MergeFrom(NpcAutonomyDispatch newer)
         {
@@ -1428,6 +1504,9 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             DeliveredCursor = newer.DeliveredCursor;
             BridgeKey = newer.BridgeKey;
             Snapshot = newer.Snapshot;
+            HasPrivateChatIngress = HasPrivateChatIngress || newer.HasPrivateChatIngress;
+            HasHostProgress = HasHostProgress || newer.HasHostProgress;
+            WasQueuedBehindActiveWorker = WasQueuedBehindActiveWorker || newer.WasQueuedBehindActiveWorker;
             _completions.AddRange(newer._completions);
         }
 

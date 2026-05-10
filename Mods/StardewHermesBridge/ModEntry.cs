@@ -298,6 +298,7 @@ public sealed class ModEntry : Mod
 
     private void RecordDialogueFollowUpUnavailable(string npcName, string detail)
     {
+        _overlay.SetPrivateChatPending(npcName);
         _events.Record(
             "vanilla_dialogue_unavailable",
             npcName,

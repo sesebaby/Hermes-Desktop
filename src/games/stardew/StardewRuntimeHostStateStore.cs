@@ -16,9 +16,10 @@ public sealed record StardewRuntimeHostStagedBatch(
 public sealed record StardewRuntimeHostState(
     GameEventCursor SourceCursor,
     StardewRuntimeHostStagedBatch? StagedBatch,
-    bool InitialPrivateChatHistoryDrained)
+    bool InitialPrivateChatHistoryDrained,
+    string? BridgeKey)
 {
-    public static StardewRuntimeHostState Empty { get; } = new(new GameEventCursor(), null, false);
+    public static StardewRuntimeHostState Empty { get; } = new(new GameEventCursor(), null, false, null);
 }
 
 public sealed class StardewRuntimeHostStateStore
@@ -52,7 +53,8 @@ public sealed class StardewRuntimeHostStateStore
                        staged_next_cursor_since,
                        staged_next_cursor_sequence,
                        staged_private_chat_drain_only,
-                       initial_private_chat_history_drained
+                       initial_private_chat_history_drained,
+                       bridge_key
                 FROM host_state
                 WHERE id = 1;
                 """;
@@ -77,7 +79,11 @@ public sealed class StardewRuntimeHostStateStore
                     !reader.IsDBNull(5) && reader.GetBoolean(5));
             }
 
-            return Task.FromResult(new StardewRuntimeHostState(sourceCursor, stagedBatch, initialPrivateChatHistoryDrained));
+            return Task.FromResult(new StardewRuntimeHostState(
+                sourceCursor,
+                stagedBatch,
+                initialPrivateChatHistoryDrained,
+                reader.IsDBNull(7) ? null : reader.GetString(7)));
         }
     }
 
@@ -127,6 +133,71 @@ public sealed class StardewRuntimeHostStateStore
         return Task.CompletedTask;
     }
 
+    public Task SetBridgeKeyAsync(string bridgeKey, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(bridgeKey);
+        ct.ThrowIfCancellationRequested();
+
+        lock (_gate)
+        {
+            using var db = OpenConnection();
+            using var cmd = db.CreateCommand();
+            cmd.CommandText = """
+                INSERT INTO host_state (
+                    id,
+                    source_cursor_since,
+                    source_cursor_sequence,
+                    staged_records_json,
+                    staged_next_cursor_since,
+                    staged_next_cursor_sequence,
+                    staged_private_chat_drain_only,
+                    initial_private_chat_history_drained,
+                    bridge_key,
+                    updated_at_utc)
+                VALUES (
+                    1,
+                    NULL,
+                    NULL,
+                    '',
+                    NULL,
+                    NULL,
+                    0,
+                    0,
+                    $bridge_key,
+                    $updated_at_utc)
+                ON CONFLICT(id) DO UPDATE SET
+                    bridge_key = excluded.bridge_key,
+                    updated_at_utc = excluded.updated_at_utc;
+                """;
+            cmd.Parameters.AddWithValue("$bridge_key", bridgeKey);
+            cmd.Parameters.AddWithValue("$updated_at_utc", DateTime.UtcNow.ToString("O"));
+            cmd.ExecuteNonQuery();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task ResetForBridgeAsync(string bridgeKey, bool initialPrivateChatHistoryDrained, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(bridgeKey);
+        ct.ThrowIfCancellationRequested();
+
+        lock (_gate)
+        {
+            using var db = OpenConnection();
+            UpsertState(
+                db,
+                new GameEventCursor(null),
+                records: null,
+                stagedNextCursor: null,
+                stagedPrivateChatDrainOnly: false,
+                initialPrivateChatHistoryDrained: initialPrivateChatHistoryDrained,
+                bridgeKey: bridgeKey);
+        }
+
+        return Task.CompletedTask;
+    }
+
     private SqliteConnection OpenConnection()
     {
         var db = new SqliteConnection(_connectionString);
@@ -156,12 +227,14 @@ public sealed class StardewRuntimeHostStateStore
                     staged_next_cursor_sequence INTEGER,
                     staged_private_chat_drain_only INTEGER NOT NULL DEFAULT 0,
                     initial_private_chat_history_drained INTEGER NOT NULL DEFAULT 0,
+                    bridge_key TEXT,
                     updated_at_utc TEXT NOT NULL
                 );
                 """;
             cmd.ExecuteNonQuery();
             EnsureColumn(db, "host_state", "staged_private_chat_drain_only", "INTEGER NOT NULL DEFAULT 0");
             EnsureColumn(db, "host_state", "initial_private_chat_history_drained", "INTEGER NOT NULL DEFAULT 0");
+            EnsureColumn(db, "host_state", "bridge_key", "TEXT");
         }
     }
 
@@ -171,7 +244,8 @@ public sealed class StardewRuntimeHostStateStore
         IReadOnlyList<GameEventRecord>? records,
         GameEventCursor? stagedNextCursor,
         bool stagedPrivateChatDrainOnly,
-        bool initialPrivateChatHistoryDrained)
+        bool initialPrivateChatHistoryDrained,
+        string? bridgeKey = null)
     {
         using var cmd = db.CreateCommand();
         cmd.CommandText = """
@@ -184,6 +258,7 @@ public sealed class StardewRuntimeHostStateStore
                 staged_next_cursor_sequence,
                 staged_private_chat_drain_only,
                 initial_private_chat_history_drained,
+                bridge_key,
                 updated_at_utc)
             VALUES (
                 1,
@@ -194,6 +269,7 @@ public sealed class StardewRuntimeHostStateStore
                 $staged_next_cursor_sequence,
                 $staged_private_chat_drain_only,
                 $initial_private_chat_history_drained,
+                $bridge_key,
                 $updated_at_utc)
             ON CONFLICT(id) DO UPDATE SET
                 source_cursor_since = excluded.source_cursor_since,
@@ -203,6 +279,7 @@ public sealed class StardewRuntimeHostStateStore
                 staged_next_cursor_sequence = excluded.staged_next_cursor_sequence,
                 staged_private_chat_drain_only = excluded.staged_private_chat_drain_only,
                 initial_private_chat_history_drained = excluded.initial_private_chat_history_drained,
+                bridge_key = COALESCE(excluded.bridge_key, host_state.bridge_key),
                 updated_at_utc = excluded.updated_at_utc;
             """;
         cmd.Parameters.AddWithValue("$source_cursor_since", (object?)sourceCursor.Since ?? DBNull.Value);
@@ -212,6 +289,7 @@ public sealed class StardewRuntimeHostStateStore
         cmd.Parameters.AddWithValue("$staged_next_cursor_sequence", (object?)stagedNextCursor?.Sequence ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$staged_private_chat_drain_only", stagedPrivateChatDrainOnly);
         cmd.Parameters.AddWithValue("$initial_private_chat_history_drained", initialPrivateChatHistoryDrained);
+        cmd.Parameters.AddWithValue("$bridge_key", (object?)bridgeKey ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$updated_at_utc", DateTime.UtcNow.ToString("O"));
         cmd.ExecuteNonQuery();
     }
