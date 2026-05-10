@@ -61,7 +61,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                 CancellationToken.None);
 
             Assert.AreEqual("我记住了，远古牛哥。", reply.Text);
-            Assert.AreEqual(2, writerClient.CompleteWithToolsCalls, $"{npcId} must continue after calling memory.");
+            Assert.AreEqual(3, writerClient.CompleteWithToolsCalls, $"{npcId} must continue after calling memory and declaring no immediate world action.");
             CollectionAssert.Contains(writerClient.FirstToolNames.ToArray(), "memory");
             CollectionAssert.Contains(writerClient.FirstToolNames.ToArray(), "session_search");
             CollectionAssert.Contains(writerClient.FirstToolNames.ToArray(), "skills_list");
@@ -186,10 +186,13 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             CancellationToken.None);
 
         var delegateIndex = client.FirstToolNames.FindIndex(name => name == "npc_delegate_action");
+        var noWorldActionIndex = client.FirstToolNames.FindIndex(name => name == "npc_no_world_action");
         var todoIndex = client.FirstToolNames.FindIndex(name => name == "todo");
         Assert.IsTrue(delegateIndex >= 0, "私聊工具面必须包含 npc_delegate_action。");
+        Assert.IsTrue(noWorldActionIndex >= 0, "私聊工具面必须包含 npc_no_world_action。");
         Assert.IsTrue(todoIndex >= 0, "私聊工具面必须包含 todo。");
         Assert.IsTrue(delegateIndex < todoIndex, "立即行动委托工具必须排在 todo 前，避免模型把现在就做的请求只记成待办。");
+        Assert.IsTrue(noWorldActionIndex < todoIndex, "无世界动作声明工具必须排在 todo 前，保证父层每轮都能明确闭环。");
         var todoDefinition = client.FirstToolDefinitions.Single(tool => tool.Name == "todo");
         StringAssert.Contains(todoDefinition.Description, "当前会话");
         StringAssert.Contains(todoDefinition.Description, "现在就执行");
@@ -209,12 +212,13 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             CancellationToken.None);
 
         Assert.AreEqual("好，我现在过去。", reply.Text);
-        Assert.AreEqual(3, client.CompleteWithToolsCalls, "第一次口头答应但未委托后，应触发一次纠错工具轮，再自然回复。");
+        Assert.AreEqual(3, client.CompleteWithToolsCalls, "第一轮没有任何工具调用时，应触发一次父层自检工具轮，再自然回复。");
         Assert.IsTrue(
             client.MessagesByCall.Skip(1).Any(messages => messages.Any(message =>
                 message.Role == "user" &&
-                (message.Content?.Contains("刚才的回复接受了即时行动，但没有调用 npc_delegate_action", StringComparison.Ordinal) ?? false))),
-            "纠错重试必须明确指出接受即时行动但缺少 npc_delegate_action。");
+                (message.Content?.Contains("自检：上一轮私聊回复没有调用 npc_delegate_action", StringComparison.Ordinal) ?? false) &&
+                (message.Content?.Contains("请你自己判断", StringComparison.Ordinal) ?? false))),
+            "自检重试只能把缺少 npc_delegate_action 的结构事实反馈给父层，由父层自己判断是否补工具调用。");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
         var ingress = haleySnapshot.Controller.IngressWorkItems.Single();
         Assert.AreEqual("npc_delegated_action", ingress.WorkType);
@@ -227,6 +231,62 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", target["source"]?.GetValue<string>());
         Assert.IsNull(ingress.Payload?["destinationText"]);
         Assert.IsNull(ingress.Payload?["intentText"]);
+    }
+
+    [TestMethod]
+    public async Task ReplyAsync_WhenCasualImmediateMoveAcceptedWithoutDelegation_RetriesAndQueuesDelegatedAction()
+    {
+        var runtimeSupervisor = new NpcRuntimeSupervisor();
+        var client = new FirstCasualAcceptsWithoutDelegatingThenDelegatesChatClient();
+        var runner = CreateRunner(client, runtimeSupervisor);
+
+        var reply = await runner.ReplyAsync(
+            new NpcPrivateChatRequest("haley", "save-1", "conversation-casual-corrective", "走吧,我们去海边"),
+            CancellationToken.None);
+
+        Assert.AreEqual("好啦，我们走。", reply.Text);
+        Assert.AreEqual(3, client.CompleteWithToolsCalls, "第一轮没有任何工具调用时，应触发一次通用父层自检；宿主不能靠短语或地点判断移动意图。");
+        var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
+        var ingress = haleySnapshot.Controller.IngressWorkItems.Single();
+        Assert.AreEqual("npc_delegated_action", ingress.WorkType);
+        Assert.AreEqual("move", ingress.Payload?["action"]?.GetValue<string>());
+        var target = ingress.Payload?["target"]?.AsObject();
+        Assert.IsNotNull(target);
+        Assert.AreEqual("Beach", target["locationName"]?.GetValue<string>());
+        Assert.AreEqual(32, target["x"]?.GetValue<int>());
+        Assert.AreEqual(34, target["y"]?.GetValue<int>());
+        Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", target["source"]?.GetValue<string>());
+        Assert.IsNull(ingress.Payload?["destinationText"]);
+    }
+
+    [TestMethod]
+    public async Task ReplyAsync_WhenFirstTurnUsesNonDelegationToolWithoutMarker_RunsDelegationSelfCheck()
+    {
+        var runtimeSupervisor = new NpcRuntimeSupervisor();
+        var client = new FirstUsesSessionSearchThenSelfCheckChatClient();
+        var runner = CreateRunner(client, runtimeSupervisor);
+
+        var reply = await runner.ReplyAsync(
+            new NpcPrivateChatRequest("haley", "save-1", "conversation-search", "你还记得我们之前聊过什么吗？"),
+            CancellationToken.None);
+
+        Assert.AreEqual("我记得，我们聊过花。", reply.Text);
+        Assert.AreEqual(4, client.CompleteWithToolsCalls, "非 npc_delegate_action 工具不能替代世界动作委托；没有 npc_no_world_action 工具调用时仍要自检。");
+    }
+
+    [TestMethod]
+    public async Task ReplyAsync_WhenNoWorldActionToolCalled_DoesNotSelfCheck()
+    {
+        var runtimeSupervisor = new NpcRuntimeSupervisor();
+        var client = new NoWorldActionToolThenFinalChatClient();
+        var runner = CreateRunner(client, runtimeSupervisor);
+
+        var reply = await runner.ReplyAsync(
+            new NpcPrivateChatRequest("haley", "save-1", "conversation-chat", "今天心情怎么样？"),
+            CancellationToken.None);
+
+        Assert.AreEqual("今天还不错。", reply.Text);
+        Assert.AreEqual(2, client.CompleteWithToolsCalls, "父层已经调用 npc_no_world_action 时，不应追加自检轮。");
     }
 
     [TestMethod]
@@ -273,7 +333,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             CancellationToken.None);
 
         Assert.IsTrue(result.Success);
-        Assert.AreEqual(1, privateChatClient.CompleteWithToolsCalls);
+        Assert.AreEqual(2, privateChatClient.CompleteWithToolsCalls);
         Assert.AreEqual(1, delegationClient.StructuredStreamCalls);
         Assert.IsTrue(delegationClient.LastSystemPrompt?.Contains("helpful assistant", StringComparison.OrdinalIgnoreCase));
     }
@@ -330,7 +390,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             includeMemory: true,
             includeUser: true,
             discoveredToolProvider: () => discoveredTools ?? Enumerable.Empty<ITool>(),
-            maxToolIterations: 2,
+            maxToolIterations: 3,
             delegationChatClient: delegationChatClient);
 
     private void CreatePack(string npcId, string displayName)
@@ -399,6 +459,23 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                 });
             }
 
+            if (CompleteWithToolsCalls == 2)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = "no-world-after-memory",
+                            Name = "npc_no_world_action",
+                            Arguments = "{\"reason\":\"只是记住玩家名字，不需要立即改变游戏世界\"}"
+                        }
+                    ]
+                });
+            }
+
             return Task.FromResult(new ChatResponse { Content = "我记住了，远古牛哥。", FinishReason = "stop" });
         }
 
@@ -448,6 +525,23 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                 message.Content.Contains(_expectedMemory, StringComparison.Ordinal));
             SawOriginalNamingTurn = snapshot.Any(message =>
                 message.Content.Contains("我叫远古牛哥,你记住", StringComparison.Ordinal));
+
+            if (CompleteWithToolsCalls == 1)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = "no-world-action",
+                            Name = "npc_no_world_action",
+                            Arguments = "{\"reason\":\"只是回答玩家的问题\"}"
+                        }
+                    ]
+                });
+            }
 
             return Task.FromResult(new ChatResponse
             {
@@ -554,6 +648,23 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                             Id = "todo-write",
                             Name = "todo",
                             Arguments = "{\"todos\":[{\"id\":\"1\",\"content\":\"明天陪玩家去海边\",\"status\":\"pending\"}]}"
+                        }
+                    ]
+                });
+            }
+
+            if (_calls == 2)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = "no-world-after-todo",
+                            Name = "npc_no_world_action",
+                            Arguments = "{\"reason\":\"玩家约的是明天，不是当前立即改变游戏世界\"}"
                         }
                     ]
                 });
@@ -707,6 +818,203 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             }
 
             return Task.FromResult(new ChatResponse { Content = "好，我现在过去。", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class FirstCasualAcceptsWithoutDelegatingThenDelegatesChatClient : IChatClient
+    {
+        public int CompleteWithToolsCalls { get; private set; }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            CompleteWithToolsCalls++;
+            if (CompleteWithToolsCalls == 1)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    Content = "这不已经走着呢嘛，海水应该蓝得发亮。",
+                    FinishReason = "stop"
+                });
+            }
+
+            if (CompleteWithToolsCalls == 2)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = "delegate-after-casual-correction",
+                            Name = "npc_delegate_action",
+                            Arguments = """
+                            {
+                              "action": "move",
+                              "reason": "陪玩家去海边",
+                              "target": {
+                                "locationName": "Beach",
+                                "x": 32,
+                                "y": 34,
+                                "source": "map-skill:stardew.navigation.poi.beach-shoreline"
+                              },
+                              "conversationId": "conversation-casual-corrective"
+                            }
+                            """
+                        }
+                    ]
+                });
+            }
+
+            return Task.FromResult(new ChatResponse { Content = "好啦，我们走。", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class FirstUsesSessionSearchThenSelfCheckChatClient : IChatClient
+    {
+        public int CompleteWithToolsCalls { get; private set; }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            CompleteWithToolsCalls++;
+            if (CompleteWithToolsCalls == 1)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = "search-before-reply",
+                            Name = "session_search",
+                            Arguments = "{\"query\":\"之前聊过什么\",\"limit\":1}"
+                        }
+                    ]
+                });
+            }
+
+            if (CompleteWithToolsCalls == 2)
+            {
+                return Task.FromResult(new ChatResponse { Content = "我记得，我们聊过花。", FinishReason = "stop" });
+            }
+
+            if (CompleteWithToolsCalls == 3)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = "no-world-after-self-check",
+                            Name = "npc_no_world_action",
+                            Arguments = "{\"reason\":\"只是回答记忆问题，不需要立即改变游戏世界\"}"
+                        }
+                    ]
+                });
+            }
+
+            return Task.FromResult(new ChatResponse { Content = "我记得，我们聊过花。", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class NoWorldActionToolThenFinalChatClient : IChatClient
+    {
+        public int CompleteWithToolsCalls { get; private set; }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            CompleteWithToolsCalls++;
+            if (CompleteWithToolsCalls == 1)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = "no-world-action",
+                            Name = "npc_no_world_action",
+                            Arguments = "{\"reason\":\"只是闲聊\"}"
+                        }
+                    ]
+                });
+            }
+
+            return Task.FromResult(new ChatResponse
+            {
+                Content = "今天还不错。",
+                FinishReason = "stop"
+            });
         }
 
         public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)

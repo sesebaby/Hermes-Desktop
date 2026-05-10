@@ -342,6 +342,48 @@ public sealed class NpcDelegateMoveTargetParameters
     public int? FacingDirection { get; init; }
 }
 
+public sealed class NpcNoWorldActionTool : ITool, IToolSchemaProvider
+{
+    public string Name => "npc_no_world_action";
+
+    public string Description => "仅限私聊父 agent 使用。当前私聊轮次不需要立即改变游戏世界时，调用本工具声明无世界动作，然后自然回复玩家。不要用纯文本省略这个声明。";
+
+    public Type ParametersType => typeof(NpcNoWorldActionToolParameters);
+
+    public JsonElement GetParameterSchema()
+        => JsonSerializer.SerializeToElement(new
+        {
+            type = "object",
+            properties = new
+            {
+                reason = new
+                {
+                    type = "string",
+                    description = "为什么这轮不需要立即改变游戏世界的简短原因。"
+                }
+            },
+            required = new[] { "reason" }
+        });
+
+    public Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
+    {
+        var p = (NpcNoWorldActionToolParameters)parameters;
+        if (string.IsNullOrWhiteSpace(p.Reason))
+            return Task.FromResult(ToolResult.Fail("reason is required"));
+
+        return Task.FromResult(ToolResult.Ok(JsonSerializer.Serialize(new
+        {
+            noWorldAction = true,
+            reason = p.Reason.Trim()
+        })));
+    }
+}
+
+public sealed class NpcNoWorldActionToolParameters
+{
+    public required string Reason { get; init; }
+}
+
 public sealed record StardewNpcToolSurfacePolicy(
     IReadOnlyList<string> ParentToolNames,
     IReadOnlyList<string> LocalExecutorToolNames)

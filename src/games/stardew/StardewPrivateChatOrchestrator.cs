@@ -222,6 +222,7 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
                     descriptor,
                     runtimeDriver,
                     _loggerFactory.CreateLogger<NpcDelegateActionTool>()),
+                new NpcNoWorldActionTool(),
                 ..toolSnapshot.ToolSurface.Tools
             ]);
             var sessionId = $"{descriptor.SessionId}:private_chat:{request.ConversationId}";
@@ -265,16 +266,16 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
                 BuildPrivateChatMessage(descriptor.DisplayName, request.PlayerText),
                 chatSession,
                 ct);
-            if (ShouldRetryImmediateActionDelegation(request.PlayerText, response, chatSession))
+            if (ShouldRunDelegationSelfCheck(response, chatSession))
             {
                 logger.LogInformation(
-                    "Stardew private-chat accepted immediate action without delegation; retrying once; npc={NpcId}; saveId={SaveId}; conversationId={ConversationId}; sessionId={SessionId}",
+                    "Stardew private-chat completed without delegated action; running parent self-check once; npc={NpcId}; saveId={SaveId}; conversationId={ConversationId}; sessionId={SessionId}",
                     descriptor.NpcId,
                     saveId,
                     request.ConversationId,
                     sessionId);
                 response = await handle.Agent.ChatAsync(
-                    BuildPrivateChatDelegationCorrectionMessage(request.PlayerText),
+                    BuildPrivateChatDelegationSelfCheckMessage(request.PlayerText, response),
                     chatSession,
                     ct);
             }
@@ -325,9 +326,10 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
     private static string BuildPrivateChatSystemPrompt(string displayName)
         =>
             "如果玩家现在就请你做一件会改变游戏世界的事，而你决定答应，必须先调用 npc_delegate_action，再自然回复玩家。只口头答应不会让动作发生。\n" +
+            "如果你决定这轮没有当前就要发生的游戏世界动作，必须先调用 npc_no_world_action，再自然回复玩家。\n" +
             "action=move 时，你必须先用 skill_view 读取 stardew-navigation、references/index.md、相关 region 和最具体的 POI 文件；只有已加载 POI/reference 明确给出 target(locationName,x,y,source) 后，才调用 npc_delegate_action。\n" +
             "npc_delegate_action 是延迟执行入口：私聊回复关闭后，宿主会按你传入的机械 target 执行真实移动，并由 Stardew bridge 返回结果。不要使用 destinationId，不要编造坐标，不要把自然语言地点直接当 locationName。\n" +
-            "玩家说“现在去某地”“一起去某地”“带我去某地”这类即时请求时，如果你接受，action 填 move，target 必须原样填写已加载 POI/reference 的 locationName、x、y、source；可选 facingDirection。\n" +
+            "玩家提出当前私聊中就要发生的移动请求时，如果你接受，action 填 move，target 必须原样填写已加载 POI/reference 的 locationName、x、y、source；可选 facingDirection。\n" +
             $"你是星露谷里的 {displayName}，现在正在和玩家私聊。\n" +
             "玩家找你说话时，你先像角色本人一样自然回应，不要装成助手。\n" +
             "如果玩家给了以后要兑现的约定、邀请、请求或共同计划，你自己判断要不要接；接了就用 todo 记到长期任务里。\n" +
@@ -338,36 +340,23 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
             "最终回复会显示在玩家手机私聊里，必须直接对玩家说话；不要写内心独白、旁白、动作描写或只给自己看的想法。\n" +
             "不要把工具过程讲给玩家听，不要输出标签、markdown 或系统说明。";
 
-    private static string BuildPrivateChatDelegationCorrectionMessage(string playerText)
+    private static string BuildPrivateChatDelegationSelfCheckMessage(string playerText, string previousReply)
         =>
-            "纠错：刚才的回复接受了即时行动，但没有调用 npc_delegate_action，所以游戏世界不会发生动作。\n" +
-            "现在如果你仍然接受玩家这个立即行动请求，必须先用 skill_view 读取 stardew-navigation 的分层地图资料，拿到 target(locationName,x,y,source) 后调用 npc_delegate_action，action 填 move，target 原样填写已加载 POI/reference 的机械目标；工具调用后再给玩家一句自然回复。\n" +
+            "自检：上一轮私聊回复没有调用 npc_delegate_action。\n" +
+            "请你自己判断：如果上一轮已经接受了玩家当前就要发生、且会改变游戏世界的行动请求，不能只口头答应；现在必须先用 skill_view 读取 stardew-navigation 的分层地图资料，拿到 target(locationName,x,y,source) 后调用 npc_delegate_action，action 填 move，target 原样填写已加载 POI/reference 的机械目标；工具调用后再给玩家一句自然回复。\n" +
+            "如果上一轮没有接受当前就要发生的游戏世界行动请求，不要调用 npc_delegate_action；必须先调用 npc_no_world_action，再直接原样回复上一轮给玩家的话。\n" +
             "不要使用 destinationId，不要编造坐标，不要只说“我现在过去”。\n\n" +
-            $"Player: {playerText}";
+            $"Player: {playerText}\n" +
+            $"Previous reply: {previousReply}";
 
-    private static bool ShouldRetryImmediateActionDelegation(string playerText, string response, Session session)
-    {
-        if (!LooksLikeImmediateMoveRequest(playerText) ||
-            !LooksLikeAcceptedImmediateAction(response))
-        {
-            return false;
-        }
+    private static bool ShouldRunDelegationSelfCheck(string response, Session session)
+        => !SessionHasToolCall(session, "npc_delegate_action") &&
+           !SessionHasToolCall(session, "npc_no_world_action");
 
-        return !session.Messages.Any(message =>
-            message.ToolCalls?.Any(call => string.Equals(call.Name, "npc_delegate_action", StringComparison.OrdinalIgnoreCase)) ?? false);
-    }
+    private static bool SessionHasToolCall(Session session, string toolName)
+        => session.Messages.Any(message =>
+            message.ToolCalls?.Any(call => string.Equals(call.Name, toolName, StringComparison.OrdinalIgnoreCase)) ?? false);
 
-    private static bool LooksLikeImmediateMoveRequest(string text)
-        => ContainsAny(text, "现在", "马上", "立刻", "这就", "now", "right now") &&
-           ContainsAny(text, "去", "过去", "走", "前往", "一起", "带我", "go", "come", "head", "海边", "沙滩", "beach");
-
-    private static bool LooksLikeAcceptedImmediateAction(string text)
-        => ContainsAny(text, "现在", "马上", "这就", "过去", "出发", "走吧", "now", "right now", "head", "coming") &&
-           !ContainsAny(text, "不能", "不行", "没法", "抱歉", "sorry", "can't", "cannot");
-
-    private static bool ContainsAny(string text, params string[] values)
-        => !string.IsNullOrWhiteSpace(text) &&
-           values.Any(value => text.Contains(value, StringComparison.OrdinalIgnoreCase));
 }
 
 public sealed class StardewPrivateChatRuntimeAdapter : IDisposable
