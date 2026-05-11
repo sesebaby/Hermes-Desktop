@@ -460,7 +460,7 @@ public class NpcRuntimeSupervisorTests
     }
 
     [TestMethod]
-    public async Task GetOrCreateAutonomyHandleAsync_JsonIntentStillUsesDelegationCompatibilityPath()
+    public async Task GetOrCreateAutonomyHandleAsync_JsonIntentBlocksDelegatedWriteAction()
     {
         var supervisor = new NpcRuntimeSupervisor();
         var pack = CreatePack("haley", "Haley");
@@ -528,14 +528,14 @@ public class NpcRuntimeSupervisorTests
             parentContract,
             CancellationToken.None);
 
-        Assert.AreEqual("local_executor_completed:stardew_navigate_to_tile", result.DecisionResponse);
+        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
         Assert.AreEqual(0, autonomyClient.CompleteCalls);
         Assert.AreEqual(0, autonomyClient.CompleteWithToolsCalls);
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_move");
-        Assert.AreEqual(2, delegationClient.StructuredStreamCalls);
-        CollectionAssert.Contains(delegationClient.LastToolNames.ToArray(), "stardew_navigate_to_tile");
-        Assert.IsTrue(delegationClient.ToolNamesByCall.Any(names => names.Contains("skill_view")));
-        Assert.AreEqual(1, navigateTool.ExecuteCalls);
+        Assert.AreEqual(0, delegationClient.StructuredStreamCalls);
+        CollectionAssert.DoesNotContain(delegationClient.LastToolNames.ToArray(), "stardew_navigate_to_tile");
+        Assert.IsFalse(delegationClient.ToolNamesByCall.Any(names => names.Contains("skill_view")));
+        Assert.AreEqual(0, navigateTool.ExecuteCalls);
     }
 
     [TestMethod]
@@ -679,7 +679,7 @@ public class NpcRuntimeSupervisorTests
             new GameEventBatch([], new GameEventCursor()),
             CancellationToken.None);
 
-        Assert.AreEqual("local_executor_blocked:local_executor_unavailable", result.DecisionResponse);
+        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_move");
         Assert.AreEqual(0, navigateTool.ExecuteCalls);
     }

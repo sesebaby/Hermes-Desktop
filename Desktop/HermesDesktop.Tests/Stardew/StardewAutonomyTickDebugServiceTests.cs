@@ -677,7 +677,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithParentMoveIntentExecutesSkillResolvedTileNavigationWithoutInjectedCandidates()
+    public async Task RunOneTickAsync_WithParentMoveIntentDoesNotLetLocalExecutorNavigate()
     {
         var commands = new FakeCommandService();
         var chatClient = new ToolSnapshotChatClient(
@@ -733,7 +733,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
         var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
 
         Assert.IsTrue(result.Success, result.FailureReason);
-        Assert.AreEqual("local_executor_completed:stardew_navigate_to_tile", result.DecisionResponse);
+        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
         Assert.IsFalse(
             chatClient.UserMessages.Any(message => message.Contains("destinationId=town.fountain", StringComparison.Ordinal)),
             "The host must not preload observed destination ids into the parent autonomy prompt.");
@@ -741,15 +741,10 @@ public sealed class StardewAutonomyTickDebugServiceTests
             chatClient.UserMessages.Any(message => message.Contains("nearby[0]", StringComparison.Ordinal)),
             "The host must not preload host-generated nearby movement affordances into the parent autonomy prompt.");
         CollectionAssert.DoesNotContain(chatClient.ToolNames.ToArray(), "stardew_move");
+        Assert.AreEqual(0, delegationChatClient.ToolNamesByCall.Count);
         CollectionAssert.DoesNotContain(delegationChatClient.ToolNames.ToArray(), "stardew_move");
-        Assert.IsTrue(delegationChatClient.ToolNamesByCall.Any(names => names.Contains("skill_view")));
-        CollectionAssert.Contains(delegationChatClient.ToolNames.ToArray(), "stardew_navigate_to_tile");
-        Assert.IsNotNull(commands.LastAction);
-        Assert.AreEqual(GameActionType.Move, commands.LastAction.Type);
-        Assert.IsFalse(commands.LastAction.Payload?.ContainsKey("destinationId") is true);
-        Assert.AreEqual("Town", commands.LastAction.Target.LocationName);
-        Assert.AreEqual(42, commands.LastAction.Target.Tile?.X);
-        Assert.AreEqual(17, commands.LastAction.Target.Tile?.Y);
+        CollectionAssert.DoesNotContain(delegationChatClient.ToolNames.ToArray(), "stardew_navigate_to_tile");
+        Assert.IsNull(commands.LastAction);
     }
 
     [TestMethod]
