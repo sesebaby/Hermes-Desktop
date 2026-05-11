@@ -410,6 +410,8 @@ public sealed class StardewPrivateChatRuntimeAdapter : IDisposable
     private readonly ILogger<StardewPrivateChatRuntimeAdapter> _logger;
     private readonly IPrivateChatSessionLeaseCoordinator? _sessionLeaseCoordinator;
     private readonly StardewNpcRuntimeBindingResolver? _bindingResolver;
+    private readonly string? _runtimeRoot;
+    private readonly NpcRuntimeSupervisor? _runtimeSupervisor;
     private string? _bridgeKey;
     private StardewPrivateChatOrchestrator? _orchestrator;
 
@@ -418,13 +420,17 @@ public sealed class StardewPrivateChatRuntimeAdapter : IDisposable
         ILogger<StardewPrivateChatRuntimeAdapter> logger,
         StardewPrivateChatOptions? options = null,
         IPrivateChatSessionLeaseCoordinator? sessionLeaseCoordinator = null,
-        StardewNpcRuntimeBindingResolver? bindingResolver = null)
+        StardewNpcRuntimeBindingResolver? bindingResolver = null,
+        string? runtimeRoot = null,
+        NpcRuntimeSupervisor? runtimeSupervisor = null)
     {
         _agentRunner = agentRunner;
         _logger = logger;
         _options = options ?? new StardewPrivateChatOptions();
         _sessionLeaseCoordinator = sessionLeaseCoordinator;
         _bindingResolver = bindingResolver;
+        _runtimeRoot = runtimeRoot;
+        _runtimeSupervisor = runtimeSupervisor;
     }
 
     public async Task ProcessAsync(
@@ -486,7 +492,7 @@ public sealed class StardewPrivateChatRuntimeAdapter : IDisposable
             DisposeOrchestratorNoThrow();
             _orchestrator = new StardewPrivateChatOrchestrator(
                 adapter.Events,
-                adapter.Commands,
+                CreateCommandService(adapter.Commands, saveId),
                 _agentRunner,
                 BuildOptions(saveId, bridgeKey),
                 _sessionLeaseCoordinator);
@@ -494,6 +500,23 @@ public sealed class StardewPrivateChatRuntimeAdapter : IDisposable
         }
 
         _logger.LogInformation("Stardew private-chat runtime bridge attached: {BridgeKey}", bridgeKey);
+    }
+
+    private IGameCommandService CreateCommandService(IGameCommandService commands, string saveId)
+    {
+        if (_bindingResolver is null ||
+            _runtimeSupervisor is null ||
+            string.IsNullOrWhiteSpace(_runtimeRoot))
+        {
+            return commands;
+        }
+
+        return new StardewPrivateChatLifecycleCommandService(
+            commands,
+            _bindingResolver,
+            _runtimeSupervisor,
+            _runtimeRoot,
+            saveId);
     }
 
     private StardewPrivateChatOptions BuildOptions(string saveId, string bridgeKey)
@@ -545,6 +568,61 @@ public sealed class StardewPrivateChatRuntimeAdapter : IDisposable
         }
 
         _orchestrator = null;
+    }
+
+    private sealed class StardewPrivateChatLifecycleCommandService : IGameCommandService
+    {
+        private readonly IGameCommandService _inner;
+        private readonly StardewNpcRuntimeBindingResolver _bindingResolver;
+        private readonly NpcRuntimeSupervisor _runtimeSupervisor;
+        private readonly string _runtimeRoot;
+        private readonly string _saveId;
+
+        public StardewPrivateChatLifecycleCommandService(
+            IGameCommandService inner,
+            StardewNpcRuntimeBindingResolver bindingResolver,
+            NpcRuntimeSupervisor runtimeSupervisor,
+            string runtimeRoot,
+            string saveId)
+        {
+            _inner = inner;
+            _bindingResolver = bindingResolver;
+            _runtimeSupervisor = runtimeSupervisor;
+            _runtimeRoot = runtimeRoot;
+            _saveId = saveId;
+        }
+
+        public async Task<GameCommandResult> SubmitAsync(GameAction action, CancellationToken ct)
+        {
+            if (action.Type is not GameActionType.OpenPrivateChat and not GameActionType.Speak)
+                return await _inner.SubmitAsync(action, ct);
+
+            var runtimeActions = await CreateRuntimeActionsAsync(action, ct);
+            var preparedAction = await runtimeActions.TryBeginAsync(action, ct);
+            if (preparedAction?.BlockedResult is not null)
+                return preparedAction.BlockedResult;
+
+            var result = await _inner.SubmitAsync(action, ct);
+            await runtimeActions.RecordSubmitResultAsync(preparedAction, result, ct);
+            return result;
+        }
+
+        public Task<GameCommandStatus> GetStatusAsync(string commandId, CancellationToken ct)
+            => _inner.GetStatusAsync(commandId, ct);
+
+        public Task<GameCommandStatus?> TryGetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken ct)
+            => _inner.TryGetByIdempotencyKeyAsync(idempotencyKey, ct);
+
+        public Task<GameCommandStatus> CancelAsync(string commandId, string reason, CancellationToken ct)
+            => _inner.CancelAsync(commandId, reason, ct);
+
+        private async Task<StardewRuntimeActionController> CreateRuntimeActionsAsync(GameAction action, CancellationToken ct)
+        {
+            var binding = _bindingResolver.Resolve(action.NpcId, _saveId);
+            var driver = await _runtimeSupervisor.GetOrCreateDriverAsync(binding.Descriptor, _runtimeRoot, ct);
+            driver.Instance.Namespace.SeedPersonaPack(binding.Pack);
+            return new StardewRuntimeActionController(driver, null, null, null);
+        }
     }
 }
 

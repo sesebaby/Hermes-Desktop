@@ -453,7 +453,9 @@ public partial class App : Application
             sp.GetRequiredService<INpcPrivateChatAgentRunner>(),
             sp.GetRequiredService<ILogger<StardewPrivateChatRuntimeAdapter>>(),
             sessionLeaseCoordinator: sp.GetRequiredService<IPrivateChatSessionLeaseCoordinator>(),
-            bindingResolver: sp.GetRequiredService<StardewNpcRuntimeBindingResolver>()));
+            bindingResolver: sp.GetRequiredService<StardewNpcRuntimeBindingResolver>(),
+            runtimeRoot: projectDir,
+            runtimeSupervisor: sp.GetRequiredService<NpcRuntimeSupervisor>()));
         services.AddSingleton(sp =>
         {
             var chatLanes = sp.GetRequiredService<ChatLaneClientProvider>();
