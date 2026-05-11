@@ -1819,7 +1819,11 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         Assert.AreEqual("stardew-valley", action.GameId);
         Assert.AreEqual("一分钟后主动和我对话", action.Payload?["prompt"]?.ToString());
         Assert.AreEqual("scheduled_task:task-haley-talk", action.Payload?["conversationId"]?.ToString());
-        Assert.AreEqual(0, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
+        var completed = supervisor.Snapshot().Single().Controller;
+        Assert.AreEqual(0, completed.IngressWorkItems.Count);
+        Assert.AreEqual("cmd-1", completed.LastTerminalCommandStatus?.CommandId);
+        Assert.AreEqual("open_private_chat", completed.LastTerminalCommandStatus?.Action);
+        Assert.AreEqual(StardewCommandStatuses.Completed, completed.LastTerminalCommandStatus?.Status);
     }
 
     [TestMethod]

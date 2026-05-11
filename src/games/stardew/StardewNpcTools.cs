@@ -1221,6 +1221,21 @@ internal sealed class StardewRuntimeActionController
 
         if (IsTerminalStatus(commandResult.Status))
         {
+            var commandId = string.IsNullOrWhiteSpace(commandResult.CommandId)
+                ? snapshot.ActionSlot?.CommandId ?? snapshot.PendingWorkItem?.CommandId ?? snapshot.ActionSlot?.WorkItemId ?? snapshot.PendingWorkItem?.WorkItemId ?? preparedAction.WorkItemId
+                : commandResult.CommandId;
+            var action = snapshot.PendingWorkItem?.WorkType ?? "action";
+            await _runtimeDriver.SetLastTerminalCommandStatusAsync(
+                new GameCommandStatus(
+                    commandId,
+                    string.Empty,
+                    action,
+                    commandResult.Status,
+                    1,
+                    commandResult.FailureReason,
+                    commandResult.FailureReason,
+                    UpdatedAtUtc: _nowUtc()),
+                ct);
             await ClearAsync(
                 preparedAction.ClaimId ?? preparedAction.WorkItemId,
                 commandResult.Retryable ? _nowUtc() + DefaultRetryDelay : null,

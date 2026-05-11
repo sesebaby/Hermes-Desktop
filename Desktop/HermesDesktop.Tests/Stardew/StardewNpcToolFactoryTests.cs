@@ -472,6 +472,45 @@ public class StardewNpcToolFactoryTests
         }
     }
 
+    [TestMethod]
+    public async Task RuntimeActionController_WhenSubmitResultIsTerminal_RecordsLastTerminalStatus()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-runtime-submit-terminal-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var controller = new StardewRuntimeActionController(driver, null, actionTimeout: null, nowUtc: () => new DateTime(2026, 5, 4, 12, 0, 0, DateTimeKind.Utc));
+            var action = new GameAction(
+                "haley",
+                "stardew-valley",
+                GameActionType.OpenPrivateChat,
+                "trace-open-chat",
+                "idem-open-chat",
+                new GameActionTarget("player"),
+                BodyBinding: descriptor.EffectiveBodyBinding);
+
+            var prepared = await controller.TryBeginAsync(action, CancellationToken.None);
+            await controller.RecordSubmitResultAsync(
+                prepared,
+                new GameCommandResult(true, "cmd-open-chat", StardewCommandStatuses.Completed, null, "trace-open-chat"),
+                CancellationToken.None);
+
+            var snapshot = driver.Snapshot();
+            Assert.IsNull(snapshot.PendingWorkItem);
+            Assert.IsNull(snapshot.ActionSlot);
+            Assert.AreEqual("cmd-open-chat", snapshot.LastTerminalCommandStatus?.CommandId);
+            Assert.AreEqual("open_private_chat", snapshot.LastTerminalCommandStatus?.Action);
+            Assert.AreEqual(StardewCommandStatuses.Completed, snapshot.LastTerminalCommandStatus?.Status);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
     private static NpcRuntimeDescriptor CreateDescriptor(string npcId)
         => new(
             npcId,
