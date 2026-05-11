@@ -416,6 +416,52 @@ public class OpenAiClientAuthTests
     }
 
     [TestMethod]
+    public async Task CompleteAsync_WithJsonObjectResponseFormat_AddsJsonInstructionWhenPromptDoesNotMentionJson()
+    {
+        string? capturedBody = null;
+        using var httpClient = new HttpClient(new CaptureHandler(request =>
+        {
+            capturedBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return CreateSuccessResponse();
+        }));
+
+        var client = new OpenAiClient(
+            new LlmConfig
+            {
+                Provider = "deepseek",
+                Model = "deepseek-v4-flash",
+                BaseUrl = "https://api.deepseek.com/v1",
+                AuthMode = "none",
+                ResponseFormat = "json_object"
+            },
+            httpClient);
+
+        await client.CompleteWithToolsAsync(
+            [new Message { Role = "user", Content = "你被唤醒了一轮。自己决定下一步。" }],
+            [
+                new ToolDefinition
+                {
+                    Name = "stardew_status",
+                    Description = "Read status.",
+                    Parameters = JsonSerializer.SerializeToElement(new
+                    {
+                        type = "object",
+                        properties = new { },
+                        required = Array.Empty<string>()
+                    })
+                }
+            ],
+            CancellationToken.None);
+
+        Assert.IsNotNull(capturedBody);
+        using var doc = JsonDocument.Parse(capturedBody!);
+        var messages = doc.RootElement.GetProperty("messages");
+        Assert.AreEqual("system", messages[0].GetProperty("role").GetString());
+        StringAssert.Contains(messages[0].GetProperty("content").GetString(), "json");
+        Assert.AreEqual("user", messages[1].GetProperty("role").GetString());
+    }
+
+    [TestMethod]
     public async Task StreamAsync_ToolCallDeltas_EmitToolUseEventsWithCompleteArguments()
     {
         var sse =

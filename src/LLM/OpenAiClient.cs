@@ -261,6 +261,7 @@ public sealed class OpenAiClient : IChatClient
             : new[] { (object)new { role = "system", content = systemPrompt.Trim() } }
                 .Concat(convertedMessages)
                 .ToArray();
+        msgs = EnsureJsonObjectPromptContract(msgs);
 
         if (tools is not null)
         {
@@ -294,6 +295,46 @@ public sealed class OpenAiClient : IChatClient
             return;
 
         payload["response_format"] = new { type = "json_object" };
+    }
+
+    private object[] EnsureJsonObjectPromptContract(object[] messages)
+    {
+        if (!string.Equals(_config.ResponseFormat, "json_object", StringComparison.OrdinalIgnoreCase) ||
+            PromptMentionsJson(messages))
+        {
+            return messages;
+        }
+
+        return new[] { (object)new { role = "system", content = "Return valid json." } }
+            .Concat(messages)
+            .ToArray();
+    }
+
+    private static bool PromptMentionsJson(IEnumerable<object> messages)
+    {
+        foreach (var message in messages)
+        {
+            var content = ReadContent(message);
+            if (!string.IsNullOrWhiteSpace(content) &&
+                content.Contains("json", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string? ReadContent(object message)
+    {
+        if (message is IDictionary<string, object?> dictionary &&
+            dictionary.TryGetValue("content", out var dictionaryContent))
+        {
+            return dictionaryContent as string;
+        }
+
+        var contentProperty = message.GetType().GetProperty("content");
+        return contentProperty?.GetValue(message) as string;
     }
 
     private async Task<HttpResponseMessage> PostAsync(object payload, CancellationToken ct)

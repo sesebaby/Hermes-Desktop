@@ -245,6 +245,49 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
+    public async Task RunOneTickAsync_WithCompletedLastAction_IncludesExecutionResultFactInDecisionMessage()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-last-action-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.SetLastTerminalCommandStatus(new GameCommandStatus(
+                "cmd-move-1",
+                "haley",
+                "move",
+                "completed",
+                1,
+                null,
+                null));
+            var agent = new FakeAgent(() => { });
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                agent);
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.IsNotNull(agent.LastMessage);
+            StringAssert.Contains(agent.LastMessage, "last_action_result");
+            StringAssert.Contains(agent.LastMessage, "commandId=cmd-move-1");
+            StringAssert.Contains(agent.LastMessage, "action=move");
+            StringAssert.Contains(agent.LastMessage, "status=completed");
+            StringAssert.Contains(agent.LastMessage, "不是下一步指令");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task RunOneTickAsync_DecisionMessageDoesNotInjectObservedGameTime()
     {
         var descriptor = CreateDescriptor("haley");

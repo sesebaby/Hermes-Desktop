@@ -282,23 +282,28 @@ public sealed class NpcAutonomyLoop
             "idle_micro_action 只能表达原地短动作；不要同时附带 speech 或 target，也不要把它改写成 move 或 speak。\n" +
             "如果任务真的被外部条件阻断，用 taskUpdate 把已有 todo 标成 blocked；如果确定做不成，标成 failed；blocked 或 failed 都要写短 reason。\n" +
             "wait 只表示你现在选择暂不推进，不是普通世界动作。";
-        var timeoutFact = BuildActionSlotTimeoutFact(lastTerminalCommandStatus);
+        var lastActionFact = BuildLastActionResultFact(lastTerminalCommandStatus);
         message += "\nMOVE TOOL CONTRACT: parent autonomy owns target resolution. Use skill_view to load stardew-navigation and the smallest relevant reference files, then call stardew_navigate_to_tile with the exact target(locationName,x,y,source). The host executes the real action and the tool result is the feedback channel.";
-        return timeoutFact is null
+        return lastActionFact is null
             ? message
-            : message + "\n" + timeoutFact;
+            : message + "\n" + lastActionFact;
     }
 
-    private static string? BuildActionSlotTimeoutFact(GameCommandStatus? status)
+    private static string? BuildLastActionResultFact(GameCommandStatus? status)
     {
-        if (status is null ||
-            !IsActionSlotTimeout(status))
-        {
+        if (status is null)
             return null;
-        }
 
         var commandId = string.IsNullOrWhiteSpace(status.CommandId) ? "-" : status.CommandId;
-        return $"action_slot_timeout: 上一轮行动槽在完成前超时；commandId={commandId}; status={status.Status}。你自己决定下一步是观察、等待、换目标，还是用不同方式继续。";
+        if (IsActionSlotTimeout(status))
+            return $"action_slot_timeout: 上一轮行动槽在完成前超时；commandId={commandId}; status={status.Status}。你自己决定下一步是观察、等待、换目标，还是用不同方式继续。";
+
+        var action = string.IsNullOrWhiteSpace(status.Action) ? "-" : status.Action;
+        var reason = status.ErrorCode ?? status.BlockedReason;
+        var result = $"last_action_result: 上一轮真实动作已结束；commandId={commandId}; action={action}; status={status.Status}";
+        return string.IsNullOrWhiteSpace(reason)
+            ? result + "。这是宿主执行结果事实，不是下一步指令。"
+            : result + $"; reason={reason}。这是宿主执行结果事实，不是下一步指令。";
     }
 
     private static bool IsActionSlotTimeout(GameCommandStatus status)

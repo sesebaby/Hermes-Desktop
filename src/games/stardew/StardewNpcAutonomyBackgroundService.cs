@@ -828,33 +828,6 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
 
         var runtimeActions = new StardewRuntimeActionController(tracker.Driver, _worldCoordination, null, null);
 
-        if (controller.ActionSlot?.TimeoutAtUtc is { } timeoutAtUtc && DateTime.UtcNow >= timeoutAtUtc)
-        {
-            var cancelledStatus = !string.IsNullOrWhiteSpace(controller.ActionSlot.CommandId)
-                ? await commandService.CancelAsync(controller.ActionSlot.CommandId, StardewBridgeErrorCodes.ActionSlotTimeout, ct)
-                : new GameCommandStatus(
-                    controller.ActionSlot.WorkItemId,
-                    binding.Descriptor.NpcId,
-                    controller.PendingWorkItem?.WorkType ?? "action",
-                    StardewCommandStatuses.Cancelled,
-                    0,
-                    StardewBridgeErrorCodes.ActionSlotTimeout,
-                    StardewBridgeErrorCodes.ActionSlotTimeout,
-                    UpdatedAtUtc: DateTime.UtcNow);
-
-            cancelledStatus = NormalizeActionSlotTimeoutStatus(binding, controller, cancelledStatus);
-            await runtimeActions.RecordStatusAsync(cancelledStatus, ct);
-            await WriteActionSlotTimeoutEvidenceAsync(binding, tracker, cancelledStatus, controller.ActionSlot.TraceId, ct);
-            await PauseTrackerAsync(
-                tracker,
-                deliveredCursor,
-                StardewBridgeErrorCodes.ActionSlotTimeout,
-                bridgeKey,
-                null,
-                ct);
-            return true;
-        }
-
         var commandId = controller.PendingWorkItem?.CommandId ?? controller.ActionSlot?.CommandId;
         if (string.IsNullOrWhiteSpace(commandId))
         {
@@ -877,6 +850,31 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                     return true;
             }
 
+            if (controller.ActionSlot?.TimeoutAtUtc is { } timeoutAtUtcWithoutCommand && DateTime.UtcNow >= timeoutAtUtcWithoutCommand)
+            {
+                var cancelledStatus = new GameCommandStatus(
+                    controller.ActionSlot.WorkItemId,
+                    binding.Descriptor.NpcId,
+                    controller.PendingWorkItem?.WorkType ?? "action",
+                    StardewCommandStatuses.Cancelled,
+                    0,
+                    StardewBridgeErrorCodes.ActionSlotTimeout,
+                    StardewBridgeErrorCodes.ActionSlotTimeout,
+                    UpdatedAtUtc: DateTime.UtcNow);
+
+                cancelledStatus = NormalizeActionSlotTimeoutStatus(binding, controller, cancelledStatus);
+                await runtimeActions.RecordStatusAsync(cancelledStatus, ct);
+                await WriteActionSlotTimeoutEvidenceAsync(binding, tracker, cancelledStatus, controller.ActionSlot.TraceId, ct);
+                await PauseTrackerAsync(
+                    tracker,
+                    deliveredCursor,
+                    StardewBridgeErrorCodes.ActionSlotTimeout,
+                    bridgeKey,
+                    null,
+                    ct);
+                return true;
+            }
+
             await PauseTrackerAsync(
                 tracker,
                 deliveredCursor,
@@ -891,6 +889,24 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         var statusTraceId = controller.ActionSlot?.TraceId ?? status.CommandId;
         await runtimeActions.RecordStatusAsync(status, ct);
         await WriteCommandTerminalEvidenceAsync(binding, tracker, status, statusTraceId, ct);
+
+        if (!StardewRuntimeActionController.IsTerminalStatus(status.Status) &&
+            controller.ActionSlot?.TimeoutAtUtc is { } timeoutAtUtc &&
+            DateTime.UtcNow >= timeoutAtUtc)
+        {
+            var cancelledStatus = await commandService.CancelAsync(commandId, StardewBridgeErrorCodes.ActionSlotTimeout, ct);
+            cancelledStatus = NormalizeActionSlotTimeoutStatus(binding, controller, cancelledStatus);
+            await runtimeActions.RecordStatusAsync(cancelledStatus, ct);
+            await WriteActionSlotTimeoutEvidenceAsync(binding, tracker, cancelledStatus, controller.ActionSlot.TraceId, ct);
+            await PauseTrackerAsync(
+                tracker,
+                deliveredCursor,
+                StardewBridgeErrorCodes.ActionSlotTimeout,
+                bridgeKey,
+                null,
+                ct);
+            return true;
+        }
 
         if (StardewRuntimeActionController.IsInFlightStatus(status.Status))
         {

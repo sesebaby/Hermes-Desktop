@@ -843,6 +843,48 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
+    public async Task RunOneIterationAsync_WhenExpiredPendingActionAlreadyCompleted_DoesNotCancelCompletedCommand()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("unused");
+        var commands = new ScriptedCommandService(
+            statusSequence:
+            [
+                new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Completed, 1, null, null)
+            ]);
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley has reached the beach.",
+                ["location=Beach"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetPendingWorkItemAsync(
+            new NpcRuntimePendingWorkItemSnapshot("work-1", "move", "cmd-1", StardewCommandStatuses.Running, DateTime.UtcNow.AddMinutes(-2)),
+            CancellationToken.None);
+        await driver.SetActionSlotAsync(
+            new NpcRuntimeActionSlotSnapshot("action", "work-1", "cmd-1", "trace-1", DateTime.UtcNow.AddMinutes(-2), DateTime.UtcNow.AddSeconds(-1)),
+            CancellationToken.None);
+        var service = CreateService(discovery, _ => adapter, chatClient, supervisor, enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, commands.StatusCalls);
+        Assert.AreEqual(0, commands.CancelRequests.Count);
+        var snapshot = supervisor.Snapshot().Single();
+        Assert.IsNull(snapshot.Controller.PendingWorkItem);
+        Assert.IsNull(snapshot.Controller.ActionSlot);
+        Assert.AreEqual(StardewCommandStatuses.Completed, snapshot.Controller.LastTerminalCommandStatus?.Status);
+        Assert.IsNull(snapshot.Controller.LastTerminalCommandStatus?.ErrorCode);
+    }
+
+    [TestMethod]
     public async Task RunOneIterationAsync_WhenPendingActionEndsBlocked_SurfacesTerminalStatusAndWritesRuntimeEvidence()
     {
         var discovery = CreateDiscovery("save-42");
@@ -968,7 +1010,11 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
               "waitReason": "I will reconsider after the previous action timed out."
             }
             """);
-        var commands = new FakeCommandService();
+        var commands = new ScriptedCommandService(
+            statusSequence:
+            [
+                new GameCommandStatus("cmd-1", "haley", "move", StardewCommandStatuses.Running, 1, null, null)
+            ]);
         var coordination = new WorldCoordinationService(new ResourceClaimRegistry());
         var targetTile = new ClaimedTile("Town", 42, 17);
         Assert.IsTrue(coordination.TryClaimMove("work-1", "haley", "trace-1", targetTile, targetTile, "idem-1").Accepted);
