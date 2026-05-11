@@ -344,6 +344,13 @@ public sealed class NpcDelegateMoveTargetParameters
 
 public sealed class NpcNoWorldActionTool : ITool, IToolSchemaProvider
 {
+    private readonly ILogger? _logger;
+
+    public NpcNoWorldActionTool(ILogger? logger = null)
+    {
+        _logger = logger;
+    }
+
     public string Name => "npc_no_world_action";
 
     public string Description => "仅限私聊父 agent 使用。当前私聊轮次不需要立即改变游戏世界时，调用本工具声明无世界动作，然后自然回复玩家。不要用纯文本省略这个声明。";
@@ -370,6 +377,8 @@ public sealed class NpcNoWorldActionTool : ITool, IToolSchemaProvider
         var p = (NpcNoWorldActionToolParameters)parameters;
         if (string.IsNullOrWhiteSpace(p.Reason))
             return Task.FromResult(ToolResult.Fail("reason is required"));
+
+        _logger?.LogInformation("NPC private-chat no-world action declared; reason={Reason}", p.Reason.Trim());
 
         return Task.FromResult(ToolResult.Ok(JsonSerializer.Serialize(new
         {

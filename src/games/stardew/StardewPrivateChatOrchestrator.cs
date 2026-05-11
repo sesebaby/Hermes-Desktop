@@ -8,6 +8,8 @@ using Hermes.Agent.Skills;
 using Hermes.Agent.Tools;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 
 public sealed class StardewPrivateChatOrchestrator : IDisposable
 {
@@ -21,6 +23,7 @@ public sealed class StardewPrivateChatOrchestrator : IDisposable
         IPrivateChatSessionLeaseCoordinator? sessionLeaseCoordinator = null)
     {
         var stardewOptions = options ?? new StardewPrivateChatOptions();
+        var conversationIdScope = NormalizeConversationIdScope(stardewOptions.ConversationIdScope);
         _inner = new PrivateChatOrchestrator(
             events,
             commands,
@@ -38,7 +41,10 @@ public sealed class StardewPrivateChatOrchestrator : IDisposable
                     ],
                     IsRetryableOpenFailure: IsRetryableOpenFailure,
                     BodyBinding: stardewOptions.BodyBinding,
-                    BodyBindingResolver: stardewOptions.BodyBindingResolver),
+                    BodyBindingResolver: stardewOptions.BodyBindingResolver,
+                    GetConversationId: conversationIdScope is null
+                        ? null
+                        : record => ExtractScopedConversationId(record, conversationIdScope)),
                 ToCoreReopenPolicy(stardewOptions.ReopenPolicy),
                 stardewOptions.MaxTurnsPerSession,
                 stardewOptions.MaxOpenAttempts,
@@ -91,6 +97,43 @@ public sealed class StardewPrivateChatOrchestrator : IDisposable
             PrivateChatReopenPolicy.UntilCancelled => PrivateChatSessionReopenPolicy.UntilCancelled,
             _ => PrivateChatSessionReopenPolicy.OnceAfterReply
         };
+
+    private static string? NormalizeConversationIdScope(string? scope)
+    {
+        if (string.IsNullOrWhiteSpace(scope))
+            return null;
+
+        var builder = new StringBuilder(scope.Length);
+        foreach (var c in scope.Trim())
+            builder.Append(char.IsAsciiLetterOrDigit(c) ? c : '_');
+
+        var normalized = builder.ToString().Trim('_');
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static string? ExtractScopedConversationId(GameEventRecord record, string scope)
+    {
+        var explicitConversationId = GetPayloadString(record, "conversationId");
+        if (!string.IsNullOrWhiteSpace(explicitConversationId))
+            return explicitConversationId.Trim();
+
+        if (!string.IsNullOrWhiteSpace(record.CorrelationId))
+        {
+            var correlationId = record.CorrelationId.Trim();
+            return correlationId.StartsWith("pc_", StringComparison.OrdinalIgnoreCase)
+                ? correlationId
+                : $"{scope}_{correlationId}";
+        }
+
+        return string.IsNullOrWhiteSpace(record.EventId)
+            ? null
+            : $"{scope}_{record.EventId.Trim()}";
+    }
+
+    private static string? GetPayloadString(GameEventRecord record, string propertyName)
+        => record.Payload is not null && record.Payload.TryGetPropertyValue(propertyName, out var node)
+            ? node?.GetValue<string>()
+            : null;
 
     private static StardewPrivateChatState ToStardewState(PrivateChatState state)
         => state switch
@@ -222,7 +265,7 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
                     descriptor,
                     runtimeDriver,
                     _loggerFactory.CreateLogger<NpcDelegateActionTool>()),
-                new NpcNoWorldActionTool(),
+                new NpcNoWorldActionTool(_loggerFactory.CreateLogger<NpcNoWorldActionTool>()),
                 ..toolSnapshot.ToolSurface.Tools
             ]);
             var sessionId = $"{descriptor.SessionId}:private_chat:{request.ConversationId}";
@@ -445,7 +488,7 @@ public sealed class StardewPrivateChatRuntimeAdapter : IDisposable
                 adapter.Events,
                 adapter.Commands,
                 _agentRunner,
-                BuildOptions(saveId),
+                BuildOptions(saveId, bridgeKey),
                 _sessionLeaseCoordinator);
             _bridgeKey = bridgeKey;
         }
@@ -453,9 +496,15 @@ public sealed class StardewPrivateChatRuntimeAdapter : IDisposable
         _logger.LogInformation("Stardew private-chat runtime bridge attached: {BridgeKey}", bridgeKey);
     }
 
-    private StardewPrivateChatOptions BuildOptions(string saveId)
+    private StardewPrivateChatOptions BuildOptions(string saveId, string bridgeKey)
     {
-        var options = _options with { SaveId = saveId };
+        var options = _options with
+        {
+            SaveId = saveId,
+            ConversationIdScope = string.IsNullOrWhiteSpace(_options.ConversationIdScope)
+                ? BuildBridgeConversationIdScope(bridgeKey)
+                : _options.ConversationIdScope
+        };
         if (options.BodyBinding is not null || options.BodyBindingResolver is not null || _bindingResolver is null)
             return options;
 
@@ -463,6 +512,12 @@ public sealed class StardewPrivateChatRuntimeAdapter : IDisposable
         {
             BodyBindingResolver = npcId => _bindingResolver.Resolve(npcId, saveId).Descriptor.EffectiveBodyBinding
         };
+    }
+
+    private static string BuildBridgeConversationIdScope(string bridgeKey)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(bridgeKey.Trim()));
+        return "bridge_" + Convert.ToHexString(bytes.AsSpan(0, 8)).ToLowerInvariant();
     }
 
     private void DisposeOrchestratorNoThrow()
@@ -500,7 +555,8 @@ public sealed record StardewPrivateChatOptions(
     TimeSpan PollInterval = default,
     NpcBodyBinding? BodyBinding = null,
     Func<string, NpcBodyBinding>? BodyBindingResolver = null,
-    TimeSpan ReplyTimeout = default);
+    TimeSpan ReplyTimeout = default,
+    string? ConversationIdScope = null);
 
 public enum PrivateChatReopenPolicy
 {

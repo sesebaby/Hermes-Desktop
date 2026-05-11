@@ -108,7 +108,61 @@ public class StardewPrivateChatOrchestratorTests
 
         Assert.AreEqual(1, commands.Submitted.Count);
         Assert.AreEqual(GameActionType.OpenPrivateChat, commands.Submitted[0].Type);
-        Assert.AreEqual("pc_evt-new", commands.Submitted[0].Payload?["conversationId"]?.GetValue<string>());
+        var conversationId = commands.Submitted[0].Payload?["conversationId"]?.GetValue<string>();
+        StringAssert.StartsWith(conversationId, "pc_bridge_");
+        StringAssert.Contains(conversationId, "evt-new");
+    }
+
+    [TestMethod]
+    public async Task RuntimeAdapter_NewBridgeWithRestartedEventIds_GeneratesDistinctConversationIds()
+    {
+        var events = new FakeEventSource();
+        var commands = new FakeCommandService();
+        using var runtimeAdapter = new StardewPrivateChatRuntimeAdapter(
+            new FakePrivateChatAgentRunner(),
+            NullLogger<StardewPrivateChatRuntimeAdapter>.Instance,
+            new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never));
+        var adapter = new FakeGameAdapter(commands, events);
+
+        await runtimeAdapter.ProcessAsync(
+            "127.0.0.1:8745:2026-05-10T13:55:46Z:1_435026555",
+            "save-1",
+            adapter,
+            [
+                new GameEventRecord(
+                    "evt_000000000001",
+                    "vanilla_dialogue_completed",
+                    "Haley",
+                    DateTime.UtcNow,
+                    "Haley vanilla dialogue completed.")
+            ],
+            CancellationToken.None);
+
+        await runtimeAdapter.ProcessAsync(
+            "127.0.0.1:8745:2026-05-10T23:42:22Z:1_435026555",
+            "save-1",
+            adapter,
+            [
+                new GameEventRecord(
+                    "evt_000000000001",
+                    "vanilla_dialogue_completed",
+                    "Haley",
+                    DateTime.UtcNow.AddHours(1),
+                    "Haley vanilla dialogue completed after bridge restart.")
+            ],
+            CancellationToken.None);
+
+        var conversationIds = commands.Submitted
+            .Where(action => action.Type == GameActionType.OpenPrivateChat)
+            .Select(action => action.Payload?["conversationId"]?.GetValue<string>())
+            .ToArray();
+        Assert.AreEqual(2, conversationIds.Length);
+        Assert.AreNotEqual(
+            conversationIds[0],
+            conversationIds[1],
+            "Bridge event ids restart at evt_000000000001 after a game/bridge restart; private-chat conversation ids must still stay transcript-unique.");
+        StringAssert.Contains(conversationIds[0], "evt_000000000001");
+        StringAssert.Contains(conversationIds[1], "evt_000000000001");
     }
 
     [TestMethod]

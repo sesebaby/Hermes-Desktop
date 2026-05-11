@@ -15,6 +15,7 @@
 - The failure can look like bridge pathing did nothing, but the command was actually submitted to a wrong target and then interrupted by the reply dialogue lifecycle.
 - A patch that blocks specific natural-language destination aliases, for example `海边` versus `town-square`, is a symptom fix and does not scale to the full Stardew map set.
 - A later manual test can show the NPC says a natural reply such as "already walking" but does not move at all. In that shape, runtime/LLM diagnostics can show the private-chat parent turn completed with `toolCalls=0`, so no `npc_delegate_action` ingress exists and SMAPI receives no move command.
+- A bridge/game restart can reuse event ids from `evt_000000000001`; if private-chat `conversationId` is derived only from that event id, a fresh private chat can reuse an old transcript session. The model may then see prior tool calls from an earlier run and claim movement is already queued.
 
 ## Root Cause
 
@@ -24,6 +25,7 @@
 - The first mitigation added local-executor alias matching against `destinationText`, but this kept the wrong ownership boundary: natural-language map target resolution still belonged to the local executor instead of the parent model/tool transcript.
 - Another failure mode is a parent private-chat turn that returns plain dialogue without any tool call. Prompt wording alone allowed the model to verbally accept an immediate world action while leaving the host with no structured command to execute.
 - Text markers such as `NO_WORLD_ACTION:` are not a reliable protocol. They hide the decision in natural language instead of using the same tool-call feedback channel as real world actions.
+- Another failure mode is conversation identity collision across bridge restarts. The bridge event buffer restarts canonical event ids, so `pc_evt_000000000001` is not globally unique. Reusing that value in the private-chat transcript session id lets old assistant/tool messages contaminate a new player request.
 
 ## Bad Fix Paths
 
@@ -34,6 +36,7 @@
 - Do not use a textual `NO_WORLD_ACTION:` prefix as the "no action" signal; this is another natural-language convention that the host must parse.
 - Do not bypass bridge movement with `warpCharacter` or NPC controller ownership.
 - Do not start private-chat delegated world actions while the reply dialogue for the same conversation is still open.
+- Do not "fix" restart collisions by clearing or deleting private-chat transcripts. Preserve history, but give each fresh bridge-backed private-chat session a unique conversation id.
 
 ## Corrective Constraints
 
@@ -44,6 +47,8 @@
 - Private-chat parent turns use a two-tool decision protocol: call `npc_delegate_action` when the NPC accepts an immediate world action, or call `npc_no_world_action` when this turn has no immediate world action. If neither tool appears, the runner may do one generic self-check that reports only the structural fact that `npc_delegate_action` was absent and asks the parent model to decide.
 - The self-check must not classify player text or NPC reply text in host code. It must not contain destination aliases or acceptance phrase matching.
 - Regression tests must cover the dialogue lifecycle gate, target payload contract, and zero delegation model calls for private-chat move.
+- Bridge-backed private-chat conversation ids must include a bridge/session scope before event ids so restarted `evt_000000000001` values do not collide in transcript storage.
+- `npc_no_world_action` should log its reason to Hermes logs so manual tests can distinguish a model no-action decision from missing tool execution without reading SQLite activity rows.
 
 ## Verification Evidence
 
@@ -60,6 +65,12 @@
 - GREEN: `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~Stardew" -p:UseSharedCompilation=false` passed, 213/213 with 3 live-AI tests skipped.
 - GREEN: `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~StardewNpcPrivateChatAgentRunnerTests" -p:UseSharedCompilation=false` passed, 11/11 after replacing text markers with `npc_no_world_action`.
 - GREEN: `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~NpcLocalExecutorRunnerTests|FullyQualifiedName~StardewNpcPrivateChatAgentRunnerTests|FullyQualifiedName~StardewNpcAutonomyBackgroundServiceTests|FullyQualifiedName~StardewLiveAiSmokeTests" -p:UseSharedCompilation=false` passed, 70/70 with 3 live-AI tests skipped.
+- RED: `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~StardewPrivateChatOrchestratorTests.RuntimeAdapter_NewBridgeWithRestartedEventIds_GeneratesDistinctConversationIds" -p:UseSharedCompilation=false` failed because both bridge attachments mapped restarted `evt_000000000001` to `pc_evt_000000000001`.
+- GREEN: `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~StardewPrivateChatOrchestratorTests" -p:UseSharedCompilation=false` passed, 24/24.
+- GREEN: `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~StardewNpcPrivateChatAgentRunnerTests" -p:UseSharedCompilation=false` passed, 11/11.
+- GREEN: `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~Stardew" -p:UseSharedCompilation=false` passed, 217/217 with 3 live-AI tests skipped.
+- GREEN: `dotnet test .\Mods\StardewHermesBridge.Tests\Mods.StardewHermesBridge.Tests.csproj -c Debug -p:UseSharedCompilation=false` passed, 133/133.
+- GREEN: `dotnet build .\Desktop\HermesDesktop\HermesDesktop.csproj -c Debug -p:Platform=x64 -p:UseSharedCompilation=false` succeeded with existing Stardew bridge warnings.
 
 ## Related Files
 
