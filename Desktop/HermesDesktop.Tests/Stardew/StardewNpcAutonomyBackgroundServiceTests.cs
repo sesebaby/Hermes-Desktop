@@ -1152,7 +1152,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
-    public async Task RunOneIterationAsync_WithDelegatedMoveBeforePrivateChatReplyClosed_DefersIngressWithoutStartingExecutor()
+    public async Task RunOneIterationAsync_WithDelegatedMoveAfterPrivateChatReplyDisplayed_SubmitsMoveWithoutWaitingForClose()
     {
         var discovery = CreateDiscovery("save-42");
         var delegationClient = new CapturingStreamingChatClient(
@@ -1174,19 +1174,18 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 "Haley has a private-chat delegated action.",
                 ["location=Town"])),
             new ScriptedEventSource(
-                new GameEventBatch([], new GameEventCursor(null, 0)),
                 new GameEventBatch(
                     [
                         new GameEventRecord(
-                            "evt-reply-closed-1",
-                            "private_chat_reply_closed",
+                            "evt-reply-displayed-1",
+                            "private_chat_reply_displayed",
                             "Haley",
                             DateTime.UtcNow,
-                            "Haley private chat reply closed.",
+                            "Haley private chat reply is ready for the next player click.",
                             Payload: new JsonObject { ["conversationId"] = "conversation-beach" },
                             Sequence: 1)
                     ],
-                    new GameEventCursor("evt-reply-closed-1", 1))));
+                    new GameEventCursor("evt-reply-displayed-1", 1))));
         var supervisor = new NpcRuntimeSupervisor();
         var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
         var binding = resolver.Resolve("haley", "save-42");
@@ -1220,12 +1219,6 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             supervisor,
             enabledNpcIds: ["haley"],
             delegationChatClient: delegationClient);
-
-        await service.RunOneIterationAsync(CancellationToken.None);
-
-        Assert.AreEqual(0, delegationClient.StructuredStreamCalls);
-        Assert.AreEqual(0, commands.Submitted.Count);
-        Assert.AreEqual(1, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
 
         await service.RunOneIterationAsync(CancellationToken.None);
 

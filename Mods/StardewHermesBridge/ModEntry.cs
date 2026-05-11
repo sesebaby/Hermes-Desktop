@@ -38,6 +38,7 @@ public sealed class ModEntry : Mod
     private bool _originalStartRetryAttempted;
     private DateTimeOffset? _bridgeStartedAtUtc;
     private PendingPrivateChatReplyDialogue? _pendingPrivateChatReplyDialogue;
+    private string? _activeHermesPrivateChatDialogueConversationId;
 
     public override void Entry(IModHelper helper)
     {
@@ -59,9 +60,10 @@ public sealed class ModEntry : Mod
             (npcName, conversationId, route) =>
             {
                 _overlay.ClearPrivateChatPending();
-                if (string.Equals(route, "dialogue", StringComparison.OrdinalIgnoreCase))
-                    _pendingPrivateChatReplyDialogue = new PendingPrivateChatReplyDialogue(npcName, conversationId);
-            });
+                if (string.Equals(route, "reply_pending_click", StringComparison.OrdinalIgnoreCase))
+                    _overlay.SetPrivateChatReplyReady(npcName);
+            },
+            HasHermesPrivateChatReplyDialogueOpen);
         _debugMenu = new BridgeDebugMenu(_overlay);
         _httpHost = new BridgeHttpHost(_commands, _events, _bridgeLogger);
         _clickRouter = new NpcDialogueClickRouter();
@@ -156,8 +158,10 @@ public sealed class ModEntry : Mod
         _overlay.SetBlockedReason("day_transition");
         _overlay.ClearPrivateChatPending();
         _phoneOverlay.ClosePhone();
+        _bubbleOverlay.ClearPendingClickReplies();
         ClearPendingDialogueFlow();
         ClearCustomDialogueGuards();
+        _activeHermesPrivateChatDialogueConversationId = null;
     }
 
     private void OnReturnedToTitle(object? sender, ReturnedToTitleEventArgs e)
@@ -166,8 +170,10 @@ public sealed class ModEntry : Mod
         _overlay.SetBlockedReason("returned_to_title");
         _overlay.ClearPrivateChatPending();
         _phoneOverlay.ClosePhone();
+        _bubbleOverlay.ClearPendingClickReplies();
         ClearPendingDialogueFlow();
         ClearCustomDialogueGuards();
+        _activeHermesPrivateChatDialogueConversationId = null;
         WriteDiscoveryFile();
     }
 
@@ -188,6 +194,13 @@ public sealed class ModEntry : Mod
 
         if (_menuGuard.ConsumeMenuChange(oldDialogueNpcName, newDialogueNpcName) is not NpcDialogueMenuGuardResult.Unhandled)
             return;
+
+        if (!string.IsNullOrWhiteSpace(_activeHermesPrivateChatDialogueConversationId) &&
+            e.OldMenu is DialogueBox &&
+            e.NewMenu is null)
+        {
+            _activeHermesPrivateChatDialogueConversationId = null;
+        }
 
         if (_pendingPrivateChatReplyDialogue is { } pendingReply)
         {
@@ -257,6 +270,21 @@ public sealed class ModEntry : Mod
             return;
         }
 
+        if (!isDialogueBoxOpen &&
+            route.NpcName is { } replyNpcName &&
+            clickedNpc is not null &&
+            _bubbleOverlay.TryConsumePendingClickReply(replyNpcName, out var pendingClickReply))
+        {
+            _pendingPrivateChatReplyDialogue = new PendingPrivateChatReplyDialogue(
+                pendingClickReply.NpcName,
+                pendingClickReply.ConversationId ?? "");
+            _activeHermesPrivateChatDialogueConversationId = pendingClickReply.ConversationId;
+            _overlay.ClearPrivateChatPending();
+            NpcRawDialogueRenderer.Display(clickedNpc, pendingClickReply.Text);
+            _bridgeLogger.Write("private_chat_reply_displayed_on_click", pendingClickReply.NpcName, FormalEntry, "dialogue", null, "displayed", pendingClickReply.ConversationId);
+            return;
+        }
+
         BeginOrObserveOriginalDialogue(route.NpcName!, isDialogueBoxOpen ? "already_open" : "vanilla_pending", isDialogueBoxOpen ? null : e.Button);
         _bridgeLogger.Write(SmapiBridgeLogger.NpcClickObserved, route.NpcName, FormalEntry, FormalEntry, null, "observed", $"{BuildInputAcceptedDetail(e, isActionButton, isUseToolButton, isMouseButton)};original_start={(isDialogueBoxOpen ? "already_open" : "vanilla_pending")}");
     }
@@ -319,7 +347,12 @@ public sealed class ModEntry : Mod
                 ["reply_closed_source"] = "input_menu_dialogue_closed"
             });
         _bridgeLogger.Write("private_chat_reply_closed_fact", pending.NpcName, FormalEntry, FormalEntry, null, "recorded", "input_menu_dialogue_closed");
+        _activeHermesPrivateChatDialogueConversationId = null;
     }
+
+    internal bool HasHermesPrivateChatReplyDialogueOpen()
+        => !string.IsNullOrWhiteSpace(_activeHermesPrivateChatDialogueConversationId) &&
+           Game1.activeClickableMenu is DialogueBox;
 
     private bool TryStartOriginalDialogueIfNeeded()
     {

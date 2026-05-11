@@ -53,6 +53,7 @@ public sealed class BridgeCommandQueue
     private readonly Action<string>? _privateChatOpened;
     private readonly Action<string>? _privateChatSubmitted;
     private readonly Action<string, string, string>? _privateChatReplyDisplayed;
+    private readonly Func<bool>? _hasHermesPrivateChatReplyDialogueOpen;
     private readonly object _privateChatInputGate = new();
     private BridgePrivateChatInput? _privateChatInput;
     private BridgeMoveCommand? _activeMove;
@@ -65,7 +66,8 @@ public sealed class BridgeCommandQueue
         NpcOverheadBubbleOverlay? bubbleOverlay = null,
         Action<string>? privateChatOpened = null,
         Action<string>? privateChatSubmitted = null,
-        Action<string, string, string>? privateChatReplyDisplayed = null)
+        Action<string, string, string>? privateChatReplyDisplayed = null,
+        Func<bool>? hasHermesPrivateChatReplyDialogueOpen = null)
     {
         _logger = logger;
         _events = events ?? new BridgeEventBuffer();
@@ -80,6 +82,7 @@ public sealed class BridgeCommandQueue
         _privateChatOpened = privateChatOpened;
         _privateChatSubmitted = privateChatSubmitted;
         _privateChatReplyDisplayed = privateChatReplyDisplayed;
+        _hasHermesPrivateChatReplyDialogueOpen = hasHermesPrivateChatReplyDialogueOpen;
     }
 
     public BridgeResponse<MoveAcceptedData> EnqueueMove(BridgeEnvelope<MovePayload> envelope)
@@ -264,11 +267,6 @@ public sealed class BridgeCommandQueue
         var conversationId = string.IsNullOrWhiteSpace(envelope.Payload.ConversationId)
             ? envelope.RequestId
             : envelope.Payload.ConversationId;
-        var inputMenuReply = privateChat &&
-            string.Equals(envelope.Payload.Source, "input_menu", StringComparison.OrdinalIgnoreCase);
-        if (inputMenuReply)
-            _privateChatReplyDisplayed?.Invoke(npc.Name, conversationId, "dialogue");
-
         var display = _messageRouter.Display(npc, envelope.Payload.Text, channel, envelope.Payload.ConversationId, envelope.Payload.Source);
         if (privateChat)
         {
@@ -284,8 +282,7 @@ public sealed class BridgeCommandQueue
                     ["reply_closed_source"] = display.ReplyClosedSource,
                     ["source"] = envelope.Payload.Source
                 });
-            if (!inputMenuReply)
-                _privateChatReplyDisplayed?.Invoke(npc.Name, conversationId, display.Route);
+            _privateChatReplyDisplayed?.Invoke(npc.Name, conversationId, display.Route);
         }
         _logger.Write("action_speak_completed", npcId, "speak", envelope.TraceId, null, "completed", null);
         return new BridgeResponse<SpeakData>(
@@ -730,7 +727,16 @@ public sealed class BridgeCommandQueue
 
         MaintainNpcMovementControl(npc);
 
-        var interruptReason = CheckInterrupt();
+        var waitReason = CheckMoveWait();
+        if (waitReason is not null)
+        {
+            StopNpcMotion(npc);
+            command.Wait(waitReason);
+            _logger.Write("task_waiting", command.NpcId, "move", command.TraceId, command.CommandId, "running", waitReason);
+            return command.ToStatusData();
+        }
+
+        var interruptReason = CheckMoveInterrupt();
         if (interruptReason is not null)
         {
             StopNpcMotion(npc);
@@ -1325,16 +1331,27 @@ public sealed class BridgeCommandQueue
         return delta.Y > 0 ? 2 : 0;
     }
 
-    private static string? CheckInterrupt()
+    private string? CheckMoveWait()
+    {
+        if (_hasHermesPrivateChatReplyDialogueOpen?.Invoke() == true)
+            return "private_chat_dialogue_open";
+
+        return null;
+    }
+
+    private static string? CheckMoveInterrupt()
     {
         if (Game1.eventUp)
             return "event_active";
 
-        if (Game1.activeClickableMenu is DialogueBox)
+        if (IsUnhandledDialogueOpen())
             return "dialogue_started";
 
         return null;
     }
+
+    private static bool IsUnhandledDialogueOpen()
+        => Game1.activeClickableMenu is DialogueBox;
 
     public void Drain(string reason)
     {
@@ -1807,6 +1824,14 @@ public sealed class BridgeMoveCommand
     {
         Status = "interrupted";
         InterruptionReason = reason;
+        BlockedReason = reason;
+    }
+
+    public void Wait(string reason)
+    {
+        if (Status != "running")
+            return;
+
         BlockedReason = reason;
     }
 

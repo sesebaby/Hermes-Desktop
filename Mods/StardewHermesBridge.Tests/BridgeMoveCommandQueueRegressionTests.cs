@@ -541,6 +541,33 @@ public sealed class BridgeMoveCommandQueueRegressionTests
             "Dynamic blocked tile and failure kind belong in BlockedReason, not ErrorCode.");
     }
 
+    [TestMethod]
+    public void MovePumpWaitsForHermesPrivateChatDialogueInsteadOfInterrupting()
+    {
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(
+            commandQueue,
+            "private_chat_dialogue_open",
+            "A Hermes-owned private-chat reply dialogue should be a wait state, not a terminal move interruption.");
+        StringAssert.Contains(
+            commandQueue,
+            "task_waiting",
+            "The bridge must log UI wait states distinctly from task_interrupted so manual testing can see that the move is still alive.");
+        StringAssert.Contains(
+            commandQueue,
+            "CheckMoveWait",
+            "Move execution should check temporary UI waits separately from true interrupts.");
+        StringAssert.Contains(
+            commandQueue,
+            "CheckMoveInterrupt",
+            "Move execution should keep true interrupt handling for events and non-Hermes dialogue.");
+        Assert.IsFalse(
+            commandQueue.Contains("if (Game1.activeClickableMenu is DialogueBox)\r\n            return \"dialogue_started\";", StringComparison.Ordinal) ||
+            commandQueue.Contains("if (Game1.activeClickableMenu is DialogueBox)\n            return \"dialogue_started\";", StringComparison.Ordinal),
+            "DialogueBox alone is too broad: Hermes private-chat reply windows must not terminate running moves.");
+    }
+
     private static string ReadRepositoryFile(params string[] relativePath)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

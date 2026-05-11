@@ -35,9 +35,10 @@ public sealed class StardewMessageDisplayRouter
         var privateChat = string.Equals(channel, "private_chat", StringComparison.OrdinalIgnoreCase);
         if (privateChat && string.Equals(source, "input_menu", StringComparison.OrdinalIgnoreCase))
         {
-            NpcRawDialogueRenderer.Display(npc, text);
-            _logger.Write("private_chat_reply_displayed_original_dialogue", npc.Name, channel, "dialogue", null, "displayed", conversationId);
-            return new StardewMessageDisplayResult("dialogue", "input_menu_dialogue_closed");
+            _phoneState.AddIncomingMessage(npc.Name, text, conversationId, openThread: false, recordOnly: true);
+            _bubbleOverlay.AddPendingClickReply(npc.Name, text, conversationId);
+            _logger.Write("private_chat_reply_pending_click", npc.Name, channel, "reply_pending_click", null, "queued", conversationId);
+            return new StardewMessageDisplayResult("reply_pending_click", "input_menu_next_click_dialogue_closed");
         }
 
         var nearby = IsPlayerWithinNearbyRange(npc);

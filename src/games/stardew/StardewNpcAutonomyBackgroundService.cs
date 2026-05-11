@@ -1038,6 +1038,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             string.Equals(record.EventType, "vanilla_dialogue_unavailable", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(record.EventType, "player_private_message_submitted", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(record.EventType, "player_private_message_cancelled", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(record.EventType, "private_chat_reply_displayed", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(record.EventType, "private_chat_reply_closed", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -1134,14 +1135,14 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
 
         if (isMove &&
             !string.IsNullOrWhiteSpace(conversationId) &&
-            !HasPrivateChatReplyClosed(dispatch.SharedEventBatch, binding.Descriptor, conversationId))
+            !HasPrivateChatReplyDisplayedOrClosed(dispatch.SharedEventBatch, binding.Descriptor, conversationId))
         {
             await WriteIngressDiagnosticAsync(
                 binding,
                 tracker,
                 workItem,
                 "deferred",
-                "waiting_private_chat_reply_closed",
+                "waiting_private_chat_reply_displayed",
                 ct);
             await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
             return true;
@@ -1348,14 +1349,15 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                jsonValue.TryGetValue<int>(out value);
     }
 
-    private static bool HasPrivateChatReplyClosed(
+    private static bool HasPrivateChatReplyDisplayedOrClosed(
         GameEventBatch batch,
         NpcRuntimeDescriptor descriptor,
         string conversationId)
     {
         foreach (var record in batch.Records)
         {
-            if (!string.Equals(record.EventType, "private_chat_reply_closed", StringComparison.OrdinalIgnoreCase) ||
+            if (!(string.Equals(record.EventType, "private_chat_reply_displayed", StringComparison.OrdinalIgnoreCase) ||
+                  string.Equals(record.EventType, "private_chat_reply_closed", StringComparison.OrdinalIgnoreCase)) ||
                 !IsRelevantToRuntime(descriptor, record))
             {
                 continue;

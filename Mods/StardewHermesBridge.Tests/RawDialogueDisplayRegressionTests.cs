@@ -346,7 +346,7 @@ public class RawDialogueDisplayRegressionTests
     }
 
     [TestMethod]
-    public void ProactiveNpcMessagesRouteToBubbleOrPhoneWithoutRawDialogue()
+    public void NpcMessagesRouteToNonBlockingBubbleOrPhoneWithoutAutomaticRawDialogue()
     {
         var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
         var router = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "StardewMessageDisplayRouter.cs");
@@ -359,18 +359,21 @@ public class RawDialogueDisplayRegressionTests
             commandQueue,
             "_messageRouter.Display",
             "ExecuteSpeak should use the shared message display router.");
+        Assert.IsFalse(
+            router.Contains("NpcRawDialogueRenderer.Display(npc, text)", StringComparison.Ordinal),
+            "AI private-chat replies must not automatically open a Stardew DialogueBox after one player input turn.");
         StringAssert.Contains(
             router,
-            "string.Equals(source, \"input_menu\", StringComparison.OrdinalIgnoreCase)",
-            "Only replies sourced from the player-click PrivateChatInputMenu may use the original Stardew DialogueBox path.");
+            "reply_pending_click",
+            "Input-menu replies should be recorded as pending until the player explicitly clicks the NPC again.");
         StringAssert.Contains(
             router,
-            "NpcRawDialogueRenderer.Display(npc, text)",
-            "Player-click private-chat replies must display through the original-style Stardew dialogue window.");
+            "AddPendingClickReply",
+            "The bridge must store the prepared reply for the next NPC click instead of displaying it immediately.");
         StringAssert.Contains(
-            router,
-            "return new StardewMessageDisplayResult(\"dialogue\", \"input_menu_dialogue_closed\")",
-            "The input-menu dialogue route must wait for DialogueBox close before reopening the next private-chat turn.");
+            bubbleOverlay,
+            "ClearPendingClickReplies",
+            "Pending click replies must be cleared on world teardown so stale replies cannot cross saves or days.");
         StringAssert.Contains(
             router,
             "const int NearbyTileRange = 8",
@@ -478,21 +481,23 @@ public class RawDialogueDisplayRegressionTests
 
         StringAssert.Contains(
             modEntry,
-            "_pendingPrivateChatReplyDialogue = new PendingPrivateChatReplyDialogue(npcName, conversationId)",
-            "Input-menu-sourced replies use a Stardew DialogueBox, so ModEntry must track that dialogue lifecycle.");
+            "_pendingPrivateChatReplyDialogue = new PendingPrivateChatReplyDialogue(",
+            "Input-menu-sourced replies are shown only after the next player click, so ModEntry must track that dialogue lifecycle.");
         StringAssert.Contains(
             modEntry,
             "RecordPrivateChatReplyClosedFromInputDialogue",
-            "Closing the original-style reply dialogue must emit private_chat_reply_closed for the private-chat loop.");
+            "Closing the player-click-displayed reply dialogue must emit private_chat_reply_closed for the private-chat loop.");
         StringAssert.Contains(
             modEntry,
             "input_menu_dialogue_closed",
             "The close event must identify the input-menu dialogue source, not phone or bubble.");
-        var preDisplayCallback = commandQueue.IndexOf("_privateChatReplyDisplayed?.Invoke(npc.Name, conversationId, \"dialogue\")", StringComparison.Ordinal);
-        var displayCall = commandQueue.IndexOf("_messageRouter.Display", StringComparison.Ordinal);
-        Assert.IsTrue(
-            preDisplayCallback >= 0 && displayCall > preDisplayCallback,
-            "BridgeCommandQueue must register input-menu dialogue lifecycle before calling the display router, otherwise MenuChanged can race past the pending reply marker.");
+        StringAssert.Contains(
+            commandQueue,
+            "_privateChatReplyDisplayed?.Invoke(npc.Name, conversationId, display.Route)",
+            "BridgeCommandQueue must register source-specific reply lifecycle after the display router selects the route.");
+        Assert.IsFalse(
+            commandQueue.Contains("_privateChatReplyDisplayed?.Invoke(npc.Name, conversationId, \"dialogue\")", StringComparison.Ordinal),
+            "Input-menu replies must not pre-register an active dialogue before a player click actually opens one.");
         StringAssert.Contains(
             phoneOverlay,
             "private_chat_reply_closed",

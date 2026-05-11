@@ -9,6 +9,7 @@ public sealed class BridgeStatusOverlay
     private const int PrivateChatPendingSeconds = 30;
     private const string HaleyPrivateChatPendingText = "海莉知道你想和她聊天，\n她正在考虑是否回答你。";
     private const string HaleyPrivateChatThinkingText = "海莉正在思考怎么回答你。";
+    private const string HaleyPrivateChatReplyReadyText = "海莉已经想好怎么回答你了，\n再次点击她查看。";
 
     private string _online = "offline";
     private string _lastNpcId = "-";
@@ -53,6 +54,14 @@ public sealed class BridgeStatusOverlay
         _privateChatPendingText = string.Equals(npcName, "Haley", StringComparison.OrdinalIgnoreCase)
             ? HaleyPrivateChatThinkingText
             : $"{npcName} is thinking about how to answer you.";
+        _privateChatPendingExpiresAtUtc = DateTime.UtcNow.AddSeconds(PrivateChatPendingSeconds);
+    }
+
+    public void SetPrivateChatReplyReady(string npcName)
+    {
+        _privateChatPendingText = string.Equals(npcName, "Haley", StringComparison.OrdinalIgnoreCase)
+            ? HaleyPrivateChatReplyReadyText
+            : $"{npcName} has a reply ready. Click them again to read it.";
         _privateChatPendingExpiresAtUtc = DateTime.UtcNow.AddSeconds(PrivateChatPendingSeconds);
     }
 
