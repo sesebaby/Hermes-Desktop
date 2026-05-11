@@ -332,6 +332,97 @@ public class McpServerTests
     }
 
     [TestMethod]
+    public async Task PostMcp_StardewIdleMicroAction_RecordsTerminalStatusForNextAutonomyWake()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-mcp-stardew-idle-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var supervisor = new NpcRuntimeSupervisor();
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var commands = new CapturingCommandService(
+                [
+                    new GameCommandStatus(
+                        "cmd-mcp-idle",
+                        "haley",
+                        "idle_micro_action",
+                        StardewCommandStatuses.Completed,
+                        1,
+                        null,
+                        null)
+                ],
+                new GameCommandResult(true, "cmd-mcp-idle", StardewCommandStatuses.Queued, null, "trace-mcp-idle"));
+            var tools = StardewNpcToolFactory.CreateDefault(
+                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+                descriptor,
+                traceIdFactory: () => "trace-mcp-idle",
+                idempotencyKeyFactory: () => "idem-mcp-idle",
+                maxStatusPolls: 1,
+                runtimeDriver: driver);
+            await using var server = await StartServerAsync(tools);
+            using var client = CreateClient(server);
+
+            using var response = await PostMcpAsync(client, server, new
+            {
+                jsonrpc = "2.0",
+                id = "stardew-idle-1",
+                method = "tools/call",
+                @params = new
+                {
+                    name = "stardew_idle_micro_action",
+                    arguments = new
+                    {
+                        kind = "look_around",
+                        intensity = "light",
+                        ttlSeconds = 4
+                    }
+                }
+            });
+
+            Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+            using var document = await ReadJsonAsync(response);
+            var result = document.RootElement.GetProperty("result");
+            Assert.IsFalse(result.GetProperty("isError").GetBoolean());
+            Assert.AreEqual("text", result.GetProperty("content")[0].GetProperty("type").GetString());
+            StringAssert.Contains(result.GetProperty("content")[0].GetProperty("text").GetString(), "cmd-mcp-idle");
+            Assert.IsNotNull(commands.LastAction);
+            Assert.AreEqual("haley", commands.LastAction.NpcId);
+            Assert.AreEqual(GameActionType.IdleMicroAction, commands.LastAction.Type);
+            Assert.AreEqual("self", commands.LastAction.Target.Kind);
+            Assert.AreEqual("look_around", commands.LastAction.Payload?["kind"]?.ToString());
+            Assert.AreEqual("light", commands.LastAction.Payload?["intensity"]?.ToString());
+            Assert.AreEqual(4, (int?)commands.LastAction.Payload?["ttlSeconds"]);
+
+            var snapshot = driver.Snapshot();
+            Assert.AreEqual(StardewCommandStatuses.Completed, snapshot.LastTerminalCommandStatus?.Status);
+            Assert.AreEqual("cmd-mcp-idle", snapshot.LastTerminalCommandStatus?.CommandId);
+            Assert.AreEqual("idle_micro_action", snapshot.LastTerminalCommandStatus?.Action);
+
+            var instance = new NpcRuntimeInstance(descriptor, new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId));
+            await instance.StartAsync(CancellationToken.None);
+            instance.SetLastTerminalCommandStatus(snapshot.LastTerminalCommandStatus);
+            var agent = new CapturingAgent();
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+                new NpcObservationFactStore(),
+                agent);
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.IsNotNull(agent.LastMessage);
+            StringAssert.Contains(agent.LastMessage, "last_action_result");
+            StringAssert.Contains(agent.LastMessage, "commandId=cmd-mcp-idle");
+            StringAssert.Contains(agent.LastMessage, "action=idle_micro_action");
+            StringAssert.Contains(agent.LastMessage, "status=completed");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task PostMcp_StardewNavigateToTile_WithBlockedStatus_WakesAgentWithFailureFact()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-mcp-stardew-blocked-tests", Guid.NewGuid().ToString("N"));

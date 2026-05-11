@@ -42,9 +42,9 @@ public static class StardewNpcToolFactory
             new StardewFarmStatusTool(adapter.Queries, descriptor),
             new StardewRecentActivityTool(recentActivityProvider, descriptor, logger),
             new StardewNavigateToTileTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
-            new StardewSpeakTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
-            new StardewOpenPrivateChatTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
-            new StardewIdleMicroActionTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
+            new StardewSpeakTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
+            new StardewOpenPrivateChatTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
+            new StardewIdleMicroActionTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
             new StardewTaskStatusTool(adapter.Commands)
         ]);
     }
@@ -716,14 +716,68 @@ public sealed class StardewRecentActivityTool : ITool, IToolSchemaProvider
     }
 }
 
+internal sealed class StardewActionStatusPoller
+{
+    private readonly IGameCommandService _commands;
+    private readonly int _maxStatusPolls;
+    private readonly StardewRuntimeActionController _runtimeActions;
+
+    public StardewActionStatusPoller(
+        IGameCommandService commands,
+        int maxStatusPolls,
+        StardewRuntimeActionController runtimeActions)
+    {
+        _commands = commands;
+        _maxStatusPolls = Math.Max(0, maxStatusPolls);
+        _runtimeActions = runtimeActions;
+    }
+
+    public async Task<IReadOnlyList<GameCommandStatus>> PollUntilTerminalAsync(GameCommandResult commandResult, CancellationToken ct)
+    {
+        if (!commandResult.Accepted ||
+            string.IsNullOrWhiteSpace(commandResult.CommandId) ||
+            StardewRuntimeActionController.IsTerminalStatus(commandResult.Status))
+        {
+            return [];
+        }
+
+        var statuses = new List<GameCommandStatus>();
+        for (var i = 0; i < _maxStatusPolls; i++)
+        {
+            var status = await _commands.GetStatusAsync(commandResult.CommandId, ct);
+            statuses.Add(status);
+            await _runtimeActions.RecordStatusAsync(status, ct);
+
+            if (StardewRuntimeActionController.IsTerminalStatus(status.Status))
+                break;
+        }
+
+        return statuses;
+    }
+
+    public async Task<StardewNpcActionToolResult> ToActionToolResultAsync(GameCommandResult commandResult, CancellationToken ct)
+    {
+        var statusPolls = await PollUntilTerminalAsync(commandResult, ct);
+        var finalStatus = statusPolls.Count > 0 ? statusPolls[^1] : null;
+        return new StardewNpcActionToolResult(
+            commandResult.Accepted,
+            commandResult.CommandId,
+            commandResult.Status,
+            commandResult.FailureReason,
+            commandResult.TraceId,
+            finalStatus,
+            statusPolls);
+    }
+}
+
 public sealed class StardewNavigateToTileTool : ITool, IToolSchemaProvider
 {
     private readonly IGameCommandService _commands;
     private readonly NpcRuntimeDescriptor _descriptor;
     private readonly Func<string> _traceIdFactory;
     private readonly Func<string> _idempotencyKeyFactory;
-    private readonly int _maxStatusPolls;
     private readonly StardewRuntimeActionController _runtimeActions;
+    private readonly StardewActionStatusPoller _statusPoller;
 
     internal StardewNavigateToTileTool(
         IGameCommandService commands,
@@ -737,8 +791,8 @@ public sealed class StardewNavigateToTileTool : ITool, IToolSchemaProvider
         _descriptor = descriptor;
         _traceIdFactory = traceIdFactory;
         _idempotencyKeyFactory = idempotencyKeyFactory;
-        _maxStatusPolls = Math.Max(0, maxStatusPolls);
         _runtimeActions = runtimeActions;
+        _statusPoller = new StardewActionStatusPoller(commands, maxStatusPolls, runtimeActions);
     }
 
     public string Name => "stardew_navigate_to_tile";
@@ -793,40 +847,7 @@ public sealed class StardewNavigateToTileTool : ITool, IToolSchemaProvider
 
         var commandResult = await _commands.SubmitAsync(action, ct);
         await _runtimeActions.RecordSubmitResultAsync(preparedAction, commandResult, ct);
-        var statusPolls = await PollUntilTerminalAsync(commandResult, ct);
-        var finalStatus = statusPolls.Count > 0 ? statusPolls[^1] : null;
-
-        return ToolResult.Ok(StardewNpcToolJson.Serialize(new StardewNpcActionToolResult(
-            commandResult.Accepted,
-            commandResult.CommandId,
-            commandResult.Status,
-            commandResult.FailureReason,
-            commandResult.TraceId,
-            finalStatus,
-            statusPolls)));
-    }
-
-    private async Task<IReadOnlyList<GameCommandStatus>> PollUntilTerminalAsync(GameCommandResult commandResult, CancellationToken ct)
-    {
-        if (!commandResult.Accepted ||
-            string.IsNullOrWhiteSpace(commandResult.CommandId) ||
-            StardewRuntimeActionController.IsTerminalStatus(commandResult.Status))
-        {
-            return [];
-        }
-
-        var statuses = new List<GameCommandStatus>();
-        for (var i = 0; i < _maxStatusPolls; i++)
-        {
-            var status = await _commands.GetStatusAsync(commandResult.CommandId, ct);
-            statuses.Add(status);
-            await _runtimeActions.RecordStatusAsync(status, ct);
-
-            if (StardewRuntimeActionController.IsTerminalStatus(status.Status))
-                break;
-        }
-
-        return statuses;
+        return ToolResult.Ok(StardewNpcToolJson.Serialize(await _statusPoller.ToActionToolResultAsync(commandResult, ct)));
     }
 }
 
@@ -837,12 +858,14 @@ public sealed class StardewSpeakTool : ITool, IToolSchemaProvider
     private readonly Func<string> _traceIdFactory;
     private readonly Func<string> _idempotencyKeyFactory;
     private readonly StardewRuntimeActionController _runtimeActions;
+    private readonly StardewActionStatusPoller _statusPoller;
 
     internal StardewSpeakTool(
         IGameCommandService commands,
         NpcRuntimeDescriptor descriptor,
         Func<string> traceIdFactory,
         Func<string> idempotencyKeyFactory,
+        int maxStatusPolls,
         StardewRuntimeActionController runtimeActions)
     {
         _commands = commands;
@@ -850,6 +873,7 @@ public sealed class StardewSpeakTool : ITool, IToolSchemaProvider
         _traceIdFactory = traceIdFactory;
         _idempotencyKeyFactory = idempotencyKeyFactory;
         _runtimeActions = runtimeActions;
+        _statusPoller = new StardewActionStatusPoller(commands, maxStatusPolls, runtimeActions);
     }
 
     public string Name => "stardew_speak";
@@ -888,7 +912,7 @@ public sealed class StardewSpeakTool : ITool, IToolSchemaProvider
 
         var commandResult = await _commands.SubmitAsync(action, ct);
         await _runtimeActions.RecordSubmitResultAsync(preparedAction, commandResult, ct);
-        return ToolResult.Ok(StardewNpcToolJson.Serialize(commandResult));
+        return ToolResult.Ok(StardewNpcToolJson.Serialize(await _statusPoller.ToActionToolResultAsync(commandResult, ct)));
     }
 }
 
@@ -899,12 +923,14 @@ public sealed class StardewIdleMicroActionTool : ITool, IToolSchemaProvider
     private readonly Func<string> _traceIdFactory;
     private readonly Func<string> _idempotencyKeyFactory;
     private readonly StardewRuntimeActionController _runtimeActions;
+    private readonly StardewActionStatusPoller _statusPoller;
 
     internal StardewIdleMicroActionTool(
         IGameCommandService commands,
         NpcRuntimeDescriptor descriptor,
         Func<string> traceIdFactory,
         Func<string> idempotencyKeyFactory,
+        int maxStatusPolls,
         StardewRuntimeActionController runtimeActions)
     {
         _commands = commands;
@@ -912,6 +938,7 @@ public sealed class StardewIdleMicroActionTool : ITool, IToolSchemaProvider
         _traceIdFactory = traceIdFactory;
         _idempotencyKeyFactory = idempotencyKeyFactory;
         _runtimeActions = runtimeActions;
+        _statusPoller = new StardewActionStatusPoller(commands, maxStatusPolls, runtimeActions);
     }
 
     public string Name => "stardew_idle_micro_action";
@@ -956,7 +983,7 @@ public sealed class StardewIdleMicroActionTool : ITool, IToolSchemaProvider
 
         var commandResult = await _commands.SubmitAsync(action, ct);
         await _runtimeActions.RecordSubmitResultAsync(preparedAction, commandResult, ct);
-        return ToolResult.Ok(StardewNpcToolJson.Serialize(commandResult));
+        return ToolResult.Ok(StardewNpcToolJson.Serialize(await _statusPoller.ToActionToolResultAsync(commandResult, ct)));
     }
 }
 
@@ -994,12 +1021,14 @@ public sealed class StardewOpenPrivateChatTool : ITool, IToolSchemaProvider
     private readonly Func<string> _traceIdFactory;
     private readonly Func<string> _idempotencyKeyFactory;
     private readonly StardewRuntimeActionController _runtimeActions;
+    private readonly StardewActionStatusPoller _statusPoller;
 
     internal StardewOpenPrivateChatTool(
         IGameCommandService commands,
         NpcRuntimeDescriptor descriptor,
         Func<string> traceIdFactory,
         Func<string> idempotencyKeyFactory,
+        int maxStatusPolls,
         StardewRuntimeActionController runtimeActions)
     {
         _commands = commands;
@@ -1007,6 +1036,7 @@ public sealed class StardewOpenPrivateChatTool : ITool, IToolSchemaProvider
         _traceIdFactory = traceIdFactory;
         _idempotencyKeyFactory = idempotencyKeyFactory;
         _runtimeActions = runtimeActions;
+        _statusPoller = new StardewActionStatusPoller(commands, maxStatusPolls, runtimeActions);
     }
 
     public string Name => "stardew_open_private_chat";
@@ -1040,7 +1070,7 @@ public sealed class StardewOpenPrivateChatTool : ITool, IToolSchemaProvider
 
         var commandResult = await _commands.SubmitAsync(action, ct);
         await _runtimeActions.RecordSubmitResultAsync(preparedAction, commandResult, ct);
-        return ToolResult.Ok(StardewNpcToolJson.Serialize(commandResult));
+        return ToolResult.Ok(StardewNpcToolJson.Serialize(await _statusPoller.ToActionToolResultAsync(commandResult, ct)));
     }
 }
 
