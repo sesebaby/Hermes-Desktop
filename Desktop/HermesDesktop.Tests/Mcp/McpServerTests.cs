@@ -423,6 +423,180 @@ public class McpServerTests
     }
 
     [TestMethod]
+    public async Task PostMcp_StardewSpeak_RecordsTerminalStatusForNextAutonomyWake()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-mcp-stardew-speak-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var supervisor = new NpcRuntimeSupervisor();
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var commands = new CapturingCommandService(
+                [
+                    new GameCommandStatus(
+                        "cmd-mcp-speak",
+                        "haley",
+                        "speak",
+                        StardewCommandStatuses.Completed,
+                        1,
+                        null,
+                        null)
+                ],
+                new GameCommandResult(true, "cmd-mcp-speak", StardewCommandStatuses.Queued, null, "trace-mcp-speak"));
+            var tools = StardewNpcToolFactory.CreateDefault(
+                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+                descriptor,
+                traceIdFactory: () => "trace-mcp-speak",
+                idempotencyKeyFactory: () => "idem-mcp-speak",
+                maxStatusPolls: 1,
+                runtimeDriver: driver);
+            await using var server = await StartServerAsync(tools);
+            using var client = CreateClient(server);
+
+            using var response = await PostMcpAsync(client, server, new
+            {
+                jsonrpc = "2.0",
+                id = "stardew-speak-1",
+                method = "tools/call",
+                @params = new
+                {
+                    name = "stardew_speak",
+                    arguments = new
+                    {
+                        text = "I'll be there soon.",
+                        channel = "player"
+                    }
+                }
+            });
+
+            Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+            using var document = await ReadJsonAsync(response);
+            var result = document.RootElement.GetProperty("result");
+            Assert.IsFalse(result.GetProperty("isError").GetBoolean());
+            StringAssert.Contains(result.GetProperty("content")[0].GetProperty("text").GetString(), "cmd-mcp-speak");
+            Assert.IsNotNull(commands.LastAction);
+            Assert.AreEqual("haley", commands.LastAction.NpcId);
+            Assert.AreEqual(GameActionType.Speak, commands.LastAction.Type);
+            Assert.AreEqual("player", commands.LastAction.Target.Kind);
+            Assert.AreEqual("I'll be there soon.", commands.LastAction.Payload?["text"]?.ToString());
+            Assert.AreEqual("player", commands.LastAction.Payload?["channel"]?.ToString());
+
+            var snapshot = driver.Snapshot();
+            Assert.AreEqual(StardewCommandStatuses.Completed, snapshot.LastTerminalCommandStatus?.Status);
+            Assert.AreEqual("cmd-mcp-speak", snapshot.LastTerminalCommandStatus?.CommandId);
+            Assert.AreEqual("speak", snapshot.LastTerminalCommandStatus?.Action);
+
+            var instance = new NpcRuntimeInstance(descriptor, new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId));
+            await instance.StartAsync(CancellationToken.None);
+            instance.SetLastTerminalCommandStatus(snapshot.LastTerminalCommandStatus);
+            var agent = new CapturingAgent();
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+                new NpcObservationFactStore(),
+                agent);
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.IsNotNull(agent.LastMessage);
+            StringAssert.Contains(agent.LastMessage, "last_action_result");
+            StringAssert.Contains(agent.LastMessage, "commandId=cmd-mcp-speak");
+            StringAssert.Contains(agent.LastMessage, "action=speak");
+            StringAssert.Contains(agent.LastMessage, "status=completed");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task PostMcp_StardewOpenPrivateChat_RecordsTerminalStatusForNextAutonomyWake()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-mcp-stardew-open-chat-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var supervisor = new NpcRuntimeSupervisor();
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var commands = new CapturingCommandService(
+                [
+                    new GameCommandStatus(
+                        "cmd-mcp-open-chat",
+                        "haley",
+                        "open_private_chat",
+                        StardewCommandStatuses.Completed,
+                        1,
+                        null,
+                        null)
+                ],
+                new GameCommandResult(true, "cmd-mcp-open-chat", StardewCommandStatuses.Queued, null, "trace-mcp-open-chat"));
+            var tools = StardewNpcToolFactory.CreateDefault(
+                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+                descriptor,
+                traceIdFactory: () => "trace-mcp-open-chat",
+                idempotencyKeyFactory: () => "idem-mcp-open-chat",
+                maxStatusPolls: 1,
+                runtimeDriver: driver);
+            await using var server = await StartServerAsync(tools);
+            using var client = CreateClient(server);
+
+            using var response = await PostMcpAsync(client, server, new
+            {
+                jsonrpc = "2.0",
+                id = "stardew-open-chat-1",
+                method = "tools/call",
+                @params = new
+                {
+                    name = "stardew_open_private_chat",
+                    arguments = new
+                    {
+                        prompt = "Ask me in private."
+                    }
+                }
+            });
+
+            Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+            using var document = await ReadJsonAsync(response);
+            var result = document.RootElement.GetProperty("result");
+            Assert.IsFalse(result.GetProperty("isError").GetBoolean());
+            StringAssert.Contains(result.GetProperty("content")[0].GetProperty("text").GetString(), "cmd-mcp-open-chat");
+            Assert.IsNotNull(commands.LastAction);
+            Assert.AreEqual("haley", commands.LastAction.NpcId);
+            Assert.AreEqual(GameActionType.OpenPrivateChat, commands.LastAction.Type);
+            Assert.AreEqual("player", commands.LastAction.Target.Kind);
+            Assert.AreEqual("Ask me in private.", commands.LastAction.Payload?["prompt"]?.ToString());
+
+            var snapshot = driver.Snapshot();
+            Assert.AreEqual(StardewCommandStatuses.Completed, snapshot.LastTerminalCommandStatus?.Status);
+            Assert.AreEqual("cmd-mcp-open-chat", snapshot.LastTerminalCommandStatus?.CommandId);
+            Assert.AreEqual("open_private_chat", snapshot.LastTerminalCommandStatus?.Action);
+
+            var instance = new NpcRuntimeInstance(descriptor, new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId));
+            await instance.StartAsync(CancellationToken.None);
+            instance.SetLastTerminalCommandStatus(snapshot.LastTerminalCommandStatus);
+            var agent = new CapturingAgent();
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+                new NpcObservationFactStore(),
+                agent);
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.IsNotNull(agent.LastMessage);
+            StringAssert.Contains(agent.LastMessage, "last_action_result");
+            StringAssert.Contains(agent.LastMessage, "commandId=cmd-mcp-open-chat");
+            StringAssert.Contains(agent.LastMessage, "action=open_private_chat");
+            StringAssert.Contains(agent.LastMessage, "status=completed");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task PostMcp_StardewNavigateToTile_WithBlockedStatus_WakesAgentWithFailureFact()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-mcp-stardew-blocked-tests", Guid.NewGuid().ToString("N"));
