@@ -146,7 +146,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     public async Task ReplyAsync_WhenImmediateActionAccepted_QueuesDelegatedActionIngress()
     {
         var runtimeSupervisor = new NpcRuntimeSupervisor();
-        var client = new DelegateActionThenFinalChatClient();
+        var client = new TodoThenDelegateActionThenFinalChatClient();
         var runner = CreateRunner(client, runtimeSupervisor);
 
         var reply = await runner.ReplyAsync(
@@ -155,7 +155,16 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
 
         Assert.AreEqual("I'll head there now.", reply.Text);
         Assert.IsTrue(client.SawDelegateActionTool, "Private chat tool surface must include npc_delegate_action.");
+        CollectionAssert.AreEqual(
+            new[] { "todo", "npc_delegate_action" },
+            client.ExecutedWorldPlanningTools,
+            "Accepted immediate world commitments must first become NPC session todo, then enter the host action lifecycle.");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
+        Assert.IsTrue(runtimeSupervisor.TryGetTaskView(haleySnapshot.SessionId, out var taskView));
+        Assert.IsNotNull(taskView);
+        Assert.AreEqual(1, taskView.ActiveSnapshot.Todos.Count);
+        Assert.AreEqual("Meet player at the beach now", taskView.ActiveSnapshot.Todos[0].Content);
+        Assert.AreEqual("in_progress", taskView.ActiveSnapshot.Todos[0].Status);
         var ingress = haleySnapshot.Controller.IngressWorkItems.Single();
         Assert.AreEqual("npc_delegated_action", ingress.WorkType);
         Assert.AreEqual("queued", ingress.Status);
@@ -178,7 +187,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     public async Task ReplyAsync_PrivateChatToolSurface_PrioritizesImmediateDelegationOverTodo()
     {
         var runtimeSupervisor = new NpcRuntimeSupervisor();
-        var client = new DelegateActionThenFinalChatClient();
+        var client = new TodoThenDelegateActionThenFinalChatClient();
         var runner = CreateRunner(client, runtimeSupervisor);
 
         await runner.ReplyAsync(
@@ -191,8 +200,8 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         Assert.IsTrue(delegateIndex >= 0, "私聊工具面必须包含 npc_delegate_action。");
         Assert.IsTrue(noWorldActionIndex >= 0, "私聊工具面必须包含 npc_no_world_action。");
         Assert.IsTrue(todoIndex >= 0, "私聊工具面必须包含 todo。");
-        Assert.IsTrue(delegateIndex < todoIndex, "立即行动委托工具必须排在 todo 前，避免模型把现在就做的请求只记成待办。");
-        Assert.IsTrue(noWorldActionIndex < todoIndex, "无世界动作声明工具必须排在 todo 前，保证父层每轮都能明确闭环。");
+        Assert.IsTrue(todoIndex < delegateIndex, "立即行动承诺必须先成为 NPC session todo，再委托真实动作。");
+        Assert.IsTrue(noWorldActionIndex < delegateIndex, "无世界动作声明工具必须靠前，保证父层每轮都能明确闭环。");
         var todoDefinition = client.FirstToolDefinitions.Single(tool => tool.Name == "todo");
         StringAssert.Contains(todoDefinition.Description, "当前会话");
         StringAssert.Contains(todoDefinition.Description, "现在就执行");
@@ -212,7 +221,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             CancellationToken.None);
 
         Assert.AreEqual("好，我现在过去。", reply.Text);
-        Assert.AreEqual(3, client.CompleteWithToolsCalls, "第一轮没有任何工具调用时，应触发一次父层自检工具轮，再自然回复。");
+        Assert.AreEqual(3, client.CompleteWithToolsCalls, "第一轮没有任何工具调用时，应触发一次父层自检工具轮，自检轮必须同时补 todo 和委托动作。");
         Assert.IsTrue(
             client.MessagesByCall.Skip(1).Any(messages => messages.Any(message =>
                 message.Role == "user" &&
@@ -231,6 +240,34 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", target["source"]?.GetValue<string>());
         Assert.IsNull(ingress.Payload?["destinationText"]);
         Assert.IsNull(ingress.Payload?["intentText"]);
+        Assert.IsTrue(runtimeSupervisor.TryGetTaskView(haleySnapshot.SessionId, out var taskView));
+        Assert.IsNotNull(taskView);
+        Assert.AreEqual(1, taskView.ActiveSnapshot.Todos.Count);
+        Assert.AreEqual("Meet player at the beach now", taskView.ActiveSnapshot.Todos[0].Content);
+        Assert.AreEqual("in_progress", taskView.ActiveSnapshot.Todos[0].Status);
+    }
+
+    [TestMethod]
+    public async Task ReplyAsync_WhenImmediateActionDelegatedWithoutTodo_RetriesForCommitmentTodoWithoutDuplicatingDelegation()
+    {
+        var runtimeSupervisor = new NpcRuntimeSupervisor();
+        var client = new FirstDelegatesWithoutTodoThenWritesTodoChatClient();
+        var runner = CreateRunner(client, runtimeSupervisor);
+
+        var reply = await runner.ReplyAsync(
+            new NpcPrivateChatRequest("haley", "save-1", "conversation-beach", "go to the beach now"),
+            CancellationToken.None);
+
+        Assert.AreEqual("I'll head there now.", reply.Text);
+        Assert.AreEqual(4, client.CompleteWithToolsCalls, "Missing commitment todo should trigger one parent self-check turn before the final reply.");
+        Assert.IsTrue(client.SawMissingTodoSelfCheck);
+        var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
+        Assert.AreEqual(1, haleySnapshot.Controller.IngressWorkItems.Count, "The todo repair turn must not enqueue a duplicate delegated action.");
+        Assert.IsTrue(runtimeSupervisor.TryGetTaskView(haleySnapshot.SessionId, out var taskView));
+        Assert.IsNotNull(taskView);
+        Assert.AreEqual(1, taskView.ActiveSnapshot.Todos.Count);
+        Assert.AreEqual("Meet player at the beach now", taskView.ActiveSnapshot.Todos[0].Content);
+        Assert.AreEqual("in_progress", taskView.ActiveSnapshot.Todos[0].Status);
     }
 
     [TestMethod]
@@ -245,7 +282,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             CancellationToken.None);
 
         Assert.AreEqual("好啦，我们走。", reply.Text);
-        Assert.AreEqual(3, client.CompleteWithToolsCalls, "第一轮没有任何工具调用时，应触发一次通用父层自检；宿主不能靠短语或地点判断移动意图。");
+        Assert.AreEqual(3, client.CompleteWithToolsCalls, "第一轮没有任何工具调用时，应触发一次通用父层自检；自检轮必须同时补 todo 和委托动作，宿主不能靠短语或地点判断移动意图。");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
         var ingress = haleySnapshot.Controller.IngressWorkItems.Single();
         Assert.AreEqual("npc_delegated_action", ingress.WorkType);
@@ -257,6 +294,11 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         Assert.AreEqual(34, target["y"]?.GetValue<int>());
         Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", target["source"]?.GetValue<string>());
         Assert.IsNull(ingress.Payload?["destinationText"]);
+        Assert.IsTrue(runtimeSupervisor.TryGetTaskView(haleySnapshot.SessionId, out var taskView));
+        Assert.IsNotNull(taskView);
+        Assert.AreEqual(1, taskView.ActiveSnapshot.Todos.Count);
+        Assert.AreEqual("Meet player at the beach now", taskView.ActiveSnapshot.Todos[0].Content);
+        Assert.AreEqual("in_progress", taskView.ActiveSnapshot.Todos[0].Status);
     }
 
     [TestMethod]
@@ -426,6 +468,13 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             Path.Combine(root, FileSystemNpcPackLoader.ManifestFileName),
             JsonSerializer.Serialize(manifest));
     }
+
+    private static IReadOnlyList<string> ReadExecutedToolNames(IEnumerable<Message> messages)
+        => messages
+            .Where(message => string.Equals(message.Role, "assistant", StringComparison.OrdinalIgnoreCase))
+            .SelectMany(message => message.ToolCalls ?? [])
+            .Select(call => call.Name)
+            .ToArray();
 
     private sealed class MemoryWriteThenFinalChatClient : IChatClient
     {
@@ -690,13 +739,14 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         }
     }
 
-    private sealed class DelegateActionThenFinalChatClient : IChatClient
+    private sealed class TodoThenDelegateActionThenFinalChatClient : IChatClient
     {
         private int _calls;
 
         public bool SawDelegateActionTool { get; private set; }
         public List<string> FirstToolNames { get; } = new();
         public List<ToolDefinition> FirstToolDefinitions { get; } = new();
+        public string[] ExecutedWorldPlanningTools { get; private set; } = [];
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
             => Task.FromResult("ok");
@@ -724,6 +774,12 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                     [
                         new ToolCall
                         {
+                            Id = "todo-commitment",
+                            Name = "todo",
+                            Arguments = "{\"todos\":[{\"id\":\"meet-beach-now\",\"content\":\"Meet player at the beach now\",\"status\":\"in_progress\"}]}"
+                        },
+                        new ToolCall
+                        {
                             Id = "delegate-action",
                             Name = "npc_delegate_action",
                             Arguments = """
@@ -743,6 +799,11 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                     ]
                 });
             }
+
+            if (_calls == 2)
+                ExecutedWorldPlanningTools = ReadExecutedToolNames(messages)
+                    .Where(name => name is "todo" or "npc_delegate_action")
+                    .ToArray();
 
             return Task.FromResult(new ChatResponse { Content = "I'll head there now.", FinishReason = "stop" });
         }
@@ -797,6 +858,12 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                     [
                         new ToolCall
                         {
+                            Id = "todo-after-correction",
+                            Name = "todo",
+                            Arguments = "{\"todos\":[{\"id\":\"meet-beach-now\",\"content\":\"Meet player at the beach now\",\"status\":\"in_progress\"}]}"
+                        },
+                        new ToolCall
+                        {
                             Id = "delegate-after-correction",
                             Name = "npc_delegate_action",
                             Arguments = """
@@ -818,6 +885,96 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             }
 
             return Task.FromResult(new ChatResponse { Content = "好，我现在过去。", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class FirstDelegatesWithoutTodoThenWritesTodoChatClient : IChatClient
+    {
+        public int CompleteWithToolsCalls { get; private set; }
+        public bool SawMissingTodoSelfCheck { get; private set; }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            CompleteWithToolsCalls++;
+            var snapshot = messages.ToArray();
+            SawMissingTodoSelfCheck |= snapshot.Any(message =>
+                string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase) &&
+                (message.Content?.Contains("缺少 todo", StringComparison.Ordinal) ?? false) &&
+                (message.Content?.Contains("不要重复调用 npc_delegate_action", StringComparison.Ordinal) ?? false));
+            if (CompleteWithToolsCalls == 1)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = "delegate-action",
+                            Name = "npc_delegate_action",
+                            Arguments = """
+                            {
+                              "action": "move",
+                              "reason": "meet the player at the beach now",
+                              "target": {
+                                "locationName": "Beach",
+                                "x": 32,
+                                "y": 34,
+                                "source": "map-skill:stardew.navigation.poi.beach-shoreline"
+                              },
+                              "conversationId": "conversation-beach"
+                            }
+                            """
+                        }
+                    ]
+                });
+            }
+
+            if (CompleteWithToolsCalls == 2)
+            {
+                return Task.FromResult(new ChatResponse { Content = "I'll head there now.", FinishReason = "stop" });
+            }
+
+            if (CompleteWithToolsCalls == 3)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = "todo-commitment-repair",
+                            Name = "todo",
+                            Arguments = "{\"todos\":[{\"id\":\"meet-beach-now\",\"content\":\"Meet player at the beach now\",\"status\":\"in_progress\"}]}"
+                        }
+                    ]
+                });
+            }
+
+            return Task.FromResult(new ChatResponse { Content = "I'll head there now.", FinishReason = "stop" });
         }
 
         public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
@@ -866,6 +1023,12 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                     FinishReason = "tool_calls",
                     ToolCalls =
                     [
+                        new ToolCall
+                        {
+                            Id = "todo-after-casual-correction",
+                            Name = "todo",
+                            Arguments = "{\"todos\":[{\"id\":\"meet-beach-now\",\"content\":\"Meet player at the beach now\",\"status\":\"in_progress\"}]}"
+                        },
                         new ToolCall
                         {
                             Id = "delegate-after-casual-correction",

@@ -385,8 +385,7 @@ public sealed class NpcRuntimeSupervisor
                     CheckpointDirectory = Path.Combine(instance.Namespace.RuntimeRoot, "checkpoints"),
                     MemoryAvailable = includeMemory || includeUser
                 },
-                tools,
-                discoveredToolsFirst: string.Equals(channelKey, "private_chat", StringComparison.OrdinalIgnoreCase));
+                tools);
         }
 
         return new NpcRuntimeAgentHandle(

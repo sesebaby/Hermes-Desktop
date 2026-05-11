@@ -261,12 +261,12 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
             var toolSnapshot = _toolSnapshotProvider.Capture();
             var privateChatToolSurface = NpcToolSurface.FromTools(
             [
+                new NpcNoWorldActionTool(_loggerFactory.CreateLogger<NpcNoWorldActionTool>()),
+                ..toolSnapshot.ToolSurface.Tools,
                 new NpcDelegateActionTool(
                     descriptor,
                     runtimeDriver,
-                    _loggerFactory.CreateLogger<NpcDelegateActionTool>()),
-                new NpcNoWorldActionTool(_loggerFactory.CreateLogger<NpcNoWorldActionTool>()),
-                ..toolSnapshot.ToolSurface.Tools
+                    _loggerFactory.CreateLogger<NpcDelegateActionTool>())
             ]);
             var sessionId = $"{descriptor.SessionId}:private_chat:{request.ConversationId}";
             logger.LogInformation(
@@ -322,6 +322,19 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
                     chatSession,
                     ct);
             }
+            if (ShouldRunCommitmentTodoSelfCheck(chatSession))
+            {
+                logger.LogInformation(
+                    "Stardew private-chat delegated action missing commitment todo; running parent self-check once; npc={NpcId}; saveId={SaveId}; conversationId={ConversationId}; sessionId={SessionId}",
+                    descriptor.NpcId,
+                    saveId,
+                    request.ConversationId,
+                    sessionId);
+                response = await handle.Agent.ChatAsync(
+                    BuildPrivateChatCommitmentTodoSelfCheckMessage(request.PlayerText, response),
+                    chatSession,
+                    ct);
+            }
             stopwatch.Stop();
             logger.LogInformation(
                 "Stardew private-chat parent agent completed; npc={NpcId}; saveId={SaveId}; conversationId={ConversationId}; sessionId={SessionId}; responseChars={ResponseChars}; durationMs={DurationMs}",
@@ -368,8 +381,9 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
 
     private static string BuildPrivateChatSystemPrompt(string displayName)
         =>
-            "如果玩家现在就请你做一件会改变游戏世界的事，而你决定答应，必须先调用 npc_delegate_action，再自然回复玩家。只口头答应不会让动作发生。\n" +
+            "如果玩家现在就请你做一件会改变游戏世界的事，而你决定答应，必须先按承诺类型写入 todo，再调用 npc_delegate_action，最后自然回复玩家。只口头答应不会让动作发生。\n" +
             "如果你决定这轮没有当前就要发生的游戏世界动作，必须先调用 npc_no_world_action，再自然回复玩家。\n" +
+            "如果你接受了当前就要发生的玩家承诺，先用 todo 把承诺记成 in_progress 短句，再调用 npc_delegate_action；动作完成后下一轮再由你自己收口 todo。\n" +
             "action=move 时，你必须先用 skill_view 读取 stardew-navigation、references/index.md、相关 region 和最具体的 POI 文件；只有已加载 POI/reference 明确给出 target(locationName,x,y,source) 后，才调用 npc_delegate_action。\n" +
             "npc_delegate_action 是延迟执行入口：私聊回复关闭后，宿主会按你传入的机械 target 执行真实移动，并由 Stardew bridge 返回结果。不要使用 destinationId，不要编造坐标，不要把自然语言地点直接当 locationName。\n" +
             "玩家提出当前私聊中就要发生的移动请求时，如果你接受，action 填 move，target 必须原样填写已加载 POI/reference 的 locationName、x、y、source；可选 facingDirection。\n" +
@@ -386,15 +400,29 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
     private static string BuildPrivateChatDelegationSelfCheckMessage(string playerText, string previousReply)
         =>
             "自检：上一轮私聊回复没有调用 npc_delegate_action。\n" +
-            "请你自己判断：如果上一轮已经接受了玩家当前就要发生、且会改变游戏世界的行动请求，不能只口头答应；现在必须先用 skill_view 读取 stardew-navigation 的分层地图资料，拿到 target(locationName,x,y,source) 后调用 npc_delegate_action，action 填 move，target 原样填写已加载 POI/reference 的机械目标；工具调用后再给玩家一句自然回复。\n" +
+            "请你自己判断：如果上一轮已经接受了玩家当前就要发生、且会改变游戏世界的行动请求，不能只口头答应；现在必须先用 todo 写入一条 in_progress 承诺短任务，再用 skill_view 读取 stardew-navigation 的分层地图资料，拿到 target(locationName,x,y,source) 后调用 npc_delegate_action，action 填 move，target 原样填写已加载 POI/reference 的机械目标；工具调用后再给玩家一句自然回复。\n" +
             "如果上一轮没有接受当前就要发生的游戏世界行动请求，不要调用 npc_delegate_action；必须先调用 npc_no_world_action，再直接原样回复上一轮给玩家的话。\n" +
             "不要使用 destinationId，不要编造坐标，不要只说“我现在过去”。\n\n" +
+            $"Player: {playerText}\n" +
+            $"Previous reply: {previousReply}";
+
+    private static string BuildPrivateChatCommitmentTodoSelfCheckMessage(string playerText, string previousReply)
+        =>
+            "自检：上一轮私聊已经调用 npc_delegate_action 委托当前世界动作，但缺少 todo 承诺记录。\n" +
+            "如果上一轮确实接受了玩家当前就要发生的承诺，现在必须只用 todo 写入或更新一条 in_progress 短任务，让后续 autonomy 能在动作 terminal 后收口。\n" +
+            "不要重复调用 npc_delegate_action，不要重新解析地点或坐标，不要把工具过程讲给玩家听；todo 后直接原样回复上一轮给玩家的话。\n" +
+            "如果上一轮并没有形成承诺，不要写 todo，直接调用 npc_no_world_action 并原样回复。\n\n" +
             $"Player: {playerText}\n" +
             $"Previous reply: {previousReply}";
 
     private static bool ShouldRunDelegationSelfCheck(string response, Session session)
         => !SessionHasToolCall(session, "npc_delegate_action") &&
            !SessionHasToolCall(session, "npc_no_world_action");
+
+    private static bool ShouldRunCommitmentTodoSelfCheck(Session session)
+        => SessionHasToolCall(session, "npc_delegate_action") &&
+           !SessionHasToolCall(session, "todo") &&
+           !SessionHasToolCall(session, "todo_write");
 
     private static bool SessionHasToolCall(Session session, string toolName)
         => session.Messages.Any(message =>

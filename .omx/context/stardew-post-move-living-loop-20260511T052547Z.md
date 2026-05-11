@@ -1,0 +1,42 @@
+# Deep Interview Context Snapshot: stardew-post-move-living-loop
+
+- Task statement: Clarify how Haley/NPC should continue behaving after a successful move, using existing Hermes/NPC infrastructure such as todo, task continuity, skills, runtime logs, and current project principles.
+- Desired outcome: Execution-ready requirements for a design that preserves native agent principles: parent/cloud agent decides; host executes real actions; local executor must not own real write actions; no hardcoded NPC/place rules; no second tool lane; no host-injected synthetic destination candidates.
+- Stated solution pressure: User thinks prior diagnosis was directionally right but shallow, and wants fuller use of todo/task/skill infrastructure while obeying project principles.
+- Probable intent hypothesis: The system should not stop at movement completion. A completed action should become meaningful continuity context so the NPC can decide natural follow-up actions, update active commitments, and use skills/world tools without the host scripting behavior.
+- Known facts/evidence:
+  - Bridge logged Haley move command completed: cmd_move_1778476511342_5d2419639c8f4f4.
+  - Haley runtime recorded task_continuity terminal completed for that command.
+  - Autonomy service woke Haley after the completion event and ran an LLM turn.
+  - That LLM turn ended with toolCalls=0; runtime then recorded action=observe/status rather than a follow-up world action.
+  - NpcAutonomyLoop.BuildDecisionMessage already includes last_action_result facts and tells the agent to use skill_view for stardew-navigation, todo for blocked/failed task updates, and not rely on host observation.
+  - TodoTool is session-scoped and intended for commitments, multi-step tasks, blocked/failed/completed states.
+  - NpcRuntimeTaskHydrator hydrates NPC todo state from transcript tool results across runtime startup/private chat history.
+  - skills/system/stardew-npc-runtime/SYSTEM.md tells NPC runtime to use todo for active task state and commitments.
+  - Stardew persona skills include stardew-core/social/navigation/task-continuity/world.
+- Constraints:
+  - No hardcoded NPC/place/natural-language mapping rules.
+  - Host may provide facts/events/tool results, but must not decide NPC behavior.
+  - Real world write actions must go through host executor/tool contract.
+  - Local small model/delegation lane must not perform real write actions.
+  - Do not introduce a second runtime/task/memory/tool lane.
+  - Skills should encode behavioral guidance and domain knowledge; tools/actions should carry executable contracts.
+- Unknowns/open questions:
+  - What exactly should count as successful post-move behavior: immediate visible action, todo transition, speech, idle micro-action, world observation, or skill-guided social behavior?
+  - Should private-chat invitations create/update an explicit todo before/during move, or should move completion remain only a terminal command fact?
+  - Which part belongs in skills vs prompt supplement vs tool result shape vs todo/task projection?
+  - What non-goals must remain out of first pass?
+  - What decisions may the implementation make without asking again?
+- Likely codebase touchpoints:
+  - src/runtime/NpcAutonomyLoop.cs
+  - src/runtime/NpcRuntimeTaskHydrator.cs
+  - src/Tools/TodoWriteTool.cs
+  - src/games/stardew/StardewNpcPrivateChatAgentRunner.cs
+  - src/games/stardew/StardewNpcAutonomyBackgroundService.cs
+  - src/games/stardew/StardewNpcTools.cs
+  - skills/gaming/stardew-task-continuity/SKILL.md
+  - skills/gaming/stardew-social/SKILL.md
+  - skills/gaming/stardew-world/SKILL.md
+  - skills/system/stardew-npc-runtime/SYSTEM.md
+  - Desktop/HermesDesktop.Tests/Stardew/*
+- Prompt-safe initial-context summary status: not_needed

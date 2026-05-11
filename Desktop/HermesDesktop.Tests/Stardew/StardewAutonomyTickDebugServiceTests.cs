@@ -353,12 +353,59 @@ public sealed class StardewAutonomyTickDebugServiceTests
         StringAssert.Contains(systemPrompt, "### stardew-task-continuity");
         StringAssert.Contains(systemPrompt, "玩家给你以后要兑现的约定时，按角色判断是否接受；接受后用 `todo` 记录短句");
         StringAssert.Contains(systemPrompt, "私聊里答应“现在就做”的现实世界动作，必须用 `npc_delegate_action` 委托");
+        StringAssert.Contains(systemPrompt, "动作完成后不能假装忘记承诺");
+        StringAssert.Contains(systemPrompt, "显式收口");
         StringAssert.Contains(systemPrompt, "stardew_navigate_to_tile");
         StringAssert.Contains(systemPrompt, "stardew_task_status");
         StringAssert.Contains(systemPrompt, "memory");
         Assert.IsFalse(
             systemPrompt.Contains("mc ", StringComparison.Ordinal),
             "Stardew continuity guidance must borrow HermesCraft's behavior pattern without leaking Minecraft command text.");
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_HaleyPromptInjectsPersonaInclinationsWithoutHardcodedArrivalScript()
+    {
+        var repositoryGamingRoot = FindRepositoryPath("skills", "gaming");
+        var repositoryPersonaRoot = FindRepositoryPath("src", "game", "stardew", "personas");
+        var chatClient = new ToolSnapshotChatClient("I will wait.");
+        var service = new StardewAutonomyTickDebugService(
+            new FakeDiscovery(new StardewBridgeDiscoverySnapshot(
+                new StardewBridgeOptions { Host = "127.0.0.1", Port = 8745, BridgeToken = "token" },
+                DateTimeOffset.UtcNow,
+                1234,
+                "save-42")),
+            _ => new FakeGameAdapter(
+                new FakeCommandService(),
+                new FakeQueryService(new GameObservation(
+                    "haley",
+                    "stardew-valley",
+                    DateTime.UtcNow,
+                    "Haley is idle.",
+                    [])),
+                new FakeEventSource([])),
+            chatClient,
+            NullLoggerFactory.Instance,
+            _skillManager,
+            new NoopCronScheduler(),
+            new NpcRuntimeSupervisor(),
+            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), repositoryPersonaRoot),
+            CreatePromptSupplementBuilder(new FixedStardewGamingSkillRootProvider(repositoryGamingRoot)),
+            discoveredToolProvider: null,
+            worldCoordination: CreateWorldCoordination(),
+            includeMemory: true,
+            includeUser: true,
+            maxToolIterations: 2,
+            runtimeRoot: _tempDir);
+
+        var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
+
+        Assert.IsTrue(result.Success, result.FailureReason);
+        var systemPrompt = string.Join("\n", chatClient.SystemMessages);
+        StringAssert.Contains(systemPrompt, "明亮、干净、上镜");
+        StringAssert.Contains(systemPrompt, "到达一个适合停留或拍照的地方后");
+        Assert.IsFalse(systemPrompt.Contains("到海边后必须", StringComparison.Ordinal));
+        Assert.IsFalse(systemPrompt.Contains("Beach:32,34", StringComparison.Ordinal));
     }
 
     [TestMethod]

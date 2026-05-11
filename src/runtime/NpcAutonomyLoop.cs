@@ -202,7 +202,8 @@ public sealed class NpcAutonomyLoop
             decisionSession.State[StardewAutonomySessionKeys.IsAutonomyTurn] = true;
             var decisionMessage = BuildDecisionMessage(
                 descriptor,
-                instance?.Snapshot().Controller.LastTerminalCommandStatus);
+                instance?.Snapshot().Controller.LastTerminalCommandStatus,
+                GetActiveTodos(instance, descriptor.SessionId));
             _logger?.LogInformation(
                 "NPC autonomy decision request prepared; npc={NpcId}; trace={TraceId}; injectedFacts={FactCount}; messageChars={MessageChars}",
                 descriptor.NpcId,
@@ -245,7 +246,7 @@ public sealed class NpcAutonomyLoop
         if (_localExecutorRunner is null)
         {
             await WriteNarrativeMovementDiagnosticAsync(descriptor, traceId, decisionResponse, decisionSession, ct);
-            await WriteNoToolActionDiagnosticAsync(descriptor, traceId, decisionResponse, decisionSession, ct);
+            await WriteNoToolActionDiagnosticAsync(instance, descriptor, traceId, decisionResponse, decisionSession, ct);
         }
 
         await WriteSessionTaskContinuityEvidenceAsync(descriptor, traceId, decisionSession, null, ct);
@@ -266,7 +267,8 @@ public sealed class NpcAutonomyLoop
 
     private static string BuildDecisionMessage(
         NpcRuntimeDescriptor descriptor,
-        GameCommandStatus? lastTerminalCommandStatus = null)
+        GameCommandStatus? lastTerminalCommandStatus = null,
+        IReadOnlyList<SessionTodoItem>? activeTodos = null)
     {
         var message =
             $"NPC: {descriptor.DisplayName} ({descriptor.NpcId})\n" +
@@ -284,9 +286,29 @@ public sealed class NpcAutonomyLoop
             "wait 只表示你现在选择暂不推进，不是普通世界动作。";
         var lastActionFact = BuildLastActionResultFact(lastTerminalCommandStatus);
         message += "\nMOVE TOOL CONTRACT: parent autonomy owns target resolution. Use skill_view to load stardew-navigation and the smallest relevant reference files, then call stardew_navigate_to_tile with the exact target(locationName,x,y,source). The host executes the real action and the tool result is the feedback channel.";
+        var activeTodoFact = BuildActiveTodoClosureFact(lastTerminalCommandStatus, activeTodos);
+        if (activeTodoFact is not null)
+            message += "\n" + activeTodoFact;
         return lastActionFact is null
             ? message
             : message + "\n" + lastActionFact;
+    }
+
+    private static string? BuildActiveTodoClosureFact(
+        GameCommandStatus? lastTerminalCommandStatus,
+        IReadOnlyList<SessionTodoItem>? activeTodos)
+    {
+        if (lastTerminalCommandStatus is null ||
+            !TerminalStatusNames.Contains(lastTerminalCommandStatus.Status) ||
+            activeTodos is null ||
+            activeTodos.Count == 0)
+        {
+            return null;
+        }
+
+        var todoText = string.Join("; ", activeTodos.Take(3).Select(todo => $"{todo.Id}:{todo.Status}:{todo.Content}"));
+        return "active todo closure required: 你有 active todo 与刚结束的 last_action_result 同时存在；" +
+               $"active todo={todoText}。你必须显式收口：调用 todo 标 completed/blocked/failed，或提交新的世界动作，或明确 wait/no-action 并写短 reason。";
     }
 
     private static string? BuildLastActionResultFact(GameCommandStatus? status)
@@ -659,14 +681,49 @@ public sealed class NpcAutonomyLoop
     }
 
     private async Task WriteNoToolActionDiagnosticAsync(
+        NpcRuntimeInstance? instance,
         NpcRuntimeDescriptor descriptor,
         string traceId,
         string? decisionResponse,
         Session? decisionSession,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(decisionResponse) ||
-            HasAnyStardewActionToolCall(decisionSession))
+        if (HasAnyStardewActionToolCall(decisionSession))
+        {
+            return;
+        }
+
+        var requiresClosureChoice = RequiresClosureChoice(instance, descriptor.SessionId);
+        if (requiresClosureChoice)
+        {
+            if (!string.IsNullOrWhiteSpace(decisionResponse) &&
+                TryExtractExplicitNoActionReason(decisionResponse, out var reason))
+            {
+                await WriteTaskContinuityAsync(
+                    descriptor,
+                    traceId,
+                    "closure_no_action",
+                    "diagnostic",
+                    "recorded",
+                    null,
+                    reason,
+                    ct);
+                return;
+            }
+
+            await WriteTaskContinuityAsync(
+                descriptor,
+                traceId,
+                "closure_missing",
+                "diagnostic",
+                "missing",
+                null,
+                "terminal_action_with_active_todo_without_explicit_closure",
+                ct);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(decisionResponse))
         {
             return;
         }
@@ -1053,6 +1110,37 @@ public sealed class NpcAutonomyLoop
         return session.Messages.Any(message =>
             string.Equals(message.ToolName, toolName, StringComparison.OrdinalIgnoreCase) ||
             (message.ToolCalls?.Any(toolCall => string.Equals(toolCall.Name, toolName, StringComparison.OrdinalIgnoreCase)) ?? false));
+    }
+
+    private static bool RequiresClosureChoice(NpcRuntimeInstance? instance, string sessionId)
+        => instance?.Snapshot().Controller.LastTerminalCommandStatus is { } status &&
+           TerminalStatusNames.Contains(status.Status) &&
+           GetActiveTodos(instance, sessionId).Count > 0;
+
+    private static IReadOnlyList<SessionTodoItem> GetActiveTodos(NpcRuntimeInstance? instance, string sessionId)
+    {
+        if (instance is null ||
+            !instance.TryGetTaskView(sessionId, out var taskView) ||
+            taskView is null)
+        {
+            return [];
+        }
+
+        return taskView.ActiveSnapshot.Todos.Where(IsActiveTodo).ToArray();
+    }
+
+    private static bool TryExtractExplicitNoActionReason(string value, out string reason)
+    {
+        reason = "";
+        var match = Regex.Match(
+            value.Trim(),
+            @"^(?:wait|no-action|no_action)\s*[:：]\s*(?<reason>\S.{0,180})$",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (!match.Success)
+            return false;
+
+        reason = Truncate(match.Groups["reason"].Value.Trim(), 180);
+        return !string.IsNullOrWhiteSpace(reason);
     }
 
     private static bool SessionHasAnyToolCalls(Session? session)

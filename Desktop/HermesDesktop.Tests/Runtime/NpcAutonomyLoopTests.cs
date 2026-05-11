@@ -288,6 +288,52 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
+    public async Task RunOneTickAsync_WithCompletedLastActionAndActiveTodo_RequiresExplicitClosureChoice()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-closure-prompt-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("meet-beach-now", "Meet player at the beach now", "in_progress")]);
+            instance.SetLastTerminalCommandStatus(new GameCommandStatus(
+                "cmd-move-1",
+                "haley",
+                "move",
+                "completed",
+                1,
+                null,
+                null));
+            var agent = new FakeAgent(() => { });
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                agent);
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.IsNotNull(agent.LastMessage);
+            StringAssert.Contains(agent.LastMessage, "last_action_result");
+            StringAssert.Contains(agent.LastMessage, "active todo");
+            StringAssert.Contains(agent.LastMessage, "显式收口");
+            StringAssert.Contains(agent.LastMessage, "todo");
+            StringAssert.Contains(agent.LastMessage, "wait/no-action");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task RunOneTickAsync_DecisionMessageDoesNotInjectObservedGameTime()
     {
         var descriptor = CreateDescriptor("haley");
@@ -622,6 +668,152 @@ public class NpcAutonomyLoopTests
 
             Assert.AreEqual(0, commands.SubmitCalls);
             Assert.IsTrue(File.ReadAllText(logPath).Contains("no_tool_decision:no_visible_line", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_AfterCompletedActionWithActiveTodoAndNoToolReason_RecordsMissingClosureDiagnostic()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-missing-closure-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("meet-beach-now", "Meet player at the beach now", "in_progress")]);
+            instance.SetLastTerminalCommandStatus(new GameCommandStatus(
+                "cmd-move-1",
+                "haley",
+                "move",
+                "completed",
+                1,
+                null,
+                null));
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var commands = new CountingCommandService();
+            var agent = new FakeAgent(() => { }, "到了。");
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    commands,
+                    new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                agent,
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                traceIdFactory: () => "trace-missing-closure");
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.AreEqual(0, commands.SubmitCalls);
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertRuntimeRecord(records, "closure_missing", "diagnostic", "missing");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_AfterCompletedActionWithActiveTodoAndBlankReply_RecordsMissingClosureDiagnostic()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-blank-closure-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("meet-beach-now", "Meet player at the beach now", "in_progress")]);
+            instance.SetLastTerminalCommandStatus(new GameCommandStatus(
+                "cmd-move-1",
+                "haley",
+                "move",
+                "completed",
+                1,
+                null,
+                null));
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var commands = new CountingCommandService();
+            var agent = new FakeAgent(() => { }, "");
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    commands,
+                    new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                agent,
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                traceIdFactory: () => "trace-blank-closure");
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.AreEqual(0, commands.SubmitCalls);
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertRuntimeRecord(records, "closure_missing", "diagnostic", "missing");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_AfterCompletedActionWithActiveTodoAndExplicitWaitReason_RecordsNoActionClosure()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-explicit-wait-closure-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("meet-beach-now", "Meet player at the beach now", "in_progress")]);
+            instance.SetLastTerminalCommandStatus(new GameCommandStatus(
+                "cmd-move-1",
+                "haley",
+                "move",
+                "completed",
+                1,
+                null,
+                null));
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var commands = new CountingCommandService();
+            var agent = new FakeAgent(() => { }, "wait: arrived and waiting for the player to speak first");
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    commands,
+                    new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                agent,
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                traceIdFactory: () => "trace-explicit-wait-closure");
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.AreEqual(0, commands.SubmitCalls);
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertRuntimeRecord(records, "closure_no_action", "diagnostic", "recorded");
+            Assert.IsTrue(records.Any(record =>
+                record.TryGetProperty("target", out var targetProperty) &&
+                targetProperty.GetString() == "closure_no_action" &&
+                record.TryGetProperty("error", out var errorProperty) &&
+                (errorProperty.GetString()?.Contains("waiting for the player", StringComparison.Ordinal) ?? false)));
         }
         finally
         {
