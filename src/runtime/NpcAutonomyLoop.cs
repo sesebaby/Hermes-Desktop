@@ -1015,7 +1015,8 @@ public sealed class NpcAutonomyLoop
 
     private static bool IsFeedbackTool(ToolCall call)
         => string.Equals(call.Name, "stardew_speak", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(call.Name, "stardew_open_private_chat", StringComparison.OrdinalIgnoreCase);
+           string.Equals(call.Name, "stardew_open_private_chat", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(call.Name, "stardew_idle_micro_action", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsTodoTool(ToolCall call)
         => string.Equals(call.Name, "todo", StringComparison.OrdinalIgnoreCase) ||
@@ -1067,7 +1068,8 @@ public sealed class NpcAutonomyLoop
     private static bool HasAnyStardewActionToolCall(Session? session)
         => HasToolCall(session, "stardew_navigate_to_tile") ||
            HasToolCall(session, "stardew_speak") ||
-           HasToolCall(session, "stardew_open_private_chat");
+           HasToolCall(session, "stardew_open_private_chat") ||
+           HasToolCall(session, "stardew_idle_micro_action");
 
     private static bool TryExtractVisibleLine(string value, out string text)
     {
