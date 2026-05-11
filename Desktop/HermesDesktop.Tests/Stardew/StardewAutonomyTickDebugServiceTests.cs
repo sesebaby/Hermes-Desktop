@@ -55,7 +55,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
     [TestMethod]
     public async Task RunOneTickAsync_HaleyInjectsRequiredPersonaSkillsAndExcludesLocalExecutorToolsFromParent()
     {
-        var chatClient = new ToolSnapshotChatClient(
+        const string parentContract =
             """
             {
               "action": "wait",
@@ -64,7 +64,8 @@ public sealed class StardewAutonomyTickDebugServiceTests
               "allowedActions": ["move", "observe", "wait", "task_status"],
               "escalate": false
             }
-            """);
+            """;
+        var chatClient = new ToolSnapshotChatClient(parentContract);
         var queries = new FakeQueryService(new GameObservation(
             "haley",
             "stardew-valley",
@@ -103,7 +104,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
 
         Assert.IsTrue(result.Success);
         Assert.AreEqual("haley", result.NpcId);
-        Assert.AreEqual("local_executor_completed:wait", result.DecisionResponse);
+        Assert.AreEqual(parentContract, result.DecisionResponse);
         Assert.IsNull(queries.LastNpcId);
 
         Assert.IsTrue(chatClient.ToolNames.Count > 0, "Parent autonomy lane uses a restricted tool surface so tool results stay in its transcript.");
@@ -356,9 +357,11 @@ public sealed class StardewAutonomyTickDebugServiceTests
         StringAssert.Contains(systemPrompt, "动作完成后不能假装忘记承诺");
         StringAssert.Contains(systemPrompt, "显式收口");
         StringAssert.Contains(systemPrompt, "action_loop");
-        StringAssert.Contains(systemPrompt, "action_chain_budget_exceeded");
-        StringAssert.Contains(systemPrompt, "closure_missing");
-        StringAssert.Contains(systemPrompt, "blocked_until_closure");
+        Assert.IsFalse(systemPrompt.Contains("blocked_until_closure", StringComparison.Ordinal));
+        Assert.IsFalse(systemPrompt.Contains("closure_missing", StringComparison.Ordinal));
+        Assert.IsFalse(systemPrompt.Contains("必须先用 `todo` 收口", StringComparison.Ordinal));
+        Assert.IsFalse(systemPrompt.Contains("wait:", StringComparison.Ordinal));
+        Assert.IsFalse(systemPrompt.Contains("no-action:", StringComparison.Ordinal));
         StringAssert.Contains(systemPrompt, "stardew_navigate_to_tile");
         StringAssert.Contains(systemPrompt, "stardew_task_status");
         StringAssert.Contains(systemPrompt, "memory");
@@ -731,7 +734,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
     public async Task RunOneTickAsync_WithParentMoveIntentDoesNotLetLocalExecutorNavigate()
     {
         var commands = new FakeCommandService();
-        var chatClient = new ToolSnapshotChatClient(
+        const string parentContract =
             """
             {
               "action": "move",
@@ -739,7 +742,8 @@ public sealed class StardewAutonomyTickDebugServiceTests
               "destinationText": "town fountain",
               "escalate": false
             }
-            """);
+            """;
+        var chatClient = new ToolSnapshotChatClient(parentContract);
         var delegationChatClient = new ToolSnapshotChatClient(
             new StreamEvent.ToolUseComplete(
                 "call-skill-root",
@@ -784,7 +788,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
         var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
 
         Assert.IsTrue(result.Success, result.FailureReason);
-        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
+        Assert.AreEqual(parentContract, result.DecisionResponse);
         Assert.IsFalse(
             chatClient.UserMessages.Any(message => message.Contains("destinationId=town.fountain", StringComparison.Ordinal)),
             "The host must not preload observed destination ids into the parent autonomy prompt.");
@@ -807,7 +811,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
                 "call-observe",
                 "stardew_status",
                 Json("{}")));
-        var chatClient = new ToolSnapshotChatClient(
+        const string parentContract =
             """
             {
               "action": "observe",
@@ -816,7 +820,8 @@ public sealed class StardewAutonomyTickDebugServiceTests
               "allowedActions": ["move", "observe", "wait", "task_status"],
               "escalate": false
             }
-            """);
+            """;
+        var chatClient = new ToolSnapshotChatClient(parentContract);
         var queries = new FakeQueryService(new GameObservation(
             "haley",
             "stardew-valley",
@@ -852,11 +857,12 @@ public sealed class StardewAutonomyTickDebugServiceTests
         var result = await service.RunOneTickAsync("Haley", CancellationToken.None);
 
         Assert.IsTrue(result.Success, result.FailureReason);
-        Assert.AreEqual("local_executor_completed:stardew_status", result.DecisionResponse);
+        Assert.AreEqual(parentContract, result.DecisionResponse);
         Assert.IsFalse(
             chatClient.UserMessages.Any(message => message.Contains("destination[0]=label=Bedroom mirror", StringComparison.Ordinal)),
             "Wake-only autonomy must not expose place candidates unless the agent explicitly observes through tools.");
-        CollectionAssert.Contains(delegationChatClient.ToolNames.ToArray(), "stardew_status");
+        Assert.AreEqual(0, delegationChatClient.ToolNamesByCall.Count);
+        CollectionAssert.DoesNotContain(delegationChatClient.ToolNames.ToArray(), "stardew_status");
         Assert.IsNull(commands.LastAction, "A placeCandidate fact must not force host-side movement without an agent tool call.");
     }
 

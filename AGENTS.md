@@ -362,6 +362,8 @@
 - 游戏侧和桥接层只负责把世界接到 Hermes 上，不能接管、替代或干涉 Hermes 原生能力。
 - 不得代写或维护 `SOUL.md`、`MEMORY.md`、`USER.md`，也不得维护任何等价的人格摘要、记忆摘要、身份快照或第二 tool lane。
 - 宿主只在智能体主动调用工具、收到玩家输入或完成真实执行后提供事实、事件、确认和执行结果，不替 NPC 决策；任何真实世界写操作都必须走宿主执行器。
+- Stardew/NPC agent 的能力边界必须是模型可见的 Hermes/MCP/Stardew tool surface；agent 通过读 skill、调用可见工具、接收工具结果闭环。`local executor` 不是 MCP，不是 agent 可见能力，也不能作为父层 agent 无工具调用、自由文本或 JSON 文本的隐藏解析/执行 fallback。
+- 父层 NPC autonomy turn 如果没有工具调用，宿主最多记录可读诊断或在下一次唤醒中给出“请进行下一步行动”的事实提示；不得把该文本塞给本地 executor，不得从文本里替 agent 推断 move/speak/todo/task update。
 - 严重错误教训：星露谷 NPC 自主循环每轮只能单纯唤醒角色，并提示它“作为生活在星露谷的人，自己行动”；宿主不得自动灌入观察结果、事件批次、`destination[n]`、`nearby[n]`、`moveCandidate[n]`，也不得要求它必须先观察、等待、移动或做某个动作。
 - `destination[n]`、`nearby[n]`、`moveCandidate[n]`、房间内 `mirror/downstairs/front door` 这类内容属于宿主生成的行动候选，不是原始世界事实；只能作为智能体主动调用观察/状态工具后的工具结果出现，不能在唤醒提示里预载给父层决策。
 - 每个原版 NPC 必须保持独立 `home`、独立会话和独立记忆边界；群聊、私聊、偷听、送礼、交易都要保持“Agent 提意图，宿主负责许可和执行”的边界。

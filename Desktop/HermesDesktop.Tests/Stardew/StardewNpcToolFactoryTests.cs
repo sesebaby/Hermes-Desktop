@@ -521,6 +521,59 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
+    public async Task RecentActivityProvider_WithDelegatedMoveChain_IncludesTodoTraceAndConversationCorrelation()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-recent-correlation-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new NpcObservationFactStore();
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var controller = new StardewRuntimeActionController(
+                driver,
+                null,
+                actionTimeout: null,
+                nowUtc: () => new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc));
+            var action = new GameAction(
+                "haley",
+                "stardew-valley",
+                GameActionType.Move,
+                "trace-delegate-beach",
+                "idem-delegate-beach",
+                new GameActionTarget("tile", "Beach", new GameTile(32, 34)),
+                "meet the player at the beach",
+                new JsonObject
+                {
+                    ["rootTodoId"] = "meet-beach-now",
+                    ["conversationId"] = "pc_evt_beach",
+                    ["targetSource"] = "map-skill:stardew.navigation.poi.beach-shoreline"
+                },
+                descriptor.EffectiveBodyBinding);
+
+            var prepared = await controller.TryBeginAsync(action, CancellationToken.None);
+            await controller.RecordSubmitResultAsync(
+                prepared,
+                new GameCommandResult(true, "cmd-beach", StardewCommandStatuses.Completed, null, "trace-delegate-beach"),
+                CancellationToken.None);
+            var provider = new StardewRecentActivityProvider(store, driver);
+
+            var data = await provider.ReadRecentActivityAsync(descriptor, CancellationToken.None);
+
+            var chainFact = data.Facts.Single(fact => fact.StartsWith("action_chain:", StringComparison.Ordinal));
+            StringAssert.Contains(chainFact, "rootTodoId=meet-beach-now");
+            StringAssert.Contains(chainFact, "rootTraceId=trace-delegate-beach");
+            StringAssert.Contains(chainFact, "lastTarget=move:Beach:32:34");
+            StringAssert.Contains(chainFact, "conversationId=pc_evt_beach");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task RecentActivityProvider_WithRepeatedSameActionFailures_IncludesActionLoopFact()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-recent-loop-tests", Guid.NewGuid().ToString("N"));
@@ -653,7 +706,7 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
-    public async Task RuntimeActionController_TerminalFailures_UpdateFailureCountersAndBlockAtConfiguredLimit()
+    public async Task RuntimeActionController_TerminalFailures_UpdateFailureCountersWithoutBlocking()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-runtime-chain-failure-tests", Guid.NewGuid().ToString("N"));
         try
@@ -703,9 +756,10 @@ public class StardewNpcToolFactoryTests
             Assert.IsNotNull(chain);
             Assert.AreEqual(2, chain!.ConsecutiveFailures);
             Assert.AreEqual(2, chain.ConsecutiveSameActionFailures);
-            Assert.AreEqual("blocked_until_closure", chain.GuardStatus);
-            Assert.IsTrue(chain.BlockedUntilClosure);
-            Assert.AreEqual(StardewBridgeErrorCodes.PathBlocked, chain.BlockedReasonCode);
+            Assert.AreEqual("open", chain.GuardStatus);
+            Assert.IsFalse(chain.BlockedUntilClosure);
+            Assert.IsNull(chain.BlockedReasonCode);
+            Assert.AreEqual(StardewBridgeErrorCodes.PathBlocked, chain.LastReasonCode);
         }
         finally
         {
@@ -715,7 +769,7 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
-    public async Task RuntimeActionController_ChainBudgetExceeded_BlocksWithoutSubmittingSlotOrOverwritingTerminal()
+    public async Task RuntimeActionController_ChainBudgetExceeded_SubmitsWithoutOverwritingTerminal()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-runtime-chain-budget-tests", Guid.NewGuid().ToString("N"));
         try
@@ -770,16 +824,18 @@ public class StardewNpcToolFactoryTests
 
             var prepared = await controller.TryBeginAsync(action, CancellationToken.None);
 
-            Assert.IsNotNull(prepared?.BlockedResult);
-            Assert.IsFalse(prepared!.BlockedResult!.Accepted);
-            Assert.AreEqual(StardewBridgeErrorCodes.ActionChainBudgetExceeded, prepared.BlockedResult.FailureReason);
+            Assert.IsNotNull(prepared);
+            Assert.IsNull(prepared!.BlockedResult);
             var snapshot = driver.Snapshot();
-            Assert.IsNull(snapshot.PendingWorkItem);
-            Assert.IsNull(snapshot.ActionSlot);
+            Assert.IsNotNull(snapshot.PendingWorkItem);
+            Assert.IsNotNull(snapshot.ActionSlot);
             Assert.AreEqual("cmd-previous", snapshot.LastTerminalCommandStatus?.CommandId);
             Assert.AreEqual(StardewCommandStatuses.Completed, snapshot.LastTerminalCommandStatus?.Status);
-            Assert.AreEqual("blocked_until_closure", snapshot.ActionChainGuard?.GuardStatus);
-            Assert.AreEqual(StardewBridgeErrorCodes.ActionChainBudgetExceeded, snapshot.ActionChainGuard?.BlockedReasonCode);
+            Assert.AreEqual("open", snapshot.ActionChainGuard?.GuardStatus);
+            Assert.IsFalse(snapshot.ActionChainGuard?.BlockedUntilClosure ?? true);
+            Assert.IsNull(snapshot.ActionChainGuard?.BlockedReasonCode);
+            Assert.AreEqual("trace-root-1", snapshot.ActionChainGuard?.RootTraceId);
+            Assert.AreEqual(3, snapshot.ActionChainGuard?.ConsecutiveActions);
         }
         finally
         {
@@ -789,7 +845,7 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
-    public async Task RuntimeActionController_WhenBlockedUntilClosure_PreservesOriginalBlockedReason()
+    public async Task RuntimeActionController_WithLegacyBlockedUntilClosure_SubmitsNextAction()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-runtime-chain-preserve-reason-tests", Guid.NewGuid().ToString("N"));
         try
@@ -801,7 +857,7 @@ public class StardewNpcToolFactoryTests
                 new NpcRuntimeActionChainGuardSnapshot(
                     "chain-closure-reason",
                     "blocked_until_closure",
-                    StardewBridgeErrorCodes.ClosureMissing,
+                    "legacy_closure_missing",
                     true,
                     "todo-1",
                     "trace-root-1",
@@ -835,9 +891,15 @@ public class StardewNpcToolFactoryTests
 
             var prepared = await controller.TryBeginAsync(action, CancellationToken.None);
 
-            Assert.IsNotNull(prepared?.BlockedResult);
-            Assert.AreEqual(StardewBridgeErrorCodes.ClosureMissing, prepared!.BlockedResult!.FailureReason);
-            Assert.AreEqual(StardewBridgeErrorCodes.ClosureMissing, driver.Snapshot().ActionChainGuard?.BlockedReasonCode);
+            Assert.IsNotNull(prepared);
+            Assert.IsNull(prepared!.BlockedResult);
+            var snapshot = driver.Snapshot();
+            Assert.IsNotNull(snapshot.PendingWorkItem);
+            Assert.IsNotNull(snapshot.ActionSlot);
+            Assert.AreEqual("open", snapshot.ActionChainGuard?.GuardStatus);
+            Assert.IsFalse(snapshot.ActionChainGuard?.BlockedUntilClosure ?? true);
+            Assert.IsNull(snapshot.ActionChainGuard?.BlockedReasonCode);
+            Assert.AreEqual("trace-next", snapshot.ActionChainGuard?.RootTraceId);
         }
         finally
         {

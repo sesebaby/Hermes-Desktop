@@ -86,7 +86,8 @@ public sealed record NpcRuntimeActionChainGuardSnapshot(
     string? LastTerminalStatus,
     string? LastReasonCode,
     int ClosureMissingCount,
-    int DeferredIngressAttempts);
+    int DeferredIngressAttempts,
+    string? ConversationId = null);
 
 public sealed record NpcRuntimeControllerSnapshot
 {

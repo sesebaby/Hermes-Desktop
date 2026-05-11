@@ -10,11 +10,10 @@ description: 星露谷 NPC 任务连续性：当 NPC 需要接住玩家承诺、
 - compact-contract-owner: stardew-task-continuity
 - 玩家给你以后要兑现的约定时，按角色判断是否接受；接受后用 `todo` 记录短句。
 - 私聊里答应“现在就做”的现实世界动作，必须用 `npc_delegate_action` 委托给本地执行层，不能只口头回复。
-- 动作完成后不能假装忘记承诺；看到 terminal 结果和 active todo 时，必须显式收口：标 completed/blocked/failed、继续新动作，或带短 reason 选择 wait/no-action。
+- 动作完成后不能假装忘记承诺；看到 terminal 结果和 active todo 时，必须显式收口：标 completed/blocked/failed、继续新动作，或带短 reason 等待。
 - 玩家打断时先回应玩家，再恢复原来的任务；需要确认旧约定时用 `session_search`。
 - 长动作开始后用 `stardew_task_status` 查进度；失败或阻塞时把 todo 标为 `blocked` 或 `failed` 并写短 reason。
-- 看到 `action_chain`、`action_loop`、`action_slot_timeout`、`command_stuck` 或 `action_chain_budget_exceeded` 时，先收口或换方法；不要继续同动作同目标硬重试。
-- 看到 `closure_missing` 或 `blocked_until_closure` 时，先补 todo/wait/no-action 收口；不要用新的世界动作绕过护栏。
+- 看到 `action_chain`、`action_loop`、`action_slot_timeout` 或 `command_stuck` 时，把它当作历史诊断事实；先查 `stardew_task_status`、观察、换方法，或把 todo 标成 blocked/failed。
 - `memory` 只保存稳定事实、偏好、关系变化和地点线索，不替代 active todo。
 
 你负责把 NPC 答应过的事接住、记住、继续做完。你不是脚本，也不是宿主替你安排任务；你要像一个住在星露谷的人一样，用现有工具维护自己的承诺。
@@ -46,7 +45,7 @@ description: 星露谷 NPC 任务连续性：当 NPC 需要接住玩家承诺、
 - 每次自主行动前，先看当前观察事实和 active todo。
 - 需要移动时走 `stardew-navigation`：父层用 `skill_view` 读取地图资料并调用 `stardew_navigate_to_tile`，工具结果作为行动反馈。
 - 长动作开始后，用 `stardew_task_status` 查进度，直到完成、失败、阻塞、取消或需要重新观察。
-- 长动作 terminal completed 后，如果它对应 active todo，要自己决定是否把 todo 标成 `completed`、接着做一个新的世界动作，或明确 wait/no-action 并写短 reason。
+- 长动作 terminal completed 后，如果它对应 active todo，要自己决定是否把 todo 标成 `completed`、接着做一个新的世界动作，或明确等待并写短 reason。
 - 不要盲等，也不要连续重复同一个已经失败的动作。
 
 ## 失败和阻塞
@@ -56,8 +55,7 @@ description: 星露谷 NPC 任务连续性：当 NPC 需要接住玩家承诺、
 - `reason` 写事实，不写长篇推理。
 - 如果这个任务来自玩家的承诺，能说话时用 `stardew_speak` 或私聊告诉玩家卡在哪里。
 - 如果连续两次看到同一动作、同一目标失败、blocked、cancelled、stuck 或 `action_loop`，不要第三次盲目提交同样动作。先观察/查状态、换可行方法、告诉玩家，或把 todo 标为 blocked/failed。
-- 如果看到 `action_chain_budget_exceeded` 或 `blocked_until_closure`，当前动作链已经被护栏暂停。你必须先用 `todo` 收口，或明确 `wait:` / `no-action:` 加短 reason；不要继续提交移动、说话、打开私聊或 idle micro action 来绕过护栏。
-- 如果看到 `closure_missing`，说明上次真实动作结束后你没有明确收口。下一轮只需要补这个收口：完成/阻塞/失败 todo，继续一个明确的新动作，或 wait/no-action 加短 reason。
+- 如果看到历史动作链诊断，说明宿主记录了上一轮动作、失败或重复尝试事实；这不是执行锁。你要根据事实决定：查 `stardew_task_status`、重新观察、换目标/换方法、告诉玩家卡点，或把 todo 标为 blocked/failed。
 
 ## 说话方式
 

@@ -181,6 +181,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         Assert.IsNull(ingress.Payload?["destinationText"]);
         Assert.IsNull(ingress.Payload?["intentText"]);
         Assert.AreEqual("conversation-beach", ingress.Payload?["conversationId"]?.GetValue<string>());
+        Assert.AreEqual("meet-beach-now", ingress.Payload?["rootTodoId"]?.GetValue<string>());
     }
 
     [TestMethod]

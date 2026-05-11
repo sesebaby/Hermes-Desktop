@@ -19,7 +19,6 @@ public sealed class NpcAutonomyLoop
     private readonly INpcLocalExecutorRunner? _localExecutorRunner;
     private readonly ILogger<NpcAutonomyLoop>? _logger;
     private readonly Func<string> _traceIdFactory;
-    private readonly NpcActionChainGuardOptions _actionChainGuardOptions;
 
     public NpcAutonomyLoop(
         IGameAdapter adapter,
@@ -28,8 +27,7 @@ public sealed class NpcAutonomyLoop
         NpcRuntimeLogWriter? logWriter = null,
         ILogger<NpcAutonomyLoop>? logger = null,
         Func<string>? traceIdFactory = null,
-        INpcLocalExecutorRunner? localExecutorRunner = null,
-        NpcActionChainGuardOptions? actionChainGuardOptions = null)
+        INpcLocalExecutorRunner? localExecutorRunner = null)
     {
         _adapter = adapter;
         _factStore = factStore;
@@ -38,7 +36,6 @@ public sealed class NpcAutonomyLoop
         _localExecutorRunner = localExecutorRunner;
         _logger = logger;
         _traceIdFactory = traceIdFactory ?? (() => $"trace_{Guid.NewGuid():N}");
-        _actionChainGuardOptions = actionChainGuardOptions ?? new NpcActionChainGuardOptions();
     }
 
     public async Task<NpcAutonomyTickResult> RunOneTickAsync(
@@ -290,26 +287,11 @@ public sealed class NpcAutonomyLoop
         if (IsToolIterationLimitFallback(decisionResponse))
             decisionResponse = null;
 
-        if (_localExecutorRunner is not null &&
-            ShouldRouteToLocalExecutor(decisionResponse, decisionSession) &&
-            decisionResponse is not null)
-        {
-            var route = await RunLocalExecutorAsync(
-                instance,
-                descriptor,
-                [],
-                traceId,
-                decisionResponse,
-                ct);
-            decisionResponse = route.DecisionResponse;
-        }
-
         await WriteActivityAsync(descriptor, traceId, eventFacts, decisionResponse, ct);
         await WriteToolBudgetDiagnosticAsync(descriptor, traceId, rawDecisionResponse, ct);
-        if (_localExecutorRunner is null)
-            await WriteNarrativeMovementDiagnosticAsync(descriptor, traceId, decisionResponse, decisionSession, ct);
+        await WriteNarrativeMovementDiagnosticAsync(descriptor, traceId, decisionResponse, decisionSession, ct);
 
-        await WriteNoToolActionDiagnosticAsync(runtimeDriver, instance, descriptor, traceId, decisionResponse, decisionSession, ct);
+        await WriteNoToolActionDiagnosticAsync(instance, descriptor, traceId, decisionResponse, decisionSession, ct);
 
         await WriteSessionTaskContinuityEvidenceAsync(runtimeDriver, instance, descriptor, traceId, decisionSession, null, ct);
 
@@ -349,7 +331,7 @@ public sealed class NpcAutonomyLoop
             "wait 只表示你现在选择暂不推进，不是普通世界动作。";
         var lastActionFact = BuildLastActionResultFact(lastTerminalCommandStatus);
         message += "\nMOVE TOOL CONTRACT: parent autonomy owns target resolution. Use skill_view to load stardew-navigation and the smallest relevant reference files, then call stardew_navigate_to_tile with the exact target(locationName,x,y,source). The host executes the real action and the tool result is the feedback channel.";
-        var activeTodoFact = BuildActiveTodoClosureFact(lastTerminalCommandStatus, activeTodos);
+        var activeTodoFact = BuildActiveTodoContinuityFact(lastTerminalCommandStatus, activeTodos);
         if (activeTodoFact is not null)
             message += "\n" + activeTodoFact;
         var actionChainFact = BuildActionChainFact(actionChainGuard);
@@ -363,12 +345,13 @@ public sealed class NpcAutonomyLoop
             : message + "\n" + lastActionFact;
     }
 
-    private static string? BuildActiveTodoClosureFact(
+    private static string? BuildActiveTodoContinuityFact(
         GameCommandStatus? lastTerminalCommandStatus,
         IReadOnlyList<SessionTodoItem>? activeTodos)
     {
         if (lastTerminalCommandStatus is null ||
             !TerminalStatusNames.Contains(lastTerminalCommandStatus.Status) ||
+            !IsTaskContinuityTerminal(lastTerminalCommandStatus) ||
             activeTodos is null ||
             activeTodos.Count == 0)
         {
@@ -376,8 +359,8 @@ public sealed class NpcAutonomyLoop
         }
 
         var todoText = string.Join("; ", activeTodos.Take(3).Select(todo => $"{todo.Id}:{todo.Status}:{todo.Content}"));
-        return "active todo closure required: 你有 active todo 与刚结束的 last_action_result 同时存在；" +
-               $"active todo={todoText}。你必须显式收口：调用 todo 标 completed/blocked/failed，或提交新的世界动作，或明确 wait/no-action 并写短 reason。";
+        return "active todo continuity: 你有 active todo 与刚结束的 last_action_result 同时存在；" +
+               $"active todo={todoText}。这是连续性事实，不是执行锁；请进行下一步行动：你需要自己决定标 completed/blocked/failed、继续新动作，或暂时等待。";
     }
 
     private static string? BuildLastActionResultFact(GameCommandStatus? status)
@@ -393,8 +376,8 @@ public sealed class NpcAutonomyLoop
         var reason = status.ErrorCode ?? status.BlockedReason;
         var result = $"last_action_result: 上一轮真实动作已结束；commandId={commandId}; action={action}; status={status.Status}";
         return string.IsNullOrWhiteSpace(reason)
-            ? result + "。这是宿主执行结果事实，不是下一步指令。"
-            : result + $"; reason={reason}。这是宿主执行结果事实，不是下一步指令。";
+            ? result + "。这是宿主执行结果事实，不是下一步指令；请进行下一步行动。"
+            : result + $"; reason={reason}。这是宿主执行结果事实，不是下一步指令；请进行下一步行动。";
     }
 
     private static string? BuildActionChainFact(NpcRuntimeActionChainGuardSnapshot? chain)
@@ -406,12 +389,31 @@ public sealed class NpcAutonomyLoop
         var status = string.IsNullOrWhiteSpace(chain.LastTerminalStatus)
             ? chain.GuardStatus
             : chain.LastTerminalStatus;
-        var fact = $"action_chain: chainId={chain.ChainId}; status={status}; guard={chain.GuardStatus}; actions={chain.ConsecutiveActions}; failures={chain.ConsecutiveFailures}; sameActionFailures={chain.ConsecutiveSameActionFailures}; closureMissing={chain.ClosureMissingCount}; deferredIngress={chain.DeferredIngressAttempts}; reason={reason}。这是动作链护栏事实，不是下一步指令。";
-        if (chain.BlockedUntilClosure || string.Equals(chain.GuardStatus, "blocked_until_closure", StringComparison.OrdinalIgnoreCase))
-            fact += " 当前动作链已被护栏阻断；你必须先用 todo completed/blocked/failed 或 wait/no-action 加短 reason 收口，不要继续提交真实世界动作。";
-
-        return fact;
+        var correlation = FormatActionCorrelation(chain);
+        return string.IsNullOrWhiteSpace(correlation)
+            ? $"action_chain: chainId={chain.ChainId}; status={status}; guard={chain.GuardStatus}; actions={chain.ConsecutiveActions}; failures={chain.ConsecutiveFailures}; sameActionFailures={chain.ConsecutiveSameActionFailures}; closureMissing={chain.ClosureMissingCount}; deferredIngress={chain.DeferredIngressAttempts}; reason={reason}。这是历史诊断事实，不是执行锁，也不是下一步指令。"
+            : $"action_chain: chainId={chain.ChainId}; status={status}; guard={chain.GuardStatus}; actions={chain.ConsecutiveActions}; failures={chain.ConsecutiveFailures}; sameActionFailures={chain.ConsecutiveSameActionFailures}; closureMissing={chain.ClosureMissingCount}; deferredIngress={chain.DeferredIngressAttempts}; reason={reason}; {correlation}。这是历史诊断事实，不是执行锁，也不是下一步指令。";
     }
+
+    private static string FormatActionCorrelation(NpcRuntimeActionChainGuardSnapshot? chain)
+    {
+        if (chain is null)
+            return string.Empty;
+
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(chain.RootTodoId))
+            parts.Add($"rootTodoId={SanitizePromptFact(chain.RootTodoId)}");
+        if (!string.IsNullOrWhiteSpace(chain.RootTraceId))
+            parts.Add($"rootTraceId={SanitizePromptFact(chain.RootTraceId)}");
+        if (!string.IsNullOrWhiteSpace(chain.ConversationId))
+            parts.Add($"conversationId={SanitizePromptFact(chain.ConversationId)}");
+        if (!string.IsNullOrWhiteSpace(chain.LastTargetKey))
+            parts.Add($"lastTarget={SanitizePromptFact(chain.LastTargetKey)}");
+        return string.Join("; ", parts);
+    }
+
+    private static string SanitizePromptFact(string value)
+        => value.Replace('\r', ' ').Replace('\n', ' ').Trim();
 
     private static string? BuildActionLoopFact(NpcRuntimeActionChainGuardSnapshot? chain)
     {
@@ -436,17 +438,6 @@ public sealed class NpcAutonomyLoop
     private static bool IsToolIterationLimitFallback(string? value)
         => !string.IsNullOrWhiteSpace(value) &&
            value.StartsWith("I've reached the maximum number of tool call iterations.", StringComparison.Ordinal);
-
-    private static bool ShouldRouteToLocalExecutor(string? decisionResponse, Session? decisionSession)
-    {
-        if (string.IsNullOrWhiteSpace(decisionResponse))
-            return false;
-
-        if (decisionResponse.TrimStart().StartsWith("{", StringComparison.Ordinal))
-            return true;
-
-        return !SessionHasAnyToolCalls(decisionSession);
-    }
 
     private async Task WriteActivityAsync(
         NpcRuntimeDescriptor descriptor,
@@ -606,8 +597,6 @@ public sealed class NpcAutonomyLoop
             null,
             taskUpdate.Reason,
             ct);
-        if (IsTodoClosureStatus(taskUpdate.Status))
-            await CloseActionChainAfterTodoClosureAsync(null, instance, taskUpdate.TaskId, ct);
     }
 
     private async Task SubmitSpeechContractAsync(
@@ -784,7 +773,6 @@ public sealed class NpcAutonomyLoop
     }
 
     private async Task WriteNoToolActionDiagnosticAsync(
-        NpcRuntimeDriver? runtimeDriver,
         NpcRuntimeInstance? instance,
         NpcRuntimeDescriptor descriptor,
         string traceId,
@@ -797,8 +785,8 @@ public sealed class NpcAutonomyLoop
             return;
         }
 
-        var requiresClosureChoice = RequiresClosureChoice(instance, descriptor.SessionId);
-        if (requiresClosureChoice)
+        var requiresTaskContinuityDecision = RequiresTaskContinuityDecision(instance, descriptor.SessionId);
+        if (requiresTaskContinuityDecision)
         {
             if (!string.IsNullOrWhiteSpace(decisionResponse) &&
                 TryExtractExplicitNoActionReason(decisionResponse, out var reason))
@@ -806,26 +794,24 @@ public sealed class NpcAutonomyLoop
                 await WriteTaskContinuityAsync(
                     descriptor,
                     traceId,
-                    "closure_no_action",
+                    "task_continuity_no_action",
                     "diagnostic",
                     "recorded",
                     null,
                     reason,
                     ct);
-                await CloseActionChainAfterClosureAsync(runtimeDriver, instance, ct);
                 return;
             }
 
             await WriteTaskContinuityAsync(
                 descriptor,
                 traceId,
-                "closure_missing",
+                "task_continuity_unresolved",
                 "diagnostic",
                 "missing",
                 null,
                 "terminal_action_with_active_todo_without_explicit_closure",
                 ct);
-            await RecordClosureMissingAsync(runtimeDriver, instance, ct);
             return;
         }
 
@@ -967,8 +953,6 @@ public sealed class NpcAutonomyLoop
                 null,
                 reason,
                 ct);
-            if (IsTodoClosureStatus(status))
-                await CloseActionChainAfterTodoClosureAsync(runtimeDriver, instance, todoId, ct);
             needsFeedback |= IsBlockedOrFailed(status);
         }
 
@@ -1052,12 +1036,6 @@ public sealed class NpcAutonomyLoop
     private static bool IsActiveTodo(SessionTodoItem todo)
         => string.Equals(todo.Status, "pending", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(todo.Status, "in_progress", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsTodoClosureStatus(string? status)
-        => string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(status, "blocked", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(status, "failed", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(status, "cancelled", StringComparison.OrdinalIgnoreCase);
 
     private static readonly HashSet<string> TerminalStatusNames = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -1229,95 +1207,38 @@ public sealed class NpcAutonomyLoop
             (message.ToolCalls?.Any(toolCall => string.Equals(toolCall.Name, toolName, StringComparison.OrdinalIgnoreCase)) ?? false));
     }
 
-    private static bool RequiresClosureChoice(NpcRuntimeInstance? instance, string sessionId)
+    private static bool RequiresTaskContinuityDecision(NpcRuntimeInstance? instance, string sessionId)
         => instance?.Snapshot().Controller.LastTerminalCommandStatus is { } status &&
            TerminalStatusNames.Contains(status.Status) &&
+           IsTaskContinuityTerminal(status) &&
            GetActiveTodos(instance, sessionId).Count > 0;
 
-    private async Task RecordClosureMissingAsync(
-        NpcRuntimeDriver? runtimeDriver,
-        NpcRuntimeInstance? instance,
-        CancellationToken ct)
+    private static bool IsTaskContinuityTerminal(GameCommandStatus status)
     {
-        if (instance is null)
-            return;
+        if (IsPrivateChatLifecycleTerminal(status))
+            return false;
 
-        var snapshot = instance.Snapshot().Controller;
-        if (snapshot.ActionChainGuard is not { } chain)
-            return;
-
-        var nowUtc = DateTime.UtcNow;
-        var missingCount = chain.ClosureMissingCount + 1;
-        var updated = chain with
+        return status.Action switch
         {
-            UpdatedAtUtc = nowUtc,
-            ClosureMissingCount = missingCount
+            var action when string.Equals(action, "move", StringComparison.OrdinalIgnoreCase) => true,
+            var action when string.Equals(action, "speak", StringComparison.OrdinalIgnoreCase) => true,
+            var action when string.Equals(action, "idle_micro_action", StringComparison.OrdinalIgnoreCase) => true,
+            _ => false
         };
-        if (missingCount > _actionChainGuardOptions.MaxClosureMissing)
-        {
-            updated = updated with
-            {
-                GuardStatus = "blocked_until_closure",
-                BlockedUntilClosure = true,
-                BlockedReasonCode = StardewBridgeErrorCodes.ClosureMissing
-            };
-        }
-
-        var nextWakeAtUtc = nowUtc + TimeSpan.FromSeconds(2);
-        if (runtimeDriver is not null)
-        {
-            await runtimeDriver.SetActionChainGuardAndNextWakeAsync(updated, nextWakeAtUtc, ct);
-            return;
-        }
-
-        instance.SetActionChainGuard(updated);
-        instance.SetNextWakeAtUtc(nextWakeAtUtc);
     }
 
-    private static Task CloseActionChainAfterClosureAsync(
-        NpcRuntimeDriver? runtimeDriver,
-        NpcRuntimeInstance? instance,
-        CancellationToken ct)
-    {
-        if (runtimeDriver is not null)
-            instance = runtimeDriver.Instance;
+    private static bool IsPrivateChatLifecycleTerminal(GameCommandStatus status)
+        => StartsWithOrdinalIgnoreCase(status.CommandId, "work_private_chat:") ||
+           StartsWithOrdinalIgnoreCase(status.CommandId, "work_private_chat_reply:") ||
+           StartsWithOrdinalIgnoreCase(status.CommandId, "private_chat:") ||
+           StartsWithOrdinalIgnoreCase(status.CommandId, "private_chat_reply:") ||
+           string.Equals(status.Action, "open_private_chat", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status.Action, "private_chat", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status.Action, "private_chat_reply", StringComparison.OrdinalIgnoreCase);
 
-        if (instance?.Snapshot().Controller.ActionChainGuard is not { } chain)
-            return Task.CompletedTask;
-
-        var closed = chain with
-        {
-            GuardStatus = "closed",
-            BlockedUntilClosure = false,
-            UpdatedAtUtc = DateTime.UtcNow
-        };
-
-        if (runtimeDriver is not null)
-            return runtimeDriver.SetActionChainGuardAsync(closed, ct);
-
-        instance.SetActionChainGuard(closed);
-        return Task.CompletedTask;
-    }
-
-    private static Task CloseActionChainAfterTodoClosureAsync(
-        NpcRuntimeDriver? runtimeDriver,
-        NpcRuntimeInstance? instance,
-        string? todoId,
-        CancellationToken ct)
-    {
-        if (runtimeDriver is not null)
-            instance = runtimeDriver.Instance;
-
-        var chain = instance?.Snapshot().Controller.ActionChainGuard;
-        if (chain is not null &&
-            !string.IsNullOrWhiteSpace(chain.RootTodoId) &&
-            !string.Equals(chain.RootTodoId, todoId, StringComparison.OrdinalIgnoreCase))
-        {
-            return Task.CompletedTask;
-        }
-
-        return CloseActionChainAfterClosureAsync(runtimeDriver, instance, ct);
-    }
+    private static bool StartsWithOrdinalIgnoreCase(string? value, string prefix)
+        => !string.IsNullOrWhiteSpace(value) &&
+           value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
 
     private static IReadOnlyList<SessionTodoItem> GetActiveTodos(NpcRuntimeInstance? instance, string sessionId)
     {
@@ -1343,16 +1264,6 @@ public sealed class NpcAutonomyLoop
 
         reason = Truncate(match.Groups["reason"].Value.Trim(), 180);
         return !string.IsNullOrWhiteSpace(reason);
-    }
-
-    private static bool SessionHasAnyToolCalls(Session? session)
-    {
-        if (session is null)
-            return false;
-
-        return session.Messages.Any(message =>
-            !string.IsNullOrWhiteSpace(message.ToolName) ||
-            message.ToolCalls is { Count: > 0 });
     }
 
     private static bool HasAnyStardewActionToolCall(Session? session)

@@ -1263,6 +1263,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
 
         var intentText = ReadPayloadString(payload, "intentText");
         var conversationId = ReadPayloadString(payload, "conversationId");
+        var rootTodoId = ReadPayloadString(payload, "rootTodoId");
         var isMove = string.Equals(action, "move", StringComparison.OrdinalIgnoreCase);
 
         if (isMove &&
@@ -1307,6 +1308,10 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             {
                 ["targetSource"] = moveTarget.Source
             };
+            if (!string.IsNullOrWhiteSpace(rootTodoId))
+                movePayload["rootTodoId"] = rootTodoId.Trim();
+            if (!string.IsNullOrWhiteSpace(conversationId))
+                movePayload["conversationId"] = conversationId.Trim();
             if (moveTarget.FacingDirection is not null)
                 movePayload["facingDirection"] = moveTarget.FacingDirection.Value;
 

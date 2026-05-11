@@ -53,7 +53,6 @@ public sealed record NpcAutonomyBudgetOptions(
 public sealed record NpcActionChainGuardOptions(
     int MaxActionsPerChain = 4,
     int MaxConsecutiveFailures = 2,
-    int MaxClosureMissing = 1,
     int MaxDeferredIngressAttempts = 3,
     TimeSpan? ChainTtl = null)
 {

@@ -323,9 +323,10 @@ public class NpcAutonomyLoopTests
             Assert.IsNotNull(agent.LastMessage);
             StringAssert.Contains(agent.LastMessage, "last_action_result");
             StringAssert.Contains(agent.LastMessage, "active todo");
-            StringAssert.Contains(agent.LastMessage, "显式收口");
+            StringAssert.Contains(agent.LastMessage, "连续性事实");
+            StringAssert.Contains(agent.LastMessage, "不是执行锁");
             StringAssert.Contains(agent.LastMessage, "todo");
-            StringAssert.Contains(agent.LastMessage, "wait/no-action");
+            Assert.IsFalse(agent.LastMessage.Contains("wait/no-action", StringComparison.Ordinal));
         }
         finally
         {
@@ -372,7 +373,8 @@ public class NpcAutonomyLoopTests
                 LastTerminalStatus: StardewCommandStatuses.Completed,
                 LastReasonCode: null,
                 ClosureMissingCount: 0,
-                DeferredIngressAttempts: 0));
+                DeferredIngressAttempts: 0,
+                ConversationId: "pc_evt_beach"));
             var agent = new FakeAgent(() => { });
             var loop = new NpcAutonomyLoop(
                 new FakeGameAdapter(
@@ -391,9 +393,14 @@ public class NpcAutonomyLoopTests
 
             Assert.IsNotNull(agent.LastMessage);
             StringAssert.Contains(agent.LastMessage, "last_action_result");
-            StringAssert.Contains(agent.LastMessage, "active todo closure required");
+            StringAssert.Contains(agent.LastMessage, "active todo continuity");
+            StringAssert.Contains(agent.LastMessage, "不是执行锁");
             StringAssert.Contains(agent.LastMessage, "action_chain:");
             StringAssert.Contains(agent.LastMessage, "chainId=chain-prompt-1");
+            StringAssert.Contains(agent.LastMessage, "rootTodoId=meet-now");
+            StringAssert.Contains(agent.LastMessage, "rootTraceId=trace-root-1");
+            StringAssert.Contains(agent.LastMessage, "conversationId=pc_evt_beach");
+            StringAssert.Contains(agent.LastMessage, "lastTarget=move:Town:42:17");
             StringAssert.Contains(agent.LastMessage, "actions=2");
             Assert.IsFalse(agent.LastMessage.Contains("destination[0]", StringComparison.Ordinal));
             Assert.IsFalse(agent.LastMessage.Contains("nearby[0]", StringComparison.Ordinal));
@@ -857,7 +864,7 @@ public class NpcAutonomyLoopTests
 
             Assert.AreEqual(0, commands.SubmitCalls);
             var records = ReadRuntimeLogRecords(logPath);
-            AssertRuntimeRecord(records, "closure_missing", "diagnostic", "missing");
+            AssertRuntimeRecord(records, "task_continuity_unresolved", "diagnostic", "missing");
         }
         finally
         {
@@ -904,7 +911,7 @@ public class NpcAutonomyLoopTests
 
             Assert.AreEqual(0, commands.SubmitCalls);
             var records = ReadRuntimeLogRecords(logPath);
-            AssertRuntimeRecord(records, "closure_missing", "diagnostic", "missing");
+            AssertRuntimeRecord(records, "task_continuity_unresolved", "diagnostic", "missing");
         }
         finally
         {
@@ -914,7 +921,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_ClosureMissing_FirstTimeIncrementsGuardAndSchedulesRepairWake()
+    public async Task RunOneTickAsync_ClosureMissing_FirstTimeRecordsDiagnosticOnly()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-closure-repair-tests", Guid.NewGuid().ToString("N"));
         try
@@ -966,11 +973,11 @@ public class NpcAutonomyLoopTests
             await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
 
             var controller = instance.Snapshot().Controller;
-            Assert.AreEqual(1, controller.ActionChainGuard?.ClosureMissingCount);
+            Assert.AreEqual(0, controller.ActionChainGuard?.ClosureMissingCount);
             Assert.AreEqual("open", controller.ActionChainGuard?.GuardStatus);
-            Assert.IsNotNull(controller.NextWakeAtUtc, "First missing closure should schedule one repair wake.");
+            Assert.IsNull(controller.NextWakeAtUtc, "Closure-missing diagnostics must not schedule a repair wake.");
             var records = ReadRuntimeLogRecords(logPath);
-            AssertRuntimeRecord(records, "closure_missing", "diagnostic", "missing");
+            AssertRuntimeRecord(records, "task_continuity_unresolved", "diagnostic", "missing");
         }
         finally
         {
@@ -980,7 +987,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_ClosureMissing_WithRuntimeDriverPersistsGuardAndRepairWake()
+    public async Task RunOneTickAsync_ClosureMissing_WithRuntimeDriverDoesNotPersistRepairWake()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-closure-persist-tests", Guid.NewGuid().ToString("N"));
         try
@@ -1033,9 +1040,9 @@ public class NpcAutonomyLoopTests
 
             var reloadedDriver = await new NpcRuntimeSupervisor().GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
             var controller = reloadedDriver.Snapshot();
-            Assert.AreEqual(1, controller.ActionChainGuard?.ClosureMissingCount);
+            Assert.AreEqual(0, controller.ActionChainGuard?.ClosureMissingCount);
             Assert.AreEqual("open", controller.ActionChainGuard?.GuardStatus);
-            Assert.IsNotNull(controller.NextWakeAtUtc, "Repair wake must be persisted with the closure-missing guard.");
+            Assert.IsNull(controller.NextWakeAtUtc, "Closure-missing diagnostics must not persist a repair wake.");
         }
         finally
         {
@@ -1045,7 +1052,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_ClosureMissing_SecondTimeBlocksFurtherWorldActionUntilClosure()
+    public async Task RunOneTickAsync_ClosureMissing_SecondTimeRemainsDiagnosticOnly()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-closure-block-tests", Guid.NewGuid().ToString("N"));
         try
@@ -1098,10 +1105,10 @@ public class NpcAutonomyLoopTests
 
             var chain = instance.Snapshot().Controller.ActionChainGuard;
             Assert.IsNotNull(chain);
-            Assert.AreEqual(2, chain!.ClosureMissingCount);
-            Assert.AreEqual("blocked_until_closure", chain.GuardStatus);
-            Assert.IsTrue(chain.BlockedUntilClosure);
-            Assert.AreEqual(StardewBridgeErrorCodes.ClosureMissing, chain.BlockedReasonCode);
+            Assert.AreEqual(1, chain!.ClosureMissingCount);
+            Assert.AreEqual("open", chain.GuardStatus);
+            Assert.IsFalse(chain.BlockedUntilClosure);
+            Assert.IsNull(chain.BlockedReasonCode);
         }
         finally
         {
@@ -1134,7 +1141,7 @@ public class NpcAutonomyLoopTests
             instance.SetActionChainGuard(new NpcRuntimeActionChainGuardSnapshot(
                 "chain-wait-closure",
                 "blocked_until_closure",
-                StardewBridgeErrorCodes.ClosureMissing,
+                "legacy_closure_missing",
                 true,
                 "meet-beach-now",
                 "trace-root-1",
@@ -1166,16 +1173,16 @@ public class NpcAutonomyLoopTests
 
             Assert.AreEqual(0, commands.SubmitCalls);
             var records = ReadRuntimeLogRecords(logPath);
-            AssertRuntimeRecord(records, "closure_no_action", "diagnostic", "recorded");
+            AssertRuntimeRecord(records, "task_continuity_no_action", "diagnostic", "recorded");
             Assert.IsTrue(records.Any(record =>
                 record.TryGetProperty("target", out var targetProperty) &&
-                targetProperty.GetString() == "closure_no_action" &&
+                targetProperty.GetString() == "task_continuity_no_action" &&
                 record.TryGetProperty("error", out var errorProperty) &&
                 (errorProperty.GetString()?.Contains("waiting for the player", StringComparison.Ordinal) ?? false)));
             var chain = instance.Snapshot().Controller.ActionChainGuard;
             Assert.IsNotNull(chain);
-            Assert.AreEqual("closed", chain!.GuardStatus);
-            Assert.IsFalse(chain.BlockedUntilClosure);
+            Assert.AreEqual("blocked_until_closure", chain!.GuardStatus);
+            Assert.IsTrue(chain.BlockedUntilClosure);
         }
         finally
         {
@@ -1185,7 +1192,155 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_TodoClosureToolResult_ClosesBlockedActionChain()
+    public async Task RunOneTickAsync_AfterPrivateChatUiTerminalWithActiveTodo_DoesNotRequireWorldActionClosure()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-private-chat-terminal-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("meet-beach-now", "Meet player at the beach now", "in_progress")]);
+            instance.SetLastTerminalCommandStatus(new GameCommandStatus(
+                "work_private_chat:haley:evt_21",
+                "haley",
+                "open_private_chat",
+                StardewCommandStatuses.Completed,
+                1,
+                null,
+                null));
+            instance.SetActionChainGuard(new NpcRuntimeActionChainGuardSnapshot(
+                "chain-world-move",
+                "open",
+                null,
+                false,
+                "meet-beach-now",
+                "trace-root-world-move",
+                new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                "move",
+                "move:Beach:32:34",
+                ConsecutiveActions: 1,
+                ConsecutiveFailures: 0,
+                ConsecutiveSameActionFailures: 0,
+                LastTerminalStatus: StardewCommandStatuses.Completed,
+                LastReasonCode: null,
+                ClosureMissingCount: 0,
+                DeferredIngressAttempts: 0));
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                new FakeAgent(() => { }, "I'll keep the private chat open while I wait."),
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                traceIdFactory: () => "trace-private-chat-terminal");
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            var chain = instance.Snapshot().Controller.ActionChainGuard;
+            Assert.IsNotNull(chain);
+            Assert.AreEqual(0, chain!.ClosureMissingCount);
+            Assert.AreEqual("open", chain.GuardStatus);
+            var records = ReadRuntimeLogRecords(logPath);
+            Assert.IsFalse(records.Any(record =>
+                record.GetProperty("actionType").GetString() == "task_continuity" &&
+                record.GetProperty("target").GetString() == "task_continuity_unresolved"),
+                "Private-chat UI terminal status must not create world-action closure debt.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithStructuredWaitIntentDuringClosureRequirement_DoesNotSatisfyContinuityThroughHiddenExecutor()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-structured-wait-closure-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("meet-beach-now", "Meet player at the beach now", "in_progress")]);
+            instance.SetLastTerminalCommandStatus(new GameCommandStatus(
+                "cmd-move-1",
+                "haley",
+                "move",
+                StardewCommandStatuses.Completed,
+                1,
+                null,
+                null));
+            instance.SetActionChainGuard(new NpcRuntimeActionChainGuardSnapshot(
+                "chain-wait-closure",
+                "blocked_until_closure",
+                "legacy_closure_missing",
+                true,
+                "meet-beach-now",
+                "trace-root-1",
+                new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                "move",
+                "move:Beach:32:34",
+                ConsecutiveActions: 1,
+                ConsecutiveFailures: 0,
+                ConsecutiveSameActionFailures: 0,
+                LastTerminalStatus: StardewCommandStatuses.Completed,
+                LastReasonCode: null,
+                ClosureMissingCount: 2,
+                DeferredIngressAttempts: 0));
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var parentContract =
+                """
+                {
+                  "action": "wait",
+                  "reason": "action chain requires closure before new world actions",
+                  "waitReason": "already arrived; waiting for the player to continue",
+                  "escalate": false
+                }
+                """;
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                new FakeAgent(() => { }, parentContract),
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                localExecutorRunner: new NpcUnavailableLocalExecutorRunner(),
+                traceIdFactory: () => "trace-structured-wait-closure");
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            var records = ReadRuntimeLogRecords(logPath);
+            Assert.IsTrue(records.Any(record =>
+                record.GetProperty("actionType").GetString() == "task_continuity" &&
+                record.GetProperty("target").GetString() == "task_continuity_unresolved"),
+                "A parent JSON wait response is not a visible tool call and must not be treated as task continuity.");
+            var chain = instance.Snapshot().Controller.ActionChainGuard;
+            Assert.IsNotNull(chain);
+            Assert.AreEqual("blocked_until_closure", chain!.GuardStatus);
+            Assert.IsTrue(chain.BlockedUntilClosure);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_TodoClosureToolResult_DoesNotUnlockLegacyBlockedActionChain()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-todo-closure-chain-tests", Guid.NewGuid().ToString("N"));
         try
@@ -1197,7 +1352,7 @@ public class NpcAutonomyLoopTests
                 new NpcRuntimeActionChainGuardSnapshot(
                     "chain-todo-closure",
                     "blocked_until_closure",
-                    StardewBridgeErrorCodes.ActionChainBudgetExceeded,
+                    "legacy_action_chain_budget_exceeded",
                     true,
                     "meet-now",
                     "trace-root-1",
@@ -1228,7 +1383,7 @@ public class NpcAutonomyLoopTests
                             {
                                 Id = "call-todo",
                                 Name = "todo",
-                                Arguments = """{"todos":[{"id":"meet-now","content":"Meet the player now","status":"blocked","reason":"action_chain_budget_exceeded"}]}"""
+                                Arguments = """{"todos":[{"id":"meet-now","content":"Meet the player now","status":"blocked","reason":"legacy_action_history_budget"}]}"""
                             }
                         ]
                     });
@@ -1237,7 +1392,7 @@ public class NpcAutonomyLoopTests
                         Role = "tool",
                         ToolCallId = "call-todo",
                         ToolName = "todo",
-                        Content = """{"todos":[{"id":"meet-now","content":"Meet the player now","status":"blocked","reason":"action_chain_budget_exceeded"}]}"""
+                        Content = """{"todos":[{"id":"meet-now","content":"Meet the player now","status":"blocked","reason":"legacy_action_history_budget"}]}"""
                     });
                 });
             var loop = new NpcAutonomyLoop(
@@ -1252,8 +1407,8 @@ public class NpcAutonomyLoopTests
 
             var chain = driver.Snapshot().ActionChainGuard;
             Assert.IsNotNull(chain);
-            Assert.AreEqual("closed", chain!.GuardStatus);
-            Assert.IsFalse(chain.BlockedUntilClosure);
+            Assert.AreEqual("blocked_until_closure", chain!.GuardStatus);
+            Assert.IsTrue(chain.BlockedUntilClosure);
         }
         finally
         {
@@ -1275,7 +1430,7 @@ public class NpcAutonomyLoopTests
                 new NpcRuntimeActionChainGuardSnapshot(
                     "chain-rooted",
                     "blocked_until_closure",
-                    StardewBridgeErrorCodes.ActionChainBudgetExceeded,
+                    "legacy_action_chain_budget_exceeded",
                     true,
                     "meet-now",
                     "trace-root-1",
@@ -1603,7 +1758,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithLocalExecutorMoveIntent_BlocksWithoutCallingRunnerOrWritingMemory()
+    public async Task RunOneTickAsync_WithJsonMoveIntent_DoesNotRouteHiddenLocalExecutorFallback()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-local-executor-tests", Guid.NewGuid().ToString("N"));
         try
@@ -1648,14 +1803,13 @@ public class NpcAutonomyLoopTests
             var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
 
             Assert.AreEqual(0, localExecutor.CallCount);
-            Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
+            Assert.AreEqual(parentContract, result.DecisionResponse);
 
             var records = ReadRuntimeLogRecords(logPath);
-            AssertLogRecord(records, "diagnostic", "intent_contract", "accepted", "action=move;reason=meet the player near Pierre");
-            AssertLogRecord(records, "diagnostic", "parent_tool_surface", "verified", "registered_tools=0;stardew_navigate_to_tile=0;stardew_task_status=0;stardew_speak=0;todo=0;agent=0");
-            AssertLogRecord(records, "diagnostic", "local_executor", "selected", "action=move;lane=delegation");
-            AssertLogRecord(records, "local_executor", "move", "blocked", "local_executor_write_action_disabled");
-            AssertLogRecordExecutorMode(records, "local_executor", "move", "blocked");
+            Assert.IsFalse(records.Any(record =>
+                HasLogRecordWithActionOrTarget(record, "local_executor") ||
+                HasLogRecordWithActionOrTarget(record, "intent_contract")),
+                "Parent autonomy JSON text must not be treated as a hidden local-executor contract.");
 
             var entries = await memoryManager.ReadEntriesAsync("memory", CancellationToken.None);
             Assert.AreEqual(0, entries.Count);
@@ -1668,7 +1822,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithLocalExecutorIdleMicroAction_BlocksWithoutCallingRunnerOrWritingMemory()
+    public async Task RunOneTickAsync_WithJsonIdleMicroAction_DoesNotRouteHiddenLocalExecutorFallback()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-local-executor-idle-tests", Guid.NewGuid().ToString("N"));
         try
@@ -1716,13 +1870,13 @@ public class NpcAutonomyLoopTests
             var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
 
             Assert.AreEqual(0, localExecutor.CallCount);
-            Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
+            Assert.AreEqual(parentContract, result.DecisionResponse);
 
             var records = ReadRuntimeLogRecords(logPath);
-            AssertLogRecord(records, "diagnostic", "intent_contract", "accepted", "action=idle_micro_action;reason=she is staying in place and can do a small idle motion");
-            AssertLogRecord(records, "diagnostic", "local_executor", "selected", "action=idle_micro_action;lane=delegation");
-            AssertLogRecord(records, "local_executor", "idle_micro_action", "blocked", "local_executor_write_action_disabled");
-            AssertLogRecordExecutorMode(records, "local_executor", "idle_micro_action", "blocked");
+            Assert.IsFalse(records.Any(record =>
+                HasLogRecordWithActionOrTarget(record, "local_executor") ||
+                HasLogRecordWithActionOrTarget(record, "intent_contract")),
+                "Parent autonomy JSON text must not be treated as a hidden local-executor contract.");
 
             var entries = await memoryManager.ReadEntriesAsync("memory", CancellationToken.None);
             Assert.AreEqual(0, entries.Count);
@@ -1735,7 +1889,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithSpeechAndTaskUpdateIntent_SubmitsSpeechAndUpdatesExistingTodo()
+    public async Task RunOneTickAsync_WithJsonSpeechAndTaskUpdateIntent_DoesNotApplyHiddenSideEffects()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-contract-side-effects-tests", Guid.NewGuid().ToString("N"));
         try
@@ -1786,22 +1940,20 @@ public class NpcAutonomyLoopTests
 
             var result = await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
 
-            Assert.AreEqual("local_executor_completed:wait", result.DecisionResponse);
-            Assert.AreEqual(1, commands.SubmitCalls);
-            Assert.IsNotNull(commands.LastSubmittedAction);
-            Assert.AreEqual(GameActionType.Speak, commands.LastSubmittedAction.Type);
-            Assert.AreEqual("I can't get there yet. The path is blocked.", commands.LastSubmittedAction.Payload?["text"]?.GetValue<string>());
-            Assert.AreEqual("player", commands.LastSubmittedAction.Payload?["channel"]?.GetValue<string>());
+            Assert.AreEqual(parentContract, result.DecisionResponse);
+            Assert.AreEqual(0, commands.SubmitCalls);
 
             var snapshot = instance.TodoStore.Read(descriptor.SessionId);
             Assert.AreEqual(1, snapshot.Todos.Count);
-            Assert.AreEqual("blocked", snapshot.Todos[0].Status);
-            Assert.AreEqual("path_blocked", snapshot.Todos[0].Reason);
+            Assert.AreEqual("in_progress", snapshot.Todos[0].Status);
+            Assert.IsTrue(string.IsNullOrWhiteSpace(snapshot.Todos[0].Reason));
 
             var records = ReadRuntimeLogRecords(logPath);
-            AssertLogRecord(records, "diagnostic", "intent_contract", "accepted", "action=wait;reason=the path is blocked right now");
-            AssertLogRecord(records, "host_action", "stardew_speak", "submitted", "queued", "cmd-fallback");
-            AssertRuntimeRecord(records, "task_update_contract", "task_written", "blocked");
+            Assert.IsFalse(records.Any(record =>
+                HasLogRecordWithActionOrTarget(record, "host_action") ||
+                HasLogRecordWithActionOrTarget(record, "local_executor") ||
+                HasLogRecordWithActionOrTarget(record, "task_update_contract")),
+                "Parent autonomy JSON text must not produce hidden host side effects.");
         }
         finally
         {
@@ -1811,7 +1963,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithSpeechAndBlockedLocalExecutor_KeepsSpeechAsHostAction()
+    public async Task RunOneTickAsync_WithJsonSpeechAndBlockedLocalExecutor_DoesNotSubmitHiddenSpeech()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-speech-blocked-tests", Guid.NewGuid().ToString("N"));
         try
@@ -1860,12 +2012,10 @@ public class NpcAutonomyLoopTests
             await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
 
             var records = ReadRuntimeLogRecords(logPath);
-            AssertLogRecord(records, "local_executor", "move", "blocked", "local_executor_write_action_disabled");
-            AssertLogRecordExecutorMode(records, "local_executor", "move", "blocked");
-            AssertLogRecord(records, "host_action", "stardew_speak", "submitted", "queued", "cmd-fallback");
             Assert.IsFalse(records.Any(record =>
-                record.GetProperty("actionType").GetString() == "local_executor" &&
-                record.GetProperty("target").GetString() == "stardew_speak"));
+                HasLogRecordWithActionOrTarget(record, "local_executor") ||
+                HasLogRecordWithActionOrTarget(record, "host_action")),
+                "Parent autonomy JSON text must not be converted into hidden local-executor or host actions.");
         }
         finally
         {
@@ -1875,7 +2025,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithMechanicalMoveIntent_EscalatesBeforeLocalExecutor()
+    public async Task RunOneTickAsync_WithJsonMechanicalMoveIntent_DoesNotRouteHiddenLocalExecutorFallback()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-target-source-tests", Guid.NewGuid().ToString("N"));
         try
@@ -1926,10 +2076,13 @@ public class NpcAutonomyLoopTests
             var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
 
             Assert.AreEqual(0, localExecutor.CallCount);
-            Assert.AreEqual("local_executor_escalated:move_target_not_supported", result.DecisionResponse);
+            Assert.AreEqual(parentContract, result.DecisionResponse);
 
             var records = ReadRuntimeLogRecords(logPath);
-            AssertLogRecord(records, "diagnostic", "intent_contract", "rejected", "move_target_not_supported");
+            Assert.IsFalse(records.Any(record =>
+                HasLogRecordWithActionOrTarget(record, "intent_contract") ||
+                HasLogRecordWithActionOrTarget(record, "local_executor")),
+                "Mechanical JSON from parent autonomy must not enter the hidden local-executor path.");
         }
         finally
         {
@@ -1990,7 +2143,9 @@ public class NpcAutonomyLoopTests
             Assert.AreEqual("pending", snapshot.Todos[0].Status);
 
             var records = ReadRuntimeLogRecords(logPath);
-            AssertLogRecord(records, "diagnostic", "task_update_contract", "skipped", "task_not_found:missing");
+            Assert.IsFalse(records.Any(record =>
+                HasLogRecordWithActionOrTarget(record, "task_update_contract")),
+                "Parent autonomy JSON text must not be treated as a hidden task update contract.");
         }
         finally
         {
@@ -2000,7 +2155,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithLocalExecutorInvalidParentContract_RejectsAndDoesNotWriteMemory()
+    public async Task RunOneTickAsync_WithFreeTextAndLocalExecutor_DoesNotRouteHiddenFallback()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-invalid-local-executor-tests", Guid.NewGuid().ToString("N"));
         try
@@ -2034,9 +2189,12 @@ public class NpcAutonomyLoopTests
             var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
 
             Assert.AreEqual(0, localExecutor.CallCount);
-            Assert.AreEqual("local_executor_escalated:intent_contract_invalid", result.DecisionResponse);
+            Assert.AreEqual("not json", result.DecisionResponse);
             var records = ReadRuntimeLogRecords(logPath);
-            AssertLogRecord(records, "diagnostic", "intent_contract", "rejected", "intent_contract_invalid");
+            Assert.IsFalse(records.Any(record =>
+                HasLogRecordWithActionOrTarget(record, "intent_contract") ||
+                HasLogRecordWithActionOrTarget(record, "local_executor")),
+                "Parent autonomy free text must not be parsed or routed into local executor.");
             var entries = await memoryManager.ReadEntriesAsync("memory", CancellationToken.None);
             Assert.AreEqual(0, entries.Count);
         }
@@ -2130,6 +2288,12 @@ public class NpcAutonomyLoopTests
             sourceProperty.GetString() == targetSource),
             $"Missing {actionType} record target={target}, targetSource={targetSource}.");
     }
+
+    private static bool HasLogRecordWithActionOrTarget(JsonElement record, string value)
+        => (record.TryGetProperty("actionType", out var actionTypeProperty) &&
+            string.Equals(actionTypeProperty.GetString(), value, StringComparison.OrdinalIgnoreCase)) ||
+           (record.TryGetProperty("target", out var targetProperty) &&
+            string.Equals(targetProperty.GetString(), value, StringComparison.OrdinalIgnoreCase));
 
     private sealed class FakeGameAdapter : IGameAdapter
     {

@@ -286,8 +286,7 @@ public sealed class NpcRuntimeSupervisor
             agentHandle.Agent,
             new NpcRuntimeLogWriter(Path.Combine(instance.Namespace.ActivityPath, "runtime.jsonl")),
             request.Services.LoggerFactory.CreateLogger<NpcAutonomyLoop>(),
-            localExecutorRunner: localExecutorRunner,
-            actionChainGuardOptions: request.ActionChainGuardOptions);
+            localExecutorRunner: localExecutorRunner);
 
         return new NpcRuntimeAutonomyHandle(
             instance,

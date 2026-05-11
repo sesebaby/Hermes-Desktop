@@ -621,12 +621,12 @@ public class NpcRuntimeSupervisorTests
     }
 
     [TestMethod]
-    public async Task GetOrCreateAutonomyHandleAsync_WhenDelegationClientMissing_BlocksLocalExecutorWithoutParentFallback()
+    public async Task GetOrCreateAutonomyHandleAsync_WhenParentReturnsJsonWithoutToolCall_DoesNotUseHiddenLocalExecutorFallback()
     {
         var supervisor = new NpcRuntimeSupervisor();
         var pack = CreatePack("haley", "Haley");
         var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
-        var autonomyClient = new ParentIntentChatClient(
+        const string parentContract =
             """
             {
               "action": "move",
@@ -634,7 +634,8 @@ public class NpcRuntimeSupervisorTests
               "destinationText": "beach",
               "escalate": false
             }
-            """);
+            """;
+        var autonomyClient = new ParentIntentChatClient(parentContract);
         var navigateTool = new RecordingTool(
             "stardew_navigate_to_tile",
             typeof(NavigateToTileParameters),
@@ -679,7 +680,7 @@ public class NpcRuntimeSupervisorTests
             new GameEventBatch([], new GameEventCursor()),
             CancellationToken.None);
 
-        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
+        Assert.AreEqual(parentContract, result.DecisionResponse);
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_move");
         Assert.AreEqual(0, navigateTool.ExecuteCalls);
     }

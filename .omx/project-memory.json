@@ -66,6 +66,12 @@
       "priority": "high",
       "context": "用户于 2026-05-10 再次强烈要求写入项目记忆：除代码定义外必须全中文。",
       "timestamp": "2026-05-10T18:00:00+08:00"
+    },
+    {
+      "directive": "Stardew/NPC agent 能力边界必须是模型可见的 Hermes/MCP/Stardew tool surface；agent 通过读 skill、调用可见工具、接收工具结果闭环。`local executor` 是 Hermes 内部实现细节，不是 MCP，也不能作为父层 agent 无工具调用、自由文本或 JSON 文本的隐藏解析/执行 fallback。宿主只能记录可读诊断或提示“请进行下一步行动”，不得把文本塞给本地 executor 后替 agent 推断 move/speak/todo/task update。",
+      "priority": "high",
+      "context": "用户于 2026-05-11 明确指出 local executor 本身对 agent 应不可见，agent 工具应该是 MCP/Hermes tool surface；本次修复切断 NpcAutonomyLoop 普通父层响应到 local executor 的隐藏 fallback。",
+      "timestamp": "2026-05-11T00:00:00+08:00"
     }
   ],
   "notes": [

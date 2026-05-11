@@ -54,9 +54,7 @@ public static class StardewBridgeErrorCodes
     public const string CommandStuck = "command_stuck";
     public const string ActionSlotBusy = "action_slot_busy";
     public const string ActionSlotTimeout = "action_slot_timeout";
-    public const string ActionChainBudgetExceeded = "action_chain_budget_exceeded";
     public const string ActionLoop = "action_loop";
-    public const string ClosureMissing = "closure_missing";
     public const string DelegatedIngressDeferredExceeded = "delegated_ingress_deferred_exceeded";
     public const string IdempotencyConflict = "idempotency_conflict";
     public const string BridgeUnauthorized = "bridge_unauthorized";

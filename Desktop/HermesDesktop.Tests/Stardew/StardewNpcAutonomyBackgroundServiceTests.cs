@@ -1224,6 +1224,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 {
                     ["action"] = "move",
                     ["reason"] = "meet the player at the beach now",
+                    ["rootTodoId"] = "meet-beach-now",
                     ["target"] = new JsonObject
                     {
                         ["locationName"] = "Beach",
@@ -1255,6 +1256,177 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", submitted.Payload?["targetSource"]?.GetValue<string>());
         Assert.AreEqual(2, submitted.Payload?["facingDirection"]?.GetValue<int>());
         Assert.AreEqual(0, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WithDelegatedMoveAndBlockedClosureGuard_SubmitsMoveAsFreshPlayerRequest()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var commands = new ScriptedCommandService(
+            [
+                new GameCommandStatus("cmd-active", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null)
+            ]);
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley has a private-chat delegated action from the player.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetActionChainGuardAsync(
+            new NpcRuntimeActionChainGuardSnapshot(
+                "chain-stale-closure",
+                "blocked_until_closure",
+                "legacy_closure_missing",
+                true,
+                "old-todo",
+                "trace-old-private-chat",
+                DateTime.UtcNow.AddMinutes(-20),
+                DateTime.UtcNow.AddSeconds(-1),
+                "move",
+                "move:Town:42:17",
+                ConsecutiveActions: 1,
+                ConsecutiveFailures: 0,
+                ConsecutiveSameActionFailures: 0,
+                LastTerminalStatus: StardewCommandStatuses.Completed,
+                LastReasonCode: null,
+                ClosureMissingCount: 5,
+                DeferredIngressAttempts: 0),
+            CancellationToken.None);
+        await driver.EnqueueIngressWorkItemAsync(
+            new NpcRuntimeIngressWorkItemSnapshot(
+                "ingress-delegate-blocked-chain",
+                "npc_delegated_action",
+                "queued",
+                DateTime.UtcNow,
+                "idem-delegate-blocked-chain",
+                "trace-delegate-blocked-chain",
+                new()
+                {
+                    ["action"] = "move",
+                    ["reason"] = "meet the player at the beach now",
+                    ["rootTodoId"] = "meet-beach-now",
+                    ["target"] = new JsonObject
+                    {
+                        ["locationName"] = "Beach",
+                        ["x"] = 32,
+                        ["y"] = 34,
+                        ["source"] = "map-skill:stardew.navigation.poi.beach-shoreline"
+                    }
+                }),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            new CountingChatClient("unused"),
+            supervisor,
+            enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, commands.Submitted.Count);
+        var submitted = commands.Submitted.Single();
+        Assert.AreEqual(GameActionType.Move, submitted.Type);
+        Assert.AreEqual("Beach", submitted.Target.LocationName);
+        Assert.AreEqual(new GameTile(32, 34), submitted.Target.Tile);
+        var snapshot = supervisor.Snapshot().Single().Controller;
+        Assert.AreEqual(0, snapshot.IngressWorkItems.Count);
+        Assert.AreEqual("open", snapshot.ActionChainGuard?.GuardStatus);
+        Assert.IsFalse(snapshot.ActionChainGuard?.BlockedUntilClosure ?? true);
+        Assert.AreEqual("trace-delegate-blocked-chain", snapshot.ActionChainGuard?.RootTraceId);
+        Assert.AreEqual("move:Beach:32:34", snapshot.ActionChainGuard?.LastTargetKey);
+        Assert.AreEqual(1, snapshot.ActionChainGuard?.ConsecutiveActions);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WithDelegatedMoveAndLegacyPathBlockedGuard_SubmitsMoveWhenSlotFree()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var commands = new ScriptedCommandService(
+            [
+                new GameCommandStatus("cmd-active", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null)
+            ]);
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley has a private-chat delegated action from the player.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetActionChainGuardAsync(
+            new NpcRuntimeActionChainGuardSnapshot(
+                "chain-path-blocked",
+                "blocked_until_closure",
+                StardewBridgeErrorCodes.PathBlocked,
+                true,
+                "todo-path-blocked",
+                "trace-path-blocked",
+                DateTime.UtcNow.AddMinutes(-20),
+                DateTime.UtcNow.AddSeconds(-1),
+                "move",
+                "move:Town:42:17",
+                ConsecutiveActions: 1,
+                ConsecutiveFailures: 2,
+                ConsecutiveSameActionFailures: 2,
+                LastTerminalStatus: StardewCommandStatuses.Blocked,
+                LastReasonCode: StardewBridgeErrorCodes.PathBlocked,
+                ClosureMissingCount: 0,
+                DeferredIngressAttempts: 0),
+            CancellationToken.None);
+        await driver.EnqueueIngressWorkItemAsync(
+            new NpcRuntimeIngressWorkItemSnapshot(
+                "ingress-delegate-path-blocked-chain",
+                "npc_delegated_action",
+                "queued",
+                DateTime.UtcNow,
+                "idem-delegate-path-blocked-chain",
+                "trace-delegate-path-blocked-chain",
+                new()
+                {
+                    ["action"] = "move",
+                    ["reason"] = "meet the player at the beach now",
+                    ["rootTodoId"] = "meet-beach-now",
+                    ["target"] = new JsonObject
+                    {
+                        ["locationName"] = "Beach",
+                        ["x"] = 32,
+                        ["y"] = 34,
+                        ["source"] = "map-skill:stardew.navigation.poi.beach-shoreline"
+                    }
+                }),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            new CountingChatClient("unused"),
+            supervisor,
+            enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, commands.Submitted.Count);
+        var submitted = commands.Submitted.Single();
+        Assert.AreEqual(GameActionType.Move, submitted.Type);
+        Assert.AreEqual("Beach", submitted.Target.LocationName);
+        Assert.AreEqual(new GameTile(32, 34), submitted.Target.Tile);
+        var snapshot = supervisor.Snapshot().Single().Controller;
+        Assert.AreEqual(0, snapshot.IngressWorkItems.Count);
+        Assert.AreEqual("open", snapshot.ActionChainGuard?.GuardStatus);
+        Assert.IsFalse(snapshot.ActionChainGuard?.BlockedUntilClosure ?? true);
+        Assert.IsNull(snapshot.ActionChainGuard?.BlockedReasonCode);
+        Assert.AreEqual("trace-delegate-path-blocked-chain", snapshot.ActionChainGuard?.RootTraceId);
     }
 
     [TestMethod]
@@ -1311,6 +1483,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 {
                     ["action"] = "move",
                     ["reason"] = "meet the player at the beach now",
+                    ["rootTodoId"] = "meet-beach-now",
                     ["target"] = new JsonObject
                     {
                         ["locationName"] = "Beach",
@@ -1333,6 +1506,8 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
 
         Assert.AreEqual(0, delegationClient.StructuredStreamCalls);
         Assert.AreEqual(1, commands.Submitted.Count);
+        Assert.AreEqual("meet-beach-now", commands.Submitted.Single().Payload?["rootTodoId"]?.GetValue<string>());
+        Assert.AreEqual("conversation-beach", commands.Submitted.Single().Payload?["conversationId"]?.GetValue<string>());
         Assert.AreEqual(0, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
     }
 
@@ -1575,7 +1750,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
-    public async Task RunOneIterationAsync_WhenClosureMissingSchedulesRepairWake_DoesNotOverwriteWithNormalWakeInterval()
+    public async Task RunOneIterationAsync_WhenClosureMissingDiagnostic_DoesNotCreateRepairWake()
     {
         var discovery = CreateDiscovery("save-42");
         var adapter = new FakeGameAdapter(
@@ -1656,13 +1831,13 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         Assert.IsTrue(
             records.Any(record =>
                 record.GetProperty("actionType").GetString() == "task_continuity" &&
-                record.GetProperty("target").GetString() == "closure_missing"),
-            "Expected closure_missing diagnostic. Records: " + string.Join(Environment.NewLine, records.Select(record => record.GetRawText())));
-        Assert.AreEqual(1, snapshot.ActionChainGuard?.ClosureMissingCount);
+                record.GetProperty("target").GetString() == "task_continuity_unresolved"),
+            "Expected task continuity diagnostic. Records: " + string.Join(Environment.NewLine, records.Select(record => record.GetRawText())));
+        Assert.AreEqual(0, snapshot.ActionChainGuard?.ClosureMissingCount);
         Assert.IsNotNull(snapshot.NextWakeAtUtc);
         Assert.IsTrue(
-            snapshot.NextWakeAtUtc!.Value <= DateTime.UtcNow.AddSeconds(20),
-            $"Closure repair wake should stay short instead of being overwritten by the normal autonomy interval. nextWake={snapshot.NextWakeAtUtc:o}");
+            snapshot.NextWakeAtUtc!.Value >= DateTime.UtcNow.AddMinutes(4),
+            $"Closure diagnostics should not create a short repair wake. nextWake={snapshot.NextWakeAtUtc:o}");
     }
 
     [TestMethod]

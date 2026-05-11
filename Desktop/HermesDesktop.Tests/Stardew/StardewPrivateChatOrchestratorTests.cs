@@ -344,10 +344,124 @@ public class StardewPrivateChatOrchestratorTests
             var status = driver.Snapshot().LastTerminalCommandStatus;
             Assert.IsNotNull(status);
             Assert.AreEqual("cmd-private-speak", status.CommandId);
-            Assert.AreEqual("speak", status.Action);
+            Assert.AreEqual("private_chat_reply", status.Action);
             Assert.AreEqual(StardewCommandStatuses.Completed, status.Status);
             Assert.IsNull(driver.Snapshot().ActionSlot);
             Assert.IsNull(driver.Snapshot().PendingWorkItem);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RuntimeAdapter_WithBlockedActionChainGuard_SubmitsPrivateChatReply()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-private-chat-blocked-chain-reply-tests", Guid.NewGuid().ToString("N"));
+        var runtimeRoot = Path.Combine(tempDir, "runtime");
+        var packRoot = Path.Combine(tempDir, "packs");
+        try
+        {
+            CreatePack(packRoot, "haley", "Haley", targetEntityId: "Haley");
+            var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), packRoot);
+            var supervisor = new NpcRuntimeSupervisor();
+            var events = new FakeEventSource();
+            var commands = new FakeCommandService();
+            commands.Results.Enqueue(new GameCommandResult(
+                true,
+                "cmd-private-open",
+                StardewCommandStatuses.Completed,
+                null,
+                "trace-private-open"));
+            commands.Results.Enqueue(new GameCommandResult(
+                true,
+                "cmd-private-speak",
+                StardewCommandStatuses.Completed,
+                null,
+                "trace-private-speak"));
+            using var runtimeAdapter = new StardewPrivateChatRuntimeAdapter(
+                new FakePrivateChatAgentRunner { ReplyText = "Oh. Hi." },
+                NullLogger<StardewPrivateChatRuntimeAdapter>.Instance,
+                new StardewPrivateChatOptions(NpcId: "haley", ReopenPolicy: PrivateChatReopenPolicy.Never),
+                new StardewNpcPrivateChatSessionLeaseCoordinator(runtimeRoot, supervisor, resolver),
+                bindingResolver: resolver,
+                runtimeRoot: runtimeRoot,
+                runtimeSupervisor: supervisor);
+            var adapter = new FakeGameAdapter(commands, events);
+
+            await runtimeAdapter.ProcessAsync(
+                "bridge-1",
+                "save-1",
+                adapter,
+                [
+                    new GameEventRecord(
+                        "evt-open",
+                        "vanilla_dialogue_completed",
+                        "Haley",
+                        DateTime.UtcNow,
+                        "Haley vanilla dialogue completed.")
+                ],
+                CancellationToken.None);
+
+            var conversationId = commands.Submitted[0].Payload?["conversationId"]?.GetValue<string>();
+            Assert.IsFalse(string.IsNullOrWhiteSpace(conversationId));
+            var driver = await supervisor.GetOrCreateDriverAsync(resolver.Resolve("haley", "save-1").Descriptor, runtimeRoot, CancellationToken.None);
+            await driver.SetActionChainGuardAsync(
+                new NpcRuntimeActionChainGuardSnapshot(
+                    "chain-blocked",
+                    "blocked_until_closure",
+                    "legacy_closure_missing",
+                    true,
+                    "todo-1",
+                    "trace-root",
+                    DateTime.UtcNow.AddMinutes(-1),
+                    DateTime.UtcNow,
+                    "move",
+                    "move:Town:42:17",
+                    ConsecutiveActions: 1,
+                    ConsecutiveFailures: 0,
+                    ConsecutiveSameActionFailures: 0,
+                    LastTerminalStatus: StardewCommandStatuses.Completed,
+                    LastReasonCode: null,
+                    ClosureMissingCount: 2,
+                    DeferredIngressAttempts: 0),
+                CancellationToken.None);
+
+            await runtimeAdapter.ProcessAsync(
+                "bridge-1",
+                "save-1",
+                adapter,
+                [
+                    new GameEventRecord(
+                        "evt-message",
+                        "player_private_message_submitted",
+                        "Haley",
+                        DateTime.UtcNow.AddSeconds(1),
+                        "Player submitted a private chat message.",
+                        conversationId,
+                        new JsonObject
+                        {
+                            ["conversationId"] = conversationId,
+                            ["text"] = "hi Haley"
+                        })
+                ],
+                CancellationToken.None);
+
+            Assert.AreEqual(2, commands.Submitted.Count);
+            Assert.AreEqual(GameActionType.Speak, commands.Submitted[1].Type);
+            var status = driver.Snapshot().LastTerminalCommandStatus;
+            Assert.IsNotNull(status);
+            Assert.AreEqual("cmd-private-speak", status.CommandId);
+            Assert.AreEqual("private_chat_reply", status.Action);
+            Assert.AreEqual(StardewCommandStatuses.Completed, status.Status);
+            Assert.IsNull(driver.Snapshot().ActionSlot);
+            Assert.IsNull(driver.Snapshot().PendingWorkItem);
+            Assert.AreEqual("open", driver.Snapshot().ActionChainGuard?.GuardStatus);
+            Assert.IsFalse(driver.Snapshot().ActionChainGuard?.BlockedUntilClosure ?? true);
+            Assert.IsNull(driver.Snapshot().ActionChainGuard?.BlockedReasonCode);
+            Assert.AreEqual("private_chat_reply", driver.Snapshot().ActionChainGuard?.LastAction);
         }
         finally
         {
