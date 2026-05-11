@@ -326,7 +326,11 @@ public sealed class StardewLiveAiSmokeTests
             {
                 Role = "assistant",
                 Content = response.Content ?? "",
-                ToolCalls = response.ToolCalls
+                ToolCalls = response.ToolCalls,
+                Reasoning = response.Reasoning,
+                ReasoningContent = response.ReasoningContent,
+                ReasoningDetails = response.ReasoningDetails,
+                CodexReasoningItems = response.CodexReasoningItems
             });
 
             foreach (var toolCall in response.ToolCalls!)
