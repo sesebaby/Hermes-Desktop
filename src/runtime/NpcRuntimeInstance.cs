@@ -236,6 +236,12 @@ public sealed class NpcRuntimeInstance
         }
     }
 
+    internal bool TryReleasePrivateChatSessionLease(NpcRuntimeSessionLeaseSnapshot lease)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        return TryReleasePrivateChatSessionLease(lease.Owner, lease.Generation);
+    }
+
     internal void RecordEventCursor(GameEventCursor cursor)
     {
         ArgumentNullException.ThrowIfNull(cursor);

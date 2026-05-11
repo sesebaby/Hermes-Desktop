@@ -22,6 +22,8 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
 
     internal static TimeSpan DefaultAutonomyWakeInterval { get; } = TimeSpan.FromSeconds(20);
 
+    internal static TimeSpan PrivateChatSessionLeaseTtl { get; } = TimeSpan.FromMinutes(5);
+
     private readonly object _gate = new();
     private readonly IStardewBridgeDiscovery _discovery;
     private readonly Func<StardewBridgeDiscoverySnapshot, IGameAdapter> _adapterFactory;
@@ -479,6 +481,17 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 return;
 
             if (tracker.Instance.TryGetActivePrivateChatSessionLease(out var activeLease) && activeLease is not null)
+            {
+                if (DateTime.UtcNow - activeLease.AcquiredAtUtc >= PrivateChatSessionLeaseTtl &&
+                    tracker.Instance.TryReleasePrivateChatSessionLease(activeLease))
+                {
+                    await tracker.Driver.SyncAsync(ct);
+                    await WritePrivateChatLeaseDiagnosticAsync(binding, tracker, activeLease, "released", "stale_private_chat_session_lease", ct);
+                    activeLease = null;
+                }
+            }
+
+            if (activeLease is not null)
             {
                 await PauseTrackerAsync(tracker, deliveredCursor, activeLease.Reason, dispatch.BridgeKey, null, ct);
                 return;
@@ -989,6 +1002,28 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             status.Status,
             CommandId: status.CommandId,
             Error: status.ErrorCode ?? status.BlockedReason), ct);
+    }
+
+    private static Task WritePrivateChatLeaseDiagnosticAsync(
+        StardewNpcRuntimeBinding binding,
+        NpcAutonomyTracker tracker,
+        NpcRuntimeSessionLeaseSnapshot lease,
+        string stage,
+        string result,
+        CancellationToken ct)
+    {
+        var writer = new NpcRuntimeLogWriter(Path.Combine(tracker.Instance.Namespace.ActivityPath, "runtime.jsonl"));
+        return writer.WriteAsync(new NpcRuntimeLogRecord(
+            DateTime.UtcNow,
+            $"private_chat_lease_{lease.ConversationId}_{lease.Generation}",
+            binding.Descriptor.NpcId,
+            binding.Descriptor.GameId,
+            binding.Descriptor.SessionId,
+            "diagnostic",
+            "private_chat_session_lease",
+            stage,
+            result,
+            Error: $"conversationId={lease.ConversationId};owner={lease.Owner};generation={lease.Generation}"), ct);
     }
 
     private string BuildHostStateDbPath(string saveId)

@@ -322,6 +322,62 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
+    public async Task RunOneIterationAsync_StalePrivateChatLeaseIsReleasedAndAutonomyResumes()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("I will keep going after the stale private chat lease is cleared.");
+        var adapter = CreateAdapter("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        driver.Instance.Namespace.SeedPersonaPack(binding.Pack);
+        driver.Instance.RestorePrivateChatSessionLease(new NpcRuntimeSessionLeaseSnapshot(
+            "pc-stale",
+            "private_chat",
+            "private_chat_session_active",
+            1,
+            DateTime.UtcNow.AddMinutes(-30)));
+        await driver.SyncAsync(CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"],
+            autonomyWakeInterval: TimeSpan.FromMilliseconds(1));
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        var snapshot = supervisor.Snapshot().Single();
+        Assert.IsNull(snapshot.ActivePrivateChatSessionLease);
+        Assert.AreEqual(1, chatClient.CompleteWithToolsCalls);
+        Assert.AreEqual(NpcAutonomyLoopState.Running, snapshot.AutonomyLoopState);
+        Assert.IsNotNull(snapshot.LastAutomaticTickAtUtc);
+
+        var logPath = Path.Combine(
+            _tempDir,
+            "runtime",
+            "stardew",
+            "games",
+            "stardew-valley",
+            "saves",
+            "save-42",
+            "npc",
+            "haley",
+            "profiles",
+            "default",
+            "activity",
+            "runtime.jsonl");
+        var records = ReadRuntimeLogRecords(logPath);
+        Assert.IsTrue(records.Any(record =>
+            record.GetProperty("actionType").GetString() == "diagnostic" &&
+            record.GetProperty("target").GetString() == "private_chat_session_lease" &&
+            record.GetProperty("stage").GetString() == "released" &&
+            record.GetProperty("result").GetString() == "stale_private_chat_session_lease"));
+    }
+
+    [TestMethod]
     public async Task RunOneIterationAsync_OpenPrivateChatWithoutPlayerMessageDoesNotPauseAutonomy()
     {
         var discovery = CreateDiscovery("save-42");
