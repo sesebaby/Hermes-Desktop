@@ -1333,8 +1333,14 @@ public sealed class BridgeCommandQueue
 
     private string? CheckMoveWait()
     {
+        if (Game1.eventUp)
+            return null;
+
         if (_hasHermesPrivateChatReplyDialogueOpen?.Invoke() == true)
             return "private_chat_dialogue_open";
+
+        if (IsDialogueOpen())
+            return "dialogue_open";
 
         return null;
     }
@@ -1344,13 +1350,10 @@ public sealed class BridgeCommandQueue
         if (Game1.eventUp)
             return "event_active";
 
-        if (IsUnhandledDialogueOpen())
-            return "dialogue_started";
-
         return null;
     }
 
-    private static bool IsUnhandledDialogueOpen()
+    private static bool IsDialogueOpen()
         => Game1.activeClickableMenu is DialogueBox;
 
     public void Drain(string reason)

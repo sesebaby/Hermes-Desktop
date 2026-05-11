@@ -266,6 +266,17 @@ public sealed class PrivateChatOrchestrator : IDisposable
         string reason,
         CancellationToken ct)
     {
+        if (!_options.Policy.TryGetBodyBinding(npcId, out var bodyBinding))
+        {
+            return Task.FromResult(new GameCommandResult(
+                false,
+                "",
+                "skipped",
+                "unsupported_npc",
+                $"trace_private_chat_skipped_{Guid.NewGuid():N}",
+                Retryable: false));
+        }
+
         var payload = new JsonObject
         {
             ["conversationId"] = conversationId,
@@ -280,7 +291,7 @@ public sealed class PrivateChatOrchestrator : IDisposable
             new GameActionTarget("player"),
             reason,
             payload,
-            _options.Policy.GetBodyBinding(npcId));
+            bodyBinding);
         return _commands.SubmitAsync(action, ct);
     }
 

@@ -79,10 +79,35 @@ public sealed record PrivateChatPolicy(
             ? BodyBinding
             : BodyBindingResolver?.Invoke(npcId) ?? NpcBodyBinding.FromLogicalId(npcId);
 
+    public bool TryGetBodyBinding(string npcId, out NpcBodyBinding? binding)
+    {
+        try
+        {
+            binding = GetBodyBinding(npcId);
+            return true;
+        }
+        catch (PrivateChatUnsupportedNpcException)
+        {
+            binding = null;
+            return false;
+        }
+    }
+
     private static string? GetPayloadString(GameEventRecord record, string propertyName)
         => record.Payload is not null && record.Payload.TryGetPropertyValue(propertyName, out var node)
             ? node?.GetValue<string>()
             : null;
+}
+
+public sealed class PrivateChatUnsupportedNpcException : InvalidOperationException
+{
+    public PrivateChatUnsupportedNpcException(string npcId)
+        : base($"Private chat is not configured for NPC '{npcId}'.")
+    {
+        NpcId = npcId;
+    }
+
+    public string NpcId { get; }
 }
 
 public interface IPrivateChatAgentRunner

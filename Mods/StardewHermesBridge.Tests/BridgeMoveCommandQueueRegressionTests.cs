@@ -568,6 +568,27 @@ public sealed class BridgeMoveCommandQueueRegressionTests
             "DialogueBox alone is too broad: Hermes private-chat reply windows must not terminate running moves.");
     }
 
+    [TestMethod]
+    public void MovePumpWaitsForAnyDialogueInsteadOfInterruptingRunningMove()
+    {
+        var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
+
+        StringAssert.Contains(
+            commandQueue,
+            "dialogue_open",
+            "A vanilla dialogue with any NPC should temporarily pause Bridge movement so the running move can resume after the menu closes.");
+        StringAssert.Contains(
+            commandQueue,
+            "task_waiting",
+            "Dialogue pauses must remain observable as a running wait state, not a terminal interruption.");
+        Assert.IsFalse(
+            commandQueue.Contains("return \"dialogue_started\";", StringComparison.Ordinal),
+            "A DialogueBox must not produce a terminal dialogue_started interruption for an unrelated NPC's running move.");
+        Assert.IsFalse(
+            commandQueue.Contains("IsUnhandledDialogueOpen", StringComparison.Ordinal),
+            "The move pump must not classify all non-Hermes DialogueBox menus as unhandled terminal interrupts.");
+    }
+
     private static string ReadRepositoryFile(params string[] relativePath)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

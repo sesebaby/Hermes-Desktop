@@ -510,7 +510,17 @@ public sealed class StardewPrivateChatRuntimeAdapter : IDisposable
 
         return options with
         {
-            BodyBindingResolver = npcId => _bindingResolver.Resolve(npcId, saveId).Descriptor.EffectiveBodyBinding
+            BodyBindingResolver = npcId =>
+            {
+                try
+                {
+                    return _bindingResolver.Resolve(npcId, saveId).Descriptor.EffectiveBodyBinding;
+                }
+                catch (InvalidOperationException ex) when (ex.Message.StartsWith("Could not resolve Stardew NPC pack for ", StringComparison.Ordinal))
+                {
+                    throw new PrivateChatUnsupportedNpcException(npcId);
+                }
+            }
         };
     }
 

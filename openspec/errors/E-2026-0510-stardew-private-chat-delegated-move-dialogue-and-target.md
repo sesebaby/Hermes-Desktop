@@ -17,6 +17,8 @@
 - A later manual test can show the NPC says a natural reply such as "already walking" but does not move at all. In that shape, runtime/LLM diagnostics can show the private-chat parent turn completed with `toolCalls=0`, so no `npc_delegate_action` ingress exists and SMAPI receives no move command.
 - A bridge/game restart can reuse event ids from `evt_000000000001`; if private-chat `conversationId` is derived only from that event id, a fresh private chat can reuse an old transcript session. The model may then see prior tool calls from an earlier run and claim movement is already queued.
 - After the private-chat reply path was changed to avoid automatic reply popups, delegated moves can still appear stuck if the host waits for `private_chat_reply_closed` instead of treating `private_chat_reply_displayed` with `route=reply_pending_click` as sufficient delivery.
+- While an NPC is moving, clicking a different vanilla NPC can open a normal Stardew `DialogueBox`; older Bridge logic treated that global menu as `task_interrupted ... dialogue_started`, so the moving NPC stopped forever instead of pausing until the menu closed.
+- After clicking a non-configured vanilla NPC such as Willy, private-chat processing can fail with `Could not resolve Stardew NPC pack for 'Willy'`; if that exception escapes the shared event batch, later configured NPC events such as Haley's click are not processed and private chat appears broken.
 
 ## Root Cause
 
@@ -27,6 +29,8 @@
 - Another failure mode is a parent private-chat turn that returns plain dialogue without any tool call. Prompt wording alone allowed the model to verbally accept an immediate world action while leaving the host with no structured command to execute.
 - Text markers such as `NO_WORLD_ACTION:` are not a reliable protocol. They hide the decision in natural language instead of using the same tool-call feedback channel as real world actions.
 - Another failure mode is conversation identity collision across bridge restarts. The bridge event buffer restarts canonical event ids, so `pc_evt_000000000001` is not globally unique. Reusing that value in the private-chat transcript session id lets old assistant/tool messages contaminate a new player request.
+- Bridge movement used a global `DialogueBox => dialogue_started` interrupt condition even when the active dialogue belonged to another NPC. That conflated temporary player UI focus with terminal loss of movement ownership.
+- The Stardew private-chat runtime adapter installed a body-binding resolver for all bridge click events. In wildcard private-chat mode, events for vanilla NPCs without persona packs reached the resolver before they could be skipped, so an unsupported NPC exception aborted the batch before later supported events advanced.
 
 ## Bad Fix Paths
 
@@ -40,6 +44,8 @@
 - Do not make delegated movement wait for `private_chat_reply_closed` after replies become pending-click; `private_chat_reply_displayed` with the matching conversation is the delivery boundary, while `private_chat_reply_closed` is only the later "player read/dismissed it" boundary.
 - Do not start private-chat delegated world actions while a bridge-owned reply `DialogueBox` is actually open; if it is already open, the move pump should wait and keep the command running rather than interrupting.
 - Do not "fix" restart collisions by clearing or deleting private-chat transcripts. Preserve history, but give each fresh bridge-backed private-chat session a unique conversation id.
+- Do not reintroduce `DialogueBox => dialogue_started` as a broad movement interrupt; ordinary dialogue menus are a temporary wait state.
+- Do not swallow all binding resolver failures as unsupported NPCs. Only the explicit unsupported-NPC path should be skipped; real pack/source/config errors must still surface.
 
 ## Corrective Constraints
 
@@ -54,6 +60,8 @@
 - Regression tests must cover the dialogue lifecycle gate, target payload contract, and zero delegation model calls for private-chat move.
 - Bridge-backed private-chat conversation ids must include a bridge/session scope before event ids so restarted `evt_000000000001` values do not collide in transcript storage.
 - `npc_no_world_action` should log its reason to Hermes logs so manual tests can distinguish a model no-action decision from missing tool execution without reading SQLite activity rows.
+- Any active Stardew `DialogueBox` should pause a running move with a visible wait reason such as `dialogue_open`, then resume after the menu closes. `Game1.eventUp` remains a true interrupt because the world state can change underneath the route.
+- Private-chat ingress must skip explicit unsupported-NPC events without throwing or holding the batch cursor; later supported NPC events in the same batch must still open private chat normally.
 
 ## Verification Evidence
 
@@ -82,10 +90,21 @@
 - GREEN: `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~Stardew" -p:UseSharedCompilation=false` passed, 217/217 with 3 live-AI tests skipped.
 - GREEN: `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug -p:UseSharedCompilation=false` passed, 1046/1046 with 4 skipped.
 - GREEN: `dotnet build .\Desktop\HermesDesktop\HermesDesktop.csproj -c Debug -p:Platform=x64 -p:UseSharedCompilation=false` succeeded with existing Stardew bridge warnings.
+- RED: `dotnet test .\Mods\StardewHermesBridge.Tests\Mods.StardewHermesBridge.Tests.csproj -c Debug --filter "FullyQualifiedName~BridgeMoveCommandQueueRegressionTests.MovePumpWaitsForAnyDialogueInsteadOfInterruptingRunningMove" -p:UseSharedCompilation=false` failed because `DialogueBox` still returned `dialogue_started`.
+- RED: `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~StardewPrivateChatOrchestratorTests.RuntimeAdapter_UnsupportedNpcEvent_DoesNotBlockLaterSupportedPrivateChat" -p:UseSharedCompilation=false` failed because Willy's unsupported pack exception escaped and blocked the later Haley event.
+- GREEN: `dotnet test .\Mods\StardewHermesBridge.Tests\Mods.StardewHermesBridge.Tests.csproj -c Debug -p:UseSharedCompilation=false` passed, 135/135.
+- GREEN: `dotnet test .\Desktop\HermesDesktop.Tests\HermesDesktop.Tests.csproj -c Debug --filter "FullyQualifiedName~Stardew" -p:UseSharedCompilation=false` passed, 221/224 with 3 live-AI tests skipped.
+- GREEN: `dotnet build .\Desktop\HermesDesktop\HermesDesktop.csproj -c Debug -p:Platform=x64 -p:UseSharedCompilation=false` succeeded with existing Stardew bridge warnings.
 
 ## Related Files
 
 - `src/games/stardew/StardewNpcAutonomyBackgroundService.cs`
 - `src/runtime/NpcLocalExecutorRunner.cs`
+- `src/game/core/PrivateChatContracts.cs`
+- `src/game/core/PrivateChatOrchestrator.cs`
+- `src/games/stardew/StardewPrivateChatOrchestrator.cs`
+- `Mods/StardewHermesBridge/Bridge/BridgeCommandQueue.cs`
 - `Desktop/HermesDesktop.Tests/Stardew/StardewNpcAutonomyBackgroundServiceTests.cs`
 - `Desktop/HermesDesktop.Tests/Runtime/NpcLocalExecutorRunnerTests.cs`
+- `Desktop/HermesDesktop.Tests/Stardew/StardewPrivateChatOrchestratorTests.cs`
+- `Mods/StardewHermesBridge.Tests/BridgeMoveCommandQueueRegressionTests.cs`

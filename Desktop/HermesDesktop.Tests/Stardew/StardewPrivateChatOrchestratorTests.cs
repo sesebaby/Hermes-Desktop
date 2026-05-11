@@ -209,6 +209,57 @@ public class StardewPrivateChatOrchestratorTests
     }
 
     [TestMethod]
+    public async Task RuntimeAdapter_UnsupportedNpcEvent_DoesNotBlockLaterSupportedPrivateChat()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-private-chat-unsupported-npc-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            CreatePack(tempDir, "haley", "Haley", targetEntityId: "Haley");
+            var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), tempDir);
+            var events = new FakeEventSource();
+            var commands = new FakeCommandService();
+            using var runtimeAdapter = new StardewPrivateChatRuntimeAdapter(
+                new FakePrivateChatAgentRunner(),
+                NullLogger<StardewPrivateChatRuntimeAdapter>.Instance,
+                new StardewPrivateChatOptions(ReopenPolicy: PrivateChatReopenPolicy.Never),
+                bindingResolver: resolver);
+            var adapter = new FakeGameAdapter(commands, events);
+
+            await runtimeAdapter.ProcessAsync(
+                "bridge-1",
+                "save-1",
+                adapter,
+                [
+                    new GameEventRecord(
+                        "evt-willy",
+                        "vanilla_dialogue_completed",
+                        "Willy",
+                        DateTime.UtcNow,
+                        "Willy vanilla dialogue completed."),
+                    new GameEventRecord(
+                        "evt-haley",
+                        "vanilla_dialogue_completed",
+                        "Haley",
+                        DateTime.UtcNow.AddSeconds(1),
+                        "Haley vanilla dialogue completed.")
+                ],
+                CancellationToken.None);
+
+            var action = commands.Submitted.Single();
+            Assert.AreEqual(GameActionType.OpenPrivateChat, action.Type);
+            Assert.AreEqual("Haley", action.NpcId);
+            Assert.AreEqual("Haley", action.BodyBinding?.TargetEntityId);
+            Assert.AreEqual("Haley", action.BodyBinding?.SmapiName);
+            StringAssert.Contains(action.Payload?["conversationId"]?.GetValue<string>() ?? string.Empty, "evt-haley");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task ProcessNextAsync_OtherNpcDialogueCompleted_DoesNotOpenPrivateChat()
     {
         var events = new FakeEventSource(
