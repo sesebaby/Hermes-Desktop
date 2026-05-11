@@ -26,6 +26,7 @@ public sealed class NpcRuntimeInstance
     private DateTime? _nextWakeAtUtc;
     private IReadOnlyList<NpcRuntimeIngressWorkItemSnapshot> _ingressWorkItems = [];
     private GameCommandStatus? _lastTerminalCommandStatus;
+    private NpcRuntimeActionChainGuardSnapshot? _actionChainGuard;
     private int _inboxDepth;
     private readonly SessionTodoStore _todoStore = new();
     private Task? _taskHydrationTask;
@@ -218,6 +219,7 @@ public sealed class NpcRuntimeInstance
             _nextWakeAtUtc = controller.NextWakeAtUtc;
             _ingressWorkItems = controller.IngressWorkItems.ToArray();
             _lastTerminalCommandStatus = controller.LastTerminalCommandStatus;
+            _actionChainGuard = controller.ActionChainGuard;
             _inboxDepth = Math.Max(0, controller.InboxDepth);
         }
     }
@@ -329,6 +331,12 @@ public sealed class NpcRuntimeInstance
             _lastTerminalCommandStatus = status;
     }
 
+    internal void SetActionChainGuard(NpcRuntimeActionChainGuardSnapshot? actionChainGuard)
+    {
+        lock (_gate)
+            _actionChainGuard = actionChainGuard;
+    }
+
     public NpcRuntimeAgentHandle GetOrCreatePrivateChatHandle(
         string rebindKey,
         Func<int, NpcRuntimeAgentHandle> factory)
@@ -406,7 +414,8 @@ public sealed class NpcRuntimeInstance
                     _nextWakeAtUtc,
                     _inboxDepth,
                     _ingressWorkItems,
-                    _lastTerminalCommandStatus));
+                    _lastTerminalCommandStatus,
+                    _actionChainGuard));
         }
     }
 

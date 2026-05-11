@@ -59,6 +59,22 @@ public sealed class NpcRuntimeDriver
         await SyncAsync(ct);
     }
 
+    public async Task SetActionChainGuardAsync(NpcRuntimeActionChainGuardSnapshot? actionChainGuard, CancellationToken ct)
+    {
+        _instance.SetActionChainGuard(actionChainGuard);
+        await SyncAsync(ct);
+    }
+
+    public async Task SetActionChainGuardAndNextWakeAsync(
+        NpcRuntimeActionChainGuardSnapshot? actionChainGuard,
+        DateTime? nextWakeAtUtc,
+        CancellationToken ct)
+    {
+        _instance.SetActionChainGuard(actionChainGuard);
+        _instance.SetNextWakeAtUtc(nextWakeAtUtc);
+        await SyncAsync(ct);
+    }
+
     public async Task EnqueueIngressWorkItemAsync(NpcRuntimeIngressWorkItemSnapshot workItem, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(workItem);
@@ -102,5 +118,6 @@ public sealed class NpcRuntimeDriver
            controller.PendingWorkItem is not null ||
            controller.ActionSlot is not null ||
            controller.NextWakeAtUtc.HasValue ||
-           controller.IngressWorkItems.Count > 0;
+           controller.IngressWorkItems.Count > 0 ||
+           controller.ActionChainGuard is not null;
 }

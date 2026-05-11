@@ -100,6 +100,51 @@ public sealed class NpcRuntimeRecoveryTests
     }
 
     [TestMethod]
+    public async Task GetOrCreateDriverAsync_PersistsActionChainGuardWithoutPendingActionSlot()
+    {
+        var descriptor = CreateDescriptor("haley");
+        var startedAt = new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc);
+        var updatedAt = startedAt.AddSeconds(30);
+        var supervisor1 = new NpcRuntimeSupervisor();
+        var driver1 = await supervisor1.GetOrCreateDriverAsync(descriptor, _tempDir, CancellationToken.None);
+
+        await driver1.SetActionChainGuardAsync(
+            new NpcRuntimeActionChainGuardSnapshot(
+                "chain-1",
+                "open",
+                null,
+                false,
+                "todo-1",
+                "trace-root-1",
+                startedAt,
+                updatedAt,
+                "move",
+                "move:Town:42:17",
+                2,
+                1,
+                1,
+                StardewCommandStatuses.Blocked,
+                StardewBridgeErrorCodes.PathBlocked,
+                1,
+                0),
+            CancellationToken.None);
+
+        var supervisor2 = new NpcRuntimeSupervisor();
+        var driver2 = await supervisor2.GetOrCreateDriverAsync(descriptor, _tempDir, CancellationToken.None);
+        var controller = driver2.Snapshot();
+
+        Assert.IsNull(controller.PendingWorkItem);
+        Assert.IsNull(controller.ActionSlot);
+        Assert.IsNotNull(controller.ActionChainGuard);
+        Assert.AreEqual("chain-1", controller.ActionChainGuard!.ChainId);
+        Assert.AreEqual("todo-1", controller.ActionChainGuard.RootTodoId);
+        Assert.AreEqual("move:Town:42:17", controller.ActionChainGuard.LastTargetKey);
+        Assert.AreEqual(2, controller.ActionChainGuard.ConsecutiveActions);
+        Assert.AreEqual(1, controller.ActionChainGuard.ConsecutiveFailures);
+        Assert.AreEqual(StardewBridgeErrorCodes.PathBlocked, controller.ActionChainGuard.LastReasonCode);
+    }
+
+    [TestMethod]
     public async Task GetOrCreateDriverAsync_RestoresLeaseSnapshotAndKeepsGenerationMonotonic()
     {
         var descriptor = CreateDescriptor("penny");

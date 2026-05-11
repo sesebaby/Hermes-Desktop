@@ -355,6 +355,10 @@ public sealed class StardewAutonomyTickDebugServiceTests
         StringAssert.Contains(systemPrompt, "私聊里答应“现在就做”的现实世界动作，必须用 `npc_delegate_action` 委托");
         StringAssert.Contains(systemPrompt, "动作完成后不能假装忘记承诺");
         StringAssert.Contains(systemPrompt, "显式收口");
+        StringAssert.Contains(systemPrompt, "action_loop");
+        StringAssert.Contains(systemPrompt, "action_chain_budget_exceeded");
+        StringAssert.Contains(systemPrompt, "closure_missing");
+        StringAssert.Contains(systemPrompt, "blocked_until_closure");
         StringAssert.Contains(systemPrompt, "stardew_navigate_to_tile");
         StringAssert.Contains(systemPrompt, "stardew_task_status");
         StringAssert.Contains(systemPrompt, "memory");

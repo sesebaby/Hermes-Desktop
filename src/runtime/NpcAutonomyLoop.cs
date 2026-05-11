@@ -19,6 +19,7 @@ public sealed class NpcAutonomyLoop
     private readonly INpcLocalExecutorRunner? _localExecutorRunner;
     private readonly ILogger<NpcAutonomyLoop>? _logger;
     private readonly Func<string> _traceIdFactory;
+    private readonly NpcActionChainGuardOptions _actionChainGuardOptions;
 
     public NpcAutonomyLoop(
         IGameAdapter adapter,
@@ -27,7 +28,8 @@ public sealed class NpcAutonomyLoop
         NpcRuntimeLogWriter? logWriter = null,
         ILogger<NpcAutonomyLoop>? logger = null,
         Func<string>? traceIdFactory = null,
-        INpcLocalExecutorRunner? localExecutorRunner = null)
+        INpcLocalExecutorRunner? localExecutorRunner = null,
+        NpcActionChainGuardOptions? actionChainGuardOptions = null)
     {
         _adapter = adapter;
         _factStore = factStore;
@@ -36,6 +38,20 @@ public sealed class NpcAutonomyLoop
         _localExecutorRunner = localExecutorRunner;
         _logger = logger;
         _traceIdFactory = traceIdFactory ?? (() => $"trace_{Guid.NewGuid():N}");
+        _actionChainGuardOptions = actionChainGuardOptions ?? new NpcActionChainGuardOptions();
+    }
+
+    public async Task<NpcAutonomyTickResult> RunOneTickAsync(
+        NpcRuntimeDriver runtimeDriver,
+        GameEventCursor eventCursor,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(runtimeDriver);
+
+        var result = await RunOneTickForDriverAsync(runtimeDriver, eventCursor, ct);
+        runtimeDriver.Instance.RecordTrace(result.TraceId);
+        await WriteInstanceTaskContinuityEvidenceAsync(runtimeDriver.Instance, result.TraceId, ct);
+        return result;
     }
 
     public async Task<NpcAutonomyTickResult> RunOneTickAsync(
@@ -48,6 +64,19 @@ public sealed class NpcAutonomyLoop
         var result = await RunOneTickForInstanceAsync(instance, eventCursor, ct);
         instance.RecordTrace(result.TraceId);
         await WriteInstanceTaskContinuityEvidenceAsync(instance, result.TraceId, ct);
+        return result;
+    }
+
+    public async Task<NpcAutonomyTickResult> RunOneTickAsync(
+        NpcRuntimeDriver runtimeDriver,
+        GameEventBatch eventBatch,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(runtimeDriver);
+
+        var result = await RunOneTickForDriverAsync(runtimeDriver, eventBatch, ct);
+        runtimeDriver.Instance.RecordTrace(result.TraceId);
+        await WriteInstanceTaskContinuityEvidenceAsync(runtimeDriver.Instance, result.TraceId, ct);
         return result;
     }
 
@@ -117,13 +146,44 @@ public sealed class NpcAutonomyLoop
         return await RunOneTickForInstanceAsync(instance, eventBatch, ct);
     }
 
+    private async Task<NpcAutonomyTickResult> RunOneTickForDriverAsync(
+        NpcRuntimeDriver runtimeDriver,
+        GameEventCursor eventCursor,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(runtimeDriver);
+        ArgumentNullException.ThrowIfNull(eventCursor);
+
+        var descriptor = runtimeDriver.Instance.Descriptor;
+        var eventStopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var eventBatch = await _adapter.Events.PollBatchAsync(eventCursor, ct);
+        eventStopwatch.Stop();
+        _logger?.LogInformation(
+            "NPC autonomy event poll completed; npc={NpcId}; events={EventCount}; nextCursor={NextCursor}; nextSequence={NextSequence}; durationMs={DurationMs}",
+            descriptor.NpcId,
+            eventBatch.Records.Count,
+            eventBatch.NextCursor?.Since ?? "-",
+            eventBatch.NextCursor?.Sequence,
+            eventStopwatch.ElapsedMilliseconds);
+        return await RunOneTickCoreAsync(runtimeDriver, runtimeDriver.Instance, descriptor, null, eventBatch, ct);
+    }
+
+    private Task<NpcAutonomyTickResult> RunOneTickForDriverAsync(
+        NpcRuntimeDriver runtimeDriver,
+        GameEventBatch eventBatch,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(runtimeDriver);
+        return RunOneTickCoreAsync(runtimeDriver, runtimeDriver.Instance, runtimeDriver.Instance.Descriptor, null, eventBatch, ct);
+    }
+
     private Task<NpcAutonomyTickResult> RunOneTickForInstanceAsync(
         NpcRuntimeInstance instance,
         GameEventBatch eventBatch,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(instance);
-        return RunOneTickCoreAsync(instance, instance.Descriptor, null, eventBatch, ct);
+        return RunOneTickCoreAsync(null, instance, instance.Descriptor, null, eventBatch, ct);
     }
 
     private Task<NpcAutonomyTickResult> RunOneTickForInstanceAsync(
@@ -133,7 +193,7 @@ public sealed class NpcAutonomyLoop
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(instance);
-        return RunOneTickCoreAsync(instance, instance.Descriptor, observation, eventBatch, ct);
+        return RunOneTickCoreAsync(null, instance, instance.Descriptor, observation, eventBatch, ct);
     }
 
     public async Task<NpcAutonomyTickResult> RunOneTickAsync(
@@ -154,7 +214,7 @@ public sealed class NpcAutonomyLoop
             eventBatch.NextCursor?.Since ?? "-",
             eventBatch.NextCursor?.Sequence,
             eventStopwatch.ElapsedMilliseconds);
-        return await RunOneTickCoreAsync(null, descriptor, null, eventBatch, ct);
+        return await RunOneTickCoreAsync(null, null, descriptor, null, eventBatch, ct);
     }
 
     public async Task<NpcAutonomyTickResult> RunOneTickAsync(
@@ -162,9 +222,10 @@ public sealed class NpcAutonomyLoop
         GameObservation observation,
         GameEventBatch eventBatch,
         CancellationToken ct)
-        => await RunOneTickCoreAsync(null, descriptor, observation, eventBatch, ct);
+        => await RunOneTickCoreAsync(null, null, descriptor, observation, eventBatch, ct);
 
     private async Task<NpcAutonomyTickResult> RunOneTickCoreAsync(
+        NpcRuntimeDriver? runtimeDriver,
         NpcRuntimeInstance? instance,
         NpcRuntimeDescriptor descriptor,
         GameObservation? observation,
@@ -173,6 +234,7 @@ public sealed class NpcAutonomyLoop
     {
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentNullException.ThrowIfNull(eventBatch);
+        instance ??= runtimeDriver?.Instance;
 
         var traceId = _traceIdFactory();
         if (observation is not null)
@@ -203,6 +265,7 @@ public sealed class NpcAutonomyLoop
             var decisionMessage = BuildDecisionMessage(
                 descriptor,
                 instance?.Snapshot().Controller.LastTerminalCommandStatus,
+                instance?.Snapshot().Controller.ActionChainGuard,
                 GetActiveTodos(instance, descriptor.SessionId));
             _logger?.LogInformation(
                 "NPC autonomy decision request prepared; npc={NpcId}; trace={TraceId}; injectedFacts={FactCount}; messageChars={MessageChars}",
@@ -244,12 +307,11 @@ public sealed class NpcAutonomyLoop
         await WriteActivityAsync(descriptor, traceId, eventFacts, decisionResponse, ct);
         await WriteToolBudgetDiagnosticAsync(descriptor, traceId, rawDecisionResponse, ct);
         if (_localExecutorRunner is null)
-        {
             await WriteNarrativeMovementDiagnosticAsync(descriptor, traceId, decisionResponse, decisionSession, ct);
-            await WriteNoToolActionDiagnosticAsync(instance, descriptor, traceId, decisionResponse, decisionSession, ct);
-        }
 
-        await WriteSessionTaskContinuityEvidenceAsync(descriptor, traceId, decisionSession, null, ct);
+        await WriteNoToolActionDiagnosticAsync(runtimeDriver, instance, descriptor, traceId, decisionResponse, decisionSession, ct);
+
+        await WriteSessionTaskContinuityEvidenceAsync(runtimeDriver, instance, descriptor, traceId, decisionSession, null, ct);
 
         return new NpcAutonomyTickResult(descriptor.NpcId, traceId, 0, eventFacts, decisionResponse, eventBatch.NextCursor);
     }
@@ -268,6 +330,7 @@ public sealed class NpcAutonomyLoop
     private static string BuildDecisionMessage(
         NpcRuntimeDescriptor descriptor,
         GameCommandStatus? lastTerminalCommandStatus = null,
+        NpcRuntimeActionChainGuardSnapshot? actionChainGuard = null,
         IReadOnlyList<SessionTodoItem>? activeTodos = null)
     {
         var message =
@@ -289,6 +352,12 @@ public sealed class NpcAutonomyLoop
         var activeTodoFact = BuildActiveTodoClosureFact(lastTerminalCommandStatus, activeTodos);
         if (activeTodoFact is not null)
             message += "\n" + activeTodoFact;
+        var actionChainFact = BuildActionChainFact(actionChainGuard);
+        if (actionChainFact is not null)
+            message += "\n" + actionChainFact;
+        var actionLoopFact = BuildActionLoopFact(actionChainGuard);
+        if (actionLoopFact is not null)
+            message += "\n" + actionLoopFact;
         return lastActionFact is null
             ? message
             : message + "\n" + lastActionFact;
@@ -327,6 +396,38 @@ public sealed class NpcAutonomyLoop
             ? result + "。这是宿主执行结果事实，不是下一步指令。"
             : result + $"; reason={reason}。这是宿主执行结果事实，不是下一步指令。";
     }
+
+    private static string? BuildActionChainFact(NpcRuntimeActionChainGuardSnapshot? chain)
+    {
+        if (chain is null)
+            return null;
+
+        var reason = chain.BlockedReasonCode ?? chain.LastReasonCode ?? "none";
+        var status = string.IsNullOrWhiteSpace(chain.LastTerminalStatus)
+            ? chain.GuardStatus
+            : chain.LastTerminalStatus;
+        var fact = $"action_chain: chainId={chain.ChainId}; status={status}; guard={chain.GuardStatus}; actions={chain.ConsecutiveActions}; failures={chain.ConsecutiveFailures}; sameActionFailures={chain.ConsecutiveSameActionFailures}; closureMissing={chain.ClosureMissingCount}; deferredIngress={chain.DeferredIngressAttempts}; reason={reason}。这是动作链护栏事实，不是下一步指令。";
+        if (chain.BlockedUntilClosure || string.Equals(chain.GuardStatus, "blocked_until_closure", StringComparison.OrdinalIgnoreCase))
+            fact += " 当前动作链已被护栏阻断；你必须先用 todo completed/blocked/failed 或 wait/no-action 加短 reason 收口，不要继续提交真实世界动作。";
+
+        return fact;
+    }
+
+    private static string? BuildActionLoopFact(NpcRuntimeActionChainGuardSnapshot? chain)
+    {
+        if (chain is null || !IsActionLoop(chain))
+            return null;
+
+        var action = string.IsNullOrWhiteSpace(chain.LastAction) ? "-" : chain.LastAction;
+        var targetKey = string.IsNullOrWhiteSpace(chain.LastTargetKey) ? "-" : chain.LastTargetKey;
+        var reason = chain.BlockedReasonCode ?? chain.LastReasonCode ?? "none";
+        return $"action_loop: chainId={chain.ChainId}; action={action}; targetKey={targetKey}; sameActionFailures={chain.ConsecutiveSameActionFailures}; failures={chain.ConsecutiveFailures}; reason={reason}。这是重复失败事实，不是下一步指令；不要继续同动作同目标硬重试。";
+    }
+
+    private static bool IsActionLoop(NpcRuntimeActionChainGuardSnapshot chain)
+        => chain.ConsecutiveSameActionFailures >= 2 ||
+           string.Equals(chain.BlockedReasonCode, StardewBridgeErrorCodes.ActionLoop, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(chain.LastReasonCode, StardewBridgeErrorCodes.ActionLoop, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsActionSlotTimeout(GameCommandStatus status)
         => string.Equals(status.ErrorCode, StardewBridgeErrorCodes.ActionSlotTimeout, StringComparison.OrdinalIgnoreCase) ||
@@ -505,6 +606,8 @@ public sealed class NpcAutonomyLoop
             null,
             taskUpdate.Reason,
             ct);
+        if (IsTodoClosureStatus(taskUpdate.Status))
+            await CloseActionChainAfterTodoClosureAsync(null, instance, taskUpdate.TaskId, ct);
     }
 
     private async Task SubmitSpeechContractAsync(
@@ -681,6 +784,7 @@ public sealed class NpcAutonomyLoop
     }
 
     private async Task WriteNoToolActionDiagnosticAsync(
+        NpcRuntimeDriver? runtimeDriver,
         NpcRuntimeInstance? instance,
         NpcRuntimeDescriptor descriptor,
         string traceId,
@@ -708,6 +812,7 @@ public sealed class NpcAutonomyLoop
                     null,
                     reason,
                     ct);
+                await CloseActionChainAfterClosureAsync(runtimeDriver, instance, ct);
                 return;
             }
 
@@ -720,6 +825,7 @@ public sealed class NpcAutonomyLoop
                 null,
                 "terminal_action_with_active_todo_without_explicit_closure",
                 ct);
+            await RecordClosureMissingAsync(runtimeDriver, instance, ct);
             return;
         }
 
@@ -785,6 +891,8 @@ public sealed class NpcAutonomyLoop
         }
 
         await WriteSessionTaskContinuityEvidenceAsync(
+            null,
+            instance,
             descriptor,
             traceId,
             null,
@@ -793,15 +901,14 @@ public sealed class NpcAutonomyLoop
     }
 
     private async Task WriteSessionTaskContinuityEvidenceAsync(
+        NpcRuntimeDriver? runtimeDriver,
+        NpcRuntimeInstance? instance,
         NpcRuntimeDescriptor descriptor,
         string traceId,
         Session? decisionSession,
         GameCommandStatus? controllerTerminalStatus,
         CancellationToken ct)
     {
-        if (_logWriter is null)
-            return;
-
         if (decisionSession is null)
         {
             if (controllerTerminalStatus is not null)
@@ -848,7 +955,7 @@ public sealed class NpcAutonomyLoop
         foreach (var call in calls.Where(IsTodoTool))
         {
             if (!toolMessagesByCallId.TryGetValue(call.Id, out var todoMessage) ||
-                !TryReadTodoWriteResult(todoMessage.Content, out var status, out var reason))
+                !TryReadTodoWriteResult(todoMessage.Content, out var todoId, out var status, out var reason))
                 continue;
 
             await WriteTaskContinuityAsync(
@@ -860,6 +967,8 @@ public sealed class NpcAutonomyLoop
                 null,
                 reason,
                 ct);
+            if (IsTodoClosureStatus(status))
+                await CloseActionChainAfterTodoClosureAsync(runtimeDriver, instance, todoId, ct);
             needsFeedback |= IsBlockedOrFailed(status);
         }
 
@@ -944,6 +1053,12 @@ public sealed class NpcAutonomyLoop
         => string.Equals(todo.Status, "pending", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(todo.Status, "in_progress", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsTodoClosureStatus(string? status)
+        => string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, "blocked", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, "failed", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, "cancelled", StringComparison.OrdinalIgnoreCase);
+
     private static readonly HashSet<string> TerminalStatusNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "completed",
@@ -1023,8 +1138,9 @@ public sealed class NpcAutonomyLoop
         return true;
     }
 
-    private static bool TryReadTodoWriteResult(string content, out string status, out string? reason)
+    private static bool TryReadTodoWriteResult(string content, out string? todoId, out string status, out string? reason)
     {
+        todoId = null;
         status = "";
         reason = null;
         try
@@ -1042,6 +1158,7 @@ public sealed class NpcAutonomyLoop
                 if (string.IsNullOrWhiteSpace(parsedStatus))
                     continue;
 
+                todoId = ReadString(todo, "id");
                 status = parsedStatus;
                 reason = ReadString(todo, "reason");
                 return true;
@@ -1116,6 +1233,91 @@ public sealed class NpcAutonomyLoop
         => instance?.Snapshot().Controller.LastTerminalCommandStatus is { } status &&
            TerminalStatusNames.Contains(status.Status) &&
            GetActiveTodos(instance, sessionId).Count > 0;
+
+    private async Task RecordClosureMissingAsync(
+        NpcRuntimeDriver? runtimeDriver,
+        NpcRuntimeInstance? instance,
+        CancellationToken ct)
+    {
+        if (instance is null)
+            return;
+
+        var snapshot = instance.Snapshot().Controller;
+        if (snapshot.ActionChainGuard is not { } chain)
+            return;
+
+        var nowUtc = DateTime.UtcNow;
+        var missingCount = chain.ClosureMissingCount + 1;
+        var updated = chain with
+        {
+            UpdatedAtUtc = nowUtc,
+            ClosureMissingCount = missingCount
+        };
+        if (missingCount > _actionChainGuardOptions.MaxClosureMissing)
+        {
+            updated = updated with
+            {
+                GuardStatus = "blocked_until_closure",
+                BlockedUntilClosure = true,
+                BlockedReasonCode = StardewBridgeErrorCodes.ClosureMissing
+            };
+        }
+
+        var nextWakeAtUtc = nowUtc + TimeSpan.FromSeconds(2);
+        if (runtimeDriver is not null)
+        {
+            await runtimeDriver.SetActionChainGuardAndNextWakeAsync(updated, nextWakeAtUtc, ct);
+            return;
+        }
+
+        instance.SetActionChainGuard(updated);
+        instance.SetNextWakeAtUtc(nextWakeAtUtc);
+    }
+
+    private static Task CloseActionChainAfterClosureAsync(
+        NpcRuntimeDriver? runtimeDriver,
+        NpcRuntimeInstance? instance,
+        CancellationToken ct)
+    {
+        if (runtimeDriver is not null)
+            instance = runtimeDriver.Instance;
+
+        if (instance?.Snapshot().Controller.ActionChainGuard is not { } chain)
+            return Task.CompletedTask;
+
+        var closed = chain with
+        {
+            GuardStatus = "closed",
+            BlockedUntilClosure = false,
+            UpdatedAtUtc = DateTime.UtcNow
+        };
+
+        if (runtimeDriver is not null)
+            return runtimeDriver.SetActionChainGuardAsync(closed, ct);
+
+        instance.SetActionChainGuard(closed);
+        return Task.CompletedTask;
+    }
+
+    private static Task CloseActionChainAfterTodoClosureAsync(
+        NpcRuntimeDriver? runtimeDriver,
+        NpcRuntimeInstance? instance,
+        string? todoId,
+        CancellationToken ct)
+    {
+        if (runtimeDriver is not null)
+            instance = runtimeDriver.Instance;
+
+        var chain = instance?.Snapshot().Controller.ActionChainGuard;
+        if (chain is not null &&
+            !string.IsNullOrWhiteSpace(chain.RootTodoId) &&
+            !string.Equals(chain.RootTodoId, todoId, StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.CompletedTask;
+        }
+
+        return CloseActionChainAfterClosureAsync(runtimeDriver, instance, ct);
+    }
 
     private static IReadOnlyList<SessionTodoItem> GetActiveTodos(NpcRuntimeInstance? instance, string sessionId)
     {

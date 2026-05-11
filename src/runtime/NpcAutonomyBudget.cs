@@ -37,7 +37,8 @@ public sealed record NpcAutonomyBudgetOptions(
     int MaxConcurrentLlmRequests = 1,
     TimeSpan? RestartCooldown = null,
     int MaxRestartsPerScene = 3,
-    TimeSpan? LlmTurnTimeout = null)
+    TimeSpan? LlmTurnTimeout = null,
+    NpcActionChainGuardOptions? ActionChainGuard = null)
 {
     public TimeSpan EffectiveRestartCooldown => RestartCooldown ?? TimeSpan.FromSeconds(5);
 
@@ -45,6 +46,21 @@ public sealed record NpcAutonomyBudgetOptions(
         LlmTurnTimeout is { } timeout && timeout > TimeSpan.Zero
             ? timeout
             : TimeSpan.FromSeconds(60);
+
+    public NpcActionChainGuardOptions EffectiveActionChainGuard => ActionChainGuard ?? new NpcActionChainGuardOptions();
+}
+
+public sealed record NpcActionChainGuardOptions(
+    int MaxActionsPerChain = 4,
+    int MaxConsecutiveFailures = 2,
+    int MaxClosureMissing = 1,
+    int MaxDeferredIngressAttempts = 3,
+    TimeSpan? ChainTtl = null)
+{
+    public TimeSpan EffectiveChainTtl =>
+        ChainTtl is { } ttl && ttl > TimeSpan.Zero
+            ? ttl
+            : TimeSpan.FromMinutes(2);
 }
 
 public sealed class NpcAutonomyBudgetLease : IAsyncDisposable, IDisposable

@@ -7,6 +7,7 @@ using Hermes.Agent.Games.Stardew;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Runtime;
 using Hermes.Agent.Skills;
+using Hermes.Agent.Tasks;
 using Hermes.Agent.Tools;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -1194,7 +1195,10 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     {
         var discovery = CreateDiscovery("save-42");
         var delegationClient = new CapturingStreamingChatClient();
-        var commands = new FakeCommandService();
+        var commands = new ScriptedCommandService(
+            [
+                new GameCommandStatus("cmd-active", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null)
+            ]);
         var adapter = new FakeGameAdapter(
             commands,
             new FakeQueryService(new GameObservation(
@@ -1266,7 +1270,10 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 "call-nav",
                 "stardew_navigate_to_tile",
                 Json("""{"locationName":"Beach","x":32,"y":34,"source":"map-skill:stardew.navigation.poi.beach-shoreline","reason":"meet the player at the beach now"}""")));
-        var commands = new FakeCommandService();
+        var commands = new ScriptedCommandService(
+            [
+                new GameCommandStatus("cmd-active", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null)
+            ]);
         var adapter = new FakeGameAdapter(
             commands,
             new FakeQueryService(new GameObservation(
@@ -1327,6 +1334,335 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         Assert.AreEqual(0, delegationClient.StructuredStreamCalls);
         Assert.AreEqual(1, commands.Submitted.Count);
         Assert.AreEqual(0, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_DelegatedIngress_WhenSlotBusy_DefersWithAttemptCountAndWake()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var commands = new ScriptedCommandService(
+            [
+                new GameCommandStatus("cmd-active", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null)
+            ]);
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley has queued private-chat movement while another action is active.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetActionSlotAsync(
+            new NpcRuntimeActionSlotSnapshot(
+                "action",
+                "work-active",
+                "cmd-active",
+                "trace-active",
+                DateTime.UtcNow,
+                DateTime.UtcNow.AddMinutes(1)),
+            CancellationToken.None);
+        await driver.EnqueueIngressWorkItemAsync(
+            new NpcRuntimeIngressWorkItemSnapshot(
+                "ingress-delegate-busy",
+                "npc_delegated_action",
+                "queued",
+                DateTime.UtcNow,
+                "idem-delegate-busy",
+                "trace-delegate-busy",
+                new()
+                {
+                    ["action"] = "move",
+                    ["reason"] = "continue the player promise",
+                    ["target"] = new JsonObject
+                    {
+                        ["locationName"] = "Beach",
+                        ["x"] = 32,
+                        ["y"] = 34,
+                        ["source"] = "map-skill:test"
+                    }
+                }),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            new CountingChatClient("unused"),
+            supervisor,
+            enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, commands.Submitted.Count);
+        var snapshot = supervisor.Snapshot().Single().Controller;
+        Assert.IsNotNull(snapshot.ActionSlot);
+        var ingress = snapshot.IngressWorkItems.Single();
+        Assert.AreEqual("ingress-delegate-busy", ingress.WorkItemId);
+        Assert.AreEqual("deferred", ingress.Status);
+        Assert.AreEqual(1, ingress.DeferredAttempts);
+        Assert.IsNotNull(snapshot.NextWakeAtUtc);
+        var logPath = Path.Combine(
+            _tempDir,
+            "runtime",
+            "stardew",
+            "games",
+            "stardew-valley",
+            "saves",
+            "save-42",
+            "npc",
+            "haley",
+            "profiles",
+            "default",
+            "activity",
+            "runtime.jsonl");
+        var records = ReadRuntimeLogRecords(logPath);
+        Assert.IsTrue(records.Any(record =>
+            record.GetProperty("actionType").GetString() == "ingress" &&
+            record.GetProperty("target").GetString() == "npc_delegated_action" &&
+            record.GetProperty("stage").GetString() == "deferred" &&
+            record.GetProperty("result").GetString() == "delegated_ingress_deferred:action_slot_busy" &&
+            record.TryGetProperty("commandId", out var commandId) &&
+            commandId.GetString() == "ingress-delegate-busy"));
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_DelegatedIngress_WhenDeferBudgetExceededWithoutActiveSlot_BlocksAndRemovesIngress()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var commands = new ScriptedCommandService(
+            [
+                new GameCommandStatus("cmd-active", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null)
+            ]);
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley has stale delegated movement ingress.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.EnqueueIngressWorkItemAsync(
+            new NpcRuntimeIngressWorkItemSnapshot(
+                "ingress-delegate-stale",
+                "npc_delegated_action",
+                "deferred",
+                DateTime.UtcNow,
+                "idem-delegate-stale",
+                "trace-delegate-stale",
+                new()
+                {
+                    ["action"] = "move",
+                    ["reason"] = "continue the player promise",
+                    ["target"] = new JsonObject
+                    {
+                        ["locationName"] = "Beach",
+                        ["x"] = 32,
+                        ["y"] = 34,
+                        ["source"] = "map-skill:test"
+                    }
+                },
+                DeferredAttempts: 1),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            new CountingChatClient("unused"),
+            supervisor,
+            enabledNpcIds: ["haley"],
+            budget: new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(
+                MaxToolIterations: 2,
+                MaxConcurrentLlmRequests: 1,
+                MaxRestartsPerScene: 2,
+                ActionChainGuard: new NpcActionChainGuardOptions(MaxDeferredIngressAttempts: 1))));
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, commands.Submitted.Count);
+        var snapshot = supervisor.Snapshot().Single().Controller;
+        Assert.AreEqual(0, snapshot.IngressWorkItems.Count);
+        Assert.AreEqual(StardewCommandStatuses.Blocked, snapshot.LastTerminalCommandStatus?.Status);
+        Assert.AreEqual(StardewBridgeErrorCodes.DelegatedIngressDeferredExceeded, snapshot.LastTerminalCommandStatus?.ErrorCode);
+        Assert.AreEqual("ingress-delegate-stale", snapshot.LastTerminalCommandStatus?.CommandId);
+        Assert.AreEqual("move", snapshot.LastTerminalCommandStatus?.Action);
+        Assert.IsNotNull(snapshot.NextWakeAtUtc);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_DelegatedIngress_DeferBudgetExceededWithActiveSlot_DoesNotOverwriteActiveTerminal()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var commands = new ScriptedCommandService(
+            [
+                new GameCommandStatus("cmd-active", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null)
+            ]);
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley has stale delegated movement ingress while active command remains running.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetLastTerminalCommandStatusAsync(
+            new GameCommandStatus("cmd-previous", "haley", "move", StardewCommandStatuses.Completed, 1, null, null),
+            CancellationToken.None);
+        await driver.SetActionSlotAsync(
+            new NpcRuntimeActionSlotSnapshot(
+                "action",
+                "work-active",
+                "cmd-active",
+                "trace-active",
+                DateTime.UtcNow,
+                DateTime.UtcNow.AddMinutes(1)),
+            CancellationToken.None);
+        await driver.EnqueueIngressWorkItemAsync(
+            new NpcRuntimeIngressWorkItemSnapshot(
+                "ingress-delegate-stale-active",
+                "npc_delegated_action",
+                "deferred",
+                DateTime.UtcNow,
+                "idem-delegate-stale-active",
+                "trace-delegate-stale-active",
+                new()
+                {
+                    ["action"] = "move",
+                    ["reason"] = "continue the player promise",
+                    ["target"] = new JsonObject
+                    {
+                        ["locationName"] = "Beach",
+                        ["x"] = 32,
+                        ["y"] = 34,
+                        ["source"] = "map-skill:test"
+                    }
+                },
+                DeferredAttempts: 1),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            new CountingChatClient("unused"),
+            supervisor,
+            enabledNpcIds: ["haley"],
+            budget: new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(
+                MaxToolIterations: 2,
+                MaxConcurrentLlmRequests: 1,
+                MaxRestartsPerScene: 2,
+                ActionChainGuard: new NpcActionChainGuardOptions(MaxDeferredIngressAttempts: 1))));
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, commands.Submitted.Count);
+        var snapshot = supervisor.Snapshot().Single().Controller;
+        Assert.AreEqual("cmd-active", snapshot.ActionSlot?.CommandId);
+        Assert.AreEqual("cmd-previous", snapshot.LastTerminalCommandStatus?.CommandId);
+        Assert.AreEqual(StardewCommandStatuses.Completed, snapshot.LastTerminalCommandStatus?.Status);
+        var ingress = snapshot.IngressWorkItems.Single();
+        Assert.AreEqual("blocked", ingress.Status);
+        Assert.AreEqual(2, ingress.DeferredAttempts);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenClosureMissingSchedulesRepairWake_DoesNotOverwriteWithNormalWakeInterval()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var adapter = new FakeGameAdapter(
+            new FakeCommandService(),
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley has just completed a delegated action and must close the active todo.",
+                ["location=Town"])),
+            new FakeEventSource([]));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var instance = await supervisor.GetOrStartAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        instance.TodoStore.Write(
+            binding.Descriptor.SessionId,
+            [new SessionTodoInput("meet-now", "Meet the player now", "in_progress")]);
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.SetLastTerminalCommandStatusAsync(
+            new GameCommandStatus(
+                "cmd-move-1",
+                "haley",
+                "move",
+                StardewCommandStatuses.Completed,
+                1,
+                null,
+                null),
+            CancellationToken.None);
+        await driver.SetActionChainGuardAsync(
+            new NpcRuntimeActionChainGuardSnapshot(
+                "chain-closure-service",
+                "open",
+                null,
+                false,
+                "meet-now",
+                "trace-root-1",
+                new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                "move",
+                "move:Town:42:17",
+                ConsecutiveActions: 1,
+                ConsecutiveFailures: 0,
+                ConsecutiveSameActionFailures: 0,
+                LastTerminalStatus: StardewCommandStatuses.Completed,
+                LastReasonCode: null,
+                ClosureMissingCount: 0,
+                DeferredIngressAttempts: 0),
+            CancellationToken.None);
+        var chatClient = new CountingChatClient("到了。");
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            chatClient,
+            supervisor,
+            enabledNpcIds: ["haley"],
+            autonomyWakeInterval: TimeSpan.FromMinutes(5));
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        var snapshot = supervisor.Snapshot().Single().Controller;
+        Assert.AreEqual(1, chatClient.CompleteWithToolsCalls);
+        var logPath = Path.Combine(
+            _tempDir,
+            "runtime",
+            "stardew",
+            "games",
+            "stardew-valley",
+            "saves",
+            "save-42",
+            "npc",
+            "haley",
+            "profiles",
+            "default",
+            "activity",
+            "runtime.jsonl");
+        var records = File.Exists(logPath) ? ReadRuntimeLogRecords(logPath) : [];
+        Assert.IsTrue(
+            records.Any(record =>
+                record.GetProperty("actionType").GetString() == "task_continuity" &&
+                record.GetProperty("target").GetString() == "closure_missing"),
+            "Expected closure_missing diagnostic. Records: " + string.Join(Environment.NewLine, records.Select(record => record.GetRawText())));
+        Assert.AreEqual(1, snapshot.ActionChainGuard?.ClosureMissingCount);
+        Assert.IsNotNull(snapshot.NextWakeAtUtc);
+        Assert.IsTrue(
+            snapshot.NextWakeAtUtc!.Value <= DateTime.UtcNow.AddSeconds(20),
+            $"Closure repair wake should stay short instead of being overwritten by the normal autonomy interval. nextWake={snapshot.NextWakeAtUtc:o}");
     }
 
     [TestMethod]

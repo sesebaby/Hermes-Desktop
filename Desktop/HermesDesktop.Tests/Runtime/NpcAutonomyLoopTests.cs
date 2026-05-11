@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Hermes.Agent.Core;
 using Hermes.Agent.Game;
+using Hermes.Agent.Games.Stardew;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Memory;
 using Hermes.Agent.Runtime;
@@ -325,6 +326,148 @@ public class NpcAutonomyLoopTests
             StringAssert.Contains(agent.LastMessage, "显式收口");
             StringAssert.Contains(agent.LastMessage, "todo");
             StringAssert.Contains(agent.LastMessage, "wait/no-action");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithTerminalTodoAndChain_IncludesClosureAndShortChainFactsOnly()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-chain-prompt-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("meet-now", "Meet the player now", "in_progress")]);
+            instance.SetLastTerminalCommandStatus(new GameCommandStatus(
+                "cmd-move-1",
+                "haley",
+                "move",
+                StardewCommandStatuses.Completed,
+                1,
+                null,
+                null));
+            instance.SetActionChainGuard(new NpcRuntimeActionChainGuardSnapshot(
+                "chain-prompt-1",
+                "open",
+                null,
+                false,
+                "meet-now",
+                "trace-root-1",
+                new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                "move",
+                "move:Town:42:17",
+                ConsecutiveActions: 2,
+                ConsecutiveFailures: 0,
+                ConsecutiveSameActionFailures: 0,
+                LastTerminalStatus: StardewCommandStatuses.Completed,
+                LastReasonCode: null,
+                ClosureMissingCount: 0,
+                DeferredIngressAttempts: 0));
+            var agent = new FakeAgent(() => { });
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation(
+                        "haley",
+                        "stardew-valley",
+                        DateTime.UtcNow,
+                        "unused",
+                        ["destination[0]=Town fountain", "nearby[0]=Town", "moveCandidate[0]=Town:42,17"])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                agent);
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.IsNotNull(agent.LastMessage);
+            StringAssert.Contains(agent.LastMessage, "last_action_result");
+            StringAssert.Contains(agent.LastMessage, "active todo closure required");
+            StringAssert.Contains(agent.LastMessage, "action_chain:");
+            StringAssert.Contains(agent.LastMessage, "chainId=chain-prompt-1");
+            StringAssert.Contains(agent.LastMessage, "actions=2");
+            Assert.IsFalse(agent.LastMessage.Contains("destination[0]", StringComparison.Ordinal));
+            Assert.IsFalse(agent.LastMessage.Contains("nearby[0]", StringComparison.Ordinal));
+            Assert.IsFalse(agent.LastMessage.Contains("moveCandidate[0]", StringComparison.Ordinal));
+            Assert.IsFalse(agent.LastMessage.Contains("{", StringComparison.Ordinal), "Action-chain prompt facts must not dump internal JSON.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithActionLoopGuard_IncludesShortActionLoopFact()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-action-loop-prompt-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.SetLastTerminalCommandStatus(new GameCommandStatus(
+                "cmd-move-2",
+                "haley",
+                "move",
+                StardewCommandStatuses.Blocked,
+                1,
+                StardewBridgeErrorCodes.PathBlocked,
+                StardewBridgeErrorCodes.PathBlocked));
+            instance.SetActionChainGuard(new NpcRuntimeActionChainGuardSnapshot(
+                "chain-loop-prompt-1",
+                "blocked_until_closure",
+                StardewBridgeErrorCodes.PathBlocked,
+                true,
+                "meet-now",
+                "trace-root-1",
+                new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                "move",
+                "move:Town:42:17",
+                ConsecutiveActions: 2,
+                ConsecutiveFailures: 2,
+                ConsecutiveSameActionFailures: 2,
+                LastTerminalStatus: StardewCommandStatuses.Blocked,
+                LastReasonCode: StardewBridgeErrorCodes.PathBlocked,
+                ClosureMissingCount: 0,
+                DeferredIngressAttempts: 0));
+            var agent = new FakeAgent(() => { });
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation(
+                        "haley",
+                        "stardew-valley",
+                        DateTime.UtcNow,
+                        "unused",
+                        ["destination[0]=Town fountain", "nearby[0]=Town", "moveCandidate[0]=Town:42,17"])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                agent);
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.IsNotNull(agent.LastMessage);
+            StringAssert.Contains(agent.LastMessage, "action_loop:");
+            StringAssert.Contains(agent.LastMessage, "chainId=chain-loop-prompt-1");
+            StringAssert.Contains(agent.LastMessage, "sameActionFailures=2");
+            StringAssert.Contains(agent.LastMessage, "reason=path_blocked");
+            Assert.IsFalse(agent.LastMessage.Contains("destination[0]", StringComparison.Ordinal));
+            Assert.IsFalse(agent.LastMessage.Contains("nearby[0]", StringComparison.Ordinal));
+            Assert.IsFalse(agent.LastMessage.Contains("moveCandidate[0]", StringComparison.Ordinal));
+            Assert.IsFalse(agent.LastMessage.Contains("{", StringComparison.Ordinal), "Action-loop prompt facts must not dump internal JSON.");
         }
         finally
         {
@@ -771,6 +914,203 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
+    public async Task RunOneTickAsync_ClosureMissing_FirstTimeIncrementsGuardAndSchedulesRepairWake()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-closure-repair-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("meet-now", "Meet the player now", "in_progress")]);
+            instance.SetLastTerminalCommandStatus(new GameCommandStatus(
+                "cmd-move-1",
+                "haley",
+                "move",
+                StardewCommandStatuses.Completed,
+                1,
+                null,
+                null));
+            instance.SetActionChainGuard(new NpcRuntimeActionChainGuardSnapshot(
+                "chain-closure-1",
+                "open",
+                null,
+                false,
+                "meet-now",
+                "trace-root-1",
+                new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                "move",
+                "move:Town:42:17",
+                ConsecutiveActions: 1,
+                ConsecutiveFailures: 0,
+                ConsecutiveSameActionFailures: 0,
+                LastTerminalStatus: StardewCommandStatuses.Completed,
+                LastReasonCode: null,
+                ClosureMissingCount: 0,
+                DeferredIngressAttempts: 0));
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                new FakeAgent(() => { }, "到了。"),
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                traceIdFactory: () => "trace-closure-first");
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            var controller = instance.Snapshot().Controller;
+            Assert.AreEqual(1, controller.ActionChainGuard?.ClosureMissingCount);
+            Assert.AreEqual("open", controller.ActionChainGuard?.GuardStatus);
+            Assert.IsNotNull(controller.NextWakeAtUtc, "First missing closure should schedule one repair wake.");
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertRuntimeRecord(records, "closure_missing", "diagnostic", "missing");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_ClosureMissing_WithRuntimeDriverPersistsGuardAndRepairWake()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-closure-persist-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var supervisor = new NpcRuntimeSupervisor();
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            driver.Instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("meet-now", "Meet the player now", "in_progress")]);
+            await driver.SetLastTerminalCommandStatusAsync(
+                new GameCommandStatus(
+                    "cmd-move-1",
+                    "haley",
+                    "move",
+                    StardewCommandStatuses.Completed,
+                    1,
+                    null,
+                    null),
+                CancellationToken.None);
+            await driver.SetActionChainGuardAsync(
+                new NpcRuntimeActionChainGuardSnapshot(
+                    "chain-closure-persist",
+                    "open",
+                    null,
+                    false,
+                    "meet-now",
+                    "trace-root-1",
+                    new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                    "move",
+                    "move:Town:42:17",
+                    ConsecutiveActions: 1,
+                    ConsecutiveFailures: 0,
+                    ConsecutiveSameActionFailures: 0,
+                    LastTerminalStatus: StardewCommandStatuses.Completed,
+                    LastReasonCode: null,
+                    ClosureMissingCount: 0,
+                    DeferredIngressAttempts: 0),
+                CancellationToken.None);
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                new FakeAgent(() => { }, "到了。"));
+
+            await loop.RunOneTickAsync(driver, new GameEventCursor(null), CancellationToken.None);
+
+            var reloadedDriver = await new NpcRuntimeSupervisor().GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var controller = reloadedDriver.Snapshot();
+            Assert.AreEqual(1, controller.ActionChainGuard?.ClosureMissingCount);
+            Assert.AreEqual("open", controller.ActionChainGuard?.GuardStatus);
+            Assert.IsNotNull(controller.NextWakeAtUtc, "Repair wake must be persisted with the closure-missing guard.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_ClosureMissing_SecondTimeBlocksFurtherWorldActionUntilClosure()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-closure-block-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("meet-now", "Meet the player now", "in_progress")]);
+            instance.SetLastTerminalCommandStatus(new GameCommandStatus(
+                "cmd-move-1",
+                "haley",
+                "move",
+                StardewCommandStatuses.Completed,
+                1,
+                null,
+                null));
+            instance.SetActionChainGuard(new NpcRuntimeActionChainGuardSnapshot(
+                "chain-closure-2",
+                "open",
+                null,
+                false,
+                "meet-now",
+                "trace-root-1",
+                new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                "move",
+                "move:Town:42:17",
+                ConsecutiveActions: 1,
+                ConsecutiveFailures: 0,
+                ConsecutiveSameActionFailures: 0,
+                LastTerminalStatus: StardewCommandStatuses.Completed,
+                LastReasonCode: null,
+                ClosureMissingCount: 1,
+                DeferredIngressAttempts: 0));
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                new FakeAgent(() => { }, "到了。"),
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                traceIdFactory: () => "trace-closure-second");
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            var chain = instance.Snapshot().Controller.ActionChainGuard;
+            Assert.IsNotNull(chain);
+            Assert.AreEqual(2, chain!.ClosureMissingCount);
+            Assert.AreEqual("blocked_until_closure", chain.GuardStatus);
+            Assert.IsTrue(chain.BlockedUntilClosure);
+            Assert.AreEqual(StardewBridgeErrorCodes.ClosureMissing, chain.BlockedReasonCode);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task RunOneTickAsync_AfterCompletedActionWithActiveTodoAndExplicitWaitReason_RecordsNoActionClosure()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-explicit-wait-closure-tests", Guid.NewGuid().ToString("N"));
@@ -791,6 +1131,24 @@ public class NpcAutonomyLoopTests
                 1,
                 null,
                 null));
+            instance.SetActionChainGuard(new NpcRuntimeActionChainGuardSnapshot(
+                "chain-wait-closure",
+                "blocked_until_closure",
+                StardewBridgeErrorCodes.ClosureMissing,
+                true,
+                "meet-beach-now",
+                "trace-root-1",
+                new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                "move",
+                "move:Town:42:17",
+                ConsecutiveActions: 1,
+                ConsecutiveFailures: 0,
+                ConsecutiveSameActionFailures: 0,
+                LastTerminalStatus: StardewCommandStatuses.Completed,
+                LastReasonCode: null,
+                ClosureMissingCount: 2,
+                DeferredIngressAttempts: 0));
             var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
             var commands = new CountingCommandService();
             var agent = new FakeAgent(() => { }, "wait: arrived and waiting for the player to speak first");
@@ -814,6 +1172,166 @@ public class NpcAutonomyLoopTests
                 targetProperty.GetString() == "closure_no_action" &&
                 record.TryGetProperty("error", out var errorProperty) &&
                 (errorProperty.GetString()?.Contains("waiting for the player", StringComparison.Ordinal) ?? false)));
+            var chain = instance.Snapshot().Controller.ActionChainGuard;
+            Assert.IsNotNull(chain);
+            Assert.AreEqual("closed", chain!.GuardStatus);
+            Assert.IsFalse(chain.BlockedUntilClosure);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_TodoClosureToolResult_ClosesBlockedActionChain()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-todo-closure-chain-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var supervisor = new NpcRuntimeSupervisor();
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            await driver.SetActionChainGuardAsync(
+                new NpcRuntimeActionChainGuardSnapshot(
+                    "chain-todo-closure",
+                    "blocked_until_closure",
+                    StardewBridgeErrorCodes.ActionChainBudgetExceeded,
+                    true,
+                    "meet-now",
+                    "trace-root-1",
+                    new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                    "move",
+                    "move:Town:42:17",
+                    ConsecutiveActions: 4,
+                    ConsecutiveFailures: 0,
+                    ConsecutiveSameActionFailures: 0,
+                    LastTerminalStatus: StardewCommandStatuses.Completed,
+                    LastReasonCode: null,
+                    ClosureMissingCount: 0,
+                    DeferredIngressAttempts: 0),
+                CancellationToken.None);
+            var agent = new FakeAgent(
+                () => { },
+                "I marked the task blocked.",
+                session =>
+                {
+                    session.AddMessage(new Message
+                    {
+                        Role = "assistant",
+                        Content = "",
+                        ToolCalls =
+                        [
+                            new ToolCall
+                            {
+                                Id = "call-todo",
+                                Name = "todo",
+                                Arguments = """{"todos":[{"id":"meet-now","content":"Meet the player now","status":"blocked","reason":"action_chain_budget_exceeded"}]}"""
+                            }
+                        ]
+                    });
+                    session.AddMessage(new Message
+                    {
+                        Role = "tool",
+                        ToolCallId = "call-todo",
+                        ToolName = "todo",
+                        Content = """{"todos":[{"id":"meet-now","content":"Meet the player now","status":"blocked","reason":"action_chain_budget_exceeded"}]}"""
+                    });
+                });
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                agent);
+
+            await loop.RunOneTickAsync(driver, new GameEventCursor(null), CancellationToken.None);
+
+            var chain = driver.Snapshot().ActionChainGuard;
+            Assert.IsNotNull(chain);
+            Assert.AreEqual("closed", chain!.GuardStatus);
+            Assert.IsFalse(chain.BlockedUntilClosure);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_UnrelatedTodoClosure_DoesNotCloseRootedActionChain()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-unrelated-todo-closure-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var supervisor = new NpcRuntimeSupervisor();
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            await driver.SetActionChainGuardAsync(
+                new NpcRuntimeActionChainGuardSnapshot(
+                    "chain-rooted",
+                    "blocked_until_closure",
+                    StardewBridgeErrorCodes.ActionChainBudgetExceeded,
+                    true,
+                    "meet-now",
+                    "trace-root-1",
+                    new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                    "move",
+                    "move:Town:42:17",
+                    ConsecutiveActions: 4,
+                    ConsecutiveFailures: 0,
+                    ConsecutiveSameActionFailures: 0,
+                    LastTerminalStatus: StardewCommandStatuses.Completed,
+                    LastReasonCode: null,
+                    ClosureMissingCount: 0,
+                    DeferredIngressAttempts: 0),
+                CancellationToken.None);
+            var agent = new FakeAgent(
+                () => { },
+                "I closed another task.",
+                session =>
+                {
+                    session.AddMessage(new Message
+                    {
+                        Role = "assistant",
+                        Content = "",
+                        ToolCalls =
+                        [
+                            new ToolCall
+                            {
+                                Id = "call-todo",
+                                Name = "todo",
+                                Arguments = """{"todos":[{"id":"other-task","content":"Other task","status":"completed"}]}"""
+                            }
+                        ]
+                    });
+                    session.AddMessage(new Message
+                    {
+                        Role = "tool",
+                        ToolCallId = "call-todo",
+                        ToolName = "todo",
+                        Content = """{"todos":[{"id":"other-task","content":"Other task","status":"completed"}]}"""
+                    });
+                });
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                agent);
+
+            await loop.RunOneTickAsync(driver, new GameEventCursor(null), CancellationToken.None);
+
+            var chain = driver.Snapshot().ActionChainGuard;
+            Assert.IsNotNull(chain);
+            Assert.AreEqual("blocked_until_closure", chain!.GuardStatus);
+            Assert.IsTrue(chain.BlockedUntilClosure);
         }
         finally
         {

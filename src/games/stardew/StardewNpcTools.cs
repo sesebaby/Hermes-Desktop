@@ -22,7 +22,8 @@ public static class StardewNpcToolFactory
         ILogger? logger = null,
         Func<DateTime>? nowUtc = null,
         TimeSpan? actionTimeout = null,
-        StardewNpcToolSurfacePolicy? toolSurfacePolicy = null)
+        StardewNpcToolSurfacePolicy? toolSurfacePolicy = null,
+        NpcActionChainGuardOptions? actionChainGuardOptions = null)
     {
         traceIdFactory ??= () => $"trace_{descriptor.NpcId}_{Guid.NewGuid():N}";
         idempotencyKeyFactory ??= () => $"idem_{descriptor.NpcId}_{Guid.NewGuid():N}";
@@ -30,7 +31,8 @@ public static class StardewNpcToolFactory
             runtimeDriver,
             worldCoordination,
             nowUtc,
-            actionTimeout);
+            actionTimeout,
+            actionChainGuardOptions);
 
         return (toolSurfacePolicy ?? StardewNpcToolSurfacePolicy.Default).ApplyToParent(
         [
@@ -501,6 +503,13 @@ public sealed class StardewRecentActivityProvider : IStardewRecentActivityProvid
         if (snapshot.LastTerminalCommandStatus is { } last)
             facts.Add($"lastAction={last.Action}:{last.Status}:{last.ErrorCode ?? last.BlockedReason ?? "none"}");
 
+        if (snapshot.ActionChainGuard is { } chain)
+        {
+            facts.Add(FormatActionChainFact(chain));
+            if (FormatActionLoopFact(chain) is { } loopFact)
+                facts.Add(loopFact);
+        }
+
         if (_runtimeDriver.Instance.TryGetTaskView(descriptor.SessionId, out var taskView) && taskView is not null)
         {
             foreach (var (todo, index) in taskView.ActiveSnapshot.Todos
@@ -525,6 +534,31 @@ public sealed class StardewRecentActivityProvider : IStardewRecentActivityProvid
 
     private static string SanitizeFact(string value)
         => value.Replace('\r', ' ').Replace('\n', ' ').Trim();
+
+    private static string FormatActionChainFact(NpcRuntimeActionChainGuardSnapshot chain)
+    {
+        var reason = chain.BlockedReasonCode ?? chain.LastReasonCode ?? "none";
+        var status = string.IsNullOrWhiteSpace(chain.LastTerminalStatus)
+            ? chain.GuardStatus
+            : chain.LastTerminalStatus;
+        return $"action_chain: chainId={chain.ChainId}; status={status}; guard={chain.GuardStatus}; actions={chain.ConsecutiveActions}; failures={chain.ConsecutiveFailures}; sameActionFailures={chain.ConsecutiveSameActionFailures}; closureMissing={chain.ClosureMissingCount}; deferredIngress={chain.DeferredIngressAttempts}; reason={reason}";
+    }
+
+    private static string? FormatActionLoopFact(NpcRuntimeActionChainGuardSnapshot chain)
+    {
+        if (!IsActionLoop(chain))
+            return null;
+
+        var action = string.IsNullOrWhiteSpace(chain.LastAction) ? "-" : chain.LastAction;
+        var targetKey = string.IsNullOrWhiteSpace(chain.LastTargetKey) ? "-" : chain.LastTargetKey;
+        var reason = chain.BlockedReasonCode ?? chain.LastReasonCode ?? "none";
+        return $"action_loop: chainId={chain.ChainId}; action={action}; targetKey={targetKey}; sameActionFailures={chain.ConsecutiveSameActionFailures}; failures={chain.ConsecutiveFailures}; reason={reason}";
+    }
+
+    private static bool IsActionLoop(NpcRuntimeActionChainGuardSnapshot chain)
+        => chain.ConsecutiveSameActionFailures >= 2 ||
+           string.Equals(chain.BlockedReasonCode, StardewBridgeErrorCodes.ActionLoop, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(chain.LastReasonCode, StardewBridgeErrorCodes.ActionLoop, StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class StardewStatusTool : ITool, IToolSchemaProvider
@@ -1083,17 +1117,20 @@ internal sealed class StardewRuntimeActionController
     private readonly WorldCoordinationService? _worldCoordination;
     private readonly Func<DateTime> _nowUtc;
     private readonly TimeSpan _actionTimeout;
+    private readonly NpcActionChainGuardOptions _actionChainGuardOptions;
 
     public StardewRuntimeActionController(
         NpcRuntimeDriver? runtimeDriver,
         WorldCoordinationService? worldCoordination,
         Func<DateTime>? nowUtc,
-        TimeSpan? actionTimeout)
+        TimeSpan? actionTimeout,
+        NpcActionChainGuardOptions? actionChainGuardOptions = null)
     {
         _runtimeDriver = runtimeDriver;
         _worldCoordination = worldCoordination;
         _nowUtc = nowUtc ?? (() => DateTime.UtcNow);
         _actionTimeout = actionTimeout ?? DefaultActionTimeout;
+        _actionChainGuardOptions = actionChainGuardOptions ?? new NpcActionChainGuardOptions();
     }
 
     public async Task<StardewPreparedActionState?> TryBeginAsync(GameAction action, CancellationToken ct)
@@ -1114,6 +1151,14 @@ internal sealed class StardewRuntimeActionController
         }
 
         var startedAtUtc = _nowUtc();
+        var chainGuard = PrepareActionChainGuard(snapshot.ActionChainGuard, action, startedAtUtc);
+        if (chainGuard.BlockedResult is not null)
+        {
+            await _runtimeDriver.SetActionChainGuardAsync(chainGuard.Snapshot, ct);
+            await _runtimeDriver.SetNextWakeAtUtcAsync(startedAtUtc + DefaultRetryDelay, ct);
+            return StardewPreparedActionState.Blocked(chainGuard.BlockedResult);
+        }
+
         var workItemId = $"work_{action.IdempotencyKey}";
         var claimId = RequiresMoveClaim(action) ? workItemId : null;
         if (claimId is not null && _worldCoordination is not null)
@@ -1162,6 +1207,7 @@ internal sealed class StardewRuntimeActionController
                     startedAtUtc + _actionTimeout),
                 ct);
             await _runtimeDriver.SetNextWakeAtUtcAsync(null, ct);
+            await _runtimeDriver.SetActionChainGuardAsync(chainGuard.Snapshot, ct);
             return new StardewPreparedActionState(workItemId, claimId, startedAtUtc, action.TraceId, null);
         }
         catch
@@ -1221,10 +1267,11 @@ internal sealed class StardewRuntimeActionController
 
         if (IsTerminalStatus(commandResult.Status))
         {
+            var terminalSnapshot = _runtimeDriver.Snapshot();
             var commandId = string.IsNullOrWhiteSpace(commandResult.CommandId)
-                ? snapshot.ActionSlot?.CommandId ?? snapshot.PendingWorkItem?.CommandId ?? snapshot.ActionSlot?.WorkItemId ?? snapshot.PendingWorkItem?.WorkItemId ?? preparedAction.WorkItemId
+                ? terminalSnapshot.ActionSlot?.CommandId ?? terminalSnapshot.PendingWorkItem?.CommandId ?? terminalSnapshot.ActionSlot?.WorkItemId ?? terminalSnapshot.PendingWorkItem?.WorkItemId ?? preparedAction.WorkItemId
                 : commandResult.CommandId;
-            var action = snapshot.PendingWorkItem?.WorkType ?? "action";
+            var action = terminalSnapshot.PendingWorkItem?.WorkType ?? "action";
             await _runtimeDriver.SetLastTerminalCommandStatusAsync(
                 new GameCommandStatus(
                     commandId,
@@ -1235,6 +1282,13 @@ internal sealed class StardewRuntimeActionController
                     commandResult.FailureReason,
                     commandResult.FailureReason,
                     UpdatedAtUtc: _nowUtc()),
+                ct);
+            await RecordTerminalActionChainStatusAsync(
+                terminalSnapshot.ActionChainGuard,
+                action,
+                commandResult.Status,
+                commandResult.FailureReason,
+                _nowUtc(),
                 ct);
             await ClearAsync(
                 preparedAction.ClaimId ?? preparedAction.WorkItemId,
@@ -1270,7 +1324,15 @@ internal sealed class StardewRuntimeActionController
         if (!IsTerminalStatus(status.Status))
             return;
 
+        var terminalSnapshot = _runtimeDriver.Snapshot();
         await _runtimeDriver.SetLastTerminalCommandStatusAsync(status, ct);
+        await RecordTerminalActionChainStatusAsync(
+            terminalSnapshot.ActionChainGuard,
+            status.Action,
+            status.Status,
+            status.ErrorCode ?? status.BlockedReason,
+            _nowUtc(),
+            ct);
         var primaryClaimId = !string.IsNullOrWhiteSpace(status.CommandId)
             ? status.CommandId
             : snapshot.ActionSlot?.CommandId ?? snapshot.PendingWorkItem?.CommandId ?? snapshot.ActionSlot?.WorkItemId ?? snapshot.PendingWorkItem?.WorkItemId;
@@ -1352,6 +1414,151 @@ internal sealed class StardewRuntimeActionController
             _ => "action"
         };
 
+    private static bool IsWorldWritingAction(GameActionType actionType)
+        => actionType is GameActionType.Move or GameActionType.Speak or GameActionType.IdleMicroAction or GameActionType.OpenPrivateChat;
+
+    private ActionChainGuardPreparation PrepareActionChainGuard(
+        NpcRuntimeActionChainGuardSnapshot? current,
+        GameAction action,
+        DateTime nowUtc)
+    {
+        if (!IsWorldWritingAction(action.Type))
+            return new ActionChainGuardPreparation(current, null);
+
+        var guard = ShouldStartNewChain(current, action, nowUtc)
+            ? CreateActionChainGuard(action, nowUtc)
+            : current!;
+
+        if (guard.BlockedUntilClosure ||
+            string.Equals(guard.GuardStatus, "blocked_until_closure", StringComparison.OrdinalIgnoreCase) ||
+            guard.ConsecutiveActions >= _actionChainGuardOptions.MaxActionsPerChain ||
+            guard.ConsecutiveFailures >= _actionChainGuardOptions.MaxConsecutiveFailures)
+        {
+            var blocked = guard with
+            {
+                GuardStatus = "blocked_until_closure",
+                BlockedUntilClosure = true,
+                BlockedReasonCode = guard.BlockedReasonCode ?? StardewBridgeErrorCodes.ActionChainBudgetExceeded,
+                UpdatedAtUtc = nowUtc,
+                LastAction = ToWorkType(action.Type),
+                LastTargetKey = BuildTargetKey(action)
+            };
+            return new ActionChainGuardPreparation(
+                blocked,
+                new GameCommandResult(
+                    Accepted: false,
+                    CommandId: $"guard_{action.IdempotencyKey}",
+                    Status: StardewCommandStatuses.Blocked,
+                    FailureReason: blocked.BlockedReasonCode ?? StardewBridgeErrorCodes.ActionChainBudgetExceeded,
+                    TraceId: action.TraceId,
+                    Retryable: false));
+        }
+
+        var accepted = guard with
+        {
+            GuardStatus = "open",
+            BlockedReasonCode = null,
+            BlockedUntilClosure = false,
+            UpdatedAtUtc = nowUtc,
+            LastAction = ToWorkType(action.Type),
+            LastTargetKey = BuildTargetKey(action),
+            ConsecutiveActions = guard.ConsecutiveActions + 1
+        };
+        return new ActionChainGuardPreparation(accepted, null);
+    }
+
+    private bool ShouldStartNewChain(NpcRuntimeActionChainGuardSnapshot? current, GameAction action, DateTime nowUtc)
+    {
+        if (current is null)
+            return true;
+
+        if (string.Equals(current.GuardStatus, "closed", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (nowUtc - current.UpdatedAtUtc > _actionChainGuardOptions.EffectiveChainTtl)
+            return true;
+
+        return false;
+    }
+
+    private static NpcRuntimeActionChainGuardSnapshot CreateActionChainGuard(GameAction action, DateTime nowUtc)
+        => new(
+            $"chain_{Guid.NewGuid():N}",
+            "open",
+            null,
+            false,
+            ReadPayloadString(action.Payload, "rootTodoId"),
+            action.TraceId,
+            nowUtc,
+            nowUtc,
+            null,
+            null,
+            0,
+            0,
+            0,
+            null,
+            null,
+            0,
+            0);
+
+    private async Task RecordTerminalActionChainStatusAsync(
+        NpcRuntimeActionChainGuardSnapshot? current,
+        string? action,
+        string status,
+        string? reasonCode,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        if (_runtimeDriver is null || current is null)
+            return;
+
+        var failure = IsFailureStatus(status);
+        var sameAction = string.Equals(current.LastAction, action, StringComparison.OrdinalIgnoreCase);
+        var updated = current with
+        {
+            UpdatedAtUtc = nowUtc,
+            LastTerminalStatus = status,
+            LastReasonCode = string.IsNullOrWhiteSpace(reasonCode) ? null : reasonCode,
+            ConsecutiveFailures = failure ? current.ConsecutiveFailures + 1 : 0,
+            ConsecutiveSameActionFailures = failure && sameAction ? current.ConsecutiveSameActionFailures + 1 : 0
+        };
+
+        if (updated.ConsecutiveFailures >= _actionChainGuardOptions.MaxConsecutiveFailures ||
+            updated.ConsecutiveSameActionFailures >= _actionChainGuardOptions.MaxConsecutiveFailures)
+        {
+            updated = updated with
+            {
+                GuardStatus = "blocked_until_closure",
+                BlockedUntilClosure = true,
+                BlockedReasonCode = string.IsNullOrWhiteSpace(reasonCode)
+                    ? StardewBridgeErrorCodes.ActionChainBudgetExceeded
+                    : reasonCode
+            };
+        }
+
+        await _runtimeDriver.SetActionChainGuardAsync(updated, ct);
+    }
+
+    private static bool IsFailureStatus(string? status)
+        => string.Equals(status, StardewCommandStatuses.Failed, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Cancelled, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Interrupted, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Blocked, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Expired, StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildTargetKey(GameAction action)
+        => action.Type switch
+        {
+            GameActionType.Move when action.Target.Tile is not null && !string.IsNullOrWhiteSpace(action.Target.LocationName)
+                => $"move:{action.Target.LocationName}:{action.Target.Tile.X}:{action.Target.Tile.Y}",
+            GameActionType.Move when !string.IsNullOrWhiteSpace(ReadPayloadString(action.Payload, "destinationId"))
+                => $"move:destination:{ReadPayloadString(action.Payload, "destinationId")}",
+            GameActionType.Speak => $"speak:{action.Target.Kind}:{action.Target.EntityId ?? "player"}",
+            GameActionType.OpenPrivateChat => $"open_private_chat:{action.Target.Kind}:{action.Target.EntityId ?? "player"}",
+            GameActionType.IdleMicroAction => $"idle_micro_action:{ReadPayloadString(action.Payload, "kind") ?? action.Target.Kind}",
+            _ => $"{ToWorkType(action.Type)}:{action.Target.Kind}:{action.Target.EntityId ?? action.Target.ObjectId ?? action.Target.LocationName ?? "-"}"
+        };
+
     private DateTime? GetCooldownAtUtc(string? status, DateTime? retryAfterUtc)
     {
         if (retryAfterUtc.HasValue)
@@ -1366,6 +1573,10 @@ internal sealed class StardewRuntimeActionController
         return null;
     }
 }
+
+internal sealed record ActionChainGuardPreparation(
+    NpcRuntimeActionChainGuardSnapshot? Snapshot,
+    GameCommandResult? BlockedResult);
 
 internal sealed record StardewPreparedActionState(
     string WorkItemId,

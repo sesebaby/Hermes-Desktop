@@ -87,7 +87,8 @@ public sealed record NpcRuntimeAutonomyBindingRequest(
     string? SystemPromptSupplement = null,
     Func<IGameAdapter, NpcObservationFactStore, IEnumerable<ITool>>? LocalExecutorGameToolFactory = null,
     Func<NpcRuntimeCompositionServices, IEnumerable<ITool>>? LocalExecutorRuntimeToolFactory = null,
-    string? LocalExecutorToolFingerprint = null)
+    string? LocalExecutorToolFingerprint = null,
+    NpcActionChainGuardOptions? ActionChainGuardOptions = null)
 {
     public NpcRuntimeAutonomyBindingRequest(
         string ChannelKey,
@@ -113,6 +114,7 @@ public sealed record NpcRuntimeAutonomyBindingRequest(
             ToolSurface,
             ToolSurfaceSnapshotVersion,
             SystemPromptSupplement,
+            null,
             null,
             null,
             null)

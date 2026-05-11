@@ -66,7 +66,27 @@ public sealed record NpcRuntimeIngressWorkItemSnapshot(
     DateTime CreatedAtUtc,
     string? IdempotencyKey = null,
     string? TraceId = null,
-    JsonObject? Payload = null);
+    JsonObject? Payload = null,
+    int DeferredAttempts = 0);
+
+public sealed record NpcRuntimeActionChainGuardSnapshot(
+    string ChainId,
+    string GuardStatus,
+    string? BlockedReasonCode,
+    bool BlockedUntilClosure,
+    string? RootTodoId,
+    string RootTraceId,
+    DateTime StartedAtUtc,
+    DateTime UpdatedAtUtc,
+    string? LastAction,
+    string? LastTargetKey,
+    int ConsecutiveActions,
+    int ConsecutiveFailures,
+    int ConsecutiveSameActionFailures,
+    string? LastTerminalStatus,
+    string? LastReasonCode,
+    int ClosureMissingCount,
+    int DeferredIngressAttempts);
 
 public sealed record NpcRuntimeControllerSnapshot
 {
@@ -77,7 +97,8 @@ public sealed record NpcRuntimeControllerSnapshot
         DateTime? nextWakeAtUtc,
         int inboxDepth = 0,
         IReadOnlyList<NpcRuntimeIngressWorkItemSnapshot>? ingressWorkItems = null,
-        GameCommandStatus? lastTerminalCommandStatus = null)
+        GameCommandStatus? lastTerminalCommandStatus = null,
+        NpcRuntimeActionChainGuardSnapshot? actionChainGuard = null)
     {
         EventCursor = eventCursor;
         PendingWorkItem = pendingWorkItem;
@@ -86,6 +107,7 @@ public sealed record NpcRuntimeControllerSnapshot
         InboxDepth = Math.Max(0, inboxDepth);
         IngressWorkItems = ingressWorkItems?.ToArray() ?? [];
         LastTerminalCommandStatus = lastTerminalCommandStatus;
+        ActionChainGuard = actionChainGuard;
     }
 
     public GameEventCursor EventCursor { get; init; }
@@ -101,6 +123,8 @@ public sealed record NpcRuntimeControllerSnapshot
     public IReadOnlyList<NpcRuntimeIngressWorkItemSnapshot> IngressWorkItems { get; init; }
 
     public GameCommandStatus? LastTerminalCommandStatus { get; init; }
+
+    public NpcRuntimeActionChainGuardSnapshot? ActionChainGuard { get; init; }
 
     public static NpcRuntimeControllerSnapshot Empty { get; } = new(new GameEventCursor(), null, null, null);
 }

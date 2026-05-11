@@ -473,6 +473,103 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
+    public async Task RecentActivityProvider_WithActionChainGuard_IncludesShortChainFact()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-recent-chain-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new NpcObservationFactStore();
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            await driver.SetActionChainGuardAsync(
+                new NpcRuntimeActionChainGuardSnapshot(
+                    "chain-activity-1",
+                    "open",
+                    null,
+                    false,
+                    "todo-1",
+                    "trace-root-1",
+                    new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                    "move",
+                    "move:Town:42:17",
+                    ConsecutiveActions: 2,
+                    ConsecutiveFailures: 1,
+                    ConsecutiveSameActionFailures: 1,
+                    LastTerminalStatus: StardewCommandStatuses.Blocked,
+                    LastReasonCode: StardewBridgeErrorCodes.PathBlocked,
+                    ClosureMissingCount: 0,
+                    DeferredIngressAttempts: 0),
+                CancellationToken.None);
+            var provider = new StardewRecentActivityProvider(store, driver);
+
+            var data = await provider.ReadRecentActivityAsync(descriptor, CancellationToken.None);
+
+            var chainFact = data.Facts.Single(fact => fact.StartsWith("action_chain:", StringComparison.Ordinal));
+            StringAssert.Contains(chainFact, "chainId=chain-activity-1");
+            StringAssert.Contains(chainFact, "actions=2");
+            StringAssert.Contains(chainFact, "failures=1");
+            StringAssert.Contains(chainFact, "reason=path_blocked");
+            Assert.IsFalse(chainFact.Contains("{", StringComparison.Ordinal), "Agent-visible chain facts must not expose internal JSON.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RecentActivityProvider_WithRepeatedSameActionFailures_IncludesActionLoopFact()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-recent-loop-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new NpcObservationFactStore();
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            await driver.SetActionChainGuardAsync(
+                new NpcRuntimeActionChainGuardSnapshot(
+                    "chain-loop-1",
+                    "blocked_until_closure",
+                    StardewBridgeErrorCodes.PathBlocked,
+                    true,
+                    "todo-1",
+                    "trace-root-1",
+                    new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 5, 11, 7, 1, 0, 0, DateTimeKind.Utc),
+                    "move",
+                    "move:Town:42:17",
+                    ConsecutiveActions: 2,
+                    ConsecutiveFailures: 2,
+                    ConsecutiveSameActionFailures: 2,
+                    LastTerminalStatus: StardewCommandStatuses.Blocked,
+                    LastReasonCode: StardewBridgeErrorCodes.PathBlocked,
+                    ClosureMissingCount: 0,
+                    DeferredIngressAttempts: 0),
+                CancellationToken.None);
+            var provider = new StardewRecentActivityProvider(store, driver);
+
+            var data = await provider.ReadRecentActivityAsync(descriptor, CancellationToken.None);
+
+            var loopFact = data.Facts.Single(fact => fact.StartsWith("action_loop:", StringComparison.Ordinal));
+            StringAssert.Contains(loopFact, "chainId=chain-loop-1");
+            StringAssert.Contains(loopFact, "action=move");
+            StringAssert.Contains(loopFact, "targetKey=move:Town:42:17");
+            StringAssert.Contains(loopFact, "sameActionFailures=2");
+            StringAssert.Contains(loopFact, "reason=path_blocked");
+            Assert.IsFalse(loopFact.Contains("{", StringComparison.Ordinal), "Agent-visible action loop facts must not expose internal JSON.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task RuntimeActionController_WhenSubmitResultIsTerminal_RecordsLastTerminalStatus()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-runtime-submit-terminal-tests", Guid.NewGuid().ToString("N"));
@@ -503,6 +600,314 @@ public class StardewNpcToolFactoryTests
             Assert.AreEqual("cmd-open-chat", snapshot.LastTerminalCommandStatus?.CommandId);
             Assert.AreEqual("open_private_chat", snapshot.LastTerminalCommandStatus?.Action);
             Assert.AreEqual(StardewCommandStatuses.Completed, snapshot.LastTerminalCommandStatus?.Status);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RuntimeActionController_WhenSubmitResultIsTerminal_DoesNotDoubleCountAcceptedAction()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-runtime-chain-terminal-count-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var controller = new StardewRuntimeActionController(
+                driver,
+                null,
+                actionTimeout: null,
+                nowUtc: () => new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc));
+            var action = new GameAction(
+                "haley",
+                "stardew-valley",
+                GameActionType.Move,
+                "trace-move",
+                "idem-move",
+                new GameActionTarget("tile", "Town", new GameTile(42, 17)),
+                BodyBinding: descriptor.EffectiveBodyBinding);
+
+            var prepared = await controller.TryBeginAsync(action, CancellationToken.None);
+            Assert.AreEqual(1, driver.Snapshot().ActionChainGuard?.ConsecutiveActions);
+
+            await controller.RecordSubmitResultAsync(
+                prepared,
+                new GameCommandResult(true, "cmd-move", StardewCommandStatuses.Completed, null, "trace-move"),
+                CancellationToken.None);
+
+            var chain = driver.Snapshot().ActionChainGuard;
+            Assert.IsNotNull(chain);
+            Assert.AreEqual(1, chain!.ConsecutiveActions, "Terminal status updates must not count as another accepted action.");
+            Assert.AreEqual(0, chain.ConsecutiveFailures);
+            Assert.AreEqual(StardewCommandStatuses.Completed, chain.LastTerminalStatus);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RuntimeActionController_TerminalFailures_UpdateFailureCountersAndBlockAtConfiguredLimit()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-runtime-chain-failure-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            await driver.SetActionChainGuardAsync(
+                new NpcRuntimeActionChainGuardSnapshot(
+                    "chain-failure-1",
+                    "open",
+                    null,
+                    false,
+                    "todo-1",
+                    "trace-root-1",
+                    new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                    "move",
+                    "move:Town:42:17",
+                    ConsecutiveActions: 1,
+                    ConsecutiveFailures: 1,
+                    ConsecutiveSameActionFailures: 1,
+                    LastTerminalStatus: StardewCommandStatuses.Blocked,
+                    LastReasonCode: StardewBridgeErrorCodes.PathBlocked,
+                    ClosureMissingCount: 0,
+                    DeferredIngressAttempts: 0),
+                CancellationToken.None);
+            var controller = new StardewRuntimeActionController(
+                driver,
+                null,
+                actionTimeout: null,
+                nowUtc: () => new DateTime(2026, 5, 11, 7, 2, 0, DateTimeKind.Utc),
+                actionChainGuardOptions: new NpcActionChainGuardOptions(MaxConsecutiveFailures: 2));
+
+            await controller.RecordStatusAsync(
+                new GameCommandStatus(
+                    "cmd-blocked-2",
+                    "haley",
+                    "move",
+                    StardewCommandStatuses.Blocked,
+                    1,
+                    StardewBridgeErrorCodes.PathBlocked,
+                    StardewBridgeErrorCodes.PathBlocked),
+                CancellationToken.None);
+
+            var chain = driver.Snapshot().ActionChainGuard;
+            Assert.IsNotNull(chain);
+            Assert.AreEqual(2, chain!.ConsecutiveFailures);
+            Assert.AreEqual(2, chain.ConsecutiveSameActionFailures);
+            Assert.AreEqual("blocked_until_closure", chain.GuardStatus);
+            Assert.IsTrue(chain.BlockedUntilClosure);
+            Assert.AreEqual(StardewBridgeErrorCodes.PathBlocked, chain.BlockedReasonCode);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RuntimeActionController_ChainBudgetExceeded_BlocksWithoutSubmittingSlotOrOverwritingTerminal()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-runtime-chain-budget-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var terminal = new GameCommandStatus(
+                "cmd-previous",
+                "haley",
+                "move",
+                StardewCommandStatuses.Completed,
+                1,
+                null,
+                null);
+            await driver.SetLastTerminalCommandStatusAsync(terminal, CancellationToken.None);
+            await driver.SetActionChainGuardAsync(
+                new NpcRuntimeActionChainGuardSnapshot(
+                    "chain-1",
+                    "open",
+                    null,
+                    false,
+                    "todo-1",
+                    "trace-root-1",
+                    new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                    "move",
+                    "move:Town:42:17",
+                    ConsecutiveActions: 2,
+                    ConsecutiveFailures: 0,
+                    ConsecutiveSameActionFailures: 0,
+                    LastTerminalStatus: StardewCommandStatuses.Completed,
+                    LastReasonCode: null,
+                    ClosureMissingCount: 0,
+                    DeferredIngressAttempts: 0),
+                CancellationToken.None);
+            var controller = new StardewRuntimeActionController(
+                driver,
+                null,
+                actionTimeout: null,
+                nowUtc: () => new DateTime(2026, 5, 11, 7, 2, 0, DateTimeKind.Utc),
+                actionChainGuardOptions: new NpcActionChainGuardOptions(MaxActionsPerChain: 2));
+            var action = new GameAction(
+                "haley",
+                "stardew-valley",
+                GameActionType.Move,
+                "trace-next",
+                "idem-next",
+                new GameActionTarget("tile", "Town", new GameTile(42, 18)),
+                "continue walking",
+                BodyBinding: descriptor.EffectiveBodyBinding);
+
+            var prepared = await controller.TryBeginAsync(action, CancellationToken.None);
+
+            Assert.IsNotNull(prepared?.BlockedResult);
+            Assert.IsFalse(prepared!.BlockedResult!.Accepted);
+            Assert.AreEqual(StardewBridgeErrorCodes.ActionChainBudgetExceeded, prepared.BlockedResult.FailureReason);
+            var snapshot = driver.Snapshot();
+            Assert.IsNull(snapshot.PendingWorkItem);
+            Assert.IsNull(snapshot.ActionSlot);
+            Assert.AreEqual("cmd-previous", snapshot.LastTerminalCommandStatus?.CommandId);
+            Assert.AreEqual(StardewCommandStatuses.Completed, snapshot.LastTerminalCommandStatus?.Status);
+            Assert.AreEqual("blocked_until_closure", snapshot.ActionChainGuard?.GuardStatus);
+            Assert.AreEqual(StardewBridgeErrorCodes.ActionChainBudgetExceeded, snapshot.ActionChainGuard?.BlockedReasonCode);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RuntimeActionController_WhenBlockedUntilClosure_PreservesOriginalBlockedReason()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-runtime-chain-preserve-reason-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            await driver.SetActionChainGuardAsync(
+                new NpcRuntimeActionChainGuardSnapshot(
+                    "chain-closure-reason",
+                    "blocked_until_closure",
+                    StardewBridgeErrorCodes.ClosureMissing,
+                    true,
+                    "todo-1",
+                    "trace-root-1",
+                    new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                    "move",
+                    "move:Town:42:17",
+                    ConsecutiveActions: 1,
+                    ConsecutiveFailures: 0,
+                    ConsecutiveSameActionFailures: 0,
+                    LastTerminalStatus: StardewCommandStatuses.Completed,
+                    LastReasonCode: null,
+                    ClosureMissingCount: 2,
+                    DeferredIngressAttempts: 0),
+                CancellationToken.None);
+            var controller = new StardewRuntimeActionController(
+                driver,
+                null,
+                actionTimeout: null,
+                nowUtc: () => new DateTime(2026, 5, 11, 7, 2, 0, DateTimeKind.Utc),
+                actionChainGuardOptions: new NpcActionChainGuardOptions(MaxActionsPerChain: 4));
+            var action = new GameAction(
+                "haley",
+                "stardew-valley",
+                GameActionType.Move,
+                "trace-next",
+                "idem-next",
+                new GameActionTarget("tile", "Town", new GameTile(42, 18)),
+                "continue walking",
+                BodyBinding: descriptor.EffectiveBodyBinding);
+
+            var prepared = await controller.TryBeginAsync(action, CancellationToken.None);
+
+            Assert.IsNotNull(prepared?.BlockedResult);
+            Assert.AreEqual(StardewBridgeErrorCodes.ClosureMissing, prepared!.BlockedResult!.FailureReason);
+            Assert.AreEqual(StardewBridgeErrorCodes.ClosureMissing, driver.Snapshot().ActionChainGuard?.BlockedReasonCode);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RuntimeActionController_WhenSlotBusyAndChainBudgetExceeded_ReturnsBusyFirst()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-runtime-busy-first-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            await driver.SetActionSlotAsync(
+                new NpcRuntimeActionSlotSnapshot(
+                    "action",
+                    "work-active",
+                    "cmd-active",
+                    "trace-active",
+                    new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc)),
+                CancellationToken.None);
+            await driver.SetActionChainGuardAsync(
+                new NpcRuntimeActionChainGuardSnapshot(
+                    "chain-1",
+                    "open",
+                    null,
+                    false,
+                    "todo-1",
+                    "trace-root-1",
+                    new DateTime(2026, 5, 11, 6, 55, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                    "move",
+                    "move:Town:42:17",
+                    ConsecutiveActions: 2,
+                    ConsecutiveFailures: 0,
+                    ConsecutiveSameActionFailures: 0,
+                    LastTerminalStatus: StardewCommandStatuses.Completed,
+                    LastReasonCode: null,
+                    ClosureMissingCount: 0,
+                    DeferredIngressAttempts: 0),
+                CancellationToken.None);
+            var controller = new StardewRuntimeActionController(
+                driver,
+                null,
+                actionTimeout: null,
+                nowUtc: () => new DateTime(2026, 5, 11, 7, 2, 0, DateTimeKind.Utc),
+                actionChainGuardOptions: new NpcActionChainGuardOptions(MaxActionsPerChain: 2));
+            var action = new GameAction(
+                "haley",
+                "stardew-valley",
+                GameActionType.Move,
+                "trace-next",
+                "idem-next",
+                new GameActionTarget("tile", "Town", new GameTile(42, 18)),
+                "continue walking",
+                BodyBinding: descriptor.EffectiveBodyBinding);
+
+            var prepared = await controller.TryBeginAsync(action, CancellationToken.None);
+
+            Assert.IsNotNull(prepared?.BlockedResult);
+            Assert.AreEqual(StardewBridgeErrorCodes.ActionSlotBusy, prepared!.BlockedResult!.FailureReason);
+            var snapshot = driver.Snapshot();
+            Assert.AreEqual("cmd-active", snapshot.ActionSlot?.CommandId);
+            Assert.AreEqual("open", snapshot.ActionChainGuard?.GuardStatus);
+            Assert.AreEqual(2, snapshot.ActionChainGuard?.ConsecutiveActions);
         }
         finally
         {

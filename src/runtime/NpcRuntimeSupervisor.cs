@@ -162,7 +162,10 @@ public sealed class NpcRuntimeSupervisor
         lock (_gate)
         {
             if (_drivers.TryGetValue(key, out var existing))
+            {
+                existing.Instance.RestoreControllerSnapshot(created.Snapshot());
                 return existing;
+            }
 
             _drivers[key] = created;
             return created;
@@ -283,7 +286,8 @@ public sealed class NpcRuntimeSupervisor
             agentHandle.Agent,
             new NpcRuntimeLogWriter(Path.Combine(instance.Namespace.ActivityPath, "runtime.jsonl")),
             request.Services.LoggerFactory.CreateLogger<NpcAutonomyLoop>(),
-            localExecutorRunner: localExecutorRunner);
+            localExecutorRunner: localExecutorRunner,
+            actionChainGuardOptions: request.ActionChainGuardOptions);
 
         return new NpcRuntimeAutonomyHandle(
             instance,
