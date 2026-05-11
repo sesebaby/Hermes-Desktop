@@ -13,204 +13,19 @@ namespace HermesDesktop.Tests.Runtime;
 public sealed class NpcLocalExecutorRunnerTests
 {
     [TestMethod]
-    public async Task ExecuteAsync_WithMoveIntent_ResolvesTargetThroughSkillViewThenNavigatesToTile()
+    public async Task ExecuteAsync_WithMoveIntent_BlocksWithoutCallingModelOrNavigationTools()
     {
-        var chatClient = RecordingChatClient.WithEventsByCall(
+        var chatClient = new RecordingChatClient(
             [
-                [
-                    new StreamEvent.ToolUseComplete(
-                        "call-skill-main",
-                        "skill_view",
-                        Json("""{"name":"stardew-navigation"}"""))
-                ],
-                [
-                    new StreamEvent.ToolUseComplete(
-                        "call-skill-index",
-                        "skill_view",
-                        Json("""{"name":"stardew-navigation","file_path":"references/index.md"}"""))
-                ],
-                [
-                    new StreamEvent.ToolUseComplete(
-                        "call-skill-beach",
-                        "skill_view",
-                        Json("""{"name":"stardew-navigation","file_path":"references/poi/beach-shoreline.md"}"""))
-                ],
-                [
-                    new StreamEvent.ToolUseComplete(
-                        "call-nav",
-                        "stardew_navigate_to_tile",
-                        Json("""{"locationName":"Beach","x":32,"y":34,"source":"map-skill:stardew.navigation.poi.beach-shoreline","reason":"meet player at the beach now"}"""))
-                ]
-            ]);
-        var skillViewTool = new RecordingTool(
-            "skill_view",
-            typeof(SkillViewParameters),
-            ToolResult.Ok("""{"success":true,"name":"stardew-navigation","file":"references/poi/beach-shoreline.md","content":"`target(locationName=Beach,x=32,y=34,source=map-skill:stardew.navigation.poi.beach-shoreline)`"}"""));
-        var navigateTool = new RecordingTool(
-            "stardew_navigate_to_tile",
-            typeof(NavigateToTileParameters),
-            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-nav-1","status":"queued"}"""));
-        var taskTool = new RecordingTool(
-            "stardew_task_status",
-            typeof(TaskStatusParameters),
-            ToolResult.Ok("""{"commandId":"cmd-status-1","status":"completed"}"""));
-        var legacyMoveTool = new RecordingTool(
-            "stardew_move",
-            typeof(MoveParameters),
-            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-move-legacy","status":"queued"}"""));
-        var runner = new NpcLocalExecutorRunner(chatClient, [skillViewTool, navigateTool, taskTool, legacyMoveTool]);
-        var intent = new NpcLocalActionIntent(
-            NpcLocalActionKind.Move,
-            "meet player at the beach now",
-            DestinationText: "beach");
-
-        var result = await runner.ExecuteAsync(
-            CreateDescriptor("haley"),
-            intent,
-            [CreateObservationFact("Player asked Haley to go to the beach now.", "private_chat_request=go_to_beach_now")],
-            "trace-local-runner",
-            CancellationToken.None);
-
-        Assert.AreEqual(4, chatClient.StreamCalls);
-        Assert.IsTrue(
-            chatClient.ToolNamesByCall.Take(3).All(names => names.SequenceEqual(["skill_view"]) || names.SequenceEqual(["stardew_navigate_to_tile"])),
-            $"Move executor should expose one tool per turn before completion: {string.Join(" | ", chatClient.ToolNamesByCall.Select(names => string.Join(",", names)))}");
-        Assert.IsFalse(
-            chatClient.ToolNamesByCall.Take(3).Any(names => names.Contains("skill_view") && names.Contains("stardew_navigate_to_tile")),
-            $"Move executor should not expose skill_view and navigate together: {string.Join(" | ", chatClient.ToolNamesByCall.Select(names => string.Join(",", names)))}");
-        AssertToolNames(chatClient.ToolNamesByCall[3], "stardew_navigate_to_tile");
-        CollectionAssert.Contains(chatClient.LastTools.Select(tool => tool.Name).ToArray(), "stardew_navigate_to_tile");
-        CollectionAssert.DoesNotContain(chatClient.LastTools.Select(tool => tool.Name).ToArray(), "stardew_move");
-        Assert.AreEqual("model_called", result.ExecutorMode);
-        Assert.IsTrue(chatClient.LastMessages.First().Content?.Contains("meet player at the beach now", StringComparison.Ordinal) ?? false);
-        Assert.AreEqual(3, skillViewTool.ExecuteCalls);
-        Assert.AreEqual(1, navigateTool.ExecuteCalls);
-        Assert.AreEqual(0, legacyMoveTool.ExecuteCalls);
-        Assert.AreEqual(0, taskTool.ExecuteCalls);
-        var parameters = (NavigateToTileParameters)navigateTool.LastParameters!;
-        Assert.AreEqual("Beach", parameters.LocationName);
-        Assert.AreEqual(32, parameters.X);
-        Assert.AreEqual(34, parameters.Y);
-        Assert.AreEqual("meet player at the beach now", parameters.Reason);
-        Assert.AreEqual("stardew_navigate_to_tile", result.Target);
-        Assert.AreEqual("completed", result.Stage);
-        Assert.AreEqual("queued", result.Result);
-        Assert.AreEqual("cmd-nav-1", result.CommandId);
-        Assert.AreEqual("local_executor_completed:stardew_navigate_to_tile", result.DecisionResponse);
-        StringAssert.Contains(result.MemorySummary!, "stardew_navigate_to_tile");
-        Assert.IsFalse(result.MemorySummary!.Contains("\"commandId\"", StringComparison.Ordinal));
-        CollectionAssert.Contains(result.Diagnostics.ToArray(), "target=skill_view stage=completed result=skill_source:stardew-navigation");
-        CollectionAssert.Contains(result.Diagnostics.ToArray(), "target=skill_view stage=completed result=skill_source:stardew-navigation/references/index.md");
-        CollectionAssert.Contains(result.Diagnostics.ToArray(), "target=skill_view stage=completed result=skill_source:stardew-navigation/references/poi/beach-shoreline.md");
-    }
-
-    [TestMethod]
-    public async Task ExecuteAsync_WithStaleParentMechanicalTarget_DoesNotExposeTargetToModel()
-    {
-        var chatClient = RecordingChatClient.WithEventsByCall(
-            [
-                [
-                    new StreamEvent.ToolUseComplete(
-                        "call-skill",
-                        "skill_view",
-                        Json("""{"name":"stardew-navigation","file_path":"references/poi/beach-shoreline.md"}"""))
-                ],
-                [
-                    new StreamEvent.ToolUseComplete(
-                        "call-nav",
-                        "stardew_navigate_to_tile",
-                        Json("""{"locationName":"Beach","x":32,"y":34,"source":"map-skill:stardew.navigation.poi.beach-shoreline","reason":"go to the beach"}"""))
-                ]
-            ]);
-        var skillViewTool = new RecordingTool(
-            "skill_view",
-            typeof(SkillViewParameters),
-            ToolResult.Ok("""{"success":true,"content":"`target(locationName=Beach,x=32,y=34,source=map-skill:stardew.navigation.poi.beach-shoreline)`"}"""));
-        var moveTool = new RecordingTool(
-            "stardew_move",
-            typeof(MoveParameters),
-            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-move-legacy","status":"queued"}"""));
-        var navigateTool = new RecordingTool(
-            "stardew_navigate_to_tile",
-            typeof(NavigateToTileParameters),
-            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-nav-1","status":"queued"}"""));
-        var runner = new NpcLocalExecutorRunner(chatClient, [skillViewTool, moveTool, navigateTool]);
-        var intent = new NpcLocalActionIntent(
-            NpcLocalActionKind.Move,
-            "go to the beach",
-            DestinationText: "beach",
-            Target: new NpcLocalMoveTargetIntent(
-                "图书馆",
-                0,
-                0,
-                "stardew-navigation",
-                FacingDirection: 2));
-
-        var result = await runner.ExecuteAsync(
-            CreateDescriptor("haley"),
-            intent,
-            [CreateObservationFact("Haley can navigate to the beach.")],
-            "trace-mechanical-move",
-            CancellationToken.None);
-
-        Assert.AreEqual(2, chatClient.StreamCalls);
-        var firstUserMessage = chatClient.MessagesByCall[0].Single(message => message.Role == "user").Content!;
-        StringAssert.Contains(firstUserMessage, "\"destinationText\":\"beach\"");
-        Assert.IsFalse(firstUserMessage.Contains("\"target\"", StringComparison.Ordinal), firstUserMessage);
-        Assert.IsFalse(firstUserMessage.Contains("图书馆", StringComparison.Ordinal), firstUserMessage);
-        Assert.IsFalse(firstUserMessage.Contains("locationName", StringComparison.Ordinal), firstUserMessage);
-        Assert.AreEqual(0, moveTool.ExecuteCalls);
-        Assert.AreEqual(1, skillViewTool.ExecuteCalls);
-        Assert.AreEqual(1, navigateTool.ExecuteCalls);
-        var parameters = (NavigateToTileParameters)navigateTool.LastParameters!;
-        Assert.AreEqual("Beach", parameters.LocationName);
-        Assert.AreEqual(32, parameters.X);
-        Assert.AreEqual(34, parameters.Y);
-        Assert.AreEqual("go to the beach", parameters.Reason);
-        Assert.AreEqual("stardew_navigate_to_tile", result.Target);
-        Assert.AreEqual("completed", result.Stage);
-        Assert.AreEqual("queued", result.Result);
-        Assert.AreEqual("cmd-nav-1", result.CommandId);
-        Assert.AreEqual("model_called", result.ExecutorMode);
-        Assert.AreEqual("local_executor_completed:stardew_navigate_to_tile", result.DecisionResponse);
-        Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", result.TargetSource);
-        CollectionAssert.Contains(
-            result.Diagnostics.ToArray(),
-            "target=skill_view stage=completed result=navigation_target_loaded;locationName=Beach;x=32;y=34;source=map-skill:stardew.navigation.poi.beach-shoreline");
-    }
-
-    [TestMethod]
-    public async Task ExecuteAsync_WithMoveIntent_DoesNotPreloadNavigationSkillContextBeforeModelCall()
-    {
-        var chatClient = RecordingChatClient.WithEventsByCall(
-            [
-                [
-                    new StreamEvent.ToolUseComplete(
-                        "call-skill-beach",
-                        "skill_view",
-                        Json("""{"name":"stardew-navigation","file_path":"references/poi/beach-shoreline.md"}"""))
-                ],
-                [
-                    new StreamEvent.ToolUseComplete(
-                        "call-nav",
-                        "stardew_navigate_to_tile",
-                        Json("""{"locationName":"Beach","x":32,"y":34,"source":"map-skill:stardew.navigation.poi.beach-shoreline","reason":"go to the beach now"}"""))
-                ]
+                new StreamEvent.ToolUseComplete(
+                    "call-nav",
+                    "stardew_navigate_to_tile",
+                    Json("""{"locationName":"Beach","x":32,"y":34,"source":"fixture","reason":"meet player"}"""))
             ]);
         var skillTool = new RecordingTool(
             "skill_view",
             typeof(SkillViewParameters),
-            parameters =>
-            {
-                var p = (SkillViewParameters)parameters;
-                return p.FilePath switch
-                {
-                    null => ToolResult.Ok("""{"success":true,"name":"stardew-navigation","content":"Navigation skill overview."}"""),
-                    "references/index.md" => ToolResult.Ok("""{"success":true,"name":"stardew-navigation","file":"references/index.md","content":"Beach destination: references/poi/beach-shoreline.md"}"""),
-                    "references/poi/beach-shoreline.md" => ToolResult.Ok("""{"success":true,"name":"stardew-navigation","file":"references/poi/beach-shoreline.md","content":"`target(locationName=Beach,x=32,y=34,source=map-skill:stardew.navigation.poi.beach-shoreline)`"}"""),
-                    _ => ToolResult.Ok("""{"success":true,"content":""}""")
-                };
-            });
+            ToolResult.Ok("""{"success":true,"content":"`target(locationName=Beach,x=32,y=34,source=fixture)`"}"""));
         var navigateTool = new RecordingTool(
             "stardew_navigate_to_tile",
             typeof(NavigateToTileParameters),
@@ -219,21 +34,52 @@ public sealed class NpcLocalExecutorRunnerTests
 
         var result = await runner.ExecuteAsync(
             CreateDescriptor("haley"),
-            new NpcLocalActionIntent(NpcLocalActionKind.Move, "go to the beach now", DestinationText: "beach"),
+            new NpcLocalActionIntent(NpcLocalActionKind.Move, "meet player at the beach now", DestinationText: "beach"),
             [CreateObservationFact("Player asked Haley to go to the beach now.")],
-            "trace-preload-navigation",
+            "trace-move-disabled",
             CancellationToken.None);
 
-        Assert.AreEqual(2, chatClient.StreamCalls);
-        Assert.AreEqual(1, skillTool.ExecuteCalls);
-        Assert.AreEqual(1, navigateTool.ExecuteCalls);
-        Assert.AreEqual("local_executor_completed:stardew_navigate_to_tile", result.DecisionResponse);
-        var firstUserMessage = chatClient.MessagesByCall[0].Single(message => message.Role == "user").Content!;
-        Assert.IsFalse(firstUserMessage.Contains("Navigation skill overview.", StringComparison.Ordinal), firstUserMessage);
-        Assert.IsFalse(firstUserMessage.Contains("Beach destination: references/poi/beach-shoreline.md", StringComparison.Ordinal), firstUserMessage);
-        Assert.IsFalse(firstUserMessage.Contains("preloaded_navigation_context", StringComparison.Ordinal), firstUserMessage);
-        CollectionAssert.DoesNotContain(result.Diagnostics.ToArray(), "target=skill_view stage=completed result=skill_source:stardew-navigation;preloaded=true");
-        CollectionAssert.DoesNotContain(result.Diagnostics.ToArray(), "target=skill_view stage=completed result=skill_source:stardew-navigation/references/index.md;preloaded=true");
+        Assert.AreEqual(0, chatClient.StreamCalls);
+        Assert.AreEqual(0, skillTool.ExecuteCalls);
+        Assert.AreEqual(0, navigateTool.ExecuteCalls);
+        Assert.AreEqual("move", result.Target);
+        Assert.AreEqual("blocked", result.Stage);
+        Assert.AreEqual("local_executor_write_action_disabled", result.Result);
+        Assert.AreEqual("local_executor_write_action_disabled", result.Error);
+        Assert.AreEqual("blocked", result.ExecutorMode);
+        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
+    }
+
+    [TestMethod]
+    public async Task ExecuteAsync_WithMoveIntentAndMechanicalTarget_BlocksWithoutExposingTargetToModel()
+    {
+        var chatClient = new RecordingChatClient([]);
+        var navigateTool = new RecordingTool(
+            "stardew_navigate_to_tile",
+            typeof(NavigateToTileParameters),
+            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-nav-1","status":"queued"}"""));
+        var runner = new NpcLocalExecutorRunner(chatClient, [navigateTool]);
+        var intent = new NpcLocalActionIntent(
+            NpcLocalActionKind.Move,
+            "go to the beach",
+            DestinationText: "beach",
+            Target: new NpcLocalMoveTargetIntent(
+                "Beach",
+                32,
+                34,
+                "fixture"));
+
+        var result = await runner.ExecuteAsync(
+            CreateDescriptor("haley"),
+            intent,
+            [CreateObservationFact("Haley has a disclosed beach target.")],
+            "trace-mechanical-move-disabled",
+            CancellationToken.None);
+
+        Assert.AreEqual(0, chatClient.StreamCalls);
+        Assert.AreEqual(0, navigateTool.ExecuteCalls);
+        Assert.AreEqual("move", result.Target);
+        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
     }
 
     [TestMethod]
@@ -308,7 +154,7 @@ public sealed class NpcLocalExecutorRunnerTests
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_WithIdleMicroAction_ExposesOnlyIdleMicroActionTool()
+    public async Task ExecuteAsync_WithIdleMicroAction_BlocksWithoutCallingModelOrTool()
     {
         var chatClient = new RecordingChatClient(
             [
@@ -341,15 +187,16 @@ public sealed class NpcLocalExecutorRunnerTests
             "trace-idle",
             CancellationToken.None);
 
-        Assert.AreEqual(1, chatClient.StreamCalls);
-        Assert.AreEqual(1, chatClient.LastTools.Count);
-        Assert.AreEqual("stardew_idle_micro_action", chatClient.LastTools.Single().Name);
-        Assert.AreEqual(1, idleTool.ExecuteCalls);
+        Assert.AreEqual(0, chatClient.StreamCalls);
+        Assert.AreEqual(0, idleTool.ExecuteCalls);
         Assert.AreEqual(0, moveTool.ExecuteCalls);
         Assert.AreEqual(0, speakTool.ExecuteCalls);
-        Assert.AreEqual("stardew_idle_micro_action", result.Target);
-        Assert.AreEqual("displayed", result.Result);
-        Assert.AreEqual("local_executor_completed:stardew_idle_micro_action", result.DecisionResponse);
+        Assert.AreEqual("idle_micro_action", result.Target);
+        Assert.AreEqual("blocked", result.Stage);
+        Assert.AreEqual("local_executor_write_action_disabled", result.Result);
+        Assert.AreEqual("local_executor_write_action_disabled", result.Error);
+        Assert.AreEqual("blocked", result.ExecutorMode);
+        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
     }
 
     [TestMethod]
@@ -369,7 +216,7 @@ public sealed class NpcLocalExecutorRunnerTests
 
         Assert.AreEqual("blocked", result.Stage);
         Assert.AreEqual("blocked", result.ExecutorMode);
-        Assert.AreEqual("local_executor_blocked:local_executor_unavailable", result.DecisionResponse);
+        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
     }
 
     [TestMethod]
@@ -418,7 +265,7 @@ public sealed class NpcLocalExecutorRunnerTests
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_WithNoToolCall_RetriesOnceThenBlocks()
+    public async Task ExecuteAsync_WithMoveIntentAndNoToolCall_DoesNotRetryModel()
     {
         var chatClient = new RecordingChatClient([]);
         var skillTool = new RecordingTool(
@@ -438,17 +285,15 @@ public sealed class NpcLocalExecutorRunnerTests
             "trace-no-tool",
             CancellationToken.None);
 
-        Assert.AreEqual(2, chatClient.StreamCalls);
+        Assert.AreEqual(0, chatClient.StreamCalls);
         Assert.AreEqual(0, skillTool.ExecuteCalls);
         Assert.AreEqual(0, navigateTool.ExecuteCalls);
         Assert.AreEqual("blocked", result.ExecutorMode);
-        Assert.AreEqual("local_executor_blocked:executor_protocol_violation", result.DecisionResponse);
-        CollectionAssert.Contains(result.Diagnostics.ToArray(), "target=local_executor stage=attempt result=executor_protocol_violation;attempt=1");
-        CollectionAssert.Contains(result.Diagnostics.ToArray(), "target=local_executor stage=retry result=executor_protocol_violation;attempt=2");
+        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_WithNoToolCallThenRetrySuccess_RecordsOnlyFirstFailedAttempt()
+    public async Task ExecuteAsync_WithMoveIntentAndRetrySuccessEvents_DoesNotCallModel()
     {
         var chatClient = RecordingChatClient.WithEventsByCall(
             [
@@ -483,17 +328,15 @@ public sealed class NpcLocalExecutorRunnerTests
             "trace-retry-success",
             CancellationToken.None);
 
-        Assert.AreEqual(3, chatClient.StreamCalls);
-        Assert.AreEqual(1, skillTool.ExecuteCalls);
-        Assert.AreEqual(1, navigateTool.ExecuteCalls);
-        Assert.AreEqual("model_called", result.ExecutorMode);
-        Assert.AreEqual("local_executor_completed:stardew_navigate_to_tile", result.DecisionResponse);
-        CollectionAssert.Contains(result.Diagnostics.ToArray(), "target=local_executor stage=attempt result=executor_protocol_violation;attempt=1");
-        CollectionAssert.DoesNotContain(result.Diagnostics.ToArray(), "target=local_executor stage=retry result=executor_protocol_violation;attempt=2");
+        Assert.AreEqual(0, chatClient.StreamCalls);
+        Assert.AreEqual(0, skillTool.ExecuteCalls);
+        Assert.AreEqual(0, navigateTool.ExecuteCalls);
+        Assert.AreEqual("blocked", result.ExecutorMode);
+        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_WithNavigateBeforeLoadedSkillTarget_ReturnsToolErrorAndSelfCorrects()
+    public async Task ExecuteAsync_WithNavigateBeforeLoadedSkillTarget_DoesNotCallModelOrNavigate()
     {
         var chatClient = RecordingChatClient.WithEventsByCall(
             [
@@ -533,27 +376,16 @@ public sealed class NpcLocalExecutorRunnerTests
             "trace-provenance",
             CancellationToken.None);
 
-        Assert.AreEqual(3, chatClient.StreamCalls);
-        Assert.AreEqual(1, navigateTool.ExecuteCalls, "第一次没有 skill target 证据的导航调用不能执行。");
-        var parameters = (NavigateToTileParameters)navigateTool.LastParameters!;
-        Assert.AreEqual("Beach", parameters.LocationName);
-        Assert.AreEqual(32, parameters.X);
-        Assert.AreEqual(34, parameters.Y);
-        Assert.AreEqual("completed", result.Stage);
-        Assert.AreEqual("stardew_navigate_to_tile", result.Target);
-        Assert.IsTrue(
-            chatClient.MessagesByCall.Skip(1).Any(messages => messages.Any(message =>
-                message.Role == "tool" &&
-                message.ToolName == "stardew_navigate_to_tile" &&
-                (message.Content?.Contains("navigation_target_not_loaded", StringComparison.Ordinal) ?? false))),
-            "模型过早导航时，应收到工具结果式错误并自我纠正。");
-        CollectionAssert.Contains(
-            result.Diagnostics.ToArray(),
-            "target=stardew_navigate_to_tile stage=blocked result=navigation_target_not_loaded");
+        Assert.AreEqual(0, chatClient.StreamCalls);
+        Assert.AreEqual(0, skillTool.ExecuteCalls);
+        Assert.AreEqual(0, navigateTool.ExecuteCalls);
+        Assert.AreEqual("blocked", result.Stage);
+        Assert.AreEqual("move", result.Target);
+        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_WithNavigateArgsDifferentFromLoadedSkillTarget_ReturnsToolErrorAndSelfCorrects()
+    public async Task ExecuteAsync_WithNavigateArgsDifferentFromLoadedSkillTarget_DoesNotCallModelOrNavigate()
     {
         var chatClient = RecordingChatClient.WithEventsByCall(
             [
@@ -593,24 +425,16 @@ public sealed class NpcLocalExecutorRunnerTests
             "trace-provenance-mismatch",
             CancellationToken.None);
 
-        Assert.AreEqual(3, chatClient.StreamCalls);
-        Assert.AreEqual(1, navigateTool.ExecuteCalls, "与已加载 skill target 不一致的导航调用不能执行。");
-        var parameters = (NavigateToTileParameters)navigateTool.LastParameters!;
-        Assert.AreEqual("Beach", parameters.LocationName);
-        Assert.AreEqual("completed", result.Stage);
-        Assert.IsTrue(
-            chatClient.MessagesByCall.Skip(2).Any(messages => messages.Any(message =>
-                message.Role == "tool" &&
-                message.ToolName == "stardew_navigate_to_tile" &&
-                (message.Content?.Contains("navigation_target_mismatch", StringComparison.Ordinal) ?? false))),
-            "模型填错导航参数时，应收到包含已加载 target 的工具错误。");
-        CollectionAssert.Contains(
-            result.Diagnostics.ToArray(),
-            "target=stardew_navigate_to_tile stage=blocked result=navigation_target_mismatch");
+        Assert.AreEqual(0, chatClient.StreamCalls);
+        Assert.AreEqual(0, skillTool.ExecuteCalls);
+        Assert.AreEqual(0, navigateTool.ExecuteCalls);
+        Assert.AreEqual("blocked", result.Stage);
+        Assert.AreEqual("move", result.Target);
+        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_WithMoveSkillTargetLoaded_AddsNavigationTargetReminder()
+    public async Task ExecuteAsync_WithMoveSkillTargetLoaded_DoesNotCallModelOrAddNavigationReminder()
     {
         var chatClient = RecordingChatClient.WithEventsByCall(
             [
@@ -640,15 +464,10 @@ public sealed class NpcLocalExecutorRunnerTests
             CancellationToken.None);
 
         Assert.AreEqual("blocked", result.Stage);
-        Assert.IsTrue(
-            result.Diagnostics.Contains("target=skill_view stage=completed result=navigation_target_loaded;locationName=Beach;x=32;y=34;source=map-skill:stardew.navigation.poi.beach-shoreline"),
-            $"应记录已从 skill 内容读取到完整 target。diagnostics={string.Join(" | ", result.Diagnostics)}");
-        Assert.IsTrue(
-            chatClient.MessagesByCall.Skip(1).Any(messages => messages.Any(message =>
-                message.Role == "user" &&
-                (message.Content?.Contains("下一步必须调用 stardew_navigate_to_tile", StringComparison.Ordinal) ?? false) &&
-                message.Content.Contains("locationName=Beach,x=32,y=34,source=map-skill:stardew.navigation.poi.beach-shoreline", StringComparison.Ordinal))),
-            "读取到完整 target 后，下一轮模型调用前应收到直接执行导航工具的中文提醒。");
+        Assert.AreEqual(0, chatClient.StreamCalls);
+        Assert.AreEqual(0, skillTool.ExecuteCalls);
+        Assert.AreEqual(0, navigateTool.ExecuteCalls);
+        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
     }
 
     [TestMethod]
@@ -662,16 +481,14 @@ public sealed class NpcLocalExecutorRunnerTests
                 new RecordingTool("stardew_navigate_to_tile", typeof(NavigateToTileParameters), ToolResult.Ok("{}"))
             ]);
 
-        await runner.ExecuteAsync(
+        var moveResult = await runner.ExecuteAsync(
             CreateDescriptor("haley"),
             new NpcLocalActionIntent(NpcLocalActionKind.Move, "move", DestinationText: "beach"),
             [CreateObservationFact("Move.")],
             "trace-move-fields",
             CancellationToken.None);
-        var moveMessage = chatClient.LastMessages.Last().Content!;
-        StringAssert.Contains(moveMessage, "\"destinationText\":\"beach\"");
-        AssertIntentOmits(moveMessage, "destinationId", "commandId", "observeTarget", "waitReason", "\"escalate\":false", "\"target\"");
-        Assert.IsFalse(moveMessage.Contains("facts:", StringComparison.Ordinal), moveMessage);
+        Assert.AreEqual("blocked", moveResult.ExecutorMode);
+        Assert.AreEqual(0, chatClient.StreamCalls);
 
         await new NpcLocalExecutorRunner(
                 chatClient,
@@ -713,7 +530,7 @@ public sealed class NpcLocalExecutorRunnerTests
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_WithUnknownToolCall_BlocksWithoutExecutingAnyTool()
+    public async Task ExecuteAsync_WithMoveIntentAndUnknownToolCall_DoesNotCallModel()
     {
         var chatClient = new RecordingChatClient(
             [
@@ -740,17 +557,18 @@ public sealed class NpcLocalExecutorRunnerTests
             "trace-unknown-tool",
             CancellationToken.None);
 
+        Assert.AreEqual(0, chatClient.StreamCalls);
         Assert.AreEqual(0, navigateTool.ExecuteCalls);
-        Assert.AreEqual("stardew_gift", result.Target);
+        Assert.AreEqual("move", result.Target);
         Assert.AreEqual("blocked", result.Stage);
-        Assert.AreEqual("unknown_tool:stardew_gift", result.Result);
-        Assert.AreEqual("unknown_tool", result.Error);
+        Assert.AreEqual("local_executor_write_action_disabled", result.Result);
+        Assert.AreEqual("local_executor_write_action_disabled", result.Error);
         Assert.AreEqual("blocked", result.ExecutorMode);
-        Assert.AreEqual("local_executor_blocked:unknown_tool", result.DecisionResponse);
+        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_WithMoveIntentAndSkillSearchWithoutTarget_ReturnsUnresolvedNavigationTarget()
+    public async Task ExecuteAsync_WithMoveIntentAndSkillSearchWithoutTarget_DoesNotCallModel()
     {
         var chatClient = RecordingChatClient.WithEventsByCall(
             [
@@ -785,15 +603,12 @@ public sealed class NpcLocalExecutorRunnerTests
             "trace-unresolved-target",
             CancellationToken.None);
 
-        Assert.AreEqual(3, chatClient.StreamCalls);
-        Assert.AreEqual(2, skillTool.ExecuteCalls);
+        Assert.AreEqual(0, chatClient.StreamCalls);
+        Assert.AreEqual(0, skillTool.ExecuteCalls);
         Assert.AreEqual(0, navigateTool.ExecuteCalls);
         Assert.AreEqual("blocked", result.Stage);
-        Assert.AreEqual("unresolved_navigation_target", result.Error);
-        Assert.AreEqual("local_executor_blocked:unresolved_navigation_target", result.DecisionResponse);
-        CollectionAssert.Contains(result.Diagnostics.ToArray(), "target=skill_view stage=completed result=skill_source:stardew-navigation");
-        CollectionAssert.Contains(result.Diagnostics.ToArray(), "target=skill_view stage=completed result=skill_source:stardew-navigation/references/index.md");
-        CollectionAssert.Contains(result.Diagnostics.ToArray(), "target=local_executor stage=attempt result=unresolved_navigation_target;attempt=1");
+        Assert.AreEqual("local_executor_write_action_disabled", result.Error);
+        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
     }
 
     [TestMethod]

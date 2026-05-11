@@ -419,6 +419,19 @@ public sealed class NpcAutonomyLoop
             null,
             ct);
 
+        if (IsLocalExecutorDisabledWriteAction(intent.Action))
+        {
+            var blockedResult = NpcLocalExecutorRunner.BlockDisabledWriteAction(intent);
+            if (instance is not null)
+            {
+                await ApplyTaskUpdateContractAsync(instance, descriptor, traceId, intent.TaskUpdate, ct);
+                await SubmitSpeechContractAsync(descriptor, traceId, intent.Speech, ct);
+            }
+
+            await WriteLocalExecutorResultAsync(descriptor, traceId, blockedResult, ct);
+            return new LocalExecutorRouteResult(blockedResult.DecisionResponse);
+        }
+
         var result = await _localExecutorRunner!.ExecuteAsync(descriptor, intent, facts, traceId, ct);
         if (instance is not null)
         {
@@ -1023,6 +1036,9 @@ public sealed class NpcAutonomyLoop
             NpcLocalActionKind.Escalate => "escalate",
             _ => action.ToString()
         };
+
+    private static bool IsLocalExecutorDisabledWriteAction(NpcLocalActionKind action)
+        => action is NpcLocalActionKind.Move or NpcLocalActionKind.IdleMicroAction;
 
     private sealed record LocalExecutorRouteResult(string DecisionResponse);
 

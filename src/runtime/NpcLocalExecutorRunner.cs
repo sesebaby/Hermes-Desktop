@@ -2,7 +2,6 @@ namespace Hermes.Agent.Runtime;
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
 
@@ -40,6 +39,9 @@ public sealed class NpcUnavailableLocalExecutorRunner : INpcLocalExecutorRunner
         string traceId,
         CancellationToken ct)
     {
+        if (intent.Action is NpcLocalActionKind.Move or NpcLocalActionKind.IdleMicroAction)
+            return Task.FromResult(NpcLocalExecutorRunner.BlockDisabledWriteAction(intent));
+
         if (intent.Action is NpcLocalActionKind.Wait or NpcLocalActionKind.Escalate)
             return Task.FromResult(NpcLocalExecutorRunner.CompleteHostInterpreted(intent));
 
@@ -56,7 +58,6 @@ public sealed class NpcUnavailableLocalExecutorRunner : INpcLocalExecutorRunner
 
 public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
 {
-    private const int MaxModelToolIterations = 8;
     private static readonly JsonSerializerOptions ToolArgJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -84,6 +85,9 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
         ArgumentNullException.ThrowIfNull(descriptor);
         ArgumentNullException.ThrowIfNull(intent);
         ArgumentNullException.ThrowIfNull(facts);
+
+        if (IsDisabledWriteAction(intent.Action))
+            return BlockDisabledWriteAction(intent);
 
         if (intent.Action is NpcLocalActionKind.Wait or NpcLocalActionKind.Escalate)
             return CompleteHostInterpreted(intent);
@@ -155,154 +159,39 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
                 Content = BuildUserMessage(descriptor, intent, facts, traceId, correctiveRetry)
             }
         };
-        NavigationTargetCue? navigationTargetCue = null;
-        for (var iteration = 0; iteration < MaxModelToolIterations; iteration++)
+        await foreach (var streamEvent in _chatClient.StreamAsync(
+                           BuildSystemPrompt(intent.Action),
+                           messages,
+                           selectedTools.Select(BuildToolDefinition),
+                           ct))
         {
-            await foreach (var streamEvent in _chatClient.StreamAsync(
-                               BuildSystemPrompt(intent.Action),
-                               messages,
-                               SelectToolsForIteration(selectedTools, navigationTargetCue).Select(BuildToolDefinition),
-                               ct))
+            switch (streamEvent)
             {
-                switch (streamEvent)
+                case StreamEvent.ToolUseComplete toolUse:
                 {
-                    case StreamEvent.ToolUseComplete toolUse:
+                    var execution = await ExecuteToolUseAsync(toolUse, selectedTools, ct);
+                    diagnostics.AddRange(execution.Diagnostics);
+                    if (execution.Result.Stage == "blocked")
                     {
-                        var validation = ValidateNavigationToolUse(toolUse, navigationTargetCue);
-                        if (validation is not null)
-                        {
-                            diagnostics.Add(validation.Diagnostic);
-                            messages.Add(new Message
-                            {
-                                Role = "assistant",
-                                Content = "",
-                                ToolCalls =
-                                [
-                                    new ToolCall
-                                    {
-                                        Id = toolUse.Id,
-                                        Name = toolUse.Name,
-                                        Arguments = toolUse.Arguments.GetRawText()
-                                    }
-                                ]
-                            });
-                            messages.Add(new Message
-                            {
-                                Role = "tool",
-                                ToolCallId = toolUse.Id,
-                                ToolName = toolUse.Name,
-                                Content = validation.ToolResult
-                            });
-                            messages.Add(new Message
-                            {
-                                Role = "user",
-                                Content = validation.UserReminder
-                            });
-
-                            goto NextIteration;
-                        }
-
-                        var execution = await ExecuteToolUseAsync(toolUse, selectedTools, ct);
-                        diagnostics.AddRange(execution.Diagnostics);
-                        navigationTargetCue = execution.NavigationTargetCue ?? navigationTargetCue;
-                        if (execution.Result.Stage == "blocked" ||
-                            !ShouldContinueAfterTool(toolUse.Name))
-                        {
-                            return execution.Result with { Diagnostics = diagnostics };
-                        }
-
-                        messages.Add(new Message
-                        {
-                            Role = "assistant",
-                            Content = "",
-                            ToolCalls =
-                            [
-                                new ToolCall
-                                {
-                                    Id = toolUse.Id,
-                                    Name = toolUse.Name,
-                                    Arguments = toolUse.Arguments.GetRawText()
-                                }
-                            ]
-                        });
-                        messages.Add(new Message
-                        {
-                            Role = "tool",
-                            ToolCallId = toolUse.Id,
-                            ToolName = toolUse.Name,
-                            Content = execution.ToolContent
-                        });
-                        if (execution.NavigationTargetCue is not null)
-                        {
-                            messages.Add(new Message
-                            {
-                                Role = "user",
-                                Content = BuildNavigationTargetCueMessage(execution.NavigationTargetCue)
-                            });
-                        }
-
-                        goto NextIteration;
+                        return execution.Result with { Diagnostics = diagnostics };
                     }
-                    case StreamEvent.StreamError error:
-                        return Block("local_executor", "stream_error", "stream_error", error.Error.Message) with { Diagnostics = diagnostics };
+
+                    return execution.Result with { Diagnostics = diagnostics };
                 }
+                case StreamEvent.StreamError error:
+                    return Block("local_executor", "stream_error", "stream_error", error.Error.Message) with { Diagnostics = diagnostics };
             }
-
-            if (intent.Action is NpcLocalActionKind.Move &&
-                diagnostics.Any(IsSkillViewSourceDiagnostic) &&
-                !diagnostics.Any(IsNavigationTargetLoadedDiagnostic))
-            {
-                return Block(
-                    "local_executor",
-                    "unresolved_navigation_target",
-                    "unresolved_navigation_target",
-                    "stardew-navigation skill references were consulted but no complete target(locationName,x,y,source) was loaded") with
-                {
-                    Diagnostics =
-                    [
-                        ..diagnostics,
-                        "target=local_executor stage=attempt result=unresolved_navigation_target;attempt=1"
-                    ]
-                };
-            }
-
-            var protocolError = intent.Action is NpcLocalActionKind.Move
-                ? "executor_protocol_violation"
-                : "no_tool_call";
-            return Block("local_executor", protocolError, protocolError, "no tool call returned") with { Diagnostics = diagnostics };
-
-        NextIteration:
-            continue;
         }
 
-        return Block(
-            "local_executor",
-            "tool_iteration_limit",
-            "tool_iteration_limit",
-            $"local executor exceeded {MaxModelToolIterations} tool iterations") with { Diagnostics = diagnostics };
+        return Block("local_executor", "no_tool_call", "no_tool_call", "no tool call returned") with { Diagnostics = diagnostics };
     }
 
     private IReadOnlyList<ITool> SelectTools(NpcLocalActionKind action)
     {
-        if (action is NpcLocalActionKind.Move)
-        {
-            var moveTools = new List<ITool>();
-            foreach (var toolName in new[] { "skill_view", "stardew_navigate_to_tile" })
-            {
-                if (!_tools.TryGetValue(toolName, out var moveTool))
-                    return [];
-
-                moveTools.Add(moveTool);
-            }
-
-            return moveTools;
-        }
-
         var requiredTool = action switch
         {
             NpcLocalActionKind.TaskStatus => "stardew_task_status",
             NpcLocalActionKind.Observe => "stardew_status",
-            NpcLocalActionKind.IdleMicroAction => "stardew_idle_micro_action",
             _ => null
         };
 
@@ -352,34 +241,6 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
         if (!result.Success)
             return ToolExecutionResult.Block(toolUse.Name, result.Content, "tool_failed", result.Content);
 
-        var diagnostics = BuildToolDiagnostics(toolUse);
-        var navigationTargetCue = string.Equals(toolUse.Name, "skill_view", StringComparison.OrdinalIgnoreCase)
-            ? ReadNavigationTargetCue(result.Content)
-            : null;
-        if (navigationTargetCue is not null)
-        {
-            diagnostics =
-            [
-                ..diagnostics,
-                $"target=skill_view stage=completed result=navigation_target_loaded;locationName={navigationTargetCue.LocationName};x={navigationTargetCue.X};y={navigationTargetCue.Y};source={navigationTargetCue.Source}"
-            ];
-        }
-
-        if (ShouldContinueAfterTool(toolUse.Name))
-        {
-            return new ToolExecutionResult(
-                new NpcLocalExecutorResult(
-                    toolUse.Name,
-                    "completed",
-                    "tool_context_loaded",
-                    $"local_executor_continue:{toolUse.Name}",
-                    ExecutorMode: "model_called",
-                    Diagnostics: diagnostics),
-                result.Content,
-                diagnostics,
-                navigationTargetCue);
-        }
-
         var evidence = ReadToolEvidence(result.Content);
         var shortResult = evidence.Status ?? "completed";
         var commandId = evidence.CommandId;
@@ -392,11 +253,9 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
                 BuildMemorySummary(toolUse.Name, shortResult, commandId),
                 commandId,
                 ExecutorMode: "model_called",
-                TargetSource: ReadNavigationTargetSource(toolUse),
-                Diagnostics: diagnostics),
+                Diagnostics: []),
             result.Content,
-            diagnostics,
-            navigationTargetCue);
+            []);
     }
 
     internal static NpcLocalExecutorResult CompleteHostInterpreted(NpcLocalActionIntent intent)
@@ -429,38 +288,21 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
             Error: error,
             ExecutorMode: "blocked");
 
-    private static bool ShouldContinueAfterTool(string toolName)
-        => string.Equals(toolName, "skill_view", StringComparison.OrdinalIgnoreCase);
+    private static bool IsDisabledWriteAction(NpcLocalActionKind action)
+        => action is NpcLocalActionKind.Move or NpcLocalActionKind.IdleMicroAction;
 
-    private static IReadOnlyList<ITool> SelectToolsForIteration(
-        IReadOnlyList<ITool> selectedTools,
-        NavigationTargetCue? navigationTargetCue)
+    internal static NpcLocalExecutorResult BlockDisabledWriteAction(NpcLocalActionIntent intent)
     {
-        if (navigationTargetCue is null)
-        {
-            var skillView = selectedTools.FirstOrDefault(tool =>
-                string.Equals(tool.Name, "skill_view", StringComparison.OrdinalIgnoreCase));
-            return skillView is null ? selectedTools : [skillView];
-        }
-
-        return selectedTools
-            .Where(tool => string.Equals(tool.Name, "stardew_navigate_to_tile", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
+        var action = FormatAction(intent.Action);
+        return Block(
+            action,
+            "local_executor_write_action_disabled",
+            "local_executor_write_action_disabled",
+            $"{action} is a parent-visible host lifecycle action and cannot be executed by the local executor");
     }
 
     private static string BuildSystemPrompt(NpcLocalActionKind action)
-    {
-        var prompt = "你是星露谷 NPC 的本地行动执行层。只执行上游已经给出的 intent，只使用当前提供的工具。不要替角色做人格、关系、送礼、交易或长期计划决策。";
-        if (action is not NpcLocalActionKind.Move)
-            return prompt;
-
-        return prompt + "\n" +
-               "处理没有具体 target 的移动意图时，只能通过 skill_view 解析地点。每一次调用 skill_view 都必须带 name；读取子文件时也必须同时带 name 和 file_path。\n" +
-               "固定调用格式示例：先调用 skill_view({\"name\":\"stardew-navigation\"})；再调用 skill_view({\"name\":\"stardew-navigation\",\"file_path\":\"references/index.md\"})；再按索引读取相关 region 和最具体的 POI 文件。\n" +
-               "绝对不要只传 file_path，也不要编造坐标。只有已加载的 skill 参考文件明确给出 locationName、x、y、source 后，才能调用 stardew_navigate_to_tile。\n" +
-               "一旦某个已加载 POI 与 intent 匹配并给出完整 target(locationName,x,y,source)，必须立即调用 stardew_navigate_to_tile；不要继续横向读取其他不相关 region/POI，也不要为了比较而把所有地点读完。\n" +
-               "如果目标缺失或有歧义，不要导航，让执行结果阻塞。";
-    }
+        => "你是星露谷 NPC 的本地只读辅助执行层。只执行上游已经给出的只读/status intent，只使用当前提供的工具。不要移动、说话、打开私聊、做微动作、替角色做人格、关系、送礼、交易或长期计划决策。";
 
     private static string BuildUserMessage(
         NpcRuntimeDescriptor descriptor,
@@ -486,47 +328,6 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
         return message + "\n" +
                "facts:\n" +
                string.Join("\n", factLines);
-    }
-
-    private static string BuildNavigationTargetCueMessage(NavigationTargetCue target)
-        => "你刚刚已经从 stardew-navigation 的 skill 资料读取到完整机械目标。\n" +
-           $"已加载 target(locationName={target.LocationName},x={target.X},y={target.Y},source={target.Source})。\n" +
-           "下一步必须调用 stardew_navigate_to_tile，并把 locationName、x、y、source 原样填入工具参数；不要继续调用 skill_view，不要继续横向读取其他地点。";
-
-    private static NavigationToolValidation? ValidateNavigationToolUse(
-        StreamEvent.ToolUseComplete toolUse,
-        NavigationTargetCue? loadedTarget)
-    {
-        if (!string.Equals(toolUse.Name, "stardew_navigate_to_tile", StringComparison.OrdinalIgnoreCase))
-            return null;
-
-        if (loadedTarget is null)
-        {
-            return new NavigationToolValidation(
-                "navigation_target_not_loaded",
-                "target=stardew_navigate_to_tile stage=blocked result=navigation_target_not_loaded",
-                "Error: navigation_target_not_loaded. You called stardew_navigate_to_tile before loading a complete target(locationName,x,y,source) from stardew-navigation skill references. First call skill_view(name=\"stardew-navigation\"), then references/index.md, then the relevant region/POI file. Do not use the player's natural-language place text as locationName.",
-                "刚才的 stardew_navigate_to_tile 没有执行，因为本轮还没有从 stardew-navigation 的 skill 资料加载完整 target(locationName,x,y,source)。现在必须先调用 skill_view 读取 stardew-navigation、references/index.md 和相关 POI；不要把玩家自然语言地点直接当 locationName。");
-        }
-
-        var locationName = ReadString(toolUse.Arguments, "locationName");
-        var source = ReadString(toolUse.Arguments, "source");
-        var x = ReadInt(toolUse.Arguments, "x");
-        var y = ReadInt(toolUse.Arguments, "y");
-        if (string.Equals(locationName, loadedTarget.LocationName, StringComparison.Ordinal) &&
-            x == loadedTarget.X &&
-            y == loadedTarget.Y &&
-            string.Equals(source, loadedTarget.Source, StringComparison.Ordinal))
-        {
-            return null;
-        }
-
-        var expected = $"target(locationName={loadedTarget.LocationName},x={loadedTarget.X},y={loadedTarget.Y},source={loadedTarget.Source})";
-        return new NavigationToolValidation(
-            "navigation_target_mismatch",
-            "target=stardew_navigate_to_tile stage=blocked result=navigation_target_mismatch",
-            $"Error: navigation_target_mismatch. The tool arguments must exactly match the loaded skill target: {expected}. Retry stardew_navigate_to_tile with those values unchanged.",
-            $"刚才的 stardew_navigate_to_tile 没有执行，因为参数和已加载 skill target 不一致。已加载 {expected}。下一步必须调用 stardew_navigate_to_tile，并原样填写 locationName、x、y、source。");
     }
 
     private static string SerializeIntent(NpcLocalActionIntent intent)
@@ -577,33 +378,6 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
         if (!string.IsNullOrWhiteSpace(value))
             values[key] = value;
     }
-
-    private static IReadOnlyList<string> BuildToolDiagnostics(StreamEvent.ToolUseComplete toolUse)
-    {
-        if (!string.Equals(toolUse.Name, "skill_view", StringComparison.OrdinalIgnoreCase))
-            return [];
-
-        var skillName = ReadString(toolUse.Arguments, "name");
-        if (string.IsNullOrWhiteSpace(skillName))
-            return [];
-
-        var filePath = ReadString(toolUse.Arguments, "file_path");
-        var source = string.IsNullOrWhiteSpace(filePath)
-            ? skillName.Trim()
-            : $"{skillName.Trim()}/{filePath.Trim()}";
-        return [$"target=skill_view stage=completed result=skill_source:{source}"];
-    }
-
-    private static bool IsSkillViewSourceDiagnostic(string diagnostic)
-        => diagnostic.StartsWith("target=skill_view stage=completed result=skill_source:", StringComparison.Ordinal);
-
-    private static bool IsNavigationTargetLoadedDiagnostic(string diagnostic)
-        => diagnostic.StartsWith("target=skill_view stage=completed result=navigation_target_loaded;", StringComparison.Ordinal);
-
-    private static string? ReadNavigationTargetSource(StreamEvent.ToolUseComplete toolUse)
-        => string.Equals(toolUse.Name, "stardew_navigate_to_tile", StringComparison.OrdinalIgnoreCase)
-            ? ReadString(toolUse.Arguments, "source")
-            : null;
 
     private static ToolDefinition BuildToolDefinition(ITool tool)
         => new()
@@ -679,39 +453,6 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
         }
     }
 
-    private static NavigationTargetCue? ReadNavigationTargetCue(string toolContent)
-    {
-        var content = ReadSkillViewContent(toolContent) ?? toolContent;
-        var match = NavigationTargetPattern().Match(content);
-        if (!match.Success)
-            return null;
-
-        if (!int.TryParse(match.Groups["x"].Value, out var x) ||
-            !int.TryParse(match.Groups["y"].Value, out var y))
-        {
-            return null;
-        }
-
-        return new NavigationTargetCue(
-            match.Groups["locationName"].Value.Trim(),
-            x,
-            y,
-            match.Groups["source"].Value.Trim());
-    }
-
-    private static string? ReadSkillViewContent(string toolContent)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(toolContent);
-            return ReadString(document.RootElement, "content");
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
     private static string BuildMemorySummary(string toolName, string result, string? commandId)
         => string.IsNullOrWhiteSpace(commandId)
             ? $"{toolName} completed with result {result}."
@@ -720,11 +461,6 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
     private static string? ReadString(JsonElement element, string propertyName)
         => element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
-            : null;
-
-    private static int? ReadInt(JsonElement element, string propertyName)
-        => element.TryGetProperty(propertyName, out var value) && value.TryGetInt32(out var intValue)
-            ? intValue
             : null;
 
     private static string Truncate(string value, int maxChars)
@@ -747,19 +483,10 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
 
     private sealed record ToolEvidence(string? CommandId, string? Status);
 
-    private sealed record NavigationTargetCue(string LocationName, int X, int Y, string Source);
-
-    private sealed record NavigationToolValidation(
-        string Error,
-        string Diagnostic,
-        string ToolResult,
-        string UserReminder);
-
     private sealed record ToolExecutionResult(
         NpcLocalExecutorResult Result,
         string ToolContent,
-        IReadOnlyList<string> Diagnostics,
-        NavigationTargetCue? NavigationTargetCue = null)
+        IReadOnlyList<string> Diagnostics)
     {
         public static ToolExecutionResult Block(string target, string result, string error, string? memorySummary, string? diagnostic = null)
         {
@@ -770,8 +497,5 @@ public sealed partial class NpcLocalExecutorRunner : INpcLocalExecutorRunner
                 string.IsNullOrWhiteSpace(diagnostic) ? blocked.Diagnostics : [..blocked.Diagnostics, diagnostic]);
         }
     }
-
-    [GeneratedRegex(@"target\(\s*locationName\s*=\s*(?<locationName>[^,\)]+)\s*,\s*x\s*=\s*(?<x>-?\d+)\s*,\s*y\s*=\s*(?<y>-?\d+)\s*,\s*source\s*=\s*(?<source>[^,\)]+)\s*\)", RegexOptions.CultureInvariant)]
-    private static partial Regex NavigationTargetPattern();
 
 }

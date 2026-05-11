@@ -824,7 +824,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithLocalExecutorMoveIntent_ExecutesRunnerLogsEvidenceAndDoesNotWriteMemory()
+    public async Task RunOneTickAsync_WithLocalExecutorMoveIntent_BlocksWithoutCallingRunnerOrWritingMemory()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-local-executor-tests", Guid.NewGuid().ToString("N"));
         try
@@ -868,19 +868,15 @@ public class NpcAutonomyLoopTests
 
             var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
 
-            Assert.AreEqual(1, localExecutor.CallCount);
-            Assert.IsNotNull(localExecutor.LastIntent);
-            Assert.AreEqual(NpcLocalActionKind.Move, localExecutor.LastIntent.Action);
-            Assert.IsNull(localExecutor.LastIntent.DestinationId);
-            Assert.AreEqual("Pierre", localExecutor.LastIntent.DestinationText);
-            Assert.AreEqual("local_executor_completed:stardew_navigate_to_tile", result.DecisionResponse);
+            Assert.AreEqual(0, localExecutor.CallCount);
+            Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
 
             var records = ReadRuntimeLogRecords(logPath);
             AssertLogRecord(records, "diagnostic", "intent_contract", "accepted", "action=move;reason=meet the player near Pierre");
             AssertLogRecord(records, "diagnostic", "parent_tool_surface", "verified", "registered_tools=0;stardew_navigate_to_tile=0;stardew_task_status=0;stardew_speak=0;todo=0;agent=0");
             AssertLogRecord(records, "diagnostic", "local_executor", "selected", "action=move;lane=delegation");
-            AssertLogRecord(records, "local_executor", "stardew_navigate_to_tile", "completed", "queued", "cmd-move-1");
-            AssertLogRecordExecutorMode(records, "local_executor", "stardew_navigate_to_tile", "model_called");
+            AssertLogRecord(records, "local_executor", "move", "blocked", "local_executor_write_action_disabled");
+            AssertLogRecordExecutorMode(records, "local_executor", "move", "blocked");
 
             var entries = await memoryManager.ReadEntriesAsync("memory", CancellationToken.None);
             Assert.AreEqual(0, entries.Count);
@@ -893,7 +889,7 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
-    public async Task RunOneTickAsync_WithLocalExecutorIdleMicroAction_ExecutesRunnerLogsEvidenceAndDoesNotWriteMemory()
+    public async Task RunOneTickAsync_WithLocalExecutorIdleMicroAction_BlocksWithoutCallingRunnerOrWritingMemory()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-local-executor-idle-tests", Guid.NewGuid().ToString("N"));
         try
@@ -940,18 +936,14 @@ public class NpcAutonomyLoopTests
 
             var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
 
-            Assert.AreEqual(1, localExecutor.CallCount);
-            Assert.IsNotNull(localExecutor.LastIntent);
-            Assert.AreEqual(NpcLocalActionKind.IdleMicroAction, localExecutor.LastIntent.Action);
-            Assert.IsNotNull(localExecutor.LastIntent.IdleMicroAction);
-            Assert.AreEqual("look_around", localExecutor.LastIntent.IdleMicroAction!.Kind);
-            Assert.AreEqual("local_executor_completed:stardew_idle_micro_action", result.DecisionResponse);
+            Assert.AreEqual(0, localExecutor.CallCount);
+            Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
 
             var records = ReadRuntimeLogRecords(logPath);
             AssertLogRecord(records, "diagnostic", "intent_contract", "accepted", "action=idle_micro_action;reason=she is staying in place and can do a small idle motion");
             AssertLogRecord(records, "diagnostic", "local_executor", "selected", "action=idle_micro_action;lane=delegation");
-            AssertLogRecord(records, "local_executor", "stardew_idle_micro_action", "completed", "completed", "cmd-idle-1");
-            AssertLogRecordExecutorMode(records, "local_executor", "stardew_idle_micro_action", "model_called");
+            AssertLogRecord(records, "local_executor", "idle_micro_action", "blocked", "local_executor_write_action_disabled");
+            AssertLogRecordExecutorMode(records, "local_executor", "idle_micro_action", "blocked");
 
             var entries = await memoryManager.ReadEntriesAsync("memory", CancellationToken.None);
             Assert.AreEqual(0, entries.Count);
@@ -1089,8 +1081,8 @@ public class NpcAutonomyLoopTests
             await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
 
             var records = ReadRuntimeLogRecords(logPath);
-            AssertLogRecord(records, "local_executor", "local_executor", "blocked", "executor_protocol_violation");
-            AssertLogRecordExecutorMode(records, "local_executor", "local_executor", "blocked");
+            AssertLogRecord(records, "local_executor", "move", "blocked", "local_executor_write_action_disabled");
+            AssertLogRecordExecutorMode(records, "local_executor", "move", "blocked");
             AssertLogRecord(records, "host_action", "stardew_speak", "submitted", "queued", "cmd-fallback");
             Assert.IsFalse(records.Any(record =>
                 record.GetProperty("actionType").GetString() == "local_executor" &&

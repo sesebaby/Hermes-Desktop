@@ -44,6 +44,7 @@ public static class StardewNpcToolFactory
             new StardewNavigateToTileTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
             new StardewSpeakTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewOpenPrivateChatTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
+            new StardewIdleMicroActionTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewTaskStatusTool(adapter.Commands)
         ]);
     }
@@ -61,19 +62,9 @@ public static class StardewNpcToolFactory
         TimeSpan? actionTimeout = null,
         StardewNpcToolSurfacePolicy? toolSurfacePolicy = null)
     {
-        traceIdFactory ??= () => $"trace_{descriptor.NpcId}_{Guid.NewGuid():N}";
-        idempotencyKeyFactory ??= () => $"idem_{descriptor.NpcId}_{Guid.NewGuid():N}";
-        var runtimeActions = new StardewRuntimeActionController(
-            runtimeDriver,
-            worldCoordination,
-            nowUtc,
-            actionTimeout);
-
         return (toolSurfacePolicy ?? StardewNpcToolSurfacePolicy.Default).ApplyToLocalExecutor(
         [
             new StardewStatusTool(adapter.Queries, descriptor),
-            new StardewNavigateToTileTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
-            new StardewIdleMicroActionTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, runtimeActions),
             new StardewTaskStatusTool(adapter.Commands)
         ]);
     }
@@ -409,14 +400,13 @@ public sealed record StardewNpcToolSurfacePolicy(
         "stardew_navigate_to_tile",
         "stardew_speak",
         "stardew_open_private_chat",
+        "stardew_idle_micro_action",
         "stardew_task_status"
     ];
 
     private static readonly string[] LocalExecutorCatalog =
     [
         "stardew_status",
-        "stardew_navigate_to_tile",
-        "stardew_idle_micro_action",
         "stardew_task_status"
     ];
 
@@ -926,7 +916,7 @@ public sealed class StardewIdleMicroActionTool : ITool, IToolSchemaProvider
 
     public string Name => "stardew_idle_micro_action";
 
-    public string Description => "仅限本地执行层使用的原地微动作工具。只能从父层 intent 已选择的微动作合同和白名单中执行。";
+    public string Description => "让当前 NPC 在原地做一个短暂可见微动作。父层 autonomy 直接调用本工具；真实动作、失败结果和 lifecycle fact 由宿主与 Stardew bridge 执行并返回。";
 
     public Type ParametersType => typeof(StardewIdleMicroActionToolParameters);
 

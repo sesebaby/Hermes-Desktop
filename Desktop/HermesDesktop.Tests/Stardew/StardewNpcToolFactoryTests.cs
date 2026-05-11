@@ -33,8 +33,8 @@ public class StardewNpcToolFactoryTests
         CollectionAssert.AreEqual(
             StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(),
             tools.Select(tool => tool.Name).ToArray());
-        CollectionAssert.Contains(StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(), "stardew_navigate_to_tile");
-        CollectionAssert.Contains(StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(), "stardew_idle_micro_action");
+        CollectionAssert.DoesNotContain(StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(), "stardew_navigate_to_tile");
+        CollectionAssert.DoesNotContain(StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(), "stardew_idle_micro_action");
         CollectionAssert.DoesNotContain(StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(), "stardew_speak");
         CollectionAssert.DoesNotContain(StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(), "stardew_open_private_chat");
     }
@@ -57,7 +57,7 @@ public class StardewNpcToolFactoryTests
 
         CollectionAssert.AreEqual(new[] { "stardew_status" }, parentTools.Select(tool => tool.Name).ToArray());
         CollectionAssert.AreEqual(new[] { "stardew_status", "stardew_task_status" }, executorTools.Select(tool => tool.Name).ToArray());
-        Assert.AreNotEqual(
+        Assert.AreEqual(
             StardewNpcToolFactory.LocalExecutorToolFingerprint(),
             StardewNpcToolFactory.LocalExecutorToolFingerprint(policy));
     }
@@ -82,6 +82,7 @@ public class StardewNpcToolFactoryTests
                 "stardew_navigate_to_tile",
                 "stardew_speak",
                 "stardew_open_private_chat",
+                "stardew_idle_micro_action",
                 "stardew_task_status"
             },
             tools.Select(tool => tool.Name).ToArray());
@@ -102,23 +103,23 @@ public class StardewNpcToolFactoryTests
             new[]
             {
                 "stardew_status",
-                "stardew_navigate_to_tile",
-                "stardew_idle_micro_action",
                 "stardew_task_status"
             },
             tools.Select(tool => tool.Name).ToArray());
+        CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_navigate_to_tile");
+        CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_idle_micro_action");
         CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_speak");
         CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_open_private_chat");
     }
 
     [TestMethod]
-    public void CreateDefault_DoesNotExposeIdleMicroActionTool()
+    public void CreateDefault_ExposesIdleMicroActionToolForParentLifecycle()
     {
         var tools = StardewNpcToolFactory.CreateDefault(
             new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
             CreateDescriptor("haley"));
 
-        CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_idle_micro_action");
+        CollectionAssert.Contains(tools.Select(tool => tool.Name).ToArray(), "stardew_idle_micro_action");
     }
 
     [TestMethod]
@@ -135,7 +136,7 @@ public class StardewNpcToolFactoryTests
     public async Task NavigateToTileTool_BindsRuntimeIdentityAndSubmitsTargetMove()
     {
         var commands = new CapturingCommandService();
-        var tools = StardewNpcToolFactory.CreateLocalExecutorTools(
+        var tools = StardewNpcToolFactory.CreateDefault(
             new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
             CreateDescriptor("haley"),
             traceIdFactory: () => "trace-nav",
@@ -167,6 +168,37 @@ public class StardewNpcToolFactoryTests
         Assert.AreEqual(2, (int?)commands.LastAction.Payload?["facingDirection"]);
         Assert.AreEqual("海风应该很舒服。", commands.LastAction.Payload?["thought"]?.ToString());
         Assert.IsFalse(commands.LastAction.Payload?.ContainsKey("destinationId") is true);
+    }
+
+    [TestMethod]
+    public async Task IdleMicroActionTool_BindsRuntimeIdentityAndSubmitsParentLifecycleAction()
+    {
+        var commands = new CapturingCommandService();
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"),
+            traceIdFactory: () => "trace-idle",
+            idempotencyKeyFactory: () => "idem-idle");
+        var idleTool = tools.Single(tool => tool.Name == "stardew_idle_micro_action");
+
+        var result = await idleTool.ExecuteAsync(new StardewIdleMicroActionToolParameters
+        {
+            Kind = "look_around",
+            Intensity = "light",
+            TtlSeconds = 4
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.IsNotNull(commands.LastAction);
+        Assert.AreEqual("haley", commands.LastAction.NpcId);
+        Assert.AreEqual("Haley", commands.LastAction.BodyBinding?.TargetEntityId);
+        Assert.AreEqual(GameActionType.IdleMicroAction, commands.LastAction.Type);
+        Assert.AreEqual("trace-idle", commands.LastAction.TraceId);
+        Assert.AreEqual("idem-idle", commands.LastAction.IdempotencyKey);
+        Assert.AreEqual("self", commands.LastAction.Target.Kind);
+        Assert.AreEqual("look_around", commands.LastAction.Payload?["kind"]?.ToString());
+        Assert.AreEqual("light", commands.LastAction.Payload?["intensity"]?.ToString());
+        Assert.AreEqual(4, (int?)commands.LastAction.Payload?["ttlSeconds"]);
     }
 
     [TestMethod]
