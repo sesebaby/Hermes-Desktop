@@ -33,8 +33,8 @@ public sealed class McpToolWrapper : ITool
             
             if (result.IsError)
             {
-                var errorText = result.Content.FirstOrDefault(c => c is McpContentBlock.Text) as McpContentBlock.Text;
-                return ToolResult.Fail(errorText?.Value ?? "MCP tool returned error");
+                var errorText = result.Content.FirstOrDefault(c => c is McpContentBlock.TextBlock) as McpContentBlock.TextBlock;
+                return ToolResult.Fail(errorText?.Text ?? "MCP tool returned error");
             }
             
             // Format output
@@ -59,8 +59,8 @@ public sealed class McpToolWrapper : ITool
         {
             switch (block)
             {
-                case McpContentBlock.Text text:
-                    sb.AppendLine(text.Value);
+                case McpContentBlock.TextBlock text:
+                    sb.AppendLine(text.Text);
                     break;
                     
                 case McpContentBlock.Image img:
