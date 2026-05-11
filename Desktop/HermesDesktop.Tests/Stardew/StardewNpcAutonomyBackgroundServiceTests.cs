@@ -1690,9 +1690,52 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         await service.RunOneIterationAsync(CancellationToken.None);
 
         Assert.AreEqual(1, commands.Submitted.Count(action => action.Type == GameActionType.OpenPrivateChat));
-        Assert.AreEqual(0, supervisor.Snapshot().Count);
+        var runtime = supervisor.Snapshot().Single();
+        Assert.AreEqual("cmd-1", runtime.Controller.LastTerminalCommandStatus?.CommandId);
+        Assert.AreEqual("open_private_chat", runtime.Controller.LastTerminalCommandStatus?.Action);
         Assert.AreEqual(0, chatClient.CompleteWithToolsCalls);
         Assert.AreEqual(0, privateChatAgent.Requests.Count);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WhenPrivateChatProcessingFails_StillDispatchesAutonomyAndKeepsBatchStaged()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var chatClient = new CountingChatClient("I will wait near the library.");
+        var commands = new ThrowingOpenPrivateChatCommandService();
+        var events = new ScriptedEventSource(
+            new GameEventBatch(Array.Empty<GameEventRecord>(), new GameEventCursor(null, 0)),
+            new GameEventBatch(
+                [
+                    new GameEventRecord(
+                        "evt-43",
+                        "vanilla_dialogue_completed",
+                        "Haley",
+                        DateTime.UtcNow,
+                        "Haley finished vanilla dialogue.",
+                        Sequence: 43)
+                ],
+                new GameEventCursor("evt-43", 43)));
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley is idle.",
+                ["location=Town"])),
+            events);
+        var supervisor = new NpcRuntimeSupervisor();
+        var service = CreateService(discovery, _ => adapter, chatClient, supervisor, enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(1, chatClient.CompleteWithToolsCalls, "A private-chat bridge failure must not prevent the enabled NPC autonomy worker from running.");
+        var hostState = await new StardewRuntimeHostStateStore(GetHostStateDbPath("save-42")).LoadAsync(CancellationToken.None);
+        Assert.IsNotNull(hostState.StagedBatch, "The failing private-chat batch must remain staged so the host can retry it later instead of silently advancing the shared cursor.");
+        Assert.AreEqual("evt-43", hostState.StagedBatch!.NextCursor.Since);
+        Assert.IsNull(hostState.SourceCursor.Since);
     }
 
     [TestMethod]
@@ -1733,7 +1776,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
 
         Assert.AreEqual(1, commands.Submitted.Count(action => action.Type == GameActionType.OpenPrivateChat));
         CollectionAssert.AreEqual(new long?[] { null, 0, 42 }, events.SeenCursors.Select(cursor => cursor.Sequence).ToArray());
-        Assert.AreEqual(0, supervisor1.Snapshot().Count);
+        Assert.AreEqual("open_private_chat", supervisor1.Snapshot().Single().Controller.LastTerminalCommandStatus?.Action);
         Assert.AreEqual(0, supervisor2.Snapshot().Count);
         Assert.AreEqual(0, chatClient.CompleteWithToolsCalls);
     }
@@ -1876,6 +1919,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         TimeSpan? pollInterval = null,
         TimeSpan? autonomyWakeInterval = null)
     {
+        var bindingResolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
         var service = new StardewNpcAutonomyBackgroundService(
             discovery,
             adapterFactory,
@@ -1885,12 +1929,16 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             cronScheduler ?? new NoopCronScheduler(),
             supervisor,
             new NpcRuntimeHost(new FileSystemNpcPackLoader(), supervisor, _tempDir),
-            new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot),
+            bindingResolver,
             new StardewNpcAutonomyPromptSupplementBuilder(new FixedStardewGamingSkillRootProvider(_gamingSkillRoot)),
             new NpcToolSurfaceSnapshotProvider(() => [new DiscoveredNoopTool("mcp_dynamic_test")]),
             new StardewPrivateChatRuntimeAdapter(
                 privateChatAgentRunner ?? new NoopPrivateChatAgentRunner(),
-                NullLogger<StardewPrivateChatRuntimeAdapter>.Instance),
+                NullLogger<StardewPrivateChatRuntimeAdapter>.Instance,
+                sessionLeaseCoordinator: new StardewNpcPrivateChatSessionLeaseCoordinator(_tempDir, supervisor, bindingResolver),
+                bindingResolver: bindingResolver,
+                runtimeRoot: _tempDir,
+                runtimeSupervisor: supervisor),
             budget ?? new NpcAutonomyBudget(new NpcAutonomyBudgetOptions(MaxToolIterations: 2, MaxConcurrentLlmRequests: 1, MaxRestartsPerScene: 2)),
             worldCoordination ?? new WorldCoordinationService(new ResourceClaimRegistry()),
             NullLogger<StardewNpcAutonomyBackgroundService>.Instance,
@@ -1905,6 +1953,18 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         _services.Add(service);
         return service;
     }
+
+    private string GetHostStateDbPath(string saveId)
+        => Path.Combine(
+            _tempDir,
+            "runtime",
+            "stardew",
+            "games",
+            NpcNamespace.Sanitize("stardew-valley"),
+            "saves",
+            NpcNamespace.Sanitize(saveId),
+            "host",
+            "state.db");
 
     private static async Task WaitForSubmittedCountAsync(
         RecordingCommandService commands,
@@ -2280,6 +2340,17 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
 
     private sealed class FakeCommandService : RecordingCommandService
     {
+    }
+
+    private sealed class ThrowingOpenPrivateChatCommandService : RecordingCommandService
+    {
+        public override Task<GameCommandResult> SubmitAsync(GameAction action, CancellationToken ct)
+        {
+            if (action.Type == GameActionType.OpenPrivateChat)
+                throw new InvalidOperationException("private chat bridge failure");
+
+            return base.SubmitAsync(action, ct);
+        }
     }
 
     private sealed class ScriptedCommandService : RecordingCommandService

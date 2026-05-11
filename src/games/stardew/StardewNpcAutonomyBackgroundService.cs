@@ -288,13 +288,13 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 ct);
         }
 
-        await _privateChatRuntimeAdapter.ProcessAsync(
+        var privateChatProcessed = await TryProcessPrivateChatBatchAsync(
             bridgeKey,
             saveId,
             hostAdapter,
-            sharedEventBatch.Records,
-            ct,
-            drainOnly: privateChatDrainOnly);
+            sharedEventBatch,
+            privateChatDrainOnly,
+            ct);
 
         // enabledNpcIds gates autonomous NPC workers only. Shared private-chat ingress
         // must still be consumed so UI opening is not coupled to AI/autonomy config.
@@ -305,6 +305,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 hostState,
                 sharedEventBatch,
                 shouldStageBatch,
+                privateChatProcessed,
                 initialPrivateChatHistoryDrained,
                 ct);
             _bridgeEventCursor = sharedEventBatch.NextCursor;
@@ -357,6 +358,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             hostState,
             sharedEventBatch,
             shouldStageBatch,
+            privateChatProcessed,
             initialPrivateChatHistoryDrained,
             ct);
 
@@ -375,15 +377,56 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         StardewRuntimeHostState hostState,
         GameEventBatch sharedEventBatch,
         bool shouldStageBatch,
+        bool privateChatProcessed,
         bool initialPrivateChatHistoryDrained,
         CancellationToken ct)
     {
+        if (!privateChatProcessed)
+            return Task.CompletedTask;
+
         if (shouldStageBatch)
             return hostStateStore.CommitBatchAsync(sharedEventBatch.NextCursor, initialPrivateChatHistoryDrained, ct);
 
         return initialPrivateChatHistoryDrained != hostState.InitialPrivateChatHistoryDrained
             ? hostStateStore.CommitBatchAsync(hostState.SourceCursor, initialPrivateChatHistoryDrained, ct)
             : Task.CompletedTask;
+    }
+
+    private async Task<bool> TryProcessPrivateChatBatchAsync(
+        string bridgeKey,
+        string saveId,
+        IGameAdapter hostAdapter,
+        GameEventBatch sharedEventBatch,
+        bool privateChatDrainOnly,
+        CancellationToken ct)
+    {
+        try
+        {
+            await _privateChatRuntimeAdapter.ProcessAsync(
+                bridgeKey,
+                saveId,
+                hostAdapter,
+                sharedEventBatch.Records,
+                ct,
+                drainOnly: privateChatDrainOnly);
+            return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Stardew private-chat shared batch failed non-fatally; saveId={SaveId}; eventCount={EventCount}; nextCursor={NextCursor}; nextSequence={NextSequence}; drainOnly={DrainOnly}",
+                saveId,
+                sharedEventBatch.Records.Count,
+                sharedEventBatch.NextCursor.Since ?? "-",
+                sharedEventBatch.NextCursor.Sequence,
+                privateChatDrainOnly);
+            return false;
+        }
     }
 
     private async Task RunLoopAsync(CancellationToken ct)
