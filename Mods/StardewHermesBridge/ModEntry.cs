@@ -30,6 +30,7 @@ public sealed class ModEntry : Mod
     private NpcDialogueClickRouter _clickRouter = null!;
     private NpcDialogueFlowService _dialogueFlow = null!;
     private NpcDialogueMenuGuard _menuGuard = null!;
+    private NpcDialogueObservationGate _dialogueObservationGate = null!;
     private NpcOriginalDialogueStarter _originalDialogueStarter = null!;
     private TestTeleportCommand _testTeleportCommand = null!;
     private NpcDialogueFlowState? _pendingDialogueFlow;
@@ -69,6 +70,7 @@ public sealed class ModEntry : Mod
         _clickRouter = new NpcDialogueClickRouter();
         _dialogueFlow = new NpcDialogueFlowService();
         _menuGuard = new NpcDialogueMenuGuard();
+        _dialogueObservationGate = new NpcDialogueObservationGate();
         _originalDialogueStarter = new NpcOriginalDialogueStarter(helper);
         _testTeleportCommand = new TestTeleportCommand(helper, Monitor, _bridgeLogger);
 
@@ -161,6 +163,7 @@ public sealed class ModEntry : Mod
         _bubbleOverlay.ClearPendingClickReplies();
         ClearPendingDialogueFlow();
         ClearCustomDialogueGuards();
+        _dialogueObservationGate.Clear();
         _activeHermesPrivateChatDialogueConversationId = null;
     }
 
@@ -173,6 +176,7 @@ public sealed class ModEntry : Mod
         _bubbleOverlay.ClearPendingClickReplies();
         ClearPendingDialogueFlow();
         ClearCustomDialogueGuards();
+        _dialogueObservationGate.Clear();
         _activeHermesPrivateChatDialogueConversationId = null;
         WriteDiscoveryFile();
     }
@@ -221,6 +225,8 @@ public sealed class ModEntry : Mod
         if (e.OldMenu is not null && e.NewMenu is null)
             _commands.RecordPrivateChatInputClosedWithoutSubmit();
 
+        _dialogueObservationGate.RecordMenuChanged(e.NewMenu, newDialogueNpcName);
+
         if (_pendingDialogueFlow is null)
             return;
 
@@ -230,6 +236,7 @@ public sealed class ModEntry : Mod
             return;
         }
 
+        _dialogueObservationGate.MarkObserved(e.NewMenu, newDialogueNpcName);
         BeginOrObserveOriginalDialogue(newDialogueNpcName!, "menu_changed_open");
         _bridgeLogger.Write(SmapiBridgeLogger.OriginalDialogueObserved, newDialogueNpcName, FormalEntry, FormalEntry, null, "observed", "source=menu_changed_open");
     }
@@ -252,6 +259,10 @@ public sealed class ModEntry : Mod
         var activeDialogueNpcName = GetActiveDialogueNpcName();
         if (_menuGuard.IsCustomDialogue(activeDialogueNpcName))
             return;
+        var canClaimActiveDialogue = isDialogueBoxOpen &&
+                                     _dialogueObservationGate.CanClaim(
+                                         Game1.activeClickableMenu,
+                                         activeDialogueNpcName);
 
         var route = _clickRouter.Route(new NpcDialogueClickRouteRequest(
             isActionButton,
@@ -260,7 +271,8 @@ public sealed class ModEntry : Mod
             clickedNpcName,
             Game1.activeClickableMenu is not null,
             isDialogueBoxOpen,
-            activeDialogueNpcName));
+            activeDialogueNpcName,
+            CanClaimActiveDialogue: canClaimActiveDialogue));
 
         if (!route.IsAccepted)
         {
@@ -269,6 +281,9 @@ public sealed class ModEntry : Mod
 
             return;
         }
+
+        if (isDialogueBoxOpen)
+            _dialogueObservationGate.TryClaim(Game1.activeClickableMenu, activeDialogueNpcName);
 
         if (!isDialogueBoxOpen &&
             route.NpcName is { } replyNpcName &&

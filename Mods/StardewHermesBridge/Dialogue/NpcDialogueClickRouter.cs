@@ -10,6 +10,9 @@ public sealed class NpcDialogueClickRouter
         if (request.HasActiveMenu && !request.IsDialogueBoxOpen)
             return NpcDialogueClickRouteResult.Rejected("menu_open");
 
+        if (request.IsDialogueBoxOpen && !request.CanClaimActiveDialogue)
+            return NpcDialogueClickRouteResult.Rejected("dialogue_already_claimed");
+
         var targetNpcName = request.IsDialogueBoxOpen
             ? request.ActiveDialogueNpcName
             : request.TargetNpcName;
@@ -30,7 +33,8 @@ public sealed record NpcDialogueClickRouteRequest(
     string? TargetNpcName,
     bool HasActiveMenu,
     bool IsDialogueBoxOpen,
-    string? ActiveDialogueNpcName);
+    string? ActiveDialogueNpcName,
+    bool CanClaimActiveDialogue = false);
 
 public sealed record NpcDialogueClickRouteResult(
     bool IsAccepted,

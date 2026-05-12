@@ -43,6 +43,18 @@ public class RawDialogueDisplayRegressionTests
             modEntry,
             "if (_menuGuard.IsCustomDialogue(activeDialogueNpcName))",
             "ButtonPressed must ignore Hermes custom dialogue boxes so their close click cannot start another follow-up loop.");
+        StringAssert.Contains(
+            modEntry,
+            "_dialogueObservationGate.RecordMenuChanged(",
+            "MenuChanged must register the fresh vanilla DialogueBox instance so later close clicks on the same box are not mistaken for a new dialogue start.");
+        StringAssert.Contains(
+            modEntry,
+            "CanClaimActiveDialogue:",
+            "The click router must know whether the current active DialogueBox is still a fresh unclaimed vanilla dialogue.");
+        StringAssert.Contains(
+            modEntry,
+            "_dialogueObservationGate.MarkObserved(",
+            "Once MenuChanged or an already-open route has observed the vanilla dialogue, the same DialogueBox must not be claimable again.");
     }
 
     [TestMethod]

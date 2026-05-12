@@ -56,11 +56,32 @@ public class NpcDialogueClickRouterTests
             TargetNpcName: null,
             HasActiveMenu: true,
             IsDialogueBoxOpen: true,
-            ActiveDialogueNpcName: "Haley"));
+            ActiveDialogueNpcName: "Haley",
+            CanClaimActiveDialogue: true));
 
         Assert.IsTrue(result.IsAccepted);
         Assert.AreEqual("Haley", result.NpcName);
         Assert.AreEqual("accepted_active_dialogue", result.Reason);
+    }
+
+    [TestMethod]
+    public void Route_WhenHaleyDialogueBoxAlreadyClaimed_RejectsObservedDialogueRoute()
+    {
+        var router = new NpcDialogueClickRouter();
+
+        var result = router.Route(new NpcDialogueClickRouteRequest(
+            IsActionButton: false,
+            IsUseToolButton: true,
+            IsMouseButton: true,
+            TargetNpcName: null,
+            HasActiveMenu: true,
+            IsDialogueBoxOpen: true,
+            ActiveDialogueNpcName: "Haley",
+            CanClaimActiveDialogue: false));
+
+        Assert.IsFalse(result.IsAccepted);
+        Assert.IsNull(result.NpcName);
+        Assert.AreEqual("dialogue_already_claimed", result.Reason);
     }
 
     [TestMethod]
