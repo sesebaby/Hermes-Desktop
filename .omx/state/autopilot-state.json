@@ -1,0 +1,49 @@
+{
+  "mode": "autopilot",
+  "active": false,
+  "current_phase": "complete",
+  "iteration": 1,
+  "review_cycle": 0,
+  "max_iterations": 10,
+  "phase_cycle": [
+    "ralplan",
+    "ralph",
+    "code-review"
+  ],
+  "handoff_artifacts": {
+    "context_snapshot_path": ".omx/context/stardew-autonomy-tool-closure-harness-20260512T014405Z.md",
+    "ralplan": {
+      "prd": ".omx/plans/prd-stardew-autonomy-tool-closure-harness-reference-alignment.md",
+      "test_spec": ".omx/plans/test-spec-stardew-autonomy-tool-closure-harness-reference-alignment.md"
+    },
+    "ralph": {
+      "changed_files": [
+        "src/runtime/NpcAutonomyLoop.cs",
+        "Desktop/HermesDesktop.Tests/Runtime/NpcAutonomyLoopTests.cs",
+        "Desktop/HermesDesktop.Tests/Stardew/StardewNpcAutonomyBackgroundServiceTests.cs"
+      ],
+      "verification": [
+        "dotnet test .\\Desktop\\HermesDesktop.Tests\\HermesDesktop.Tests.csproj -c Debug --filter \"FullyQualifiedName~HermesDesktop.Tests.Runtime.NpcAutonomyLoopTests\" -p:UseSharedCompilation=false => 48 passed",
+        "dotnet test .\\Desktop\\HermesDesktop.Tests\\HermesDesktop.Tests.csproj -c Debug --filter \"FullyQualifiedName~StardewNpcPrivateChatAgentRunnerTests|FullyQualifiedName~NpcAutonomyLoopTests|FullyQualifiedName~StardewNpcAutonomyBackgroundServiceTests|FullyQualifiedName~StardewAutonomyTickDebugServiceTests|FullyQualifiedName~StardewNpcToolFactoryTests|FullyQualifiedName~StardewPrivateChatOrchestratorTests\" -p:UseSharedCompilation=false => 185 passed",
+        "dotnet build .\\Desktop\\HermesDesktop\\HermesDesktop.csproj -c Debug -p:Platform=x64 -p:UseSharedCompilation=false => succeeded with 2 existing Stardew bridge warnings"
+      ]
+    },
+    "code_review": {
+      "recommendation": "APPROVE",
+      "architectural_status": "CLEAR",
+      "clean": true,
+      "review_notes": [
+        "Self-check is bounded to one extra agent turn.",
+        "No parent free-text or JSON response is parsed into host actions.",
+        "Tool iteration fallback keeps budget diagnostics and does not run self-check."
+      ]
+    }
+  },
+  "review_verdict": {
+    "recommendation": "APPROVE",
+    "architectural_status": "CLEAR",
+    "clean": true
+  },
+  "return_to_ralplan_reason": null,
+  "completed_at": "2026-05-12T01:44:05Z"
+}

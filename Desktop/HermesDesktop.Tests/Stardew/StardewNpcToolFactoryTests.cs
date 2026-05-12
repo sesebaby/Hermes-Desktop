@@ -521,6 +521,69 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
+    public async Task RecentActivityProvider_WithPrivateChatLifecycleTerminal_ReportsLastInteractionNotLastAction()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-recent-interaction-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new NpcObservationFactStore();
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            await driver.SetActionChainGuardAsync(
+                new NpcRuntimeActionChainGuardSnapshot(
+                    "chain-existing-move",
+                    "open",
+                    null,
+                    false,
+                    "go-to-beach-photo",
+                    "trace-existing-move",
+                    new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                    "move",
+                    "move:Beach:32:34",
+                    ConsecutiveActions: 1,
+                    ConsecutiveFailures: 0,
+                    ConsecutiveSameActionFailures: 0,
+                    LastTerminalStatus: StardewCommandStatuses.Completed,
+                    LastReasonCode: null,
+                    ClosureMissingCount: 0,
+                    DeferredIngressAttempts: 0),
+                CancellationToken.None);
+            await driver.SetLastTerminalCommandStatusAsync(
+                new GameCommandStatus(
+                    "work_private_chat:1_haley_evt_0001_turn2",
+                    "haley",
+                    "open_private_chat",
+                    StardewCommandStatuses.Completed,
+                    1,
+                    null,
+                    null),
+                CancellationToken.None);
+            var provider = new StardewRecentActivityProvider(store, driver);
+
+            var data = await provider.ReadRecentActivityAsync(descriptor, CancellationToken.None);
+
+            Assert.IsTrue(
+                data.Facts.Any(fact => fact.Contains("lastInteraction=open_private_chat:completed:none", StringComparison.Ordinal)),
+                "Interaction lifecycle terminal should remain visible as an interaction fact.");
+            var interactionFact = data.Facts.Single(fact => fact.StartsWith("lastInteraction=", StringComparison.Ordinal));
+            Assert.IsFalse(
+                interactionFact.Contains("rootTodoId=", StringComparison.Ordinal) ||
+                interactionFact.Contains("lastTarget=", StringComparison.Ordinal),
+                "Interaction lifecycle facts must not inherit old world-action chain correlation.");
+            Assert.IsFalse(
+                data.Facts.Any(fact => fact.Contains("lastAction=open_private_chat", StringComparison.Ordinal)),
+                "Interaction lifecycle terminal must not overwrite the last real world action fact.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task RecentActivityProvider_WithDelegatedMoveChain_IncludesTodoTraceAndConversationCorrelation()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-recent-correlation-tests", Guid.NewGuid().ToString("N"));
@@ -574,6 +637,118 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
+    public async Task RecentActivityProvider_WithCompletedWorldAction_IncludesTaskDoneFact()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-recent-task-done-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new NpcObservationFactStore();
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var controller = new StardewRuntimeActionController(
+                driver,
+                null,
+                actionTimeout: null,
+                nowUtc: () => new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc));
+            var action = new GameAction(
+                "haley",
+                "stardew-valley",
+                GameActionType.Move,
+                "trace-beach-done",
+                "idem-beach-done",
+                new GameActionTarget("tile", "Beach", new GameTile(38, 22)),
+                "meet the player at the beach",
+                new JsonObject
+                {
+                    ["rootTodoId"] = "meet-player-at-beach",
+                    ["conversationId"] = "pc_evt_beach"
+                },
+                descriptor.EffectiveBodyBinding);
+
+            var prepared = await controller.TryBeginAsync(action, CancellationToken.None);
+            await controller.RecordSubmitResultAsync(
+                prepared,
+                new GameCommandResult(true, "cmd-beach-done", StardewCommandStatuses.Completed, null, "trace-beach-done"),
+                CancellationToken.None);
+            var provider = new StardewRecentActivityProvider(store, driver);
+
+            var data = await provider.ReadRecentActivityAsync(descriptor, CancellationToken.None);
+
+            var taskDoneFact = data.Facts.Single(fact => fact.StartsWith("task_done:", StringComparison.Ordinal));
+            StringAssert.Contains(taskDoneFact, "action=move");
+            StringAssert.Contains(taskDoneFact, "commandId=cmd-beach-done");
+            StringAssert.Contains(taskDoneFact, "target=move:Beach:38:22");
+            StringAssert.Contains(taskDoneFact, "rootTodoId=meet-player-at-beach");
+            Assert.IsFalse(taskDoneFact.Contains("{", StringComparison.Ordinal), "Agent-visible task lifecycle facts must stay short and non-JSON.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RecentActivityProvider_WithBlockedWorldAction_IncludesTaskErrorFact()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-recent-task-error-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new NpcObservationFactStore();
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            await driver.SetActionChainGuardAsync(
+                new NpcRuntimeActionChainGuardSnapshot(
+                    "chain-error-1",
+                    "open",
+                    null,
+                    false,
+                    "meet-player-at-beach",
+                    "trace-beach-blocked",
+                    new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                    "move",
+                    "move:Beach:38:22",
+                    ConsecutiveActions: 1,
+                    ConsecutiveFailures: 1,
+                    ConsecutiveSameActionFailures: 1,
+                    LastTerminalStatus: StardewCommandStatuses.Blocked,
+                    LastReasonCode: StardewBridgeErrorCodes.PathBlocked,
+                    ClosureMissingCount: 0,
+                    DeferredIngressAttempts: 0),
+                CancellationToken.None);
+            await driver.SetLastTerminalCommandStatusAsync(
+                new GameCommandStatus(
+                    "cmd-beach-blocked",
+                    "haley",
+                    "move",
+                    StardewCommandStatuses.Blocked,
+                    1,
+                    StardewBridgeErrorCodes.PathBlocked,
+                    StardewBridgeErrorCodes.PathBlocked),
+                CancellationToken.None);
+            var provider = new StardewRecentActivityProvider(store, driver);
+
+            var data = await provider.ReadRecentActivityAsync(descriptor, CancellationToken.None);
+
+            var taskErrorFact = data.Facts.Single(fact => fact.StartsWith("task_error:", StringComparison.Ordinal));
+            StringAssert.Contains(taskErrorFact, "action=move");
+            StringAssert.Contains(taskErrorFact, "commandId=cmd-beach-blocked");
+            StringAssert.Contains(taskErrorFact, "status=blocked");
+            StringAssert.Contains(taskErrorFact, "reason=path_blocked");
+            StringAssert.Contains(taskErrorFact, "target=move:Beach:38:22");
+            StringAssert.Contains(taskErrorFact, "rootTodoId=meet-player-at-beach");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task RecentActivityProvider_WithRepeatedSameActionFailures_IncludesActionLoopFact()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-recent-loop-tests", Guid.NewGuid().ToString("N"));
@@ -614,6 +789,11 @@ public class StardewNpcToolFactoryTests
             StringAssert.Contains(loopFact, "sameActionFailures=2");
             StringAssert.Contains(loopFact, "reason=path_blocked");
             Assert.IsFalse(loopFact.Contains("{", StringComparison.Ordinal), "Agent-visible action loop facts must not expose internal JSON.");
+            var stuckFact = data.Facts.Single(fact => fact.StartsWith("task_stuck:", StringComparison.Ordinal));
+            StringAssert.Contains(stuckFact, "action=move");
+            StringAssert.Contains(stuckFact, "target=move:Town:42:17");
+            StringAssert.Contains(stuckFact, "sameActionFailures=2");
+            StringAssert.Contains(stuckFact, "reason=path_blocked");
         }
         finally
         {
@@ -653,6 +833,105 @@ public class StardewNpcToolFactoryTests
             Assert.AreEqual("cmd-open-chat", snapshot.LastTerminalCommandStatus?.CommandId);
             Assert.AreEqual("open_private_chat", snapshot.LastTerminalCommandStatus?.Action);
             Assert.AreEqual(StardewCommandStatuses.Completed, snapshot.LastTerminalCommandStatus?.Status);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RuntimeActionController_WithOpenPrivateChat_DoesNotCreateWorldActionChain()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-runtime-open-chat-chain-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var controller = new StardewRuntimeActionController(
+                driver,
+                null,
+                actionTimeout: null,
+                nowUtc: () => new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc));
+            var action = new GameAction(
+                "haley",
+                "stardew-valley",
+                GameActionType.OpenPrivateChat,
+                "trace-open-chat",
+                "idem-open-chat",
+                new GameActionTarget("player"),
+                BodyBinding: descriptor.EffectiveBodyBinding);
+
+            var prepared = await controller.TryBeginAsync(action, CancellationToken.None);
+            Assert.IsNull(driver.Snapshot().ActionChainGuard);
+
+            await controller.RecordSubmitResultAsync(
+                prepared,
+                new GameCommandResult(true, "cmd-open-chat", StardewCommandStatuses.Completed, null, "trace-open-chat"),
+                CancellationToken.None);
+
+            var snapshot = driver.Snapshot();
+            Assert.AreEqual("open_private_chat", snapshot.LastTerminalCommandStatus?.Action);
+            Assert.IsNull(snapshot.ActionChainGuard, "Interaction lifecycle actions must not create world-action continuity state.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RuntimeActionController_WithOpenPrivateChatTerminal_DoesNotMutateExistingWorldActionChain()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-runtime-open-chat-existing-chain-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var existingChain = new NpcRuntimeActionChainGuardSnapshot(
+                "chain-existing-move",
+                "open",
+                null,
+                false,
+                "go-to-beach-photo",
+                "trace-existing-move",
+                new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc),
+                "move",
+                "move:Beach:32:34",
+                ConsecutiveActions: 1,
+                ConsecutiveFailures: 1,
+                ConsecutiveSameActionFailures: 1,
+                LastTerminalStatus: StardewCommandStatuses.Blocked,
+                LastReasonCode: StardewBridgeErrorCodes.PathBlocked,
+                ClosureMissingCount: 0,
+                DeferredIngressAttempts: 0);
+            await driver.SetActionChainGuardAsync(existingChain, CancellationToken.None);
+            var controller = new StardewRuntimeActionController(
+                driver,
+                null,
+                actionTimeout: null,
+                nowUtc: () => new DateTime(2026, 5, 11, 7, 2, 0, DateTimeKind.Utc));
+            var action = new GameAction(
+                "haley",
+                "stardew-valley",
+                GameActionType.OpenPrivateChat,
+                "trace-open-chat",
+                "idem-open-chat",
+                new GameActionTarget("player"),
+                BodyBinding: descriptor.EffectiveBodyBinding);
+
+            var prepared = await controller.TryBeginAsync(action, CancellationToken.None);
+            await controller.RecordSubmitResultAsync(
+                prepared,
+                new GameCommandResult(false, "cmd-open-chat", StardewCommandStatuses.Blocked, "private_chat_window_busy", "trace-open-chat"),
+                CancellationToken.None);
+
+            Assert.AreEqual(existingChain, driver.Snapshot().ActionChainGuard);
         }
         finally
         {

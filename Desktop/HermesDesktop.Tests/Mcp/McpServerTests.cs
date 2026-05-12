@@ -584,7 +584,7 @@ public class McpServerTests
             await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
 
             Assert.IsNotNull(agent.LastMessage);
-            StringAssert.Contains(agent.LastMessage, "last_action_result");
+            StringAssert.Contains(agent.LastMessage, "interaction_session");
             StringAssert.Contains(agent.LastMessage, "commandId=cmd-mcp-open-chat");
             StringAssert.Contains(agent.LastMessage, "action=open_private_chat");
             StringAssert.Contains(agent.LastMessage, "status=completed");

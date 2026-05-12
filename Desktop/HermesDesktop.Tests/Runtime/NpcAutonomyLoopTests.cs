@@ -289,6 +289,55 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
+    public async Task RunOneTickAsync_WithPrivateChatLifecycleTerminal_IncludesInteractionFactNotLastActionResult()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-interaction-terminal-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("go-to-beach-photo", "Go to the beach for photos", "in_progress")]);
+            instance.SetLastTerminalCommandStatus(new GameCommandStatus(
+                "work_private_chat:1_haley_evt_0001_turn2",
+                "haley",
+                "open_private_chat",
+                StardewCommandStatuses.Completed,
+                1,
+                null,
+                null));
+            var agent = new FakeAgent(() => { });
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                agent);
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.IsNotNull(agent.LastMessage);
+            StringAssert.Contains(agent.LastMessage, "interaction_session");
+            StringAssert.Contains(agent.LastMessage, "action=open_private_chat");
+            Assert.IsFalse(
+                agent.LastMessage.Contains("last_action_result", StringComparison.Ordinal),
+                "Private-chat lifecycle terminal must not be exposed as a real world-action result.");
+            Assert.IsFalse(
+                agent.LastMessage.Contains("active todo continuity", StringComparison.Ordinal),
+                "Private-chat lifecycle terminal must not create world-action todo continuity.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task RunOneTickAsync_WithCompletedLastActionAndActiveTodo_RequiresExplicitClosureChoice()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-closure-prompt-tests", Guid.NewGuid().ToString("N"));
@@ -320,13 +369,14 @@ public class NpcAutonomyLoopTests
 
             await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
 
-            Assert.IsNotNull(agent.LastMessage);
-            StringAssert.Contains(agent.LastMessage, "last_action_result");
-            StringAssert.Contains(agent.LastMessage, "active todo");
-            StringAssert.Contains(agent.LastMessage, "连续性事实");
-            StringAssert.Contains(agent.LastMessage, "不是执行锁");
-            StringAssert.Contains(agent.LastMessage, "todo");
-            Assert.IsFalse(agent.LastMessage.Contains("wait/no-action", StringComparison.Ordinal));
+            Assert.AreNotEqual(0, agent.Messages.Count);
+            var decisionMessage = agent.Messages[0];
+            StringAssert.Contains(decisionMessage, "last_action_result");
+            StringAssert.Contains(decisionMessage, "active todo");
+            StringAssert.Contains(decisionMessage, "连续性事实");
+            StringAssert.Contains(decisionMessage, "不是执行锁");
+            StringAssert.Contains(decisionMessage, "todo");
+            Assert.IsFalse(decisionMessage.Contains("wait/no-action", StringComparison.Ordinal));
         }
         finally
         {
@@ -391,21 +441,22 @@ public class NpcAutonomyLoopTests
 
             await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
 
-            Assert.IsNotNull(agent.LastMessage);
-            StringAssert.Contains(agent.LastMessage, "last_action_result");
-            StringAssert.Contains(agent.LastMessage, "active todo continuity");
-            StringAssert.Contains(agent.LastMessage, "不是执行锁");
-            StringAssert.Contains(agent.LastMessage, "action_chain:");
-            StringAssert.Contains(agent.LastMessage, "chainId=chain-prompt-1");
-            StringAssert.Contains(agent.LastMessage, "rootTodoId=meet-now");
-            StringAssert.Contains(agent.LastMessage, "rootTraceId=trace-root-1");
-            StringAssert.Contains(agent.LastMessage, "conversationId=pc_evt_beach");
-            StringAssert.Contains(agent.LastMessage, "lastTarget=move:Town:42:17");
-            StringAssert.Contains(agent.LastMessage, "actions=2");
-            Assert.IsFalse(agent.LastMessage.Contains("destination[0]", StringComparison.Ordinal));
-            Assert.IsFalse(agent.LastMessage.Contains("nearby[0]", StringComparison.Ordinal));
-            Assert.IsFalse(agent.LastMessage.Contains("moveCandidate[0]", StringComparison.Ordinal));
-            Assert.IsFalse(agent.LastMessage.Contains("{", StringComparison.Ordinal), "Action-chain prompt facts must not dump internal JSON.");
+            Assert.AreNotEqual(0, agent.Messages.Count);
+            var decisionMessage = agent.Messages[0];
+            StringAssert.Contains(decisionMessage, "last_action_result");
+            StringAssert.Contains(decisionMessage, "active todo continuity");
+            StringAssert.Contains(decisionMessage, "不是执行锁");
+            StringAssert.Contains(decisionMessage, "action_chain:");
+            StringAssert.Contains(decisionMessage, "chainId=chain-prompt-1");
+            StringAssert.Contains(decisionMessage, "rootTodoId=meet-now");
+            StringAssert.Contains(decisionMessage, "rootTraceId=trace-root-1");
+            StringAssert.Contains(decisionMessage, "conversationId=pc_evt_beach");
+            StringAssert.Contains(decisionMessage, "lastTarget=move:Town:42:17");
+            StringAssert.Contains(decisionMessage, "actions=2");
+            Assert.IsFalse(decisionMessage.Contains("destination[0]", StringComparison.Ordinal));
+            Assert.IsFalse(decisionMessage.Contains("nearby[0]", StringComparison.Ordinal));
+            Assert.IsFalse(decisionMessage.Contains("moveCandidate[0]", StringComparison.Ordinal));
+            Assert.IsFalse(decisionMessage.Contains("{", StringComparison.Ordinal), "Action-chain prompt facts must not dump internal JSON.");
         }
         finally
         {
@@ -912,6 +963,70 @@ public class NpcAutonomyLoopTests
             Assert.AreEqual(0, commands.SubmitCalls);
             var records = ReadRuntimeLogRecords(logPath);
             AssertRuntimeRecord(records, "task_continuity_unresolved", "diagnostic", "missing");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithTerminalActionActiveTodoAndJsonToolText_RunsAutonomySelfCheckOnce()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-tool-self-check-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("meet-beach-now", "Meet player at the beach now", "in_progress")]);
+            instance.SetLastTerminalCommandStatus(new GameCommandStatus(
+                "cmd-move-1",
+                "haley",
+                "move",
+                "completed",
+                1,
+                null,
+                null));
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var commands = new CountingCommandService();
+            var agent = new FakeAgent(
+                () => { },
+                [
+                    """{"tool":"stardew_status","parameters":{}}""",
+                    "no-action: arrived at the beach and waiting for the player to speak first"
+                ]);
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    commands,
+                    new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "unused", [])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                agent,
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                traceIdFactory: () => "trace-tool-self-check");
+
+            await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.AreEqual(2, agent.ChatCalls);
+            Assert.AreEqual(0, commands.SubmitCalls);
+            Assert.AreEqual(2, agent.Messages.Count);
+            StringAssert.Contains(agent.Messages[1], "上一轮没有真实工具调用");
+            StringAssert.Contains(agent.Messages[1], "JSON 文本不会执行");
+            StringAssert.Contains(agent.Messages[1], "stardew_status");
+            StringAssert.Contains(agent.Messages[1], "todo");
+            StringAssert.Contains(agent.Messages[1], "no-action");
+
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertRuntimeRecord(records, "task_continuity_no_action", "diagnostic", "recorded");
+            Assert.IsFalse(records.Any(record =>
+                record.GetProperty("actionType").GetString() == "task_continuity" &&
+                record.GetProperty("target").GetString() == "task_continuity_unresolved"),
+                "The self-check reply should resolve the active-todo closure instead of leaving the turn unresolved.");
         }
         finally
         {
@@ -1545,6 +1660,59 @@ public class NpcAutonomyLoopTests
                 foreach (var record in records)
                     record.Dispose();
             }
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunOneTickAsync_WithTerminalActionActiveTodoAndToolLimitFallback_DoesNotRunSelfCheck()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-tool-limit-closure-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            var instance = new NpcRuntimeInstance(descriptor, ns);
+            await instance.StartAsync(CancellationToken.None);
+            instance.TodoStore.Write(
+                descriptor.SessionId,
+                [new SessionTodoInput("meet-beach-now", "Meet player at the beach now", "in_progress")]);
+            instance.SetLastTerminalCommandStatus(new GameCommandStatus(
+                "cmd-move-1",
+                "haley",
+                "move",
+                StardewCommandStatuses.Completed,
+                1,
+                null,
+                null));
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var fallback = "I've reached the maximum number of tool call iterations. Here's what I've accomplished so far based on the conversation above.";
+            var agent = new FakeAgent(() => { }, fallback);
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation(
+                        "haley",
+                        "stardew-valley",
+                        DateTime.UtcNow,
+                        "Haley is idle.",
+                        ["location=Town"])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                agent,
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                traceIdFactory: () => "trace-tool-limit-closure");
+
+            var result = await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
+
+            Assert.AreEqual(1, agent.ChatCalls);
+            Assert.IsNull(result.DecisionResponse);
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertLogRecord(records, "diagnostic", "tool_budget", "warning", "max_tool_iterations");
         }
         finally
         {
@@ -2401,13 +2569,18 @@ public class NpcAutonomyLoopTests
     {
         private readonly Action _onChat;
 
-        private readonly string _response;
+        private readonly Queue<string> _responses;
         private readonly Action<Session>? _mutateSession;
 
         public FakeAgent(Action onChat, string response = "wait", Action<Session>? mutateSession = null)
+            : this(onChat, [response], mutateSession)
+        {
+        }
+
+        public FakeAgent(Action onChat, IEnumerable<string> responses, Action<Session>? mutateSession = null)
         {
             _onChat = onChat;
-            _response = response;
+            _responses = new Queue<string>(responses);
             _mutateSession = mutateSession;
         }
 
@@ -2424,7 +2597,7 @@ public class NpcAutonomyLoopTests
             LastMessage = message;
             Messages.Add(message);
             _mutateSession?.Invoke(session);
-            return Task.FromResult(_response);
+            return Task.FromResult(_responses.Count > 0 ? _responses.Dequeue() : "wait");
         }
 
         public async IAsyncEnumerable<Hermes.Agent.LLM.StreamEvent> StreamChatAsync(

@@ -248,6 +248,7 @@ public sealed class NpcAutonomyLoop
         }
 
         string? decisionResponse = null;
+        string? rawDecisionResponse = null;
         Session? decisionSession = null;
         if (_agent is not null)
         {
@@ -282,8 +283,38 @@ public sealed class NpcAutonomyLoop
                 traceId,
                 decisionResponse?.Length ?? 0,
                 decisionStopwatch.ElapsedMilliseconds);
+            var rawFirstDecisionResponse = decisionResponse;
+            rawDecisionResponse = rawFirstDecisionResponse;
+            if (IsToolIterationLimitFallback(decisionResponse))
+                decisionResponse = null;
+            if (!IsToolIterationLimitFallback(rawFirstDecisionResponse) &&
+                ShouldRunAutonomySelfCheck(instance, descriptor.SessionId, decisionResponse, decisionSession))
+            {
+                var selfCheckMessage = BuildAutonomySelfCheckMessage(
+                    descriptor,
+                    instance?.Snapshot().Controller.LastTerminalCommandStatus,
+                    GetActiveTodos(instance, descriptor.SessionId),
+                    decisionResponse);
+                _logger?.LogInformation(
+                    "NPC autonomy self-check request prepared; npc={NpcId}; trace={TraceId}; messageChars={MessageChars}",
+                    descriptor.NpcId,
+                    traceId,
+                    selfCheckMessage.Length);
+                var selfCheckStopwatch = System.Diagnostics.Stopwatch.StartNew();
+                decisionResponse = await _agent.ChatAsync(
+                    selfCheckMessage,
+                    decisionSession,
+                    ct);
+                selfCheckStopwatch.Stop();
+                _logger?.LogInformation(
+                    "NPC autonomy self-check response received; npc={NpcId}; trace={TraceId}; responseChars={ResponseChars}; durationMs={DurationMs}",
+                    descriptor.NpcId,
+                    traceId,
+                    decisionResponse?.Length ?? 0,
+                    selfCheckStopwatch.ElapsedMilliseconds);
+                rawDecisionResponse = decisionResponse;
+            }
         }
-        var rawDecisionResponse = decisionResponse;
         if (IsToolIterationLimitFallback(decisionResponse))
             decisionResponse = null;
 
@@ -345,6 +376,32 @@ public sealed class NpcAutonomyLoop
             : message + "\n" + lastActionFact;
     }
 
+    private static string BuildAutonomySelfCheckMessage(
+        NpcRuntimeDescriptor descriptor,
+        GameCommandStatus? lastTerminalCommandStatus,
+        IReadOnlyList<SessionTodoItem> activeTodos,
+        string? previousResponse)
+    {
+        var commandId = string.IsNullOrWhiteSpace(lastTerminalCommandStatus?.CommandId)
+            ? "-"
+            : lastTerminalCommandStatus.CommandId;
+        var action = string.IsNullOrWhiteSpace(lastTerminalCommandStatus?.Action)
+            ? "-"
+            : lastTerminalCommandStatus.Action;
+        var todoText = string.Join("; ", activeTodos.Take(3).Select(todo => $"{todo.Id}:{todo.Status}:{todo.Content}"));
+        var previousText = string.IsNullOrWhiteSpace(previousResponse) ? "-" : Truncate(previousResponse.Trim(), 300);
+
+        return
+            $"NPC: {descriptor.DisplayName} ({descriptor.NpcId})\n" +
+            "自检：上一轮没有真实工具调用，所以宿主没有执行观察、移动、说话或任务更新。\n" +
+            "JSON 文本不会执行；只有 assistant tool call 才会调用工具。\n" +
+            $"上一轮真实动作结果：commandId={commandId}; action={action}; status={lastTerminalCommandStatus?.Status ?? "-"}。\n" +
+            $"active todo={todoText}。\n" +
+            $"上一轮文本={previousText}\n" +
+            "现在请收口这个连续性状态：调用可见工具，例如 todo/todo_write、stardew_status、stardew_speak、stardew_idle_micro_action 或 stardew_task_status；" +
+            "如果你决定暂不行动，必须回复 `no-action: <原因>` 或 `wait: <原因>`。不要再把 JSON 文本当工具调用。";
+    }
+
     private static string? BuildActiveTodoContinuityFact(
         GameCommandStatus? lastTerminalCommandStatus,
         IReadOnlyList<SessionTodoItem>? activeTodos)
@@ -369,6 +426,16 @@ public sealed class NpcAutonomyLoop
             return null;
 
         var commandId = string.IsNullOrWhiteSpace(status.CommandId) ? "-" : status.CommandId;
+        if (IsInteractionLifecycleTerminal(status))
+        {
+            var interactionAction = string.IsNullOrWhiteSpace(status.Action) ? "-" : status.Action;
+            var interactionReason = status.ErrorCode ?? status.BlockedReason;
+            var interactionFact = $"interaction_session: 上一轮交互窗口/会话状态已结束；commandId={commandId}; action={interactionAction}; status={status.Status}";
+            return string.IsNullOrWhiteSpace(interactionReason)
+                ? interactionFact + "。这是窗口/会话事实，不是真实世界动作结果，也不是下一步指令。"
+                : interactionFact + $"; reason={interactionReason}。这是窗口/会话事实，不是真实世界动作结果，也不是下一步指令。";
+        }
+
         if (IsActionSlotTimeout(status))
             return $"action_slot_timeout: 上一轮行动槽在完成前超时；commandId={commandId}; status={status.Status}。你自己决定下一步是观察、等待、换目标，还是用不同方式继续。";
 
@@ -1161,6 +1228,17 @@ public sealed class NpcAutonomyLoop
             ? evidence
             : new ToolResultEvidence(null, null);
 
+    private static bool ShouldRunAutonomySelfCheck(
+        NpcRuntimeInstance? instance,
+        string sessionId,
+        string? decisionResponse,
+        Session? decisionSession)
+        => RequiresTaskContinuityDecision(instance, sessionId) &&
+           !HasAnyStardewActionToolCall(decisionSession) &&
+           !HasAnyTodoToolCall(decisionSession) &&
+           (string.IsNullOrWhiteSpace(decisionResponse) ||
+            !TryExtractExplicitNoActionReason(decisionResponse, out _));
+
     private static bool IsStardewActionTool(ToolCall call)
         => string.Equals(call.Name, "stardew_navigate_to_tile", StringComparison.OrdinalIgnoreCase) ||
            IsFeedbackTool(call);
@@ -1215,7 +1293,7 @@ public sealed class NpcAutonomyLoop
 
     private static bool IsTaskContinuityTerminal(GameCommandStatus status)
     {
-        if (IsPrivateChatLifecycleTerminal(status))
+        if (IsInteractionLifecycleTerminal(status))
             return false;
 
         return status.Action switch
@@ -1227,7 +1305,7 @@ public sealed class NpcAutonomyLoop
         };
     }
 
-    private static bool IsPrivateChatLifecycleTerminal(GameCommandStatus status)
+    private static bool IsInteractionLifecycleTerminal(GameCommandStatus status)
         => StartsWithOrdinalIgnoreCase(status.CommandId, "work_private_chat:") ||
            StartsWithOrdinalIgnoreCase(status.CommandId, "work_private_chat_reply:") ||
            StartsWithOrdinalIgnoreCase(status.CommandId, "private_chat:") ||
@@ -1271,6 +1349,10 @@ public sealed class NpcAutonomyLoop
            HasToolCall(session, "stardew_speak") ||
            HasToolCall(session, "stardew_open_private_chat") ||
            HasToolCall(session, "stardew_idle_micro_action");
+
+    private static bool HasAnyTodoToolCall(Session? session)
+        => HasToolCall(session, "todo") ||
+           HasToolCall(session, "todo_write");
 
     private static bool TryExtractVisibleLine(string value, out string text)
     {

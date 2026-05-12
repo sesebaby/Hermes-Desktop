@@ -1800,7 +1800,11 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 ClosureMissingCount: 0,
                 DeferredIngressAttempts: 0),
             CancellationToken.None);
-        var chatClient = new CountingChatClient("到了。");
+        var chatClient = new CountingChatClient(
+            [
+                "到了。",
+                "no-action: arrived and waiting for the player to speak first"
+            ]);
         var service = CreateService(
             discovery,
             _ => adapter,
@@ -1812,7 +1816,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         await service.RunOneIterationAsync(CancellationToken.None);
 
         var snapshot = supervisor.Snapshot().Single().Controller;
-        Assert.AreEqual(1, chatClient.CompleteWithToolsCalls);
+        Assert.AreEqual(2, chatClient.CompleteWithToolsCalls);
         var logPath = Path.Combine(
             _tempDir,
             "runtime",
@@ -1831,8 +1835,13 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         Assert.IsTrue(
             records.Any(record =>
                 record.GetProperty("actionType").GetString() == "task_continuity" &&
+                record.GetProperty("target").GetString() == "task_continuity_no_action"),
+            "Expected task continuity self-check resolution. Records: " + string.Join(Environment.NewLine, records.Select(record => record.GetRawText())));
+        Assert.IsFalse(
+            records.Any(record =>
+                record.GetProperty("actionType").GetString() == "task_continuity" &&
                 record.GetProperty("target").GetString() == "task_continuity_unresolved"),
-            "Expected task continuity diagnostic. Records: " + string.Join(Environment.NewLine, records.Select(record => record.GetRawText())));
+            "Self-check no-action should avoid unresolved closure diagnostics. Records: " + string.Join(Environment.NewLine, records.Select(record => record.GetRawText())));
         Assert.AreEqual(0, snapshot.ActionChainGuard?.ClosureMissingCount);
         Assert.IsNotNull(snapshot.NextWakeAtUtc);
         Assert.IsTrue(
@@ -2913,12 +2922,17 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
 
     private sealed class CountingChatClient : IChatClient
     {
-        private readonly string _response;
+        private readonly Queue<string> _responses;
         private int _completeWithToolsCalls;
 
         public CountingChatClient(string response)
+            : this([response])
         {
-            _response = response;
+        }
+
+        public CountingChatClient(IEnumerable<string> responses)
+        {
+            _responses = new Queue<string>(responses);
         }
 
         public int CompleteWithToolsCalls => _completeWithToolsCalls;
@@ -2926,7 +2940,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
         {
             Interlocked.Increment(ref _completeWithToolsCalls);
-            return Task.FromResult(_response);
+            return Task.FromResult(GetNextResponse());
         }
 
         public Task<ChatResponse> CompleteWithToolsAsync(
@@ -2935,7 +2949,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             CancellationToken ct)
         {
             Interlocked.Increment(ref _completeWithToolsCalls);
-            return Task.FromResult(new ChatResponse { Content = _response, FinishReason = "stop" });
+            return Task.FromResult(new ChatResponse { Content = GetNextResponse(), FinishReason = "stop" });
         }
 
         public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
@@ -2953,6 +2967,9 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
             await Task.CompletedTask;
             yield break;
         }
+
+        private string GetNextResponse()
+            => _responses.Count > 0 ? _responses.Dequeue() : "wait";
     }
 
     private sealed class DelegationStreamingChatClient : IChatClient

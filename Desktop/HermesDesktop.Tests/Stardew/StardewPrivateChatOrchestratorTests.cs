@@ -458,10 +458,10 @@ public class StardewPrivateChatOrchestratorTests
             Assert.AreEqual(StardewCommandStatuses.Completed, status.Status);
             Assert.IsNull(driver.Snapshot().ActionSlot);
             Assert.IsNull(driver.Snapshot().PendingWorkItem);
-            Assert.AreEqual("open", driver.Snapshot().ActionChainGuard?.GuardStatus);
-            Assert.IsFalse(driver.Snapshot().ActionChainGuard?.BlockedUntilClosure ?? true);
-            Assert.IsNull(driver.Snapshot().ActionChainGuard?.BlockedReasonCode);
-            Assert.AreEqual("private_chat_reply", driver.Snapshot().ActionChainGuard?.LastAction);
+            Assert.AreEqual("blocked_until_closure", driver.Snapshot().ActionChainGuard?.GuardStatus);
+            Assert.IsTrue(driver.Snapshot().ActionChainGuard?.BlockedUntilClosure ?? false);
+            Assert.AreEqual("legacy_closure_missing", driver.Snapshot().ActionChainGuard?.BlockedReasonCode);
+            Assert.AreEqual("move", driver.Snapshot().ActionChainGuard?.LastAction);
         }
         finally
         {

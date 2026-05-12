@@ -521,15 +521,27 @@ public sealed class StardewRecentActivityProvider : IStardewRecentActivityProvid
 
         if (snapshot.LastTerminalCommandStatus is { } last)
         {
-            var correlation = FormatActionCorrelation(snapshot.ActionChainGuard);
-            facts.Add(string.IsNullOrWhiteSpace(correlation)
-                ? $"lastAction={last.Action}:{last.Status}:{last.ErrorCode ?? last.BlockedReason ?? "none"}"
-                : $"lastAction={last.Action}:{last.Status}:{last.ErrorCode ?? last.BlockedReason ?? "none"};{correlation}");
+            if (IsInteractionLifecycleTerminal(last))
+            {
+                facts.Add($"lastInteraction={last.Action}:{last.Status}:{last.ErrorCode ?? last.BlockedReason ?? "none"}");
+            }
+            else
+            {
+                if (FormatTaskLifecycleFact(last, snapshot.ActionChainGuard) is { } lifecycleFact)
+                    facts.Add(lifecycleFact);
+
+                var correlation = FormatActionCorrelation(snapshot.ActionChainGuard);
+                facts.Add(string.IsNullOrWhiteSpace(correlation)
+                    ? $"lastAction={last.Action}:{last.Status}:{last.ErrorCode ?? last.BlockedReason ?? "none"}"
+                    : $"lastAction={last.Action}:{last.Status}:{last.ErrorCode ?? last.BlockedReason ?? "none"};{correlation}");
+            }
         }
 
         if (snapshot.ActionChainGuard is { } chain)
         {
             facts.Add(FormatActionChainFact(chain));
+            if (FormatTaskStuckFact(chain) is { } stuckFact)
+                facts.Add(stuckFact);
             if (FormatActionLoopFact(chain) is { } loopFact)
                 facts.Add(loopFact);
         }
@@ -599,10 +611,99 @@ public sealed class StardewRecentActivityProvider : IStardewRecentActivityProvid
         return $"action_loop: chainId={chain.ChainId}; action={action}; targetKey={targetKey}; sameActionFailures={chain.ConsecutiveSameActionFailures}; failures={chain.ConsecutiveFailures}; reason={reason}";
     }
 
+    private static string? FormatTaskStuckFact(NpcRuntimeActionChainGuardSnapshot chain)
+    {
+        if (!IsActionLoop(chain))
+            return null;
+
+        var action = string.IsNullOrWhiteSpace(chain.LastAction) ? "-" : SanitizeFact(chain.LastAction);
+        var status = string.IsNullOrWhiteSpace(chain.LastTerminalStatus) ? chain.GuardStatus : chain.LastTerminalStatus;
+        var reason = chain.BlockedReasonCode ?? chain.LastReasonCode ?? "none";
+        var targetKey = string.IsNullOrWhiteSpace(chain.LastTargetKey) ? null : SanitizeFact(chain.LastTargetKey);
+        var rootTodoId = string.IsNullOrWhiteSpace(chain.RootTodoId) ? null : SanitizeFact(chain.RootTodoId);
+        var rootTraceId = string.IsNullOrWhiteSpace(chain.RootTraceId) ? null : SanitizeFact(chain.RootTraceId);
+        var conversationId = string.IsNullOrWhiteSpace(chain.ConversationId) ? null : SanitizeFact(chain.ConversationId);
+        return BuildTaskLifecycleFact("task_stuck", action, "-", status, reason, targetKey, rootTodoId, rootTraceId, conversationId, chain);
+    }
+
     private static bool IsActionLoop(NpcRuntimeActionChainGuardSnapshot chain)
         => chain.ConsecutiveSameActionFailures >= 2 ||
            string.Equals(chain.BlockedReasonCode, StardewBridgeErrorCodes.ActionLoop, StringComparison.OrdinalIgnoreCase) ||
            string.Equals(chain.LastReasonCode, StardewBridgeErrorCodes.ActionLoop, StringComparison.OrdinalIgnoreCase);
+
+    private static string? FormatTaskLifecycleFact(
+        GameCommandStatus status,
+        NpcRuntimeActionChainGuardSnapshot? chain)
+    {
+        var action = string.IsNullOrWhiteSpace(status.Action) ? "-" : status.Action;
+        var commandId = string.IsNullOrWhiteSpace(status.CommandId) ? "-" : status.CommandId;
+        var reason = status.ErrorCode ?? status.BlockedReason ?? "none";
+        var targetKey = string.IsNullOrWhiteSpace(chain?.LastTargetKey) ? null : SanitizeFact(chain.LastTargetKey);
+        var rootTodoId = string.IsNullOrWhiteSpace(chain?.RootTodoId) ? null : SanitizeFact(chain.RootTodoId);
+        var rootTraceId = string.IsNullOrWhiteSpace(chain?.RootTraceId) ? null : SanitizeFact(chain.RootTraceId);
+        var conversationId = string.IsNullOrWhiteSpace(chain?.ConversationId) ? null : SanitizeFact(chain.ConversationId);
+
+        if (string.Equals(status.Status, StardewCommandStatuses.Completed, StringComparison.OrdinalIgnoreCase))
+            return BuildTaskLifecycleFact("task_done", action, commandId, status.Status, reason, targetKey, rootTodoId, rootTraceId, conversationId, chain);
+
+        if (string.Equals(status.Status, StardewCommandStatuses.Blocked, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(status.Status, StardewCommandStatuses.Failed, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(status.Status, StardewCommandStatuses.Cancelled, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(status.Status, StardewCommandStatuses.Interrupted, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(status.Status, StardewCommandStatuses.Expired, StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildTaskLifecycleFact("task_error", action, commandId, status.Status, reason, targetKey, rootTodoId, rootTraceId, conversationId, chain);
+        }
+
+        return null;
+    }
+
+    private static string BuildTaskLifecycleFact(
+        string factKind,
+        string action,
+        string commandId,
+        string status,
+        string reason,
+        string? targetKey,
+        string? rootTodoId,
+        string? rootTraceId,
+        string? conversationId,
+        NpcRuntimeActionChainGuardSnapshot? chain)
+    {
+        var parts = new List<string>
+        {
+            $"action={action}",
+            $"commandId={commandId}",
+            $"status={status}",
+            $"reason={reason}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(targetKey))
+            parts.Add($"target={targetKey}");
+        if (!string.IsNullOrWhiteSpace(rootTodoId))
+            parts.Add($"rootTodoId={rootTodoId}");
+        if (!string.IsNullOrWhiteSpace(rootTraceId))
+            parts.Add($"rootTraceId={rootTraceId}");
+        if (!string.IsNullOrWhiteSpace(conversationId))
+            parts.Add($"conversationId={conversationId}");
+        if (factKind == "task_stuck" && chain is not null)
+            parts.Add($"sameActionFailures={chain.ConsecutiveSameActionFailures}");
+
+        return $"{factKind}: {string.Join("; ", parts)}";
+    }
+
+    private static bool IsInteractionLifecycleTerminal(GameCommandStatus status)
+        => StartsWithOrdinalIgnoreCase(status.CommandId, "work_private_chat:") ||
+           StartsWithOrdinalIgnoreCase(status.CommandId, "work_private_chat_reply:") ||
+           StartsWithOrdinalIgnoreCase(status.CommandId, "private_chat:") ||
+           StartsWithOrdinalIgnoreCase(status.CommandId, "private_chat_reply:") ||
+           string.Equals(status.Action, "open_private_chat", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status.Action, "private_chat", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status.Action, "private_chat_reply", StringComparison.OrdinalIgnoreCase);
+
+    private static bool StartsWithOrdinalIgnoreCase(string? value, string prefix)
+        => !string.IsNullOrWhiteSpace(value) &&
+           value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class StardewStatusTool : ITool, IToolSchemaProvider
@@ -1246,7 +1347,13 @@ internal sealed class StardewRuntimeActionController
                 ct);
             await _runtimeDriver.SetNextWakeAtUtcAsync(null, ct);
             await _runtimeDriver.SetActionChainGuardAsync(chainGuard.Snapshot, ct);
-            return new StardewPreparedActionState(workItemId, claimId, startedAtUtc, action.TraceId, null);
+            return new StardewPreparedActionState(
+                workItemId,
+                claimId,
+                startedAtUtc,
+                action.TraceId,
+                null,
+                IsWorldActionContinuityAction(action));
         }
         catch
         {
@@ -1321,13 +1428,17 @@ internal sealed class StardewRuntimeActionController
                     commandResult.FailureReason,
                     UpdatedAtUtc: _nowUtc()),
                 ct);
-            await RecordTerminalActionChainStatusAsync(
-                terminalSnapshot.ActionChainGuard,
-                action,
-                commandResult.Status,
-                commandResult.FailureReason,
-                _nowUtc(),
-                ct);
+            if (preparedAction.UpdatesWorldActionContinuity)
+            {
+                await RecordTerminalActionChainStatusAsync(
+                    terminalSnapshot.ActionChainGuard,
+                    action,
+                    commandResult.Status,
+                    commandResult.FailureReason,
+                    _nowUtc(),
+                    ct);
+            }
+
             await ClearAsync(
                 preparedAction.ClaimId ?? preparedAction.WorkItemId,
                 commandResult.Retryable ? _nowUtc() + DefaultRetryDelay : null,
@@ -1364,13 +1475,17 @@ internal sealed class StardewRuntimeActionController
 
         var terminalSnapshot = _runtimeDriver.Snapshot();
         await _runtimeDriver.SetLastTerminalCommandStatusAsync(status, ct);
-        await RecordTerminalActionChainStatusAsync(
-            terminalSnapshot.ActionChainGuard,
-            status.Action,
-            status.Status,
-            status.ErrorCode ?? status.BlockedReason,
-            _nowUtc(),
-            ct);
+        if (IsWorldActionContinuityTerminal(status))
+        {
+            await RecordTerminalActionChainStatusAsync(
+                terminalSnapshot.ActionChainGuard,
+                status.Action,
+                status.Status,
+                status.ErrorCode ?? status.BlockedReason,
+                _nowUtc(),
+                ct);
+        }
+
         var primaryClaimId = !string.IsNullOrWhiteSpace(status.CommandId)
             ? status.CommandId
             : snapshot.ActionSlot?.CommandId ?? snapshot.PendingWorkItem?.CommandId ?? snapshot.ActionSlot?.WorkItemId ?? snapshot.PendingWorkItem?.WorkItemId;
@@ -1463,15 +1578,22 @@ internal sealed class StardewRuntimeActionController
             _ => "action"
         };
 
-    private static bool IsWorldWritingAction(GameActionType actionType)
-        => actionType is GameActionType.Move or GameActionType.Speak or GameActionType.IdleMicroAction or GameActionType.OpenPrivateChat;
+    private static bool IsWorldActionContinuityAction(GameAction action)
+        => action.Type is GameActionType.Move or GameActionType.IdleMicroAction ||
+           (action.Type == GameActionType.Speak &&
+            !string.Equals(ReadPayloadString(action.Payload, "channel"), "private_chat", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsWorldActionContinuityTerminal(GameCommandStatus status)
+        => string.Equals(status.Action, "move", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status.Action, "idle_micro_action", StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status.Action, "speak", StringComparison.OrdinalIgnoreCase);
 
     private ActionChainGuardPreparation PrepareActionChainGuard(
         NpcRuntimeActionChainGuardSnapshot? current,
         GameAction action,
         DateTime nowUtc)
     {
-        if (!IsWorldWritingAction(action.Type))
+        if (!IsWorldActionContinuityAction(action))
             return new ActionChainGuardPreparation(current);
 
         var guard = ShouldStartNewChain(current, action, nowUtc)
@@ -1601,7 +1723,8 @@ internal sealed record StardewPreparedActionState(
     string? ClaimId,
     DateTime StartedAtUtc,
     string TraceId,
-    GameCommandResult? BlockedResult)
+    GameCommandResult? BlockedResult,
+    bool UpdatesWorldActionContinuity = false)
 {
     public static StardewPreparedActionState Blocked(GameCommandResult result)
         => new(string.Empty, null, DateTime.MinValue, result.TraceId, result);
