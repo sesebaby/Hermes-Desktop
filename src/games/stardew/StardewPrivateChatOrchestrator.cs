@@ -299,7 +299,8 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
                         _cronScheduler,
                         _delegationChatClient),
                     ToolSurface: privateChatToolSurface,
-                    ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion),
+                    ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion,
+                    RuntimeBindingKey: $"conversation:{request.ConversationId}"),
                 ct);
 
             var chatSession = new Session

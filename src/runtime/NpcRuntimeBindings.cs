@@ -61,7 +61,8 @@ public sealed record NpcRuntimeAgentBindingRequest(
     int MaxToolIterations,
     NpcRuntimeCompositionServices Services,
     NpcToolSurface ToolSurface,
-    long ToolSurfaceSnapshotVersion = 0)
+    long ToolSurfaceSnapshotVersion = 0,
+    string? RuntimeBindingKey = null)
 {
     public void Validate()
     {

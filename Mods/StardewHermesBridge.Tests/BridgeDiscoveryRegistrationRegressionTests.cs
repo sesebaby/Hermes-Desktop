@@ -44,6 +44,30 @@ public sealed class BridgeDiscoveryRegistrationRegressionTests
             "A failed listener start must clear the port so the bridge is not mistaken for an online instance.");
     }
 
+    [TestMethod]
+    public void PreferredPortConflictFallsBackToDiscoverableBridgePort()
+    {
+        var httpHost = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeHttpHost.cs");
+        var modEntry = ReadRepositoryFile("Mods", "StardewHermesBridge", "ModEntry.cs");
+
+        StringAssert.Contains(
+            httpHost,
+            "MaxPortBindAttempts",
+            "A stale or duplicate SMAPI listener on the preferred port must not permanently sever Desktop event polling.");
+        StringAssert.Contains(
+            httpHost,
+            "preferredPort + attempt",
+            "The bridge should try a bounded nearby port range when the preferred port is already occupied.");
+        StringAssert.Contains(
+            httpHost,
+            "bridge_port_fallback",
+            "Fallback port selection must be logged so in-game failures are diagnosable.");
+        StringAssert.Contains(
+            modEntry,
+            "_httpHost.Port",
+            "Discovery must publish the actual bound fallback port, not the preferred port.");
+    }
+
     private static string ReadRepositoryFile(params string[] relativePath)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

@@ -13,6 +13,8 @@ using StardewValley.Quests;
 
 public sealed class BridgeHttpHost
 {
+    private const int MaxPortBindAttempts = 10;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -44,28 +46,48 @@ public sealed class BridgeHttpHost
             return;
 
         BridgeToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
-        Port = preferredPort;
-        var listener = new HttpListener();
-        listener.Prefixes.Add($"http://{host}:{Port}/");
-        try
+        Exception? lastException = null;
+        for (var attempt = 0; attempt < MaxPortBindAttempts; attempt++)
         {
-            listener.Start();
-        }
-        catch (Exception ex)
-        {
-            listener.Close();
-            _listener = null;
-            _cts = null;
-            BridgeToken = string.Empty;
-            Port = 0;
-            _logger.Write("bridge_start_failed", null, "bridge", "bridge", null, "failed", ex.Message);
+            var candidatePort = preferredPort + attempt;
+            var listener = new HttpListener();
+            listener.Prefixes.Add($"http://{host}:{candidatePort}/");
+            try
+            {
+                listener.Start();
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+                listener.Close();
+                continue;
+            }
+
+            Port = candidatePort;
+            _listener = listener;
+            _cts = new CancellationTokenSource();
+            _ = Task.Run(() => RunAsync(_cts.Token));
+            if (attempt > 0)
+            {
+                _logger.Write(
+                    "bridge_port_fallback",
+                    null,
+                    "bridge",
+                    "bridge",
+                    null,
+                    "online",
+                    $"preferredPort={preferredPort};actualPort={Port};attempt={attempt};previousError={lastException?.Message ?? "-"}");
+            }
+
+            _logger.Write("bridge_started", null, "bridge", "bridge", null, "online", $"127.0.0.1:{Port}");
             return;
         }
 
-        _listener = listener;
-        _cts = new CancellationTokenSource();
-        _ = Task.Run(() => RunAsync(_cts.Token));
-        _logger.Write("bridge_started", null, "bridge", "bridge", null, "online", $"127.0.0.1:{Port}");
+        _listener = null;
+        _cts = null;
+        BridgeToken = string.Empty;
+        Port = 0;
+        _logger.Write("bridge_start_failed", null, "bridge", "bridge", null, "failed", lastException?.Message ?? "No bridge port could be bound.");
     }
 
     public void Stop()

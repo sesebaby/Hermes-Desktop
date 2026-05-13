@@ -185,6 +185,28 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     }
 
     [TestMethod]
+    public async Task ReplyAsync_WithReusedPrivateChatHandle_QueuesHostTaskWithCurrentConversationId()
+    {
+        var runtimeSupervisor = new NpcRuntimeSupervisor();
+        var client = new TwoConversationImmediateActionChatClient();
+        var runner = CreateRunner(client, runtimeSupervisor);
+
+        await runner.ReplyAsync(
+            new NpcPrivateChatRequest("haley", "save-1", "conversation-first", "go to the beach now"),
+            CancellationToken.None);
+        var reply = await runner.ReplyAsync(
+            new NpcPrivateChatRequest("haley", "save-1", "conversation-second", "go to the beach now"),
+            CancellationToken.None);
+
+        Assert.AreEqual("I'll head there now.", reply.Text);
+        var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
+        var ingressItems = haleySnapshot.Controller.IngressWorkItems.ToArray();
+        Assert.AreEqual(2, ingressItems.Length);
+        Assert.AreEqual("conversation-first", ingressItems[0].Payload?["conversationId"]?.GetValue<string>());
+        Assert.AreEqual("conversation-second", ingressItems[1].Payload?["conversationId"]?.GetValue<string>());
+    }
+
+    [TestMethod]
     public async Task ReplyAsync_PrivateChatToolSurface_PrioritizesImmediateHostTaskSubmissionOverTodo()
     {
         var runtimeSupervisor = new NpcRuntimeSupervisor();
@@ -958,6 +980,73 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                 ExecutedWorldPlanningTools = ReadExecutedToolNames(messages)
                     .Where(name => name is "todo" or "stardew_submit_host_task")
                     .ToArray();
+
+            return Task.FromResult(new ChatResponse { Content = "I'll head there now.", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class TwoConversationImmediateActionChatClient : IChatClient
+    {
+        private int _calls;
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            _calls++;
+            if (_calls is 1 or 3)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = $"todo-commitment-{_calls}",
+                            Name = "todo",
+                            Arguments = "{\"todos\":[{\"id\":\"meet-beach-now\",\"content\":\"Meet player at the beach now\",\"status\":\"in_progress\"}]}"
+                        },
+                        new ToolCall
+                        {
+                            Id = $"delegate-action-{_calls}",
+                            Name = "stardew_submit_host_task",
+                            Arguments = """
+                            {
+                              "action": "move",
+                              "reason": "meet the player at the beach now",
+                              "target": {
+                                "locationName": "Beach",
+                                "x": 32,
+                                "y": 34,
+                                "source": "map-skill:stardew.navigation.poi.beach-shoreline"
+                              }
+                            }
+                            """
+                        }
+                    ]
+                });
+            }
 
             return Task.FromResult(new ChatResponse { Content = "I'll head there now.", FinishReason = "stop" });
         }

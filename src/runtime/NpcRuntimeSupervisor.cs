@@ -101,7 +101,8 @@ public sealed class NpcRuntimeSupervisor
             request.IncludeUser,
             request.MaxToolIterations,
             request.ToolSurfaceSnapshotVersion,
-            request.ToolSurface.Fingerprint);
+            request.ToolSurface.Fingerprint,
+            request.RuntimeBindingKey);
 
         return instance.GetOrCreatePrivateChatHandle(
             rebindKey,
@@ -234,7 +235,8 @@ public sealed class NpcRuntimeSupervisor
                 request.IncludeUser,
                 request.MaxToolIterations,
                 request.ToolSurfaceSnapshotVersion,
-                request.ToolSurface.Fingerprint),
+                request.ToolSurface.Fingerprint,
+                request.RuntimeBindingKey),
             request.Services,
             request.SystemPromptSupplement,
             request.IncludeMemory,
