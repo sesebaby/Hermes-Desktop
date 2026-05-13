@@ -161,6 +161,34 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
+    public async Task SubmitHostTaskTool_WithRuntimeConversationId_QueuesHostTaskWithConversationId()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-host-task-runtime-conversation-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var tool = new StardewSubmitHostTaskTool(descriptor, driver, defaultConversationId: "conversation-runtime");
+
+            var result = await tool.ExecuteAsync(new StardewSubmitHostTaskToolParameters
+            {
+                Action = "craft",
+                Reason = "craft a field snack later"
+            }, CancellationToken.None);
+
+            Assert.IsTrue(result.Success);
+            var ingress = driver.Snapshot().IngressWorkItems.Single();
+            Assert.AreEqual("conversation-runtime", ingress.Payload?["conversationId"]?.GetValue<string>());
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public void SubmitHostTaskTool_SchemaExposesFutureWindowActionFamilies()
     {
         var descriptor = CreateDescriptor("haley");
@@ -184,6 +212,43 @@ public class StardewNpcToolFactoryTests
                 new[] { "craft", "trade", "quest", "gather" },
                 actionEnum,
                 "Future window action families must be visible as host-task actions even while they return unsupported facts.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void SubmitHostTaskTool_SchemaExposesOnlyAgentOwnedFields()
+    {
+        var descriptor = CreateDescriptor("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-host-task-runtime-schema-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var driver = supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None).GetAwaiter().GetResult();
+            var tool = new StardewSubmitHostTaskTool(descriptor, driver);
+
+            using var document = JsonDocument.Parse(tool.GetParameterSchema().GetRawText());
+            var properties = document.RootElement.GetProperty("properties");
+            var propertyNames = properties.EnumerateObject().Select(property => property.Name).ToArray();
+
+            CollectionAssert.AreEqual(
+                new[] { "action", "reason", "target" },
+                propertyNames,
+                "Host-task schema must expose only AI-owned business fields.");
+            var targetNames = properties
+                .GetProperty("target")
+                .GetProperty("properties")
+                .EnumerateObject()
+                .Select(property => property.Name)
+                .ToArray();
+            CollectionAssert.AreEqual(
+                new[] { "locationName", "x", "y", "source" },
+                targetNames,
+                "Move target schema must not expose optional fields the host or loaded references can omit.");
         }
         finally
         {

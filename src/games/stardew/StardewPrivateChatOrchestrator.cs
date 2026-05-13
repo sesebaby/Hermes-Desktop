@@ -268,6 +268,7 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
                 new StardewSubmitHostTaskTool(
                     descriptor,
                     runtimeDriver,
+                    request.ConversationId,
                     _loggerFactory.CreateLogger<StardewSubmitHostTaskTool>())
             ]);
             var sessionId = $"{descriptor.SessionId}:private_chat:{request.ConversationId}";
@@ -420,7 +421,7 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
             "如果你接受了当前就要发生的玩家承诺，先用 todo 把承诺记成 in_progress 短句，再调用 stardew_submit_host_task；动作完成后下一轮再由你自己收口 todo。\n" +
             "action=move 时，你必须先用 skill_view 读取 stardew-navigation、references/index.md、相关 region 和最具体的 POI 文件；只有已加载 POI/reference 明确给出 target(locationName,x,y,source) 后，才调用 stardew_submit_host_task。\n" +
             "stardew_submit_host_task 是延迟执行入口：私聊回复关闭后，宿主会按你传入的 mechanical target 进入 host task submission lifecycle 执行真实移动，并由 Stardew bridge 返回结果。不要使用 destinationId，不要编造坐标，不要把自然语言地点直接当 locationName。\n" +
-            "玩家提出当前私聊中就要发生的移动请求时，如果你接受，action 填 move，target 必须原样填写已加载 POI/reference 的 locationName、x、y、source；可选 facingDirection。\n" +
+            "玩家提出当前私聊中就要发生的移动请求时，如果你接受，action 填 move，target 必须原样填写已加载 POI/reference 的 locationName、x、y、source；不要填写宿主运行时标识或其它可省略字段。\n" +
             $"你是星露谷里的 {displayName}，现在正在和玩家私聊。\n" +
             "玩家找你说话时，你先像角色本人一样自然回应，不要装成助手。\n" +
             "如果玩家给了以后要兑现的约定、邀请、请求或共同计划，你自己判断要不要接；接了就用 todo 记到长期任务里。\n" +

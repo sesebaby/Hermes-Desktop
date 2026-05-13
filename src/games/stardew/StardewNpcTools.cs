@@ -86,21 +86,24 @@ public sealed class StardewSubmitHostTaskTool : ITool, IToolSchemaProvider
 
     private readonly NpcRuntimeDescriptor _descriptor;
     private readonly NpcRuntimeDriver _runtimeDriver;
+    private readonly string? _defaultConversationId;
     private readonly ILogger? _logger;
 
     public StardewSubmitHostTaskTool(
         NpcRuntimeDescriptor descriptor,
         NpcRuntimeDriver runtimeDriver,
+        string? defaultConversationId = null,
         ILogger? logger = null)
     {
         _descriptor = descriptor ?? throw new ArgumentNullException(nameof(descriptor));
         _runtimeDriver = runtimeDriver ?? throw new ArgumentNullException(nameof(runtimeDriver));
+        _defaultConversationId = string.IsNullOrWhiteSpace(defaultConversationId) ? null : defaultConversationId.Trim();
         _logger = logger;
     }
 
     public string Name => "stardew_submit_host_task";
 
-    public string Description => "仅限私聊父 agent 使用。玩家要求现在就做现实世界动作且你决定答应时，先调用本工具提交 host task，让宿主后续按同一 host task lifecycle 执行，再自然回复玩家。只口头答应不会发生动作。action=move 时必须先用 skill_view 读取 stardew-navigation 分层资料，并把已加载 POI 给出的 target(locationName,x,y,source) 原样传入 target；不要使用 destinationId 或编造坐标。";
+    public string Description => "仅限私聊父 agent 使用。玩家要求现在就做现实世界动作且你决定答应时，先调用本工具提交 host task，让宿主后续按同一 host task lifecycle 执行，再自然回复玩家。只口头答应不会发生动作。action=move 时必须先用 skill_view 读取 stardew-navigation 分层资料，并把已加载 POI 给出的 target(locationName,x,y,source) 原样传入 target；不要填写宿主运行时标识，不要使用 destinationId 或编造坐标。";
 
     public Type ParametersType => typeof(StardewSubmitHostTaskToolParameters);
 
@@ -121,11 +124,6 @@ public sealed class StardewSubmitHostTaskTool : ITool, IToolSchemaProvider
                     type = "string",
                     description = "你为什么接受这个立即行动 host task 的简短原因。"
                 },
-                intentText = new
-                {
-                    type = "string",
-                    description = "可选字段。玩家原话或一句自然语言意图；action=move 的执行目标以 target 为准。"
-                },
                 target = new
                 {
                     type = "object",
@@ -135,15 +133,9 @@ public sealed class StardewSubmitHostTaskTool : ITool, IToolSchemaProvider
                         locationName = new { type = "string", description = "已加载 POI/reference 给出的地图名。" },
                         x = new { type = "integer", description = "已加载 POI/reference 给出的 tile X。" },
                         y = new { type = "integer", description = "已加载 POI/reference 给出的 tile Y。" },
-                        source = new { type = "string", description = "披露该坐标的已加载 skill reference。" },
-                        facingDirection = new { type = "integer", description = "可选朝向。" }
+                        source = new { type = "string", description = "披露该坐标的已加载 skill reference。" }
                     },
                     required = new[] { "locationName", "x", "y", "source" }
-                },
-                conversationId = new
-                {
-                    type = "string",
-                    description = "可选。已知时填写当前私聊 conversation id。"
                 }
             },
             required = new[] { "action", "reason" }
@@ -177,7 +169,7 @@ public sealed class StardewSubmitHostTaskTool : ITool, IToolSchemaProvider
         }
 
         var conversationId = string.IsNullOrWhiteSpace(p.ConversationId)
-            ? InferConversationId(p.CurrentSessionId)
+            ? _defaultConversationId ?? InferConversationId(p.CurrentSessionId)
             : p.ConversationId.Trim();
         var rootTodoId = InferRootTodoId();
         var payload = new JsonObject

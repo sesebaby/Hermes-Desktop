@@ -1236,8 +1236,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                                 "x": 32,
                                 "y": 34,
                                 "source": "map-skill:stardew.navigation.poi.beach-shoreline"
-                              },
-                              "conversationId": "conversation-beach"
+                              }
                             }
                             """
                         }

@@ -136,10 +136,10 @@ public sealed class StardewLiveAiSmokeTests
             string.Equals(item.WorkType, "stardew_host_task_submission", StringComparison.OrdinalIgnoreCase));
         Assert.IsNotNull(ingress, $"完整私聊 runner 使用真实 AI 时必须把即时移动意图交给 stardew_submit_host_task。reply={reply.Text}");
         Assert.AreEqual("move", ingress.Payload?["action"]?.GetValue<string>());
-        Assert.IsTrue(
-            !ingress.Payload!.TryGetPropertyValue("conversationId", out var conversationNode) ||
-            string.Equals(conversationNode?.GetValue<string>(), "conversation-beach", StringComparison.Ordinal),
-            $"conversationId 可以由工具从 session 推断；如果模型显式填写，必须正确。payload={ingress.Payload.ToJsonString()}");
+        Assert.AreEqual(
+            "conversation-beach",
+            ingress.Payload?["conversationId"]?.GetValue<string>(),
+            $"conversationId 必须由私聊 runner 注入到 host task，不能要求模型填写。payload={ingress.Payload?.ToJsonString()}");
         var target = ingress.Payload?["target"]?.AsObject();
         Assert.IsNotNull(target, $"委托参数应携带父层解析出的机械 target。payload={ingress.Payload?.ToJsonString()}");
         Assert.AreEqual("Beach", target["locationName"]?.GetValue<string>());
@@ -485,9 +485,7 @@ public sealed class StardewLiveAiSmokeTests
                                 source = new { type = "string", description = "披露该坐标的已加载 skill reference。" }
                             },
                             required = new[] { "locationName", "x", "y", "source" }
-                        },
-                        intentText = new { type = "string", description = "可选兼容字段；action=move 的执行目标以 target 为准。" },
-                        conversationId = new { type = "string", description = "可选。私聊 conversation id。" }
+                        }
                     },
                     required = new[] { "action", "reason", "target" }
                 });
@@ -511,10 +509,6 @@ public sealed class StardewLiveAiSmokeTests
         public string Reason { get; init; } = "";
 
         public DelegateMoveTargetParameters? Target { get; init; }
-
-        public string? IntentText { get; init; }
-
-        public string? ConversationId { get; init; }
     }
 
     private sealed class DelegateMoveTargetParameters
