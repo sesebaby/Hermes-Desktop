@@ -1430,7 +1430,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
-    public async Task RunOneIterationAsync_WithDelegatedMoveAfterPrivateChatReplyDisplayed_SubmitsMoveWithoutWaitingForClose()
+    public async Task RunOneIterationAsync_WithDelegatedMoveAfterPrivateChatReplyDisplayed_StaysDeferredUntilReplyClosed()
     {
         var discovery = CreateDiscovery("save-42");
         var delegationClient = new CapturingStreamingChatClient(
@@ -1505,9 +1505,108 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         await service.RunOneIterationAsync(CancellationToken.None);
 
         Assert.AreEqual(0, delegationClient.StructuredStreamCalls);
+        Assert.AreEqual(0, commands.Submitted.Count);
+        var snapshot = supervisor.Snapshot().Single().Controller;
+        Assert.AreEqual(1, snapshot.IngressWorkItems.Count);
+        var ingress = snapshot.IngressWorkItems.Single();
+        Assert.AreEqual("ingress-delegate-wait-reply", ingress.WorkItemId);
+        Assert.AreEqual("deferred", ingress.Status);
+        Assert.AreEqual("meet-beach-now", ingress.Payload?["rootTodoId"]?.GetValue<string>());
+        Assert.AreEqual("conversation-beach", ingress.Payload?["conversationId"]?.GetValue<string>());
+        var logPath = Path.Combine(
+            _tempDir,
+            "runtime",
+            "stardew",
+            "games",
+            "stardew-valley",
+            "saves",
+            "save-42",
+            "npc",
+            "haley",
+            "profiles",
+            "default",
+            "activity",
+            "runtime.jsonl");
+        var records = ReadRuntimeLogRecords(logPath);
+        Assert.IsTrue(records.Any(record =>
+            record.GetProperty("actionType").GetString() == "ingress" &&
+            record.GetProperty("target").GetString() == "stardew_host_task_submission" &&
+            record.GetProperty("stage").GetString() == "deferred" &&
+            record.GetProperty("result").GetString() == "waiting_private_chat_reply_closed" &&
+            record.TryGetProperty("commandId", out var commandId) &&
+            commandId.GetString() == "ingress-delegate-wait-reply"));
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WithDelegatedMoveAfterPrivateChatReplyClosed_SubmitsMove()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var commands = new ScriptedCommandService(
+            [
+                new GameCommandStatus("cmd-active", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null)
+            ]);
+        var adapter = new FakeGameAdapter(
+            commands,
+            new FakeQueryService(new GameObservation(
+                "haley",
+                "stardew-valley",
+                DateTime.UtcNow,
+                "Haley has a private-chat host task submission after the player closed the reply.",
+                ["location=Town"])),
+            new ScriptedEventSource(
+                new GameEventBatch(
+                    [
+                        new GameEventRecord(
+                            "evt-reply-closed-1",
+                            "private_chat_reply_closed",
+                            "Haley",
+                            DateTime.UtcNow,
+                            "Haley private chat reply was dismissed by the player.",
+                            Payload: new JsonObject { ["conversationId"] = "conversation-beach" },
+                            Sequence: 1)
+                    ],
+                    new GameEventCursor("evt-reply-closed-1", 1))));
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.EnqueueIngressWorkItemAsync(
+            new NpcRuntimeIngressWorkItemSnapshot(
+                "ingress-delegate-reply-closed",
+                "stardew_host_task_submission",
+                "queued",
+                DateTime.UtcNow,
+                "idem-delegate-reply-closed",
+                "trace-delegate-reply-closed",
+                new()
+                {
+                    ["action"] = "move",
+                    ["reason"] = "meet the player at the beach now",
+                    ["rootTodoId"] = "meet-beach-now",
+                    ["target"] = new JsonObject
+                    {
+                        ["locationName"] = "Beach",
+                        ["x"] = 32,
+                        ["y"] = 34,
+                        ["source"] = "map-skill:stardew.navigation.poi.beach-shoreline"
+                    },
+                    ["conversationId"] = "conversation-beach"
+                }),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => adapter,
+            new CountingChatClient("unused"),
+            supervisor,
+            enabledNpcIds: ["haley"]);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
         Assert.AreEqual(1, commands.Submitted.Count);
-        Assert.AreEqual("meet-beach-now", commands.Submitted.Single().Payload?["rootTodoId"]?.GetValue<string>());
-        Assert.AreEqual("conversation-beach", commands.Submitted.Single().Payload?["conversationId"]?.GetValue<string>());
+        var submitted = commands.Submitted.Single();
+        Assert.AreEqual(GameActionType.Move, submitted.Type);
+        Assert.AreEqual("meet-beach-now", submitted.Payload?["rootTodoId"]?.GetValue<string>());
+        Assert.AreEqual("conversation-beach", submitted.Payload?["conversationId"]?.GetValue<string>());
         Assert.AreEqual(0, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
     }
 
@@ -2023,6 +2122,86 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         Assert.AreEqual(StardewCommandStatuses.Blocked, snapshot.LastTerminalCommandStatus?.Status);
         Assert.AreEqual("unsupported_host_task_submission_action", snapshot.LastTerminalCommandStatus?.ErrorCode);
         Assert.AreEqual("craft", snapshot.LastTerminalCommandStatus?.Action);
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WithFutureWindowHostTaskSubmissionBeforeReplyClosed_StaysDeferred()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var delegationClient = new CapturingStreamingChatClient();
+        var commands = new FakeCommandService();
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.EnqueueIngressWorkItemAsync(
+            new NpcRuntimeIngressWorkItemSnapshot(
+                "ingress-craft-wait-close",
+                "stardew_host_task_submission",
+                "queued",
+                DateTime.UtcNow,
+                "idem-craft-wait-close",
+                "trace-craft-wait-close",
+                new()
+                {
+                    ["action"] = "craft",
+                    ["reason"] = "make a snack",
+                    ["conversationId"] = "conversation-craft"
+                }),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => new FakeGameAdapter(
+                commands,
+                new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "Haley has a future private-chat host task submission waiting for reply dismissal.", ["location=Town"])),
+                new ScriptedEventSource(
+                    new GameEventBatch(
+                        [
+                            new GameEventRecord(
+                                "evt-reply-displayed-craft",
+                                "private_chat_reply_displayed",
+                                "Haley",
+                                DateTime.UtcNow,
+                                "Haley private chat reply is visible but still open.",
+                                Payload: new JsonObject { ["conversationId"] = "conversation-craft" },
+                                Sequence: 1)
+                        ],
+                        new GameEventCursor("evt-reply-displayed-craft", 1)))),
+            new CountingChatClient("unused"),
+            supervisor,
+            enabledNpcIds: ["haley"],
+            delegationChatClient: delegationClient);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, delegationClient.StructuredStreamCalls);
+        Assert.AreEqual(0, commands.Submitted.Count);
+        var snapshot = supervisor.Snapshot().Single().Controller;
+        Assert.AreEqual(1, snapshot.IngressWorkItems.Count);
+        Assert.AreEqual("ingress-craft-wait-close", snapshot.IngressWorkItems.Single().WorkItemId);
+        Assert.IsNull(snapshot.LastTerminalCommandStatus);
+        var logPath = Path.Combine(
+            _tempDir,
+            "runtime",
+            "stardew",
+            "games",
+            "stardew-valley",
+            "saves",
+            "save-42",
+            "npc",
+            "haley",
+            "profiles",
+            "default",
+            "activity",
+            "runtime.jsonl");
+        var records = ReadRuntimeLogRecords(logPath);
+        Assert.IsTrue(records.Any(record =>
+            record.GetProperty("actionType").GetString() == "ingress" &&
+            record.GetProperty("target").GetString() == "stardew_host_task_submission" &&
+            record.GetProperty("stage").GetString() == "deferred" &&
+            record.GetProperty("result").GetString() == "waiting_private_chat_reply_closed" &&
+            record.TryGetProperty("commandId", out var commandId) &&
+            commandId.GetString() == "ingress-craft-wait-close"));
     }
 
     [TestMethod]

@@ -1259,18 +1259,10 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         var rootTodoId = ReadPayloadString(payload, "rootTodoId");
         var isMove = string.Equals(action, "move", StringComparison.OrdinalIgnoreCase);
 
-        if (isMove &&
-            !string.IsNullOrWhiteSpace(conversationId) &&
-            !HasPrivateChatReplyDisplayedOrClosed(dispatch.SharedEventBatch, binding.Descriptor, conversationId))
+        if (!string.IsNullOrWhiteSpace(conversationId) &&
+            !HasPrivateChatReplyClosed(dispatch.SharedEventBatch, binding.Descriptor, conversationId))
         {
-            await WriteIngressDiagnosticAsync(
-                binding,
-                tracker,
-                workItem,
-                "deferred",
-                "waiting_private_chat_reply_displayed",
-                ct);
-            await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
+            await DeferPrivateChatReplyClosedIngressAsync(binding, tracker, workItem, deliveredCursor, ct);
             return true;
         }
 
@@ -1574,15 +1566,45 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                jsonValue.TryGetValue<int>(out value);
     }
 
-    private static bool HasPrivateChatReplyDisplayedOrClosed(
+    private async Task DeferPrivateChatReplyClosedIngressAsync(
+        StardewNpcRuntimeBinding binding,
+        NpcAutonomyTracker tracker,
+        NpcRuntimeIngressWorkItemSnapshot workItem,
+        GameEventCursor deliveredCursor,
+        CancellationToken ct)
+    {
+        var deferred = workItem with
+        {
+            Status = "deferred",
+            DeferredAttempts = workItem.DeferredAttempts + 1
+        };
+
+        if (ShouldBlockDeferredIngress(deferred))
+        {
+            await BlockDeferredIngressAsync(binding, tracker, deferred, deliveredCursor, activeSlotOrPending: false, ct);
+            return;
+        }
+
+        await ReplaceIngressWorkItemAsync(tracker, deferred, ct);
+        await WriteIngressDiagnosticAsync(
+            binding,
+            tracker,
+            deferred,
+            "deferred",
+            "waiting_private_chat_reply_closed",
+            ct);
+        await tracker.Driver.SetNextWakeAtUtcAsync(DateTime.UtcNow + TimeSpan.FromSeconds(2), ct);
+        await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
+    }
+
+    private static bool HasPrivateChatReplyClosed(
         GameEventBatch batch,
         NpcRuntimeDescriptor descriptor,
         string conversationId)
     {
         foreach (var record in batch.Records)
         {
-            if (!(string.Equals(record.EventType, "private_chat_reply_displayed", StringComparison.OrdinalIgnoreCase) ||
-                  string.Equals(record.EventType, "private_chat_reply_closed", StringComparison.OrdinalIgnoreCase)) ||
+            if (!string.Equals(record.EventType, "private_chat_reply_closed", StringComparison.OrdinalIgnoreCase) ||
                 !IsRelevantToRuntime(descriptor, record))
             {
                 continue;

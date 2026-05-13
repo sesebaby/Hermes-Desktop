@@ -326,6 +326,45 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     }
 
     [TestMethod]
+    public async Task ReplyAsync_WhenSuccessfulHostTaskSubmissionEndsWithEmptyReply_RunsReplySelfCheckWithoutDuplicatingDelegation()
+    {
+        var runtimeSupervisor = new NpcRuntimeSupervisor();
+        var client = new FirstDelegatesWithTodoThenEmptyReplyThenNaturalReplyChatClient();
+        var runner = CreateRunner(client, runtimeSupervisor);
+
+        var reply = await runner.ReplyAsync(
+            new NpcPrivateChatRequest("haley", "save-1", "conversation-reply-repair", "海莉，我们现在去海边吧。"),
+            CancellationToken.None);
+
+        Assert.AreEqual("好，我先回你一句，然后就过去。", reply.Text);
+        Assert.AreEqual(3, client.CompleteWithToolsCalls, "成功提交 host task 后如果最终回复为空，runner 必须只追加一次 bounded reply self-check。");
+        Assert.IsTrue(client.SawReplySelfCheck, "reply self-check 必须把“已成功提交、只缺玩家可见回复、不要重复提交”作为结构事实反馈给父层。");
+        Assert.AreEqual(1, runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley").Controller.IngressWorkItems.Count, "reply 修复轮不能重复排队 host task ingress。");
+        Assert.AreEqual(1, runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley").Controller.IngressWorkItems.Count(item => item.WorkType == "stardew_host_task_submission"));
+    }
+
+    [TestMethod]
+    public async Task ReplyAsync_WhenSuccessfulHostTaskSubmissionStillHasEmptyReply_BlocksQueuedIngress()
+    {
+        var runtimeSupervisor = new NpcRuntimeSupervisor();
+        var client = new FirstDelegatesWithTodoThenAlwaysEmptyReplyChatClient();
+        var runner = CreateRunner(client, runtimeSupervisor);
+
+        var reply = await runner.ReplyAsync(
+            new NpcPrivateChatRequest("haley", "save-1", "conversation-reply-fails", "海莉，我们现在去海边吧。"),
+            CancellationToken.None);
+
+        Assert.AreEqual(string.Empty, reply.Text);
+        Assert.AreEqual(3, client.CompleteWithToolsCalls, "reply self-check 仍然只能追加一次，不能无限重试。");
+        Assert.IsTrue(client.SawReplySelfCheck);
+        var snapshot = runtimeSupervisor.Snapshot().Single(runtime => runtime.NpcId == "haley").Controller;
+        Assert.AreEqual(0, snapshot.IngressWorkItems.Count, "当父层两次都不给玩家可见回复时，已排队 ingress 必须被阻断，而不是静默继续执行。");
+        Assert.AreEqual(StardewCommandStatuses.Blocked, snapshot.LastTerminalCommandStatus?.Status);
+        Assert.AreEqual("move", snapshot.LastTerminalCommandStatus?.Action);
+        StringAssert.Contains(snapshot.LastTerminalCommandStatus?.ErrorCode ?? string.Empty, "private_chat_reply");
+    }
+
+    [TestMethod]
     public async Task ReplyAsync_WhenCasualImmediateMoveAcceptedWithoutDelegation_RetriesAndQueuesHostTaskSubmission()
     {
         var runtimeSupervisor = new NpcRuntimeSupervisor();
@@ -1229,6 +1268,157 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             }
 
             return Task.FromResult(new ChatResponse { Content = "I'll head there now.", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class FirstDelegatesWithTodoThenEmptyReplyThenNaturalReplyChatClient : IChatClient
+    {
+        public int CompleteWithToolsCalls { get; private set; }
+        public bool SawReplySelfCheck { get; private set; }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            CompleteWithToolsCalls++;
+            var snapshot = messages.ToArray();
+            SawReplySelfCheck |= snapshot.Any(message =>
+                string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase) &&
+                (message.Content?.Contains("缺少玩家可见回复", StringComparison.Ordinal) ?? false) &&
+                (message.Content?.Contains("不要重复调用 stardew_submit_host_task", StringComparison.Ordinal) ?? false));
+            if (CompleteWithToolsCalls == 1)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = "todo-before-empty-reply",
+                            Name = "todo",
+                            Arguments = "{\"todos\":[{\"id\":\"meet-beach-now\",\"content\":\"Meet player at the beach now\",\"status\":\"in_progress\"}]}"
+                        },
+                        new ToolCall
+                        {
+                            Id = "submit-before-empty-reply",
+                            Name = "stardew_submit_host_task",
+                            Arguments = """
+                            {
+                              "action": "move",
+                              "reason": "meet the player at the beach now",
+                              "target": {
+                                "locationName": "Beach",
+                                "x": 32,
+                                "y": 34,
+                                "source": "map-skill:stardew.navigation.poi.beach-shoreline"
+                              },
+                              "conversationId": "conversation-reply-repair"
+                            }
+                            """
+                        }
+                    ]
+                });
+            }
+
+            if (CompleteWithToolsCalls == 2)
+                return Task.FromResult(new ChatResponse { Content = "   ", FinishReason = "stop" });
+
+            return Task.FromResult(new ChatResponse { Content = "好，我先回你一句，然后就过去。", FinishReason = "stop" });
+        }
+
+        public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            string? systemPrompt,
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition>? tools = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class FirstDelegatesWithTodoThenAlwaysEmptyReplyChatClient : IChatClient
+    {
+        public int CompleteWithToolsCalls { get; private set; }
+        public bool SawReplySelfCheck { get; private set; }
+
+        public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
+            => Task.FromResult("ok");
+
+        public Task<ChatResponse> CompleteWithToolsAsync(
+            IEnumerable<Message> messages,
+            IEnumerable<ToolDefinition> tools,
+            CancellationToken ct)
+        {
+            CompleteWithToolsCalls++;
+            var snapshot = messages.ToArray();
+            SawReplySelfCheck |= snapshot.Any(message =>
+                string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase) &&
+                (message.Content?.Contains("缺少玩家可见回复", StringComparison.Ordinal) ?? false) &&
+                (message.Content?.Contains("不要重复调用 stardew_submit_host_task", StringComparison.Ordinal) ?? false));
+            if (CompleteWithToolsCalls == 1)
+            {
+                return Task.FromResult(new ChatResponse
+                {
+                    FinishReason = "tool_calls",
+                    ToolCalls =
+                    [
+                        new ToolCall
+                        {
+                            Id = "todo-before-empty-reply-fail",
+                            Name = "todo",
+                            Arguments = "{\"todos\":[{\"id\":\"meet-beach-now\",\"content\":\"Meet player at the beach now\",\"status\":\"in_progress\"}]}"
+                        },
+                        new ToolCall
+                        {
+                            Id = "submit-before-empty-reply-fail",
+                            Name = "stardew_submit_host_task",
+                            Arguments = """
+                            {
+                              "action": "move",
+                              "reason": "meet the player at the beach now",
+                              "target": {
+                                "locationName": "Beach",
+                                "x": 32,
+                                "y": 34,
+                                "source": "map-skill:stardew.navigation.poi.beach-shoreline"
+                              },
+                              "conversationId": "conversation-reply-fails"
+                            }
+                            """
+                        }
+                    ]
+                });
+            }
+
+            return Task.FromResult(new ChatResponse { Content = "", FinishReason = "stop" });
         }
 
         public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)

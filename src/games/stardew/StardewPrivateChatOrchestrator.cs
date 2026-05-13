@@ -11,6 +11,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 public sealed class StardewPrivateChatOrchestrator : IDisposable
 {
@@ -336,6 +337,38 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
                     chatSession,
                     ct);
             }
+
+            if (ShouldRunReplySelfCheck(response, chatSession))
+            {
+                logger.LogInformation(
+                    "Stardew private-chat host task submission missing player-visible reply; running parent self-check once; npc={NpcId}; saveId={SaveId}; conversationId={ConversationId}; sessionId={SessionId}",
+                    descriptor.NpcId,
+                    saveId,
+                    request.ConversationId,
+                    sessionId);
+                response = await handle.Agent.ChatAsync(
+                    BuildPrivateChatReplySelfCheckMessage(request.PlayerText, response),
+                    chatSession,
+                    ct);
+            }
+
+            var finalReply = response.Trim();
+            if (SessionHasSuccessfulToolCall(chatSession, "stardew_submit_host_task") &&
+                string.IsNullOrWhiteSpace(finalReply))
+            {
+                logger.LogWarning(
+                    "Stardew private-chat host task submission still missing player-visible reply after bounded self-check; blocking queued ingress; npc={NpcId}; saveId={SaveId}; conversationId={ConversationId}; sessionId={SessionId}",
+                    descriptor.NpcId,
+                    saveId,
+                    request.ConversationId,
+                    sessionId);
+                await BlockQueuedPrivateChatHostTaskSubmissionAsync(
+                    descriptor,
+                    runtimeDriver,
+                    request.ConversationId,
+                    ct);
+            }
+
             stopwatch.Stop();
             logger.LogInformation(
                 "Stardew private-chat parent agent completed; npc={NpcId}; saveId={SaveId}; conversationId={ConversationId}; sessionId={SessionId}; responseChars={ResponseChars}; durationMs={DurationMs}",
@@ -343,10 +376,10 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
                 saveId,
                 request.ConversationId,
                 sessionId,
-                response.Length,
+                finalReply.Length,
                 stopwatch.ElapsedMilliseconds);
 
-            return new NpcPrivateChatReply(response.Trim());
+            return new NpcPrivateChatReply(finalReply);
         }
         catch (OperationCanceledException ex) when (!ct.IsCancellationRequested)
         {
@@ -416,6 +449,14 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
             $"Player: {playerText}\n" +
             $"Previous reply: {previousReply}";
 
+    private static string BuildPrivateChatReplySelfCheckMessage(string playerText, string previousReply)
+        =>
+            "自检：上一轮私聊已经成功调用 stardew_submit_host_task 提交当前世界动作，但缺少玩家可见回复。\n" +
+            "现在不要重复调用 stardew_submit_host_task，不要重写 todo，不要解释工具过程；只补一条会展示给玩家的自然回复，直接对玩家说话。\n" +
+            "如果上一轮回复是空白、只剩格式噪音或不适合展示，就直接给出这次最终要显示给玩家的一句简短自然回复。\n\n" +
+            $"Player: {playerText}\n" +
+            $"Previous reply: {previousReply}";
+
     private static bool ShouldRunDelegationSelfCheck(string response, Session session)
         => !SessionHasSuccessfulToolCall(session, "stardew_submit_host_task") &&
            !SessionHasSuccessfulToolCall(session, "npc_no_world_action");
@@ -424,6 +465,10 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
         => SessionHasSuccessfulToolCall(session, "stardew_submit_host_task") &&
            !SessionHasToolCall(session, "todo") &&
            !SessionHasToolCall(session, "todo_write");
+
+    private static bool ShouldRunReplySelfCheck(string response, Session session)
+        => SessionHasSuccessfulToolCall(session, "stardew_submit_host_task") &&
+           string.IsNullOrWhiteSpace(response);
 
     private static bool SessionHasToolCall(Session session, string toolName)
         => session.Messages.Any(message =>
@@ -472,6 +517,61 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
             return false;
         }
     }
+
+    private static async Task BlockQueuedPrivateChatHostTaskSubmissionAsync(
+        NpcRuntimeDescriptor descriptor,
+        NpcRuntimeDriver runtimeDriver,
+        string conversationId,
+        CancellationToken ct)
+    {
+        var snapshot = runtimeDriver.Snapshot();
+        JsonObject? queuedPayload = null;
+        var targetWorkItem = snapshot.IngressWorkItems.LastOrDefault(item =>
+            string.Equals(item.WorkType, "stardew_host_task_submission", StringComparison.OrdinalIgnoreCase) &&
+            item.Payload is JsonObject payload &&
+            string.Equals(
+                ReadPayloadString(payload, "conversationId"),
+                conversationId,
+                StringComparison.OrdinalIgnoreCase) &&
+            (queuedPayload = payload) is not null);
+        if (targetWorkItem is null)
+            return;
+
+        const string errorCode = "private_chat_reply_missing";
+        await runtimeDriver.SetLastTerminalCommandStatusAsync(
+            new GameCommandStatus(
+                targetWorkItem.WorkItemId,
+                descriptor.NpcId,
+                ReadPayloadString(queuedPayload!, "action") ?? targetWorkItem.WorkType,
+                StardewCommandStatuses.Blocked,
+                1,
+                errorCode,
+                errorCode,
+                UpdatedAtUtc: DateTime.UtcNow),
+            ct);
+        await runtimeDriver.RemoveIngressWorkItemAsync(targetWorkItem.WorkItemId, ct);
+        await runtimeDriver.SetNextWakeAtUtcAsync(DateTime.UtcNow, ct);
+        await new NpcRuntimeLogWriter(Path.Combine(runtimeDriver.Instance.Namespace.ActivityPath, "runtime.jsonl")).WriteAsync(
+            new NpcRuntimeLogRecord(
+                DateTime.UtcNow,
+                string.IsNullOrWhiteSpace(targetWorkItem.TraceId) ? targetWorkItem.WorkItemId : targetWorkItem.TraceId!,
+                descriptor.NpcId,
+                descriptor.GameId,
+                descriptor.SessionId,
+                "ingress",
+                targetWorkItem.WorkType,
+                "blocked",
+                errorCode,
+                CommandId: targetWorkItem.WorkItemId,
+                Error: errorCode),
+            ct);
+    }
+
+    private static string? ReadPayloadString(JsonObject payload, string propertyName)
+        => payload.TryGetPropertyValue(propertyName, out var value) && value is JsonValue jsonValue &&
+           jsonValue.TryGetValue<string>(out var text)
+            ? text
+            : null;
 
 }
 
