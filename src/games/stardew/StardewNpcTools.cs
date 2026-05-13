@@ -164,9 +164,15 @@ public sealed class StardewSubmitHostTaskTool : ITool, IToolSchemaProvider
         var traceId = $"trace_host_task_{_descriptor.NpcId}_{Guid.NewGuid():N}";
         var workItemId = $"ingress_host_task_{_descriptor.NpcId}_{Guid.NewGuid():N}";
         var action = p.Action.Trim();
+        var target = default(StardewSubmitHostTaskMoveTargetParameters);
         if (string.Equals(action, "move", StringComparison.OrdinalIgnoreCase) &&
-            !TryValidateMoveTarget(p.Target, out var targetError))
+            !TryReadMoveTarget(p.Target, out target, out var targetError))
         {
+            _logger?.LogWarning(
+                "Rejected Stardew host task submission; npc={NpcId}; action={Action}; reason=invalid_move_target; error={Error}",
+                _descriptor.NpcId,
+                action,
+                targetError);
             return ToolResult.Fail(targetError);
         }
 
@@ -179,17 +185,17 @@ public sealed class StardewSubmitHostTaskTool : ITool, IToolSchemaProvider
             ["action"] = action,
             ["reason"] = p.Reason.Trim()
         };
-        if (p.Target is not null)
+        if (target is not null)
         {
             payload["target"] = new JsonObject
             {
-                ["locationName"] = p.Target.LocationName.Trim(),
-                ["x"] = p.Target.X,
-                ["y"] = p.Target.Y,
-                ["source"] = p.Target.Source.Trim()
+                ["locationName"] = target.LocationName.Trim(),
+                ["x"] = target.X,
+                ["y"] = target.Y,
+                ["source"] = target.Source.Trim()
             };
-            if (p.Target.FacingDirection is not null)
-                ((JsonObject)payload["target"]!)["facingDirection"] = p.Target.FacingDirection.Value;
+            if (target.FacingDirection is not null)
+                ((JsonObject)payload["target"]!)["facingDirection"] = target.FacingDirection.Value;
         }
         if (!string.IsNullOrWhiteSpace(p.IntentText))
             payload["intentText"] = p.IntentText.Trim();
@@ -242,28 +248,78 @@ public sealed class StardewSubmitHostTaskTool : ITool, IToolSchemaProvider
         }, JsonOptions));
     }
 
-    private static bool TryValidateMoveTarget(StardewSubmitHostTaskMoveTargetParameters? target, out string error)
+    private static bool TryReadMoveTarget(
+        JsonElement? targetElement,
+        out StardewSubmitHostTaskMoveTargetParameters? target,
+        out string error)
     {
-        if (target is null)
+        target = default;
+        if (targetElement is null ||
+            targetElement.Value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
         {
-            error = "target is required for move";
+            error = "target is required for move; use target(locationName,x,y,source) from loaded stardew-navigation references.";
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(target.LocationName))
+        var element = targetElement.Value;
+        if (element.ValueKind != JsonValueKind.Object)
         {
-            error = "target.locationName is required for move";
+            error = "target must be an object target(locationName,x,y,source) from loaded stardew-navigation references; do not pass a natural-language destination string.";
             return false;
         }
 
-        if (string.IsNullOrWhiteSpace(target.Source))
+        var locationName = ReadRequiredString(element, "locationName");
+        if (string.IsNullOrWhiteSpace(locationName))
         {
-            error = "target.source is required for move";
+            error = "target.locationName is required for move; use target(locationName,x,y,source) from loaded stardew-navigation references.";
             return false;
         }
 
+        var source = ReadRequiredString(element, "source");
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            error = "target.source is required for move; use target(locationName,x,y,source) from loaded stardew-navigation references.";
+            return false;
+        }
+
+        if (!TryReadRequiredInt(element, "x", out var x))
+        {
+            error = "target.x is required for move and must be an integer from loaded stardew-navigation references.";
+            return false;
+        }
+
+        if (!TryReadRequiredInt(element, "y", out var y))
+        {
+            error = "target.y is required for move and must be an integer from loaded stardew-navigation references.";
+            return false;
+        }
+
+        var facingDirection = TryReadRequiredInt(element, "facingDirection", out var facing)
+            ? facing
+            : (int?)null;
+        target = new StardewSubmitHostTaskMoveTargetParameters
+        {
+            LocationName = locationName.Trim(),
+            X = x,
+            Y = y,
+            Source = source.Trim(),
+            FacingDirection = facingDirection
+        };
         error = "";
         return true;
+    }
+
+    private static string? ReadRequiredString(JsonElement element, string propertyName)
+        => element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    private static bool TryReadRequiredInt(JsonElement element, string propertyName, out int value)
+    {
+        value = default;
+        return element.TryGetProperty(propertyName, out var property) &&
+               property.ValueKind == JsonValueKind.Number &&
+               property.TryGetInt32(out value);
     }
 
     private static string? InferConversationId(string? sessionId)
@@ -300,7 +356,7 @@ public sealed class StardewSubmitHostTaskToolParameters : ISessionAwareToolParam
 
     public string? IntentText { get; init; }
 
-    public StardewSubmitHostTaskMoveTargetParameters? Target { get; init; }
+    public JsonElement? Target { get; init; }
 
     public string? DestinationText { get; init; }
 

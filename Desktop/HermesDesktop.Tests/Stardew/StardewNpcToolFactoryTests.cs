@@ -193,6 +193,40 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
+    public async Task SubmitHostTaskTool_WithStringMoveTarget_ReturnsStructuredFailureWithoutIngress()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-host-task-invalid-target-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var tool = new StardewSubmitHostTaskTool(descriptor, driver);
+            var parameters = JsonSerializer.Deserialize<StardewSubmitHostTaskToolParameters>(
+                """
+                {
+                  "Action": "move",
+                  "Reason": "meet the player at the beach now",
+                  "Target": "beach",
+                  "ConversationId": "conversation-invalid"
+                }
+                """);
+
+            Assert.IsNotNull(parameters);
+            var result = await tool.ExecuteAsync(parameters, CancellationToken.None);
+
+            Assert.IsFalse(result.Success);
+            StringAssert.Contains(result.Content, "target(locationName,x,y,source)");
+            Assert.AreEqual(0, driver.Snapshot().IngressWorkItems.Count);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task IdleMicroActionTool_BindsRuntimeIdentityAndSubmitsParentLifecycleAction()
     {
         var commands = new CapturingCommandService();

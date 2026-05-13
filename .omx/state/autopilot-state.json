@@ -2,8 +2,8 @@
   "mode": "autopilot",
   "active": false,
   "current_phase": "complete",
-  "iteration": 1,
-  "review_cycle": 0,
+  "iteration": 2,
+  "review_cycle": 1,
   "max_iterations": 10,
   "phase_cycle": [
     "ralplan",
@@ -11,20 +11,24 @@
     "code-review"
   ],
   "handoff_artifacts": {
-    "context_snapshot_path": ".omx/context/stardew-autonomy-tool-closure-harness-20260512T014405Z.md",
+    "context_snapshot_path": ".omx/context/stardew-submit-host-task-native-contract-20260513T024310Z.md",
     "ralplan": {
-      "prd": ".omx/plans/prd-stardew-autonomy-tool-closure-harness-reference-alignment.md",
-      "test_spec": ".omx/plans/test-spec-stardew-autonomy-tool-closure-harness-reference-alignment.md"
+      "prd": ".omx/plans/prd-stardew-submit-host-task-native-contract.md",
+      "test_spec": ".omx/plans/test-spec-stardew-submit-host-task-native-contract.md"
     },
     "ralph": {
       "changed_files": [
-        "src/runtime/NpcAutonomyLoop.cs",
-        "Desktop/HermesDesktop.Tests/Runtime/NpcAutonomyLoopTests.cs",
-        "Desktop/HermesDesktop.Tests/Stardew/StardewNpcAutonomyBackgroundServiceTests.cs"
+        "src/games/stardew/StardewNpcTools.cs",
+        "src/games/stardew/StardewPrivateChatOrchestrator.cs",
+        "Desktop/HermesDesktop.Tests/Stardew/StardewNpcToolFactoryTests.cs",
+        "Desktop/HermesDesktop.Tests/Stardew/StardewNpcPrivateChatAgentRunnerTests.cs"
       ],
       "verification": [
-        "dotnet test .\\Desktop\\HermesDesktop.Tests\\HermesDesktop.Tests.csproj -c Debug --filter \"FullyQualifiedName~HermesDesktop.Tests.Runtime.NpcAutonomyLoopTests\" -p:UseSharedCompilation=false => 48 passed",
-        "dotnet test .\\Desktop\\HermesDesktop.Tests\\HermesDesktop.Tests.csproj -c Debug --filter \"FullyQualifiedName~StardewNpcPrivateChatAgentRunnerTests|FullyQualifiedName~NpcAutonomyLoopTests|FullyQualifiedName~StardewNpcAutonomyBackgroundServiceTests|FullyQualifiedName~StardewAutonomyTickDebugServiceTests|FullyQualifiedName~StardewNpcToolFactoryTests|FullyQualifiedName~StardewPrivateChatOrchestratorTests\" -p:UseSharedCompilation=false => 185 passed",
+        "dotnet test .\\Desktop\\HermesDesktop.Tests\\HermesDesktop.Tests.csproj -c Debug --filter \"FullyQualifiedName~StardewNpcToolFactoryTests.SubmitHostTaskTool_WithStringMoveTarget_ReturnsStructuredFailureWithoutIngress|FullyQualifiedName~StardewNpcPrivateChatAgentRunnerTests.ReplyAsync_WhenSubmitHostTaskFailsValidation_AllowsNativeRetryWithoutCommitmentTodoSelfCheck|FullyQualifiedName~StardewNpcPrivateChatAgentRunnerTests.ReplyAsync_WhenSubmitHostTaskFailsValidationAndModelStops_RunsDelegationSelfCheckAndQueuesRetry\" -p:UseSharedCompilation=false => 3 passed",
+        "dotnet test .\\Desktop\\HermesDesktop.Tests\\HermesDesktop.Tests.csproj -c Debug --filter \"FullyQualifiedName~StardewNpcPrivateChatAgentRunnerTests.ReplyAsync_WhenNoWorldActionFailsValidation_RunsDelegationSelfCheck|FullyQualifiedName~StardewNpcPrivateChatAgentRunnerTests.ReplyAsync_WhenNoWorldActionToolCalled_DoesNotSelfCheck\" -p:UseSharedCompilation=false => 2 passed",
+        "dotnet test .\\Desktop\\HermesDesktop.Tests\\HermesDesktop.Tests.csproj -c Debug --filter \"FullyQualifiedName~StardewNpcToolFactoryTests|FullyQualifiedName~StardewNpcPrivateChatAgentRunnerTests\" -p:UseSharedCompilation=false => 48 passed",
+        "dotnet test .\\Desktop\\HermesDesktop.Tests\\HermesDesktop.Tests.csproj -c Debug --filter \"FullyQualifiedName~Stardew\" -p:UseSharedCompilation=false => 258 passed, 2 skipped",
+        "dotnet test .\\Desktop\\HermesDesktop.Tests\\HermesDesktop.Tests.csproj -c Debug -p:UseSharedCompilation=false => 1078 passed, 3 skipped",
         "dotnet build .\\Desktop\\HermesDesktop\\HermesDesktop.csproj -c Debug -p:Platform=x64 -p:UseSharedCompilation=false => succeeded with 2 existing Stardew bridge warnings"
       ]
     },
@@ -33,9 +37,9 @@
       "architectural_status": "CLEAR",
       "clean": true,
       "review_notes": [
-        "Self-check is bounded to one extra agent turn.",
-        "No parent free-text or JSON response is parsed into host actions.",
-        "Tool iteration fallback keeps budget diagnostics and does not run self-check."
+        "Second-round code-review findings: none.",
+        "Architectural review status: CLEAR.",
+        "Future hardening note: persist ToolResult success metadata instead of parsing result body if this pattern expands beyond scoped Stardew private-chat closure tools."
       ]
     }
   },
@@ -45,5 +49,5 @@
     "clean": true
   },
   "return_to_ralplan_reason": null,
-  "completed_at": "2026-05-12T01:44:05Z"
+  "completed_at": "2026-05-13T02:43:10Z"
 }

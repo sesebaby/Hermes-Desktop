@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 public sealed class StardewPrivateChatOrchestrator : IDisposable
 {
@@ -416,17 +417,61 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
             $"Previous reply: {previousReply}";
 
     private static bool ShouldRunDelegationSelfCheck(string response, Session session)
-        => !SessionHasToolCall(session, "stardew_submit_host_task") &&
-           !SessionHasToolCall(session, "npc_no_world_action");
+        => !SessionHasSuccessfulToolCall(session, "stardew_submit_host_task") &&
+           !SessionHasSuccessfulToolCall(session, "npc_no_world_action");
 
     private static bool ShouldRunCommitmentTodoSelfCheck(Session session)
-        => SessionHasToolCall(session, "stardew_submit_host_task") &&
+        => SessionHasSuccessfulToolCall(session, "stardew_submit_host_task") &&
            !SessionHasToolCall(session, "todo") &&
            !SessionHasToolCall(session, "todo_write");
 
     private static bool SessionHasToolCall(Session session, string toolName)
         => session.Messages.Any(message =>
             message.ToolCalls?.Any(call => string.Equals(call.Name, toolName, StringComparison.OrdinalIgnoreCase)) ?? false);
+
+    private static bool SessionHasSuccessfulToolCall(Session session, string toolName)
+    {
+        var pendingToolCallIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var message in session.Messages)
+        {
+            if (string.Equals(message.Role, "assistant", StringComparison.OrdinalIgnoreCase) &&
+                message.ToolCalls is not null)
+            {
+                foreach (var call in message.ToolCalls.Where(call => string.Equals(call.Name, toolName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    pendingToolCallIds.Add(call.Id);
+                }
+            }
+            else if (string.Equals(message.Role, "tool", StringComparison.OrdinalIgnoreCase) &&
+                     string.Equals(message.ToolName, toolName, StringComparison.OrdinalIgnoreCase) &&
+                     !string.IsNullOrWhiteSpace(message.ToolCallId) &&
+                     pendingToolCallIds.Contains(message.ToolCallId) &&
+                     ToolResultSucceeded(message.Content))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ToolResultSucceeded(string content)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(content);
+            return (document.RootElement.TryGetProperty("success", out var success) &&
+                    success.ValueKind == JsonValueKind.True) ||
+                   (document.RootElement.TryGetProperty("queued", out var queued) &&
+                    queued.ValueKind == JsonValueKind.True) ||
+                   (document.RootElement.TryGetProperty("noWorldAction", out var noWorldAction) &&
+                    noWorldAction.ValueKind == JsonValueKind.True);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 
 }
 
