@@ -462,6 +462,36 @@ public class OpenAiClientAuthTests
     }
 
     [TestMethod]
+    public async Task CompleteAsync_WithDeepSeekFlash_DisablesThinkingModeInPayload()
+    {
+        string? capturedBody = null;
+        using var httpClient = new HttpClient(new CaptureHandler(request =>
+        {
+            capturedBody = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return CreateSuccessResponse();
+        }));
+
+        var client = new OpenAiClient(
+            new LlmConfig
+            {
+                Provider = "deepseek",
+                Model = "deepseek-v4-flash",
+                BaseUrl = "https://api.deepseek.com/v1",
+                AuthMode = "none"
+            },
+            httpClient);
+
+        await client.CompleteAsync(
+            new[] { new Message { Role = "user", Content = "hello" } },
+            CancellationToken.None);
+
+        Assert.IsNotNull(capturedBody);
+        using var doc = JsonDocument.Parse(capturedBody!);
+        var thinking = doc.RootElement.GetProperty("thinking");
+        Assert.AreEqual("disabled", thinking.GetProperty("type").GetString());
+    }
+
+    [TestMethod]
     public async Task StreamAsync_ToolCallDeltas_EmitToolUseEventsWithCompleteArguments()
     {
         var sse =

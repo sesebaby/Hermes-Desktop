@@ -275,6 +275,7 @@ public sealed class OpenAiClient : IChatClient
                 ["stream"] = stream
             };
             AddResponseFormat(payload);
+            AddProviderSpecificPayload(payload);
             return payload;
         }
 
@@ -286,6 +287,7 @@ public sealed class OpenAiClient : IChatClient
             ["stream"] = stream
         };
         AddResponseFormat(textPayload);
+        AddProviderSpecificPayload(textPayload);
         return textPayload;
     }
 
@@ -295,6 +297,20 @@ public sealed class OpenAiClient : IChatClient
             return;
 
         payload["response_format"] = new { type = "json_object" };
+    }
+
+    private void AddProviderSpecificPayload(Dictionary<string, object?> payload)
+    {
+        if (ShouldDisableDeepSeekThinking())
+        {
+            payload["thinking"] = new { type = "disabled" };
+        }
+    }
+
+    private bool ShouldDisableDeepSeekThinking()
+    {
+        return string.Equals(_config.Provider, "deepseek", StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(_config.Model, "deepseek-v4-flash", StringComparison.OrdinalIgnoreCase);
     }
 
     private object[] EnsureJsonObjectPromptContract(object[] messages)
