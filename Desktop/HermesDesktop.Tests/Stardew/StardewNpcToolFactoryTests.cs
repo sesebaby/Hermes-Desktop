@@ -21,45 +21,22 @@ public class StardewNpcToolFactoryTests
         CollectionAssert.AreEqual(
             StardewNpcToolSurfacePolicy.Default.ParentToolNames.ToArray(),
             tools.Select(tool => tool.Name).ToArray());
+        Assert.AreEqual(
+            string.Join("|", tools.Select(tool => tool.Name).OrderBy(name => name, StringComparer.OrdinalIgnoreCase)),
+            StardewNpcToolFactory.DefaultParentToolFingerprint);
     }
 
     [TestMethod]
-    public void StardewNpcToolSurfacePolicy_DefaultLocalExecutorSurfaceMatchesCurrentTools()
+    public void StardewNpcToolSurfacePolicy_OverrideControlsParentSurfaceOnly()
     {
-        var tools = StardewNpcToolFactory.CreateLocalExecutorTools(
-            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
-            CreateDescriptor("haley"));
-
-        CollectionAssert.AreEqual(
-            StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(),
-            tools.Select(tool => tool.Name).ToArray());
-        CollectionAssert.DoesNotContain(StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(), "stardew_navigate_to_tile");
-        CollectionAssert.DoesNotContain(StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(), "stardew_idle_micro_action");
-        CollectionAssert.DoesNotContain(StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(), "stardew_speak");
-        CollectionAssert.DoesNotContain(StardewNpcToolSurfacePolicy.Default.LocalExecutorToolNames.ToArray(), "stardew_open_private_chat");
-    }
-
-    [TestMethod]
-    public void StardewNpcToolSurfacePolicy_OverrideControlsExecutorSurface()
-    {
-        var policy = StardewNpcToolSurfacePolicy.Create(
-            parentToolNames: ["stardew_status"],
-            localExecutorToolNames: ["stardew_status", "stardew_task_status"]);
+        var policy = StardewNpcToolSurfacePolicy.Create(parentToolNames: ["stardew_status"]);
 
         var parentTools = StardewNpcToolFactory.CreateDefault(
             new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
             CreateDescriptor("haley"),
             toolSurfacePolicy: policy);
-        var executorTools = StardewNpcToolFactory.CreateLocalExecutorTools(
-            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
-            CreateDescriptor("haley"),
-            toolSurfacePolicy: policy);
 
         CollectionAssert.AreEqual(new[] { "stardew_status" }, parentTools.Select(tool => tool.Name).ToArray());
-        CollectionAssert.AreEqual(new[] { "stardew_status", "stardew_task_status" }, executorTools.Select(tool => tool.Name).ToArray());
-        Assert.AreEqual(
-            StardewNpcToolFactory.LocalExecutorToolFingerprint(),
-            StardewNpcToolFactory.LocalExecutorToolFingerprint(policy));
     }
 
     [TestMethod]
@@ -90,26 +67,6 @@ public class StardewNpcToolFactoryTests
         Assert.IsFalse(tools.Any(tool => tool.Name is "agent" or "todo" or "memory" or "ask_user" or "schedule_cron"));
 
         CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_move");
-    }
-
-    [TestMethod]
-    public void CreateLocalExecutorTools_ContainsOnlyAllowedMechanicalReadOnlyTools()
-    {
-        var tools = StardewNpcToolFactory.CreateLocalExecutorTools(
-            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
-            CreateDescriptor("haley"));
-
-        CollectionAssert.AreEqual(
-            new[]
-            {
-                "stardew_status",
-                "stardew_task_status"
-            },
-            tools.Select(tool => tool.Name).ToArray());
-        CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_navigate_to_tile");
-        CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_idle_micro_action");
-        CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_speak");
-        CollectionAssert.DoesNotContain(tools.Select(tool => tool.Name).ToArray(), "stardew_open_private_chat");
     }
 
     [TestMethod]
@@ -168,6 +125,71 @@ public class StardewNpcToolFactoryTests
         Assert.AreEqual(2, (int?)commands.LastAction.Payload?["facingDirection"]);
         Assert.AreEqual("海风应该很舒服。", commands.LastAction.Payload?["thought"]?.ToString());
         Assert.IsFalse(commands.LastAction.Payload?.ContainsKey("destinationId") is true);
+    }
+
+    [TestMethod]
+    public async Task SubmitHostTaskTool_WithFutureWindowAction_QueuesUnsupportedLifecycleSkeleton()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-host-task-window-skeleton-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var tool = new StardewSubmitHostTaskTool(descriptor, driver);
+
+            var result = await tool.ExecuteAsync(new StardewSubmitHostTaskToolParameters
+            {
+                Action = "craft",
+                Reason = "craft a field snack later",
+                ConversationId = "conversation-craft"
+            }, CancellationToken.None);
+
+            Assert.IsTrue(result.Success);
+            var ingress = driver.Snapshot().IngressWorkItems.Single();
+            Assert.AreEqual("stardew_host_task_submission", ingress.WorkType);
+            Assert.AreEqual("queued", ingress.Status);
+            Assert.AreEqual("craft", ingress.Payload?["action"]?.GetValue<string>());
+            Assert.AreEqual("craft a field snack later", ingress.Payload?["reason"]?.GetValue<string>());
+            Assert.AreEqual("conversation-craft", ingress.Payload?["conversationId"]?.GetValue<string>());
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void SubmitHostTaskTool_SchemaExposesFutureWindowActionFamilies()
+    {
+        var descriptor = CreateDescriptor("haley");
+        var supervisor = new NpcRuntimeSupervisor();
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-host-task-schema-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var driver = supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None).GetAwaiter().GetResult();
+            var tool = new StardewSubmitHostTaskTool(descriptor, driver);
+
+            using var document = JsonDocument.Parse(tool.GetParameterSchema().GetRawText());
+            var actionEnum = document.RootElement
+                .GetProperty("properties")
+                .GetProperty("action")
+                .GetProperty("enum")
+                .EnumerateArray()
+                .Select(value => value.GetString())
+                .ToArray();
+
+            CollectionAssert.IsSubsetOf(
+                new[] { "craft", "trade", "quest", "gather" },
+                actionEnum,
+                "Future window action families must be visible as host-task actions even while they return unsupported facts.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
     }
 
     [TestMethod]

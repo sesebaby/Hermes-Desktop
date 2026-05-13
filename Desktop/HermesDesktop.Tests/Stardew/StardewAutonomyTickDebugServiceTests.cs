@@ -353,7 +353,7 @@ public sealed class StardewAutonomyTickDebugServiceTests
             message.Contains("## Stardew Runtime Contract", StringComparison.Ordinal));
         StringAssert.Contains(systemPrompt, "### stardew-task-continuity");
         StringAssert.Contains(systemPrompt, "玩家给你以后要兑现的约定时，按角色判断是否接受；接受后用 `todo` 记录短句");
-        StringAssert.Contains(systemPrompt, "私聊里答应“现在就做”的现实世界动作，必须用 `npc_delegate_action` 委托");
+        StringAssert.Contains(systemPrompt, "私聊里答应“现在就做”的现实世界动作，必须用 `stardew_submit_host_task` 提交");
         StringAssert.Contains(systemPrompt, "动作完成后不能假装忘记承诺");
         StringAssert.Contains(systemPrompt, "显式收口");
         StringAssert.Contains(systemPrompt, "action_loop");

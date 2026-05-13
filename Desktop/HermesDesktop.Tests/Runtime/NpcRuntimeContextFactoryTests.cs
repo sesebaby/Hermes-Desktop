@@ -102,7 +102,7 @@ public class NpcRuntimeContextFactoryTests
             NullLoggerFactory.Instance,
             skillManager,
             channelKey: "private_chat",
-            systemPromptSupplement: "如果玩家现在就请求行动，先委托给 npc_delegate_action。",
+            systemPromptSupplement: "如果玩家现在就请求行动，先提交给 stardew_submit_host_task。",
             includeMemory: true,
             includeUser: true);
         var messages = await bundle.ContextManager.PrepareContextAsync(
@@ -115,7 +115,7 @@ public class NpcRuntimeContextFactoryTests
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("npc-memory-skill", StringComparison.Ordinal));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains(SystemPrompts.RuntimeFactsGuidance, StringComparison.Ordinal));
         Assert.IsFalse(bundle.PromptBuilder.SystemPrompt.Contains("Skills that aren't maintained become liabilities", StringComparison.Ordinal));
-        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("npc_delegate_action", StringComparison.Ordinal));
+        Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("stardew_submit_host_task", StringComparison.Ordinal));
         Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("你正在作为星露谷 NPC runtime 行动", StringComparison.Ordinal));
         Assert.IsTrue(bundle.PromptBuilder.SystemPrompt.Contains("如果玩家现在就请求行动", StringComparison.Ordinal));
         Assert.IsTrue(messages.Any(message =>

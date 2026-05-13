@@ -4,7 +4,6 @@ using Hermes.Agent.Games.Stardew;
 using Hermes.Agent.Tasks;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace Hermes.Agent.Runtime;
@@ -16,7 +15,6 @@ public sealed class NpcAutonomyLoop
     private readonly NpcObservationFactStore _factStore;
     private readonly Hermes.Agent.Core.IAgent? _agent;
     private readonly NpcRuntimeLogWriter? _logWriter;
-    private readonly INpcLocalExecutorRunner? _localExecutorRunner;
     private readonly ILogger<NpcAutonomyLoop>? _logger;
     private readonly Func<string> _traceIdFactory;
 
@@ -26,14 +24,12 @@ public sealed class NpcAutonomyLoop
         Hermes.Agent.Core.IAgent? agent = null,
         NpcRuntimeLogWriter? logWriter = null,
         ILogger<NpcAutonomyLoop>? logger = null,
-        Func<string>? traceIdFactory = null,
-        INpcLocalExecutorRunner? localExecutorRunner = null)
+        Func<string>? traceIdFactory = null)
     {
         _adapter = adapter;
         _factStore = factStore;
         _agent = agent;
         _logWriter = logWriter;
-        _localExecutorRunner = localExecutorRunner;
         _logger = logger;
         _traceIdFactory = traceIdFactory ?? (() => $"trace_{Guid.NewGuid():N}");
     }
@@ -102,23 +98,6 @@ public sealed class NpcAutonomyLoop
         instance.RecordTrace(result.TraceId);
         await WriteInstanceTaskContinuityEvidenceAsync(instance, result.TraceId, ct);
         return result;
-    }
-
-    public async Task<NpcAutonomyTickResult> RunDelegatedIntentAsync(
-        NpcRuntimeInstance instance,
-        string traceId,
-        string intentJson,
-        CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(instance);
-        ArgumentException.ThrowIfNullOrWhiteSpace(traceId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(intentJson);
-
-        var route = await RunLocalExecutorAsync(instance, instance.Descriptor, [], traceId, intentJson, ct);
-        await WriteActivityAsync(instance.Descriptor, traceId, 0, route.DecisionResponse, ct);
-        instance.RecordTrace(traceId);
-        await WriteInstanceTaskContinuityEvidenceAsync(instance, traceId, ct);
-        return new NpcAutonomyTickResult(instance.Descriptor.NpcId, traceId, 0, 0, route.DecisionResponse, instance.Snapshot().Controller.EventCursor);
     }
 
     private async Task<NpcAutonomyTickResult> RunOneTickForInstanceAsync(
@@ -550,179 +529,6 @@ public sealed class NpcAutonomyLoop
             Error: "agent_max_tool_iterations_fallback_dropped"), ct);
     }
 
-    private async Task<LocalExecutorRouteResult> RunLocalExecutorAsync(
-        NpcRuntimeInstance? instance,
-        NpcRuntimeDescriptor descriptor,
-        IReadOnlyList<NpcObservationFact> facts,
-        string traceId,
-        string decisionResponse,
-        CancellationToken ct)
-    {
-        if (!NpcLocalActionIntent.TryParse(decisionResponse, out var intent, out var error) ||
-            intent is null)
-        {
-            await WriteDiagnosticAsync(
-                descriptor,
-                traceId,
-                "intent_contract",
-                "rejected",
-                error,
-                "intent_contract_invalid",
-                ct);
-
-            return new LocalExecutorRouteResult(
-                $"local_executor_escalated:{error}");
-        }
-
-        var action = FormatLocalAction(intent.Action);
-        await WriteDiagnosticAsync(
-            descriptor,
-            traceId,
-            "intent_contract",
-            "accepted",
-            $"action={action};reason={intent.Reason}",
-            null,
-            ct);
-        await WriteDiagnosticAsync(
-            descriptor,
-            traceId,
-            "parent_tool_surface",
-            "verified",
-            "registered_tools=0;stardew_navigate_to_tile=0;stardew_task_status=0;stardew_speak=0;todo=0;agent=0",
-            null,
-            ct);
-        await WriteDiagnosticAsync(
-            descriptor,
-            traceId,
-            "local_executor",
-            "selected",
-            $"action={action};lane=delegation",
-            null,
-            ct);
-
-        if (IsLocalExecutorDisabledWriteAction(intent.Action))
-        {
-            var blockedResult = NpcLocalExecutorRunner.BlockDisabledWriteAction(intent);
-            if (instance is not null)
-            {
-                await ApplyTaskUpdateContractAsync(instance, descriptor, traceId, intent.TaskUpdate, ct);
-                await SubmitSpeechContractAsync(descriptor, traceId, intent.Speech, ct);
-            }
-
-            await WriteLocalExecutorResultAsync(descriptor, traceId, blockedResult, ct);
-            return new LocalExecutorRouteResult(blockedResult.DecisionResponse);
-        }
-
-        var result = await _localExecutorRunner!.ExecuteAsync(descriptor, intent, facts, traceId, ct);
-        if (instance is not null)
-        {
-            await ApplyTaskUpdateContractAsync(instance, descriptor, traceId, intent.TaskUpdate, ct);
-            await SubmitSpeechContractAsync(descriptor, traceId, intent.Speech, ct);
-        }
-
-        await WriteLocalExecutorDiagnosticsAsync(descriptor, traceId, result.Diagnostics, ct);
-        await WriteLocalExecutorResultAsync(descriptor, traceId, result, ct);
-        return new LocalExecutorRouteResult(result.DecisionResponse);
-    }
-
-    private async Task ApplyTaskUpdateContractAsync(
-        NpcRuntimeInstance instance,
-        NpcRuntimeDescriptor descriptor,
-        string traceId,
-        NpcLocalTaskUpdateIntent? taskUpdate,
-        CancellationToken ct)
-    {
-        if (taskUpdate is null)
-            return;
-
-        var snapshot = instance.TodoStore.Read(descriptor.SessionId);
-        var existing = snapshot.Todos.FirstOrDefault(todo =>
-            string.Equals(todo.Id, taskUpdate.TaskId, StringComparison.Ordinal));
-        if (existing is null)
-        {
-            await WriteDiagnosticAsync(
-                descriptor,
-                traceId,
-                "task_update_contract",
-                "skipped",
-                $"task_not_found:{taskUpdate.TaskId}",
-                null,
-                ct);
-            return;
-        }
-
-        instance.TodoStore.Write(
-            descriptor.SessionId,
-            [new SessionTodoInput(taskUpdate.TaskId, null, taskUpdate.Status, taskUpdate.Reason)],
-            merge: true);
-        await WriteTaskContinuityAsync(
-            descriptor,
-            traceId,
-            "task_update_contract",
-            "task_written",
-            taskUpdate.Status,
-            null,
-            taskUpdate.Reason,
-            ct);
-    }
-
-    private async Task SubmitSpeechContractAsync(
-        NpcRuntimeDescriptor descriptor,
-        string traceId,
-        NpcLocalSpeechIntent? speech,
-        CancellationToken ct)
-    {
-        if (speech?.ShouldSpeak is not true ||
-            string.IsNullOrWhiteSpace(speech.Text))
-        {
-            return;
-        }
-
-        var channel = string.IsNullOrWhiteSpace(speech.Channel)
-            ? "player"
-            : speech.Channel.Trim();
-        var action = new GameAction(
-            descriptor.NpcId,
-            descriptor.GameId,
-            GameActionType.Speak,
-            traceId,
-            $"idem_{descriptor.NpcId}_{traceId}_speech",
-            new GameActionTarget("player"),
-            Payload: new JsonObject
-            {
-                ["text"] = speech.Text.Trim(),
-                ["channel"] = channel
-            },
-            BodyBinding: descriptor.EffectiveBodyBinding);
-
-        var result = await _adapter.Commands.SubmitAsync(action, ct);
-        await WriteHostActionResultAsync(descriptor, traceId, "stardew_speak", result, ct);
-    }
-
-    private async Task WriteHostActionResultAsync(
-        NpcRuntimeDescriptor descriptor,
-        string traceId,
-        string target,
-        GameCommandResult result,
-        CancellationToken ct)
-    {
-        if (_logWriter is null)
-            return;
-
-        await _logWriter.WriteAsync(new NpcRuntimeLogRecord(
-            DateTime.UtcNow,
-            traceId,
-            descriptor.NpcId,
-            descriptor.GameId,
-            descriptor.SessionId,
-            "host_action",
-            target,
-            result.Accepted ? "submitted" : "rejected",
-            string.IsNullOrWhiteSpace(result.Status) ? "unknown" : result.Status,
-            CommandId: result.CommandId,
-            Error: result.FailureReason), ct);
-    }
-
     private async Task WriteDiagnosticAsync(
         NpcRuntimeDescriptor descriptor,
         string traceId,
@@ -746,69 +552,6 @@ public sealed class NpcAutonomyLoop
             stage,
             Truncate(result, 300),
             Error: string.IsNullOrWhiteSpace(error) ? null : error), ct);
-    }
-
-    private async Task WriteLocalExecutorResultAsync(
-        NpcRuntimeDescriptor descriptor,
-        string traceId,
-        NpcLocalExecutorResult result,
-        CancellationToken ct)
-    {
-        if (_logWriter is null)
-            return;
-
-        await _logWriter.WriteAsync(new NpcRuntimeLogRecord(
-            DateTime.UtcNow,
-            traceId,
-            descriptor.NpcId,
-            descriptor.GameId,
-            descriptor.SessionId,
-            "local_executor",
-            result.Target,
-            result.Stage,
-            Truncate(result.Result, 300),
-            CommandId: result.CommandId,
-            Error: string.IsNullOrWhiteSpace(result.Error) ? null : result.Error,
-            ExecutorMode: result.ExecutorMode,
-            TargetSource: result.TargetSource), ct);
-    }
-
-    private async Task WriteLocalExecutorDiagnosticsAsync(
-        NpcRuntimeDescriptor descriptor,
-        string traceId,
-        IReadOnlyList<string> diagnostics,
-        CancellationToken ct)
-    {
-        if (_logWriter is null)
-            return;
-
-        foreach (var diagnostic in diagnostics)
-        {
-            var stage = ExtractDiagnosticValue(diagnostic, "stage") ?? "diagnostic";
-            var result = ExtractDiagnosticValue(diagnostic, "result") ?? diagnostic;
-            await _logWriter.WriteAsync(new NpcRuntimeLogRecord(
-                DateTime.UtcNow,
-                traceId,
-                descriptor.NpcId,
-                descriptor.GameId,
-                descriptor.SessionId,
-                "diagnostic",
-                "local_executor",
-                stage,
-                Truncate(result, 300)), ct);
-        }
-    }
-
-    private static string? ExtractDiagnosticValue(string value, string key)
-    {
-        var prefix = key + "=";
-        var start = value.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
-        if (start < 0)
-            return null;
-
-        start += prefix.Length;
-        var end = value.IndexOf(' ', start);
-        return end < 0 ? value[start..] : value[start..end];
     }
 
     private async Task WriteNarrativeMovementDiagnosticAsync(
@@ -1255,23 +998,6 @@ public sealed class NpcAutonomyLoop
     private static bool IsBlockedOrFailed(string? status)
         => string.Equals(status, "blocked", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(status, "failed", StringComparison.OrdinalIgnoreCase);
-
-    private static string FormatLocalAction(NpcLocalActionKind action)
-        => action switch
-        {
-            NpcLocalActionKind.Move => "move",
-            NpcLocalActionKind.Observe => "observe",
-            NpcLocalActionKind.Wait => "wait",
-            NpcLocalActionKind.TaskStatus => "task_status",
-            NpcLocalActionKind.IdleMicroAction => "idle_micro_action",
-            NpcLocalActionKind.Escalate => "escalate",
-            _ => action.ToString()
-        };
-
-    private static bool IsLocalExecutorDisabledWriteAction(NpcLocalActionKind action)
-        => action is NpcLocalActionKind.Move or NpcLocalActionKind.IdleMicroAction;
-
-    private sealed record LocalExecutorRouteResult(string DecisionResponse);
 
     private sealed record ToolResultEvidence(string? CommandId, GameCommandStatus? TerminalStatus);
 

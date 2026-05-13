@@ -10,6 +10,9 @@ using Microsoft.Extensions.Logging;
 
 public static class StardewNpcToolFactory
 {
+    public static string DefaultParentToolFingerprint
+        => StardewNpcToolSurfacePolicy.Default.ParentToolFingerprint;
+
     public static IReadOnlyList<ITool> CreateDefault(
         IGameAdapter adapter,
         NpcRuntimeDescriptor descriptor,
@@ -51,40 +54,6 @@ public static class StardewNpcToolFactory
         ]);
     }
 
-    public static IReadOnlyList<ITool> CreateLocalExecutorTools(
-        IGameAdapter adapter,
-        NpcRuntimeDescriptor descriptor,
-        Func<string>? traceIdFactory = null,
-        Func<string>? idempotencyKeyFactory = null,
-        int maxStatusPolls = 3,
-        NpcRuntimeDriver? runtimeDriver = null,
-        WorldCoordinationService? worldCoordination = null,
-        ILogger? logger = null,
-        Func<DateTime>? nowUtc = null,
-        TimeSpan? actionTimeout = null,
-        StardewNpcToolSurfacePolicy? toolSurfacePolicy = null)
-    {
-        return (toolSurfacePolicy ?? StardewNpcToolSurfacePolicy.Default).ApplyToLocalExecutor(
-        [
-            new StardewStatusTool(adapter.Queries, descriptor),
-            new StardewTaskStatusTool(adapter.Commands)
-        ]);
-    }
-
-    public static string LocalExecutorToolFingerprint(StardewNpcToolSurfacePolicy? toolSurfacePolicy = null, bool includeSkillView = false)
-    {
-        var probes = (toolSurfacePolicy ?? StardewNpcToolSurfacePolicy.Default)
-            .ValidatedLocalExecutorToolNames()
-            .Select(name => new ToolFingerprintProbe(name))
-            .Cast<ITool>()
-            .ToList();
-        if (includeSkillView)
-            probes.Add(new ToolFingerprintProbe("skill_view"));
-
-        return NpcToolSurface.FromTools(probes)
-            .Fingerprint;
-    }
-
     private sealed class ToolFingerprintProbe(string name) : ITool
     {
         public string Name { get; } = name;
@@ -99,7 +68,7 @@ public static class StardewNpcToolFactory
     }
 }
 
-public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
+public sealed class StardewSubmitHostTaskTool : ITool, IToolSchemaProvider
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -109,18 +78,17 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
     private static readonly HashSet<string> AllowedActions = new(StringComparer.OrdinalIgnoreCase)
     {
         "move",
-        "observe",
-        "wait",
-        "task_status",
-        "idle_micro_action",
-        "escalate"
+        "craft",
+        "trade",
+        "quest",
+        "gather"
     };
 
     private readonly NpcRuntimeDescriptor _descriptor;
     private readonly NpcRuntimeDriver _runtimeDriver;
     private readonly ILogger? _logger;
 
-    public NpcDelegateActionTool(
+    public StardewSubmitHostTaskTool(
         NpcRuntimeDescriptor descriptor,
         NpcRuntimeDriver runtimeDriver,
         ILogger? logger = null)
@@ -130,11 +98,11 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
         _logger = logger;
     }
 
-    public string Name => "npc_delegate_action";
+    public string Name => "stardew_submit_host_task";
 
-    public string Description => "仅限私聊父 agent 使用。玩家要求现在就做现实世界动作且你决定答应时，先调用本工具把行动意图委托给宿主执行，再自然回复玩家。只口头答应不会发生动作。action=move 时必须先用 skill_view 读取 stardew-navigation 分层资料，并把已加载 POI 给出的 target(locationName,x,y,source) 原样传入 target；不要使用 destinationId 或编造坐标。";
+    public string Description => "仅限私聊父 agent 使用。玩家要求现在就做现实世界动作且你决定答应时，先调用本工具提交 host task，让宿主后续按同一 host task lifecycle 执行，再自然回复玩家。只口头答应不会发生动作。action=move 时必须先用 skill_view 读取 stardew-navigation 分层资料，并把已加载 POI 给出的 target(locationName,x,y,source) 原样传入 target；不要使用 destinationId 或编造坐标。";
 
-    public Type ParametersType => typeof(NpcDelegateActionToolParameters);
+    public Type ParametersType => typeof(StardewSubmitHostTaskToolParameters);
 
     public JsonElement GetParameterSchema()
         => JsonSerializer.SerializeToElement(new
@@ -145,17 +113,18 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
                 action = new
                 {
                     type = "string",
-                    description = "要委托的简单行动类型：move、observe、wait、task_status、idle_micro_action 或 escalate。"
+                    @enum = new[] { "move", "craft", "trade", "quest", "gather" },
+                    description = "要提交给 host task runner 的行动类型。move 是当前支持的真实动作；craft/trade/quest/gather 是未来窗口任务骨架，当前会进入 host task lifecycle 并返回 unsupported/blocked fact，不会执行游戏写操作。"
                 },
                 reason = new
                 {
                     type = "string",
-                    description = "你为什么接受这个立即行动的简短原因。"
+                    description = "你为什么接受这个立即行动 host task 的简短原因。"
                 },
                 intentText = new
                 {
                     type = "string",
-                    description = "可选兼容字段。玩家原话或一句自然语言意图；action=move 的执行目标以 target 为准。"
+                    description = "可选字段。玩家原话或一句自然语言意图；action=move 的执行目标以 target 为准。"
                 },
                 target = new
                 {
@@ -182,7 +151,7 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
 
     public async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
     {
-        var p = (NpcDelegateActionToolParameters)parameters;
+        var p = (StardewSubmitHostTaskToolParameters)parameters;
         if (string.IsNullOrWhiteSpace(p.Action) ||
             !AllowedActions.Contains(p.Action))
         {
@@ -192,8 +161,8 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
         if (string.IsNullOrWhiteSpace(p.Reason))
             return ToolResult.Fail("reason is required");
 
-        var traceId = $"trace_delegate_{_descriptor.NpcId}_{Guid.NewGuid():N}";
-        var workItemId = $"ingress_delegate_{_descriptor.NpcId}_{Guid.NewGuid():N}";
+        var traceId = $"trace_host_task_{_descriptor.NpcId}_{Guid.NewGuid():N}";
+        var workItemId = $"ingress_host_task_{_descriptor.NpcId}_{Guid.NewGuid():N}";
         var action = p.Action.Trim();
         if (string.Equals(action, "move", StringComparison.OrdinalIgnoreCase) &&
             !TryValidateMoveTarget(p.Target, out var targetError))
@@ -232,10 +201,10 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
         await _runtimeDriver.EnqueueIngressWorkItemAsync(
             new NpcRuntimeIngressWorkItemSnapshot(
                 workItemId,
-                "npc_delegated_action",
+                "stardew_host_task_submission",
                 "queued",
                 DateTime.UtcNow,
-                $"idem_delegate_{_descriptor.NpcId}_{Guid.NewGuid():N}",
+                $"idem_host_task_{_descriptor.NpcId}_{Guid.NewGuid():N}",
                 traceId,
                 payload),
             ct);
@@ -248,14 +217,14 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
                 _descriptor.NpcId,
                 _descriptor.GameId,
                 _descriptor.SessionId,
-                "private_chat_delegation",
-                "npc_delegate_action",
+                "host_task_submission",
+                "stardew_submit_host_task",
                 "queued",
                 $"workItemId={workItemId};action={action};conversationId={conversationId ?? "-"}"),
             ct);
 
         _logger?.LogInformation(
-            "Queued NPC delegated action ingress; npc={NpcId}; trace={TraceId}; workItemId={WorkItemId}; action={Action}; conversationId={ConversationId}",
+            "Queued Stardew host task submission ingress; npc={NpcId}; trace={TraceId}; workItemId={WorkItemId}; action={Action}; conversationId={ConversationId}",
             _descriptor.NpcId,
             traceId,
             workItemId,
@@ -273,7 +242,7 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
         }, JsonOptions));
     }
 
-    private static bool TryValidateMoveTarget(NpcDelegateMoveTargetParameters? target, out string error)
+    private static bool TryValidateMoveTarget(StardewSubmitHostTaskMoveTargetParameters? target, out string error)
     {
         if (target is null)
         {
@@ -323,7 +292,7 @@ public sealed class NpcDelegateActionTool : ITool, IToolSchemaProvider
     }
 }
 
-public sealed class NpcDelegateActionToolParameters : ISessionAwareToolParameters
+public sealed class StardewSubmitHostTaskToolParameters : ISessionAwareToolParameters
 {
     public required string Action { get; init; }
 
@@ -331,7 +300,7 @@ public sealed class NpcDelegateActionToolParameters : ISessionAwareToolParameter
 
     public string? IntentText { get; init; }
 
-    public NpcDelegateMoveTargetParameters? Target { get; init; }
+    public StardewSubmitHostTaskMoveTargetParameters? Target { get; init; }
 
     public string? DestinationText { get; init; }
 
@@ -341,7 +310,7 @@ public sealed class NpcDelegateActionToolParameters : ISessionAwareToolParameter
     public string? CurrentSessionId { get; set; }
 }
 
-public sealed class NpcDelegateMoveTargetParameters
+public sealed class StardewSubmitHostTaskMoveTargetParameters
 {
     public required string LocationName { get; init; }
 
@@ -406,8 +375,7 @@ public sealed class NpcNoWorldActionToolParameters
 }
 
 public sealed record StardewNpcToolSurfacePolicy(
-    IReadOnlyList<string> ParentToolNames,
-    IReadOnlyList<string> LocalExecutorToolNames)
+    IReadOnlyList<string> ParentToolNames)
 {
     private static readonly string[] ParentCatalog =
     [
@@ -425,34 +393,17 @@ public sealed record StardewNpcToolSurfacePolicy(
         "stardew_task_status"
     ];
 
-    private static readonly string[] LocalExecutorCatalog =
-    [
-        "stardew_status",
-        "stardew_task_status"
-    ];
-
-    public static StardewNpcToolSurfacePolicy Default { get; } = new(
-        ParentCatalog,
-        LocalExecutorCatalog);
+    public static StardewNpcToolSurfacePolicy Default { get; } = new(ParentCatalog);
 
     public static StardewNpcToolSurfacePolicy Create(
-        IEnumerable<string>? parentToolNames = null,
-        IEnumerable<string>? localExecutorToolNames = null)
-        => new(
-            Normalize(parentToolNames ?? ParentCatalog),
-            Normalize(localExecutorToolNames ?? LocalExecutorCatalog));
+        IEnumerable<string>? parentToolNames = null)
+        => new(Normalize(parentToolNames ?? ParentCatalog));
 
     public IReadOnlyList<ITool> ApplyToParent(IEnumerable<ITool> tools)
         => Apply("parent", tools, ParentToolNames, ParentCatalog);
 
-    public IReadOnlyList<ITool> ApplyToLocalExecutor(IEnumerable<ITool> tools)
-        => Apply("local executor", tools, LocalExecutorToolNames, LocalExecutorCatalog);
-
-    public IReadOnlyList<string> ValidatedLocalExecutorToolNames()
-    {
-        ValidateKnown("local executor", LocalExecutorToolNames, LocalExecutorCatalog);
-        return LocalExecutorToolNames;
-    }
+    public string ParentToolFingerprint
+        => string.Join("|", ParentToolNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase));
 
     private static IReadOnlyList<ITool> Apply(
         string surfaceName,

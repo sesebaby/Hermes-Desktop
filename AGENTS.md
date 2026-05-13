@@ -117,11 +117,12 @@
   Get-ChildItem "$env:LOCALAPPDATA\hermes\hermes-cs\runtime\stardew\games\stardew-valley" -Recurse -Filter runtime.jsonl | Sort-Object LastWriteTime -Descending | Select-Object -First 5 FullName,LastWriteTime
   ```
 - 先分层判断再追根因：
-  - `runtime.jsonl` 里只有 `wait` / 没有 `local_executor`、`host_action`：先查父层决策是不是没发出行动。
-  - `runtime.jsonl` 里有 `local_executor_blocked:*`：先查本地执行层 / tool-call / delegation lane。
-  - `runtime.jsonl` 里有 `host_action stardew_speak` 但没有 `move`：说明父层在说话，不代表本地模型承担了动作。
+  - `runtime.jsonl` 里没有 `host_action` / host task / `last_action_result`：先查主 agent 是否真的发出模型可见工具调用。
+  - `runtime.jsonl` 里有 `pending_work_item` / `action_slot` 长期不结束：先查 host task 状态、watchdog、timeout、resource claim 和 bridge status。
+  - `runtime.jsonl` 里有 `host_action stardew_speak` 但没有 `move`：说明主 agent 在说话，不代表有移动任务。
+  - `runtime.jsonl` 里出现 `local_executor` / `local_executor_blocked:*`：这是旧路径残留或回归信号，不能当当前正常链路处理，应优先追查并退役。
   - SMAPI 有 `task_move_enqueued` / `task_running` / `task_completed`：说明 bridge 收到命令了；没有这些就先别怀疑游戏寻路。
-  - `hermes.log` 里先看 `StardewNpcAutonomyBackgroundService`、`NpcAutonomyLoop`、`ChatLaneClientProvider` 这三类日志，优先回答“有没有唤醒 / 走了哪条模型 lane / 有没有进入 LLM turn”。
+  - `hermes.log` 里先看 `StardewNpcAutonomyBackgroundService`、`NpcAutonomyLoop`、`StardewRuntimeActionController` / Stardew tool 日志，优先回答“有没有唤醒 / 主 agent 有没有进入 LLM turn / 有没有创建 host task / bridge 有没有回 terminal fact”。
 
 ## 当前技术事实
 
@@ -316,14 +317,13 @@
 - `NpcRuntimeSupervisor` 再把通用 Hermes-native 工具和 Stardew 专用工具接进去。
 - 结论：每个 NPC 本质上是“正常 Hermes agent + 自己的 home / memory / transcript / todo / tool surface”，不要在宿主侧再发明第二套 NPC 任务或记忆系统。
 
-### 3. delegation lane 与 player-visible lane 已经分离
+### 3. Stardew v1 不保留小模型执行层
 
-- `ChatLaneClientProvider` 与 Desktop/Stardew runtime 会分别拿 `ChatRouteNames.Delegation`、`StardewAutonomy`、`StardewPrivateChat` 等 lane client。
-- `sync-stardew-npc-config.ps1` 也明确写 delegation lane 只用于 child agent work。
-- 文档里可以写“存在专用 delegation lane 支持子 agent / NPC autonomy”，不要写成“任意多层 agent 树默认打开”。
-- 最近这条设计还要明确成“父云子本地”：parent decision / player-facing lane 继续走云模型，child agent / local executor / delegation work 才走本地小模型 lane。
-- 当前本地小模型 lane 是配置层概念，走 OpenAI-compatible `delegation` endpoint；当前仓库文档与脚本示例里对应的是本地 `LM Studio`。
-- 默认不要把 `stardew_autonomy` 或 `stardew_private_chat` 直接改到本地小模型；除非产品设计明确改变，否则保持 parent-cloud / delegation-local 路由。
+- `ChatRouteNames.Delegation` 是通用 child-agent / 辅助模型配置能力，不是 Stardew v1 gameplay 执行路径。
+- Stardew v1 对齐 `external/hermescraft-main`：主 agent 调模型可见工具，host/bridge task runner 机械执行，状态/超时/watchdog/fact 回主 agent。
+- 不再保留“父云子本地”“local executor 执行 gameplay 动作”作为当前设计；相关旧 prompt、tool surface、harness 和文档若被碰到，必须退役或改成非当前路径说明。
+- 不得把 `stardew_autonomy`、`stardew_private_chat`、移动、说话、窗口操作、`todo` 收口或私聊即时行动闭环转交给本地小模型。
+- 废弃能力必须同步退役；禁止为了兼容或“以后也许用”保留双轨、影子实现、隐藏 fallback 或第二执行 lane。
 
 ## 当前已实现能力与未实现边界
 
@@ -359,6 +359,7 @@
 - 方案优先对齐 `external/hermescraft-main` 和 `external/hermes-agent-main` 的架构思想，只复用“Agent 通过工具理解世界、桥接层只暴露能力接口”的部分，不照搬游戏特有实现。
 - 本项目 fork 自 `RedWoodOG/Hermes-Desktop`；禁止直接 push 到 `upstream`，所有修改推送到 `origin`，`upstream` 只用于 fetch。
 - 预发布阶段只允许一条实现路径，禁止双轨、兼容分叉和影子实现。
+- 废弃的能力必须同步退役：相关 prompt、tool、lane、harness、配置、文档和测试期望要一起清退或显式标记为非当前路径；不得保留可被误用的兼容分叉、影子实现、隐藏 fallback 或第二执行链路。
 - 游戏侧和桥接层只负责把世界接到 Hermes 上，不能接管、替代或干涉 Hermes 原生能力。
 - 不得代写或维护 `SOUL.md`、`MEMORY.md`、`USER.md`，也不得维护任何等价的人格摘要、记忆摘要、身份快照或第二 tool lane。
 - 宿主只在智能体主动调用工具、收到玩家输入或完成真实执行后提供事实、事件、确认和执行结果，不替 NPC 决策；任何真实世界写操作都必须走宿主执行器。

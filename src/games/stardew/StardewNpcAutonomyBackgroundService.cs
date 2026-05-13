@@ -590,13 +590,6 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                         recentActivityProvider: new StardewRecentActivityProvider(factStore, tracker.Driver),
                         logger: _logger,
                         actionChainGuardOptions: _budget.Options.EffectiveActionChainGuard),
-                    LocalExecutorGameToolFactory: (adapter, factStore) => StardewNpcToolFactory.CreateLocalExecutorTools(
-                        adapter,
-                        binding.Descriptor,
-                        runtimeDriver: tracker.Driver,
-                        worldCoordination: _worldCoordination,
-                        logger: _logger),
-                    LocalExecutorRuntimeToolFactory: services => [new SkillViewTool(services.SkillManager)],
                     Services: new NpcRuntimeCompositionServices(
                         _chatClient,
                         _loggerFactory,
@@ -605,8 +598,8 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                         _delegationChatClient),
                     ToolSurface: toolSnapshot.ToolSurface,
                     ToolSurfaceSnapshotVersion: toolSnapshot.SnapshotVersion,
+                    GameToolFingerprint: StardewNpcToolFactory.DefaultParentToolFingerprint,
                     SystemPromptSupplement: systemPromptSupplement,
-                    LocalExecutorToolFingerprint: StardewNpcToolFactory.LocalExecutorToolFingerprint(includeSkillView: true),
                     ActionChainGuardOptions: _budget.Options.EffectiveActionChainGuard),
                 ct);
 
@@ -920,7 +913,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 if (StardewRuntimeActionController.IsInFlightStatus(lookupStatus.Status))
                 {
                     await PauseTrackerAsync(tracker, deliveredCursor, $"command_{lookupStatus.Status}", bridgeKey, lookupStatus.RetryAfterUtc, ct);
-                    await DeferQueuedDelegatedIngressIfBusyAsync(binding, tracker, deliveredCursor, ct);
+                    await DeferQueuedHostTaskSubmissionIngressIfBusyAsync(binding, tracker, deliveredCursor, ct);
                     return true;
                 }
 
@@ -960,7 +953,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 bridgeKey,
                 controller.ActionSlot?.TimeoutAtUtc ?? DateTime.UtcNow + _budget.Options.EffectiveRestartCooldown,
                 ct);
-            await DeferQueuedDelegatedIngressIfBusyAsync(binding, tracker, deliveredCursor, ct);
+            await DeferQueuedHostTaskSubmissionIngressIfBusyAsync(binding, tracker, deliveredCursor, ct);
             return true;
         }
 
@@ -990,7 +983,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         if (StardewRuntimeActionController.IsInFlightStatus(status.Status))
         {
             await PauseTrackerAsync(tracker, deliveredCursor, $"command_{status.Status}", bridgeKey, status.RetryAfterUtc, ct);
-            await DeferQueuedDelegatedIngressIfBusyAsync(binding, tracker, deliveredCursor, ct);
+            await DeferQueuedHostTaskSubmissionIngressIfBusyAsync(binding, tracker, deliveredCursor, ct);
             return true;
         }
 
@@ -1181,14 +1174,14 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         CancellationToken ct)
     {
         var workItem = tracker.Driver.Snapshot().IngressWorkItems
-            .FirstOrDefault(item => string.Equals(item.WorkType, "npc_delegated_action", StringComparison.OrdinalIgnoreCase)) ??
+            .FirstOrDefault(item => string.Equals(item.WorkType, "stardew_host_task_submission", StringComparison.OrdinalIgnoreCase)) ??
             tracker.Driver.Snapshot().IngressWorkItems
                 .FirstOrDefault(item => string.Equals(item.WorkType, "scheduled_private_chat", StringComparison.OrdinalIgnoreCase));
         if (workItem is null)
             return false;
 
-        if (string.Equals(workItem.WorkType, "npc_delegated_action", StringComparison.OrdinalIgnoreCase))
-            return await TryProcessDelegatedActionIngressWorkAsync(binding, tracker, hostAdapter, dispatch, workItem, deliveredCursor, ct);
+        if (string.Equals(workItem.WorkType, "stardew_host_task_submission", StringComparison.OrdinalIgnoreCase))
+            return await TryProcessHostTaskSubmissionIngressWorkAsync(binding, tracker, hostAdapter, dispatch, workItem, deliveredCursor, ct);
 
         var action = new GameAction(
             binding.Descriptor.NpcId,
@@ -1222,7 +1215,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         return true;
     }
 
-    private async Task<bool> TryProcessDelegatedActionIngressWorkAsync(
+    private async Task<bool> TryProcessHostTaskSubmissionIngressWorkAsync(
         StardewNpcRuntimeBinding binding,
         NpcAutonomyTracker tracker,
         IGameAdapter hostAdapter,
@@ -1234,7 +1227,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         var controller = tracker.Driver.Snapshot();
         if (controller.ActionSlot is not null || controller.PendingWorkItem is not null)
         {
-            await DeferDelegatedIngressAsync(binding, tracker, workItem, deliveredCursor, ct);
+            await DeferHostTaskSubmissionIngressAsync(binding, tracker, workItem, deliveredCursor, ct);
             return true;
         }
 
@@ -1256,12 +1249,12 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 "malformed",
                 "missing_action_or_reason",
                 ct);
+            await RecordIngressBlockedTerminalAsync(binding, tracker, workItem, action ?? "host_task_submission", "missing_action_or_reason", ct);
             await tracker.Driver.RemoveIngressWorkItemAsync(workItem.WorkItemId, ct);
             await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
             return true;
         }
 
-        var intentText = ReadPayloadString(payload, "intentText");
         var conversationId = ReadPayloadString(payload, "conversationId");
         var rootTodoId = ReadPayloadString(payload, "rootTodoId");
         var isMove = string.Equals(action, "move", StringComparison.OrdinalIgnoreCase);
@@ -1292,6 +1285,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                     "malformed",
                     targetError,
                     ct);
+                await RecordIngressBlockedTerminalAsync(binding, tracker, workItem, action, targetError, ct);
                 await tracker.Driver.RemoveIngressWorkItemAsync(workItem.WorkItemId, ct);
                 await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
                 return true;
@@ -1345,63 +1339,23 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             return true;
         }
 
-        var intentJson = JsonSerializer.Serialize(new Dictionary<string, object?>
-        {
-            ["action"] = action.Trim(),
-            ["reason"] = MergeReasonAndIntentText(reason.Trim(), intentText)
-        }.Where(pair => pair.Value is not null).ToDictionary(pair => pair.Key, pair => pair.Value));
-
-        var handle = await _runtimeSupervisor.GetOrCreateAutonomyHandleAsync(
-            binding.Descriptor,
-            binding.Pack,
-            _runtimeRoot,
-            new NpcRuntimeAutonomyBindingRequest(
-                ChannelKey: "autonomy",
-                AdapterKey: dispatch.BridgeKey,
-                IncludeMemory: _includeMemory,
-                IncludeUser: _includeUser,
-                MaxToolIterations: _budget.Options.MaxToolIterations,
-                AdapterFactory: () => hostAdapter,
-                GameToolFactory: (adapter, factStore) => StardewNpcToolFactory.CreateDefault(
-                    adapter,
-                    binding.Descriptor,
-                    runtimeDriver: tracker.Driver,
-                    worldCoordination: _worldCoordination,
-                    recentActivityProvider: new StardewRecentActivityProvider(factStore, tracker.Driver),
-                    logger: _logger,
-                    actionChainGuardOptions: _budget.Options.EffectiveActionChainGuard),
-                LocalExecutorGameToolFactory: (adapter, factStore) => StardewNpcToolFactory.CreateLocalExecutorTools(
-                    adapter,
-                    binding.Descriptor,
-                    runtimeDriver: tracker.Driver,
-                    worldCoordination: _worldCoordination,
-                    logger: _logger),
-                LocalExecutorRuntimeToolFactory: services => [new SkillViewTool(services.SkillManager)],
-                Services: new NpcRuntimeCompositionServices(
-                    _chatClient,
-                    _loggerFactory,
-                    _skillManager,
-                    _cronScheduler,
-                    _delegationChatClient),
-                ToolSurface: NpcToolSurface.FromTools([]),
-                SystemPromptSupplement: _promptSupplementBuilder.Build(binding.Descriptor, tracker.Instance.Namespace, binding.Pack),
-                LocalExecutorToolFingerprint: StardewNpcToolFactory.LocalExecutorToolFingerprint(includeSkillView: true),
-                ActionChainGuardOptions: _budget.Options.EffectiveActionChainGuard),
+        var unsupportedAction = action.Trim();
+        await RecordIngressBlockedTerminalAsync(
+            binding,
+            tracker,
+            workItem,
+            unsupportedAction,
+            "unsupported_host_task_submission_action",
             ct);
-
-        var tick = await handle.Loop.RunDelegatedIntentAsync(
-            handle.Instance,
-            string.IsNullOrWhiteSpace(workItem.TraceId) ? $"trace_ingress_{Guid.NewGuid():N}" : workItem.TraceId!,
-            intentJson,
+        await WriteIngressDiagnosticAsync(
+            binding,
+            tracker,
+            workItem,
+            "blocked",
+            $"unsupported_host_task_submission_action:{unsupportedAction}",
             ct);
-        if (tick.DecisionResponse?.StartsWith("local_executor_completed:", StringComparison.OrdinalIgnoreCase) is true ||
-            tick.DecisionResponse?.StartsWith("local_executor_blocked:", StringComparison.OrdinalIgnoreCase) is true ||
-            tick.DecisionResponse?.StartsWith("local_executor_escalated:", StringComparison.OrdinalIgnoreCase) is true)
-        {
-            await tracker.Driver.RemoveIngressWorkItemAsync(workItem.WorkItemId, ct);
-        }
-
-        await tracker.Driver.AcknowledgeEventCursorAsync(tick.NextEventCursor ?? deliveredCursor, ct);
+        await tracker.Driver.RemoveIngressWorkItemAsync(workItem.WorkItemId, ct);
+        await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
         return true;
     }
 
@@ -1430,7 +1384,26 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             ct);
     }
 
-    private async Task DeferDelegatedIngressAsync(
+    private static Task RecordIngressBlockedTerminalAsync(
+        StardewNpcRuntimeBinding binding,
+        NpcAutonomyTracker tracker,
+        NpcRuntimeIngressWorkItemSnapshot workItem,
+        string? action,
+        string errorCode,
+        CancellationToken ct)
+        => tracker.Driver.SetLastTerminalCommandStatusAsync(
+            new GameCommandStatus(
+                workItem.WorkItemId,
+                binding.Descriptor.NpcId,
+                string.IsNullOrWhiteSpace(action) ? workItem.WorkType : action.Trim(),
+                StardewCommandStatuses.Blocked,
+                1,
+                errorCode,
+                errorCode,
+                UpdatedAtUtc: DateTime.UtcNow),
+            ct);
+
+    private async Task DeferHostTaskSubmissionIngressAsync(
         StardewNpcRuntimeBinding binding,
         NpcAutonomyTracker tracker,
         NpcRuntimeIngressWorkItemSnapshot workItem,
@@ -1455,24 +1428,24 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             tracker,
             deferred,
             "deferred",
-            "delegated_ingress_deferred:action_slot_busy",
+            "host_task_submission_deferred:action_slot_busy",
             ct);
         await tracker.Driver.SetNextWakeAtUtcAsync(DateTime.UtcNow + TimeSpan.FromSeconds(2), ct);
         await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
     }
 
-    private async Task DeferQueuedDelegatedIngressIfBusyAsync(
+    private async Task DeferQueuedHostTaskSubmissionIngressIfBusyAsync(
         StardewNpcRuntimeBinding binding,
         NpcAutonomyTracker tracker,
         GameEventCursor deliveredCursor,
         CancellationToken ct)
     {
         var workItem = tracker.Driver.Snapshot().IngressWorkItems
-            .FirstOrDefault(item => string.Equals(item.WorkType, "npc_delegated_action", StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(item => string.Equals(item.WorkType, "stardew_host_task_submission", StringComparison.OrdinalIgnoreCase));
         if (workItem is null)
             return;
 
-        await DeferDelegatedIngressAsync(binding, tracker, workItem, deliveredCursor, ct);
+        await DeferHostTaskSubmissionIngressAsync(binding, tracker, workItem, deliveredCursor, ct);
     }
 
     private async Task BlockDeferredIngressAsync(
@@ -1493,7 +1466,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             tracker,
             blocked,
             "blocked",
-            StardewBridgeErrorCodes.DelegatedIngressDeferredExceeded,
+            StardewBridgeErrorCodes.HostTaskSubmissionDeferredExceeded,
             ct);
 
         if (activeSlotOrPending)
@@ -1504,16 +1477,12 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         {
             var payload = blocked.Payload ?? [];
             var action = ReadPayloadString(payload, "action") ?? blocked.WorkType;
-            await tracker.Driver.SetLastTerminalCommandStatusAsync(
-                new GameCommandStatus(
-                    blocked.WorkItemId,
-                    binding.Descriptor.NpcId,
-                    action,
-                    StardewCommandStatuses.Blocked,
-                    1,
-                    StardewBridgeErrorCodes.DelegatedIngressDeferredExceeded,
-                    StardewBridgeErrorCodes.DelegatedIngressDeferredExceeded,
-                    UpdatedAtUtc: DateTime.UtcNow),
+            await RecordIngressBlockedTerminalAsync(
+                binding,
+                tracker,
+                blocked,
+                action,
+                StardewBridgeErrorCodes.HostTaskSubmissionDeferredExceeded,
                 ct);
             await tracker.Driver.RemoveIngressWorkItemAsync(blocked.WorkItemId, ct);
         }

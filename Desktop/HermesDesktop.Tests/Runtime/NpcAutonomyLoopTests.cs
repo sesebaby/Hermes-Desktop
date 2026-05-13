@@ -1432,7 +1432,6 @@ public class NpcAutonomyLoopTests
                 new NpcObservationFactStore(),
                 new FakeAgent(() => { }, parentContract),
                 logWriter: new NpcRuntimeLogWriter(logPath),
-                localExecutorRunner: new NpcUnavailableLocalExecutorRunner(),
                 traceIdFactory: () => "trace-structured-wait-closure");
 
             await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
@@ -1945,13 +1944,6 @@ public class NpcAutonomyLoopTests
                   "escalate": false
                 }
                 """;
-            var localExecutor = new FakeLocalExecutorRunner(new NpcLocalExecutorResult(
-                Target: "stardew_navigate_to_tile",
-                Stage: "completed",
-                Result: "queued",
-                DecisionResponse: "local_executor_completed:stardew_navigate_to_tile",
-                MemorySummary: "navigation command queued; reason: meet the player near Pierre",
-                CommandId: "cmd-move-1"));
             var loop = new NpcAutonomyLoop(
                 new FakeGameAdapter(
                     new CountingCommandService(),
@@ -1965,12 +1957,10 @@ public class NpcAutonomyLoopTests
                 new NpcObservationFactStore(),
                 new FakeAgent(() => { }, parentContract),
                 logWriter: new NpcRuntimeLogWriter(logPath),
-                localExecutorRunner: localExecutor,
                 traceIdFactory: () => "trace-local-move");
 
             var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
 
-            Assert.AreEqual(0, localExecutor.CallCount);
             Assert.AreEqual(parentContract, result.DecisionResponse);
 
             var records = ReadRuntimeLogRecords(logPath);
@@ -2012,13 +2002,6 @@ public class NpcAutonomyLoopTests
                   "escalate": false
                 }
                 """;
-            var localExecutor = new FakeLocalExecutorRunner(new NpcLocalExecutorResult(
-                Target: "stardew_idle_micro_action",
-                Stage: "completed",
-                Result: "completed",
-                DecisionResponse: "local_executor_completed:stardew_idle_micro_action",
-                MemorySummary: "played look_around idle micro action for Haley",
-                CommandId: "cmd-idle-1"));
             var loop = new NpcAutonomyLoop(
                 new FakeGameAdapter(
                     new CountingCommandService(),
@@ -2032,12 +2015,10 @@ public class NpcAutonomyLoopTests
                 new NpcObservationFactStore(),
                 new FakeAgent(() => { }, parentContract),
                 logWriter: new NpcRuntimeLogWriter(logPath),
-                localExecutorRunner: localExecutor,
                 traceIdFactory: () => "trace-local-idle");
 
             var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
 
-            Assert.AreEqual(0, localExecutor.CallCount);
             Assert.AreEqual(parentContract, result.DecisionResponse);
 
             var records = ReadRuntimeLogRecords(logPath);
@@ -2103,7 +2084,6 @@ public class NpcAutonomyLoopTests
                 new NpcObservationFactStore(),
                 new FakeAgent(() => { }, parentContract),
                 logWriter: new NpcRuntimeLogWriter(logPath),
-                localExecutorRunner: new NpcUnavailableLocalExecutorRunner(),
                 traceIdFactory: () => "trace-contract-side-effects");
 
             var result = await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
@@ -2168,13 +2148,6 @@ public class NpcAutonomyLoopTests
                 new NpcObservationFactStore(),
                 new FakeAgent(() => { }, parentContract),
                 logWriter: new NpcRuntimeLogWriter(logPath),
-                localExecutorRunner: new FakeLocalExecutorRunner(new NpcLocalExecutorResult(
-                    "local_executor",
-                    "blocked",
-                    "executor_protocol_violation",
-                    "local_executor_blocked:executor_protocol_violation",
-                    Error: "executor_protocol_violation",
-                    ExecutorMode: "blocked")),
                 traceIdFactory: () => "trace-speech-blocked");
 
             await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
@@ -2216,15 +2189,6 @@ public class NpcAutonomyLoopTests
                   }
                 }
                 """;
-            var localExecutor = new FakeLocalExecutorRunner(new NpcLocalExecutorResult(
-                Target: "stardew_navigate_to_tile",
-                Stage: "completed",
-                Result: "queued",
-                DecisionResponse: "local_executor_completed:stardew_navigate_to_tile",
-                MemorySummary: "navigating to Beach tile 32,34",
-                CommandId: "cmd-nav-1",
-                ExecutorMode: "host_deterministic",
-                TargetSource: "map-skill:stardew.navigation.poi.beach.shoreline"));
             var loop = new NpcAutonomyLoop(
                 new FakeGameAdapter(
                     new CountingCommandService(),
@@ -2238,12 +2202,10 @@ public class NpcAutonomyLoopTests
                 new NpcObservationFactStore(),
                 new FakeAgent(() => { }, parentContract),
                 logWriter: new NpcRuntimeLogWriter(logPath),
-                localExecutorRunner: localExecutor,
                 traceIdFactory: () => "trace-target-source");
 
             var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
 
-            Assert.AreEqual(0, localExecutor.CallCount);
             Assert.AreEqual(parentContract, result.DecisionResponse);
 
             var records = ReadRuntimeLogRecords(logPath);
@@ -2300,7 +2262,6 @@ public class NpcAutonomyLoopTests
                 new NpcObservationFactStore(),
                 new FakeAgent(() => { }, parentContract),
                 logWriter: new NpcRuntimeLogWriter(logPath),
-                localExecutorRunner: new NpcUnavailableLocalExecutorRunner(),
                 traceIdFactory: () => "trace-unknown-task-update");
 
             await loop.RunOneTickAsync(instance, new GameEventCursor(null), CancellationToken.None);
@@ -2333,11 +2294,6 @@ public class NpcAutonomyLoopTests
             ns.EnsureDirectories();
             var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
             var memoryManager = ns.CreateMemoryManager(new FakeChatClient(), NullLogger<MemoryManager>.Instance);
-            var localExecutor = new FakeLocalExecutorRunner(new NpcLocalExecutorResult(
-                Target: "stardew_navigate_to_tile",
-                Stage: "completed",
-                Result: "queued",
-                DecisionResponse: "local_executor_completed:stardew_navigate_to_tile"));
             var loop = new NpcAutonomyLoop(
                 new FakeGameAdapter(
                     new CountingCommandService(),
@@ -2351,12 +2307,10 @@ public class NpcAutonomyLoopTests
                 new NpcObservationFactStore(),
                 new FakeAgent(() => { }, "not json"),
                 logWriter: new NpcRuntimeLogWriter(logPath),
-                localExecutorRunner: localExecutor,
                 traceIdFactory: () => "trace-invalid-contract");
 
             var result = await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
 
-            Assert.AreEqual(0, localExecutor.CallCount);
             Assert.AreEqual("not json", result.DecisionResponse);
             var records = ReadRuntimeLogRecords(logPath);
             Assert.IsFalse(records.Any(record =>
@@ -2642,28 +2596,4 @@ public class NpcAutonomyLoopTests
         }
     }
 
-    private sealed class FakeLocalExecutorRunner : INpcLocalExecutorRunner
-    {
-        private readonly NpcLocalExecutorResult _result;
-
-        public FakeLocalExecutorRunner(NpcLocalExecutorResult result)
-        {
-            _result = result;
-        }
-
-        public int CallCount { get; private set; }
-        public NpcLocalActionIntent? LastIntent { get; private set; }
-
-        public Task<NpcLocalExecutorResult> ExecuteAsync(
-            NpcRuntimeDescriptor descriptor,
-            NpcLocalActionIntent intent,
-            IReadOnlyList<NpcObservationFact> facts,
-            string traceId,
-            CancellationToken ct)
-        {
-            CallCount++;
-            LastIntent = intent;
-            return Task.FromResult(_result);
-        }
-    }
 }

@@ -130,7 +130,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
 
         Assert.AreEqual("我记着，明天见。", reply.Text);
         Assert.IsTrue(client.SawChineseContinuityGuidance, "Private chat prompt must use Chinese plain-language continuity guidance.");
-        Assert.IsTrue(client.SawImmediateDelegationGuidance, "Private chat prompt must explain accepted immediate world actions require a skill-grounded npc_delegate_action target.");
+        Assert.IsTrue(client.SawImmediateDelegationGuidance, "Private chat prompt must explain accepted immediate world actions require a skill-grounded stardew_submit_host_task target.");
         Assert.IsTrue(client.SawDirectPlayerReplyGuidance, "Private chat prompt must force a direct reply to the player, not inner monologue.");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
         Assert.IsTrue(runtimeSupervisor.TryGetTaskView(haleySnapshot.SessionId, out var longTermTaskView));
@@ -143,7 +143,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     }
 
     [TestMethod]
-    public async Task ReplyAsync_WhenImmediateActionAccepted_QueuesDelegatedActionIngress()
+    public async Task ReplyAsync_WhenImmediateActionAccepted_QueuesHostTaskSubmissionIngress()
     {
         var runtimeSupervisor = new NpcRuntimeSupervisor();
         var client = new TodoThenDelegateActionThenFinalChatClient();
@@ -154,9 +154,9 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             CancellationToken.None);
 
         Assert.AreEqual("I'll head there now.", reply.Text);
-        Assert.IsTrue(client.SawDelegateActionTool, "Private chat tool surface must include npc_delegate_action.");
+        Assert.IsTrue(client.SawDelegateActionTool, "Private chat tool surface must include stardew_submit_host_task.");
         CollectionAssert.AreEqual(
-            new[] { "todo", "npc_delegate_action" },
+            new[] { "todo", "stardew_submit_host_task" },
             client.ExecutedWorldPlanningTools,
             "Accepted immediate world commitments must first become NPC session todo, then enter the host action lifecycle.");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
@@ -166,7 +166,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         Assert.AreEqual("Meet player at the beach now", taskView.ActiveSnapshot.Todos[0].Content);
         Assert.AreEqual("in_progress", taskView.ActiveSnapshot.Todos[0].Status);
         var ingress = haleySnapshot.Controller.IngressWorkItems.Single();
-        Assert.AreEqual("npc_delegated_action", ingress.WorkType);
+        Assert.AreEqual("stardew_host_task_submission", ingress.WorkType);
         Assert.AreEqual("queued", ingress.Status);
         Assert.IsFalse(string.IsNullOrWhiteSpace(ingress.TraceId));
         Assert.IsFalse(string.IsNullOrWhiteSpace(ingress.WorkItemId));
@@ -185,7 +185,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     }
 
     [TestMethod]
-    public async Task ReplyAsync_PrivateChatToolSurface_PrioritizesImmediateDelegationOverTodo()
+    public async Task ReplyAsync_PrivateChatToolSurface_PrioritizesImmediateHostTaskSubmissionOverTodo()
     {
         var runtimeSupervisor = new NpcRuntimeSupervisor();
         var client = new TodoThenDelegateActionThenFinalChatClient();
@@ -195,10 +195,10 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             new NpcPrivateChatRequest("haley", "save-1", "conversation-beach", "海莉，我们现在去海边吧。"),
             CancellationToken.None);
 
-        var delegateIndex = client.FirstToolNames.FindIndex(name => name == "npc_delegate_action");
+        var delegateIndex = client.FirstToolNames.FindIndex(name => name == "stardew_submit_host_task");
         var noWorldActionIndex = client.FirstToolNames.FindIndex(name => name == "npc_no_world_action");
         var todoIndex = client.FirstToolNames.FindIndex(name => name == "todo");
-        Assert.IsTrue(delegateIndex >= 0, "私聊工具面必须包含 npc_delegate_action。");
+        Assert.IsTrue(delegateIndex >= 0, "私聊工具面必须包含 stardew_submit_host_task。");
         Assert.IsTrue(noWorldActionIndex >= 0, "私聊工具面必须包含 npc_no_world_action。");
         Assert.IsTrue(todoIndex >= 0, "私聊工具面必须包含 todo。");
         Assert.IsTrue(todoIndex < delegateIndex, "立即行动承诺必须先成为 NPC session todo，再委托真实动作。");
@@ -206,12 +206,12 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         var todoDefinition = client.FirstToolDefinitions.Single(tool => tool.Name == "todo");
         StringAssert.Contains(todoDefinition.Description, "当前会话");
         StringAssert.Contains(todoDefinition.Description, "现在就执行");
-        StringAssert.Contains(todoDefinition.Description, "npc_delegate_action");
+        StringAssert.Contains(todoDefinition.Description, "stardew_submit_host_task");
         StringAssert.DoesNotMatch(todoDefinition.Description, new System.Text.RegularExpressions.Regex(@"\bManage your task list\b"));
     }
 
     [TestMethod]
-    public async Task ReplyAsync_WhenImmediateMoveAcceptedWithoutDelegation_RetriesAndQueuesDelegatedAction()
+    public async Task ReplyAsync_WhenImmediateMoveAcceptedWithoutDelegation_RetriesAndQueuesHostTaskSubmission()
     {
         var runtimeSupervisor = new NpcRuntimeSupervisor();
         var client = new FirstAcceptsWithoutDelegatingThenDelegatesChatClient();
@@ -226,12 +226,12 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         Assert.IsTrue(
             client.MessagesByCall.Skip(1).Any(messages => messages.Any(message =>
                 message.Role == "user" &&
-                (message.Content?.Contains("自检：上一轮私聊回复没有调用 npc_delegate_action", StringComparison.Ordinal) ?? false) &&
+                (message.Content?.Contains("自检：上一轮私聊回复没有调用 stardew_submit_host_task", StringComparison.Ordinal) ?? false) &&
                 (message.Content?.Contains("请你自己判断", StringComparison.Ordinal) ?? false))),
-            "自检重试只能把缺少 npc_delegate_action 的结构事实反馈给父层，由父层自己判断是否补工具调用。");
+            "自检重试只能把缺少 stardew_submit_host_task 的结构事实反馈给父层，由父层自己判断是否补工具调用。");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
         var ingress = haleySnapshot.Controller.IngressWorkItems.Single();
-        Assert.AreEqual("npc_delegated_action", ingress.WorkType);
+        Assert.AreEqual("stardew_host_task_submission", ingress.WorkType);
         Assert.AreEqual("move", ingress.Payload?["action"]?.GetValue<string>());
         var target = ingress.Payload?["target"]?.AsObject();
         Assert.IsNotNull(target, "Corrective retry must delegate the resolved mechanical target, not natural-language destinationText.");
@@ -272,7 +272,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     }
 
     [TestMethod]
-    public async Task ReplyAsync_WhenCasualImmediateMoveAcceptedWithoutDelegation_RetriesAndQueuesDelegatedAction()
+    public async Task ReplyAsync_WhenCasualImmediateMoveAcceptedWithoutDelegation_RetriesAndQueuesHostTaskSubmission()
     {
         var runtimeSupervisor = new NpcRuntimeSupervisor();
         var client = new FirstCasualAcceptsWithoutDelegatingThenDelegatesChatClient();
@@ -286,7 +286,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         Assert.AreEqual(3, client.CompleteWithToolsCalls, "第一轮没有任何工具调用时，应触发一次通用父层自检；自检轮必须同时补 todo 和委托动作，宿主不能靠短语或地点判断移动意图。");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
         var ingress = haleySnapshot.Controller.IngressWorkItems.Single();
-        Assert.AreEqual("npc_delegated_action", ingress.WorkType);
+        Assert.AreEqual("stardew_host_task_submission", ingress.WorkType);
         Assert.AreEqual("move", ingress.Payload?["action"]?.GetValue<string>());
         var target = ingress.Payload?["target"]?.AsObject();
         Assert.IsNotNull(target);
@@ -314,7 +314,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             CancellationToken.None);
 
         Assert.AreEqual("我记得，我们聊过花。", reply.Text);
-        Assert.AreEqual(4, client.CompleteWithToolsCalls, "非 npc_delegate_action 工具不能替代世界动作委托；没有 npc_no_world_action 工具调用时仍要自检。");
+        Assert.AreEqual(4, client.CompleteWithToolsCalls, "非 stardew_submit_host_task 工具不能替代世界动作提交；没有 npc_no_world_action 工具调用时仍要自检。");
     }
 
     [TestMethod]
@@ -676,7 +676,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                 message.Content.Contains("不要把工具过程讲给玩家听", StringComparison.Ordinal));
             SawImmediateDelegationGuidance |= snapshot.Any(message =>
                 string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase) &&
-                message.Content.Contains("npc_delegate_action", StringComparison.Ordinal) &&
+                message.Content.Contains("stardew_submit_host_task", StringComparison.Ordinal) &&
                 message.Content.Contains("只口头答应不会让动作发生", StringComparison.Ordinal) &&
                 message.Content.Contains("skill_view", StringComparison.Ordinal) &&
                 message.Content.Contains("target(locationName,x,y,source)", StringComparison.Ordinal));
@@ -765,7 +765,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                 FirstToolDefinitions.AddRange(toolSnapshot);
             }
 
-            SawDelegateActionTool |= toolSnapshot.Any(tool => string.Equals(tool.Name, "npc_delegate_action", StringComparison.Ordinal));
+            SawDelegateActionTool |= toolSnapshot.Any(tool => string.Equals(tool.Name, "stardew_submit_host_task", StringComparison.Ordinal));
             if (_calls == 1)
             {
                 return Task.FromResult(new ChatResponse
@@ -782,7 +782,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                         new ToolCall
                         {
                             Id = "delegate-action",
-                            Name = "npc_delegate_action",
+                            Name = "stardew_submit_host_task",
                             Arguments = """
                             {
                               "action": "move",
@@ -803,7 +803,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
 
             if (_calls == 2)
                 ExecutedWorldPlanningTools = ReadExecutedToolNames(messages)
-                    .Where(name => name is "todo" or "npc_delegate_action")
+                    .Where(name => name is "todo" or "stardew_submit_host_task")
                     .ToArray();
 
             return Task.FromResult(new ChatResponse { Content = "I'll head there now.", FinishReason = "stop" });
@@ -866,7 +866,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                         new ToolCall
                         {
                             Id = "delegate-after-correction",
-                            Name = "npc_delegate_action",
+                            Name = "stardew_submit_host_task",
                             Arguments = """
                             {
                               "action": "move",
@@ -923,7 +923,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             SawMissingTodoSelfCheck |= snapshot.Any(message =>
                 string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase) &&
                 (message.Content?.Contains("缺少 todo", StringComparison.Ordinal) ?? false) &&
-                (message.Content?.Contains("不要重复调用 npc_delegate_action", StringComparison.Ordinal) ?? false));
+                (message.Content?.Contains("不要重复调用 stardew_submit_host_task", StringComparison.Ordinal) ?? false));
             if (CompleteWithToolsCalls == 1)
             {
                 return Task.FromResult(new ChatResponse
@@ -934,7 +934,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                         new ToolCall
                         {
                             Id = "delegate-action",
-                            Name = "npc_delegate_action",
+                            Name = "stardew_submit_host_task",
                             Arguments = """
                             {
                               "action": "move",
@@ -1033,7 +1033,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                         new ToolCall
                         {
                             Id = "delegate-after-casual-correction",
-                            Name = "npc_delegate_action",
+                            Name = "stardew_submit_host_task",
                             Arguments = """
                             {
                               "action": "move",

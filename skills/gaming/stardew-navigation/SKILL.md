@@ -1,6 +1,6 @@
 ---
 name: stardew-navigation
-description: 星露谷 NPC 本地执行层导航：当 NPC 需要把自然语言地点意图解析成地图 tile、跨地图移动、查询移动状态或处理移动失败时使用。
+description: 星露谷 NPC host task 导航：当 NPC 需要把自然语言地点意图解析成地图 tile、跨地图移动、查询移动状态或处理移动失败时使用。
 ---
 
 # 星露谷导航技能
@@ -9,7 +9,7 @@ description: 星露谷 NPC 本地执行层导航：当 NPC 需要把自然语言
 
 - compact-contract-owner: stardew-navigation
 - 移动是 agent-native：父层 agent 通过 skill 资料解析地点意义并调用 `stardew_navigate_to_tile`；实际移动仍由宿主和 bridge 执行。
-- 私聊父 agent 答应“现在去某地”时，用 `npc_delegate_action` 委托 `action=move`；父层不要直接拿移动权限。
+- 私聊父 agent 答应“现在去某地”时，用 `stardew_submit_host_task` 提交 `action=move` host task；父层不要绕过 host task lifecycle。
 - 父层 agent 收到自然语言地点后，先加载本技能，再加载 `references/index.md`，再加载相关 region 和 POI 文件。
 - 只有已经加载的 POI/reference 文件可以提供最终 `target(locationName,x,y,source)`。
 - 绝对不要编造坐标。目标缺失、有歧义或未加载时，返回 blocked/escalate，不要猜。
@@ -30,13 +30,13 @@ description: 星露谷 NPC 本地执行层导航：当 NPC 需要把自然语言
 物理移动不会因为说“我现在过去”就发生。只要要改变 NPC 在游戏世界中的位置，就必须调用导航工具链。
 
 - 如果你看到或准备写描述物理移动的词（“走到”“去”“前往”“返回”“离开”“接近”），使用本技能的移动流程。
-- 父 agent 答应“现在去某地”时，应先用 `npc_delegate_action` 委托 `action=move`，不要只回复。
+- 父 agent 答应“现在去某地”时，应先用 `stardew_submit_host_task` 提交 `action=move`，不要只回复。
 - 父层 agent 决定 move 后，必须用 `skill_view` 读取本技能和地图参考文件。
 - 如果没有调用 `stardew_navigate_to_tile`，不要声称 NPC 已到达或正在移动。
 - `stardew_speak` 只负责说话，不能移动 NPC。
 - 不使用 `destinationId`；地点解析走 skill 资料和 `stardew_navigate_to_tile` 单轨。
 
-## 本地执行流程
+## Host Task 提交流程
 
 1. 读取 `skill_view(name="stardew-navigation")`。
 2. 读取 `skill_view(name="stardew-navigation", file_path="references/index.md")`。

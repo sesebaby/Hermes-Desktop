@@ -248,7 +248,7 @@ public sealed class TodoToolTests
         StringAssert.Contains(description, "当前会话");
         StringAssert.Contains(description, "3 步以上");
         StringAssert.Contains(description, "现在就执行");
-        StringAssert.Contains(description, "npc_delegate_action");
+        StringAssert.Contains(description, "stardew_submit_host_task");
         StringAssert.Contains(description, "不传参数表示读取");
         StringAssert.Contains(description, "列表顺序代表优先级");
         StringAssert.Contains(description, "只能有一个 in_progress");

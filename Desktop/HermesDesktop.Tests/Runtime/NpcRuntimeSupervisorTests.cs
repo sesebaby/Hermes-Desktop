@@ -428,18 +428,8 @@ public class NpcRuntimeSupervisorTests
                     new FakeTool("stardew_task_status"),
                     new FakeTool("stardew_speak")
                 ],
-                LocalExecutorGameToolFactory: (adapter, factStore) =>
-                [
-                    new FakeTool("stardew_navigate_to_tile"),
-                    new FakeTool("stardew_task_status")
-                ],
                 Services: services,
-                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
-                LocalExecutorToolFingerprint: NpcToolSurface.FromTools(
-                [
-                    new FakeTool("stardew_navigate_to_tile"),
-                    new FakeTool("stardew_task_status")
-                ]).Fingerprint),
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")])),
             CancellationToken.None);
 
         await handle.AgentHandle.Agent.ChatAsync(
@@ -457,85 +447,6 @@ public class NpcRuntimeSupervisorTests
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "agent");
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "todo");
         CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "memory");
-    }
-
-    [TestMethod]
-    public async Task GetOrCreateAutonomyHandleAsync_JsonIntentBlocksDelegatedWriteAction()
-    {
-        var supervisor = new NpcRuntimeSupervisor();
-        var pack = CreatePack("haley", "Haley");
-        var descriptor = NpcRuntimeDescriptorFactory.Create(pack, "save-1");
-        var parentContract =
-            """
-            {
-              "action": "move",
-              "reason": "meet player",
-              "destinationText": "beach",
-              "escalate": false
-            }
-            """;
-        var autonomyClient = new ParentIntentChatClient(parentContract);
-        var delegationClient = new DelegationToolCallChatClient(
-            new StreamEvent.ToolUseComplete(
-                "call-skill",
-                "skill_view",
-                Json("""{"name":"stardew-navigation","file_path":"references/poi/beach-shoreline.md"}""")),
-            new StreamEvent.ToolUseComplete(
-                "call-nav",
-                "stardew_navigate_to_tile",
-                Json("""{"locationName":"Beach","x":32,"y":34,"source":"map-skill:stardew.navigation.poi.beach-shoreline","reason":"meet player"}""")));
-        var skillTool = new RecordingTool(
-            "skill_view",
-            typeof(SkillViewParameters),
-            ToolResult.Ok("""{"success":true,"content":"`target(locationName=Beach,x=32,y=34,source=map-skill:stardew.navigation.poi.beach-shoreline)`"}"""));
-        var navigateTool = new RecordingTool(
-            "stardew_navigate_to_tile",
-            typeof(NavigateToTileParameters),
-            ToolResult.Ok("""{"accepted":true,"commandId":"cmd-nav-1","status":"queued"}"""));
-        var services = new NpcRuntimeCompositionServices(
-            autonomyClient,
-            NullLoggerFactory.Instance,
-            _skillManager,
-            new NoopCronScheduler(),
-            DelegationChatClient: delegationClient);
-
-        var handle = await supervisor.GetOrCreateAutonomyHandleAsync(
-            descriptor,
-            pack,
-            _tempDir,
-            new NpcRuntimeAutonomyBindingRequest(
-                ChannelKey: "autonomy",
-                AdapterKey: "bridge-a",
-                IncludeMemory: true,
-                IncludeUser: true,
-                MaxToolIterations: 2,
-                AdapterFactory: () => new FakeGameAdapter(),
-                GameToolFactory: (adapter, factStore) =>
-                [
-                    new FakeTool("stardew_status"),
-                    new FakeTool("stardew_navigate_to_tile")
-                ],
-                LocalExecutorGameToolFactory: (adapter, factStore) => [navigateTool],
-                LocalExecutorRuntimeToolFactory: services => [skillTool],
-                Services: services,
-                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
-                LocalExecutorToolFingerprint: NpcToolSurface.FromTools([skillTool, navigateTool]).Fingerprint),
-            CancellationToken.None);
-
-        var result = await handle.Loop.RunDelegatedIntentAsync(
-            handle.Instance,
-            "trace-delegated-json",
-            parentContract,
-            CancellationToken.None);
-
-        Assert.AreEqual("local_executor_blocked:local_executor_write_action_disabled", result.DecisionResponse);
-        Assert.AreEqual(0, autonomyClient.CompleteCalls);
-        Assert.AreEqual(0, autonomyClient.CompleteWithToolsCalls);
-        CollectionAssert.DoesNotContain(autonomyClient.LastToolNames.ToArray(), "stardew_move");
-        Assert.AreEqual(0, delegationClient.StructuredStreamCalls);
-        CollectionAssert.DoesNotContain(delegationClient.LastToolNames.ToArray(), "stardew_navigate_to_tile");
-        Assert.IsFalse(delegationClient.ToolNamesByCall.Any(names => names.Contains("skill_view")));
-        Assert.AreEqual(0, navigateTool.ExecuteCalls);
     }
 
     [TestMethod]
@@ -589,11 +500,8 @@ public class NpcRuntimeSupervisorTests
                 MaxToolIterations: 3,
                 AdapterFactory: () => new FakeGameAdapter(),
                 GameToolFactory: (adapter, factStore) => [skillTool, navigateTool],
-                LocalExecutorGameToolFactory: (adapter, factStore) => [new FakeTool("stardew_navigate_to_tile")],
-                LocalExecutorRuntimeToolFactory: services => [new FakeTool("skill_view")],
                 Services: services,
-                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
-                LocalExecutorToolFingerprint: NpcToolSurface.FromTools([new FakeTool("skill_view"), new FakeTool("stardew_navigate_to_tile")]).Fingerprint),
+                ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")])),
             CancellationToken.None);
 
         var result = await handle.Loop.RunOneTickAsync(
@@ -662,11 +570,8 @@ public class NpcRuntimeSupervisorTests
                     new FakeTool("stardew_status"),
                     new FakeTool("stardew_navigate_to_tile")
                 ],
-                LocalExecutorGameToolFactory: (adapter, factStore) => [navigateTool],
-                LocalExecutorRuntimeToolFactory: services => [new RecordingTool("skill_view", typeof(SkillViewParameters), ToolResult.Ok("{}"))],
                 Services: services,
-                ToolSurface: NpcToolSurface.FromTools([]),
-                LocalExecutorToolFingerprint: NpcToolSurface.FromTools([new FakeTool("skill_view"), navigateTool]).Fingerprint),
+                ToolSurface: NpcToolSurface.FromTools([])),
             CancellationToken.None);
 
         var result = await handle.Loop.RunOneTickAsync(
@@ -686,7 +591,7 @@ public class NpcRuntimeSupervisorTests
     }
 
     [TestMethod]
-    public async Task GetOrCreateAutonomyHandleAsync_RebindsWhenLocalExecutorToolSurfaceChanges()
+    public async Task GetOrCreateAutonomyHandleAsync_RebindsWhenParentToolSurfaceChanges()
     {
         var supervisor = new NpcRuntimeSupervisor();
         var pack = CreatePack("haley", "Haley");
@@ -715,10 +620,9 @@ public class NpcRuntimeSupervisorTests
                     return new FakeGameAdapter();
                 },
                 GameToolFactory: (adapter, factStore) => [new FakeTool("stardew_status"), new FakeTool("stardew_move")],
-                LocalExecutorGameToolFactory: (adapter, factStore) => [new FakeTool("stardew_move")],
                 Services: services,
                 ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
-                LocalExecutorToolFingerprint: NpcToolSurface.FromTools([new FakeTool("stardew_move")]).Fingerprint),
+                GameToolFingerprint: "stardew_status|stardew_move"),
             CancellationToken.None);
         var second = await supervisor.GetOrCreateAutonomyHandleAsync(
             descriptor,
@@ -736,10 +640,9 @@ public class NpcRuntimeSupervisorTests
                     return new FakeGameAdapter();
                 },
                 GameToolFactory: (adapter, factStore) => [new FakeTool("stardew_status"), new FakeTool("stardew_move")],
-                LocalExecutorGameToolFactory: (adapter, factStore) => [new FakeTool("stardew_move")],
                 Services: services,
                 ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
-                LocalExecutorToolFingerprint: NpcToolSurface.FromTools([new FakeTool("stardew_move")]).Fingerprint),
+                GameToolFingerprint: "stardew_status|stardew_move"),
             CancellationToken.None);
         var third = await supervisor.GetOrCreateAutonomyHandleAsync(
             descriptor,
@@ -756,19 +659,15 @@ public class NpcRuntimeSupervisorTests
                     adapterFactoryCalls++;
                     return new FakeGameAdapter();
                 },
-                GameToolFactory: (adapter, factStore) => [new FakeTool("stardew_status"), new FakeTool("stardew_move")],
-                LocalExecutorGameToolFactory: (adapter, factStore) =>
+                GameToolFactory: (adapter, factStore) =>
                 [
+                    new FakeTool("stardew_status"),
                     new FakeTool("stardew_move"),
                     new FakeTool("stardew_task_status")
                 ],
                 Services: services,
                 ToolSurface: NpcToolSurface.FromTools([new FakeTool("mcp_tool_a")]),
-                LocalExecutorToolFingerprint: NpcToolSurface.FromTools(
-                [
-                    new FakeTool("stardew_move"),
-                    new FakeTool("stardew_task_status")
-                ]).Fingerprint),
+                GameToolFingerprint: "stardew_status|stardew_move|stardew_task_status"),
             CancellationToken.None);
 
         Assert.AreSame(first, second);

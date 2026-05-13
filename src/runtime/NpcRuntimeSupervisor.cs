@@ -122,7 +122,6 @@ public sealed class NpcRuntimeSupervisor
 
         var instance = await GetOrStartAsync(descriptor, runtimeRoot, ct);
         instance.Namespace.SeedPersonaPack(pack);
-        var localExecutorToolFingerprint = request.LocalExecutorToolFingerprint ?? string.Empty;
 
         var rebindKey = BuildRebindKey(
             request.ChannelKey,
@@ -133,7 +132,7 @@ public sealed class NpcRuntimeSupervisor
             request.MaxToolIterations,
             request.ToolSurfaceSnapshotVersion,
             request.ToolSurface.Fingerprint,
-            localExecutorToolFingerprint);
+            request.GameToolFingerprint);
 
         return instance.GetOrCreateAutonomyHandle(
             rebindKey,
@@ -252,8 +251,6 @@ public sealed class NpcRuntimeSupervisor
     {
         var adapter = request.AdapterFactory();
         var factStore = new NpcObservationFactStore();
-        var localExecutorToolSurface = CreateLocalExecutorToolSurface(request, adapter, factStore);
-        var localExecutorRunner = CreateLocalExecutorRunner(request.Services, localExecutorToolSurface);
         var combinedToolSurface = CreateAutonomyParentToolSurface(request, adapter, factStore);
         var rebindKey = BuildRebindKey(
             request.ChannelKey,
@@ -264,8 +261,8 @@ public sealed class NpcRuntimeSupervisor
             request.MaxToolIterations,
             request.ToolSurfaceSnapshotVersion,
             request.ToolSurface.Fingerprint,
-            combinedToolSurface.Fingerprint,
-            localExecutorToolSurface.Fingerprint);
+            request.GameToolFingerprint,
+            combinedToolSurface.Fingerprint);
         var agentHandle = CreateAgentHandle(
             instance,
             request.ChannelKey,
@@ -285,8 +282,7 @@ public sealed class NpcRuntimeSupervisor
             factStore,
             agentHandle.Agent,
             new NpcRuntimeLogWriter(Path.Combine(instance.Namespace.ActivityPath, "runtime.jsonl")),
-            request.Services.LoggerFactory.CreateLogger<NpcAutonomyLoop>(),
-            localExecutorRunner: localExecutorRunner);
+            request.Services.LoggerFactory.CreateLogger<NpcAutonomyLoop>());
 
         return new NpcRuntimeAutonomyHandle(
             instance,
@@ -299,20 +295,6 @@ public sealed class NpcRuntimeSupervisor
             combinedToolSurface.Fingerprint);
     }
 
-    private static NpcToolSurface CreateLocalExecutorToolSurface(
-        NpcRuntimeAutonomyBindingRequest request,
-        IGameAdapter adapter,
-        NpcObservationFactStore factStore)
-    {
-        var tools = new List<ITool>();
-        if (request.LocalExecutorGameToolFactory is not null)
-            tools.AddRange(request.LocalExecutorGameToolFactory(adapter, factStore));
-        if (request.LocalExecutorRuntimeToolFactory is not null)
-            tools.AddRange(request.LocalExecutorRuntimeToolFactory(request.Services));
-
-        return NpcToolSurface.FromTools(tools);
-    }
-
     private static NpcToolSurface CreateAutonomyParentToolSurface(
         NpcRuntimeAutonomyBindingRequest request,
         IGameAdapter adapter,
@@ -323,18 +305,6 @@ public sealed class NpcRuntimeSupervisor
         tools.Add(new SkillViewTool(request.Services.SkillManager));
 
         return NpcToolSurface.FromTools(tools);
-    }
-
-    private static INpcLocalExecutorRunner? CreateLocalExecutorRunner(
-        NpcRuntimeCompositionServices services,
-        NpcToolSurface localExecutorToolSurface)
-    {
-        if (localExecutorToolSurface.Tools.Count == 0)
-            return null;
-
-        return services.DelegationChatClient is null
-            ? new NpcUnavailableLocalExecutorRunner()
-            : new NpcLocalExecutorRunner(services.DelegationChatClient, localExecutorToolSurface.Tools);
     }
 
     private static NpcRuntimeAgentHandle CreateAgentHandle(

@@ -11,6 +11,12 @@
       "timestamp": "2026-05-06T15:12:22.152Z"
     },
     {
+      "directive": "废弃的能力必须同步退役；禁止双轨、兼容分叉、影子实现、隐藏 fallback 或“先留着以后也许用”的旧路径。任何被产品/架构决策废弃的 prompt、tool、lane、harness、配置、文档和测试期望都必须一起清退或显式标记为非当前路径。Stardew v1 当前对齐参考项目：主 agent 调可见工具，host/bridge task runner 执行并回传状态，不保留小模型 gameplay 执行层。",
+      "priority": "high",
+      "context": "用户于 2026-05-12 明确要求：废弃能力必须同时退役，绝对不允许双轨；Stardew 编排改为对齐参考项目的 host task runner，不再保留小模型执行层。",
+      "timestamp": "2026-05-12T21:14:38.5251406+08:00"
+    },
+    {
       "directive": "用户要求方案选择必须给出选项、各自理由和明确推荐；不要只问开放问题或只罗列选项。默认中文、简洁、白话。",
       "priority": "high",
       "context": "User explicitly corrected deep-interview question format on 2026-05-07.",
@@ -29,9 +35,9 @@
       "timestamp": "2026-05-06T22:03:34.262Z"
     },
     {
-      "directive": "星露谷跨地图移动设计中，本地小模型能力边界必须很薄：不主动加载地图技能，不深度理解地图；主模型负责选目标名称/地图/坐标/理由，宿主从分层地图技能或索引裁剪最小导航包，本地小模型只在导航包内调用观察、移动、状态查询或失败升级。",
-      "priority": "high",
-      "context": "用户在跨地图移动深访中指出本地小模型思考能力弱，主模型已给地点名称和坐标后，不应再让小模型加载技能。",
+      "directive": "已废弃：星露谷跨地图移动旧设计曾考虑让本地小模型在很薄的边界内辅助执行；当前不再按此执行。Stardew v1 统一改为主 agent 调可见工具，host/bridge task runner 机械执行并回传状态；不保留小模型 gameplay 执行层。",
+      "priority": "normal",
+      "context": "2026-05-12 已被“废弃能力必须同步退役；禁止双轨”原则覆盖。保留本条只作为历史记录，不作为当前设计依据。",
       "timestamp": "2026-05-06T22:10:11.181Z"
     },
     {

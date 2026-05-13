@@ -1205,7 +1205,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 "haley",
                 "stardew-valley",
                 DateTime.UtcNow,
-                "Haley has a private-chat delegated action.",
+                "Haley has a private-chat host task submission.",
                 ["location=Town"])),
             new FakeEventSource([]));
         var supervisor = new NpcRuntimeSupervisor();
@@ -1215,7 +1215,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         await driver.EnqueueIngressWorkItemAsync(
             new NpcRuntimeIngressWorkItemSnapshot(
                 "ingress-delegate-1",
-                "npc_delegated_action",
+                "stardew_host_task_submission",
                 "queued",
                 DateTime.UtcNow,
                 "idem-delegate-1",
@@ -1272,7 +1272,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 "haley",
                 "stardew-valley",
                 DateTime.UtcNow,
-                "Haley has a private-chat delegated action from the player.",
+                "Haley has a private-chat host task submission from the player.",
                 ["location=Town"])),
             new FakeEventSource([]));
         var supervisor = new NpcRuntimeSupervisor();
@@ -1302,7 +1302,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         await driver.EnqueueIngressWorkItemAsync(
             new NpcRuntimeIngressWorkItemSnapshot(
                 "ingress-delegate-blocked-chain",
-                "npc_delegated_action",
+                "stardew_host_task_submission",
                 "queued",
                 DateTime.UtcNow,
                 "idem-delegate-blocked-chain",
@@ -1358,7 +1358,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 "haley",
                 "stardew-valley",
                 DateTime.UtcNow,
-                "Haley has a private-chat delegated action from the player.",
+                "Haley has a private-chat host task submission from the player.",
                 ["location=Town"])),
             new FakeEventSource([]));
         var supervisor = new NpcRuntimeSupervisor();
@@ -1388,7 +1388,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         await driver.EnqueueIngressWorkItemAsync(
             new NpcRuntimeIngressWorkItemSnapshot(
                 "ingress-delegate-path-blocked-chain",
-                "npc_delegated_action",
+                "stardew_host_task_submission",
                 "queued",
                 DateTime.UtcNow,
                 "idem-delegate-path-blocked-chain",
@@ -1452,7 +1452,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 "haley",
                 "stardew-valley",
                 DateTime.UtcNow,
-                "Haley has a private-chat delegated action.",
+                "Haley has a private-chat host task submission.",
                 ["location=Town"])),
             new ScriptedEventSource(
                 new GameEventBatch(
@@ -1474,7 +1474,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         await driver.EnqueueIngressWorkItemAsync(
             new NpcRuntimeIngressWorkItemSnapshot(
                 "ingress-delegate-wait-reply",
-                "npc_delegated_action",
+                "stardew_host_task_submission",
                 "queued",
                 DateTime.UtcNow,
                 "idem-delegate-wait-reply",
@@ -1544,7 +1544,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         await driver.EnqueueIngressWorkItemAsync(
             new NpcRuntimeIngressWorkItemSnapshot(
                 "ingress-delegate-busy",
-                "npc_delegated_action",
+                "stardew_host_task_submission",
                 "queued",
                 DateTime.UtcNow,
                 "idem-delegate-busy",
@@ -1596,15 +1596,15 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         var records = ReadRuntimeLogRecords(logPath);
         Assert.IsTrue(records.Any(record =>
             record.GetProperty("actionType").GetString() == "ingress" &&
-            record.GetProperty("target").GetString() == "npc_delegated_action" &&
+            record.GetProperty("target").GetString() == "stardew_host_task_submission" &&
             record.GetProperty("stage").GetString() == "deferred" &&
-            record.GetProperty("result").GetString() == "delegated_ingress_deferred:action_slot_busy" &&
+            record.GetProperty("result").GetString() == "host_task_submission_deferred:action_slot_busy" &&
             record.TryGetProperty("commandId", out var commandId) &&
             commandId.GetString() == "ingress-delegate-busy"));
     }
 
     [TestMethod]
-    public async Task RunOneIterationAsync_DelegatedIngress_WhenDeferBudgetExceededWithoutActiveSlot_BlocksAndRemovesIngress()
+    public async Task RunOneIterationAsync_HostTaskSubmissionIngress_WhenDeferBudgetExceededWithoutActiveSlot_BlocksAndRemovesIngress()
     {
         var discovery = CreateDiscovery("save-42");
         var commands = new ScriptedCommandService(
@@ -1617,7 +1617,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 "haley",
                 "stardew-valley",
                 DateTime.UtcNow,
-                "Haley has stale delegated movement ingress.",
+                "Haley has stale host task submission movement ingress.",
                 ["location=Town"])),
             new FakeEventSource([]));
         var supervisor = new NpcRuntimeSupervisor();
@@ -1627,7 +1627,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         await driver.EnqueueIngressWorkItemAsync(
             new NpcRuntimeIngressWorkItemSnapshot(
                 "ingress-delegate-stale",
-                "npc_delegated_action",
+                "stardew_host_task_submission",
                 "deferred",
                 DateTime.UtcNow,
                 "idem-delegate-stale",
@@ -1664,7 +1664,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         var snapshot = supervisor.Snapshot().Single().Controller;
         Assert.AreEqual(0, snapshot.IngressWorkItems.Count);
         Assert.AreEqual(StardewCommandStatuses.Blocked, snapshot.LastTerminalCommandStatus?.Status);
-        Assert.AreEqual(StardewBridgeErrorCodes.DelegatedIngressDeferredExceeded, snapshot.LastTerminalCommandStatus?.ErrorCode);
+        Assert.AreEqual(StardewBridgeErrorCodes.HostTaskSubmissionDeferredExceeded, snapshot.LastTerminalCommandStatus?.ErrorCode);
         Assert.AreEqual("ingress-delegate-stale", snapshot.LastTerminalCommandStatus?.CommandId);
         Assert.AreEqual("move", snapshot.LastTerminalCommandStatus?.Action);
         Assert.IsNotNull(snapshot.NextWakeAtUtc);
@@ -1684,7 +1684,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 "haley",
                 "stardew-valley",
                 DateTime.UtcNow,
-                "Haley has stale delegated movement ingress while active command remains running.",
+                "Haley has stale host task submission movement ingress while active command remains running.",
                 ["location=Town"])),
             new FakeEventSource([]));
         var supervisor = new NpcRuntimeSupervisor();
@@ -1706,7 +1706,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         await driver.EnqueueIngressWorkItemAsync(
             new NpcRuntimeIngressWorkItemSnapshot(
                 "ingress-delegate-stale-active",
-                "npc_delegated_action",
+                "stardew_host_task_submission",
                 "deferred",
                 DateTime.UtcNow,
                 "idem-delegate-stale-active",
@@ -1759,7 +1759,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
                 "haley",
                 "stardew-valley",
                 DateTime.UtcNow,
-                "Haley has just completed a delegated action and must close the active todo.",
+                "Haley has just completed a host task submission action and must close the active todo.",
                 ["location=Town"])),
             new FakeEventSource([]));
         var supervisor = new NpcRuntimeSupervisor();
@@ -1850,7 +1850,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
     }
 
     [TestMethod]
-    public async Task RunOneIterationAsync_WithMalformedDelegatedActionIngress_DropsWithDiagnostic()
+    public async Task RunOneIterationAsync_WithMalformedHostTaskSubmissionIngress_DropsWithDiagnosticAndTerminalStatus()
     {
         var discovery = CreateDiscovery("save-42");
         var delegationClient = new CapturingStreamingChatClient();
@@ -1861,7 +1861,7 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         await driver.EnqueueIngressWorkItemAsync(
             new NpcRuntimeIngressWorkItemSnapshot(
                 "ingress-bad-1",
-                "npc_delegated_action",
+                "stardew_host_task_submission",
                 "queued",
                 DateTime.UtcNow,
                 "idem-bad-1",
@@ -1885,7 +1885,11 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         await service.RunOneIterationAsync(CancellationToken.None);
 
         Assert.AreEqual(0, delegationClient.StructuredStreamCalls);
-        Assert.AreEqual(0, supervisor.Snapshot().Single().Controller.IngressWorkItems.Count);
+        var snapshot = supervisor.Snapshot().Single().Controller;
+        Assert.AreEqual(0, snapshot.IngressWorkItems.Count);
+        Assert.AreEqual(StardewCommandStatuses.Blocked, snapshot.LastTerminalCommandStatus?.Status);
+        Assert.AreEqual("missing_action_or_reason", snapshot.LastTerminalCommandStatus?.ErrorCode);
+        Assert.AreEqual("host_task_submission", snapshot.LastTerminalCommandStatus?.Action);
         var logPath = Path.Combine(
             _tempDir,
             "runtime",
@@ -1903,9 +1907,122 @@ public sealed class StardewNpcAutonomyBackgroundServiceTests
         var records = ReadRuntimeLogRecords(logPath);
         Assert.IsTrue(records.Any(record =>
             record.GetProperty("actionType").GetString() == "ingress" &&
-            record.GetProperty("target").GetString() == "npc_delegated_action" &&
+            record.GetProperty("target").GetString() == "stardew_host_task_submission" &&
             record.GetProperty("stage").GetString() == "malformed" &&
             record.GetProperty("result").GetString() == "missing_action_or_reason"));
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WithNonMoveHostTaskSubmission_BlocksWithoutDelegationFallback()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var delegationClient = new CapturingStreamingChatClient();
+        var commands = new FakeCommandService();
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.EnqueueIngressWorkItemAsync(
+            new NpcRuntimeIngressWorkItemSnapshot(
+                "ingress-observe-1",
+                "stardew_host_task_submission",
+                "queued",
+                DateTime.UtcNow,
+                "idem-observe-1",
+                "trace-observe-1",
+                new()
+                {
+                    ["action"] = "observe",
+                    ["reason"] = "look around the square"
+                }),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => new FakeGameAdapter(
+                commands,
+                new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "Haley has unsupported host task submission ingress.", ["location=Town"])),
+                new FakeEventSource([])),
+            new CountingChatClient("unused"),
+            supervisor,
+            enabledNpcIds: ["haley"],
+            delegationChatClient: delegationClient);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, delegationClient.StructuredStreamCalls, "Non-move host task submission must not trigger delegation/local-executor fallback.");
+        Assert.AreEqual(0, commands.Submitted.Count, "Unsupported non-move host task submissions must not submit a bridge command.");
+        var snapshot = supervisor.Snapshot().Single().Controller;
+        Assert.AreEqual(0, snapshot.IngressWorkItems.Count);
+        Assert.AreEqual(StardewCommandStatuses.Blocked, snapshot.LastTerminalCommandStatus?.Status);
+        Assert.AreEqual("unsupported_host_task_submission_action", snapshot.LastTerminalCommandStatus?.ErrorCode);
+        Assert.AreEqual("observe", snapshot.LastTerminalCommandStatus?.Action);
+
+        var logPath = Path.Combine(
+            _tempDir,
+            "runtime",
+            "stardew",
+            "games",
+            "stardew-valley",
+            "saves",
+            "save-42",
+            "npc",
+            "haley",
+            "profiles",
+            "default",
+            "activity",
+            "runtime.jsonl");
+        var records = ReadRuntimeLogRecords(logPath);
+        Assert.IsTrue(records.Any(record =>
+            record.GetProperty("actionType").GetString() == "ingress" &&
+            record.GetProperty("target").GetString() == "stardew_host_task_submission" &&
+            record.GetProperty("stage").GetString() == "blocked" &&
+            record.GetProperty("result").GetString() == "unsupported_host_task_submission_action:observe"));
+    }
+
+    [TestMethod]
+    public async Task RunOneIterationAsync_WithFutureWindowHostTaskSubmission_BlocksWithTerminalFact()
+    {
+        var discovery = CreateDiscovery("save-42");
+        var delegationClient = new CapturingStreamingChatClient();
+        var commands = new FakeCommandService();
+        var supervisor = new NpcRuntimeSupervisor();
+        var resolver = new StardewNpcRuntimeBindingResolver(new FileSystemNpcPackLoader(), _packRoot);
+        var binding = resolver.Resolve("haley", "save-42");
+        var driver = await supervisor.GetOrCreateDriverAsync(binding.Descriptor, _tempDir, CancellationToken.None);
+        await driver.EnqueueIngressWorkItemAsync(
+            new NpcRuntimeIngressWorkItemSnapshot(
+                "ingress-craft-1",
+                "stardew_host_task_submission",
+                "queued",
+                DateTime.UtcNow,
+                "idem-craft-1",
+                "trace-craft-1",
+                new()
+                {
+                    ["action"] = "craft",
+                    ["reason"] = "make a snack"
+                }),
+            CancellationToken.None);
+        var service = CreateService(
+            discovery,
+            _ => new FakeGameAdapter(
+                commands,
+                new FakeQueryService(new GameObservation("haley", "stardew-valley", DateTime.UtcNow, "Haley has future window host task submission ingress.", ["location=Town"])),
+                new FakeEventSource([])),
+            new CountingChatClient("unused"),
+            supervisor,
+            enabledNpcIds: ["haley"],
+            delegationChatClient: delegationClient);
+
+        await service.RunOneIterationAsync(CancellationToken.None);
+
+        Assert.AreEqual(0, delegationClient.StructuredStreamCalls);
+        Assert.AreEqual(0, commands.Submitted.Count);
+        var snapshot = supervisor.Snapshot().Single().Controller;
+        Assert.AreEqual(0, snapshot.IngressWorkItems.Count);
+        Assert.AreEqual(StardewCommandStatuses.Blocked, snapshot.LastTerminalCommandStatus?.Status);
+        Assert.AreEqual("unsupported_host_task_submission_action", snapshot.LastTerminalCommandStatus?.ErrorCode);
+        Assert.AreEqual("craft", snapshot.LastTerminalCommandStatus?.Action);
     }
 
     [TestMethod]

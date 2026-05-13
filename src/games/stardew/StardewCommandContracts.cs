@@ -55,7 +55,7 @@ public static class StardewBridgeErrorCodes
     public const string ActionSlotBusy = "action_slot_busy";
     public const string ActionSlotTimeout = "action_slot_timeout";
     public const string ActionLoop = "action_loop";
-    public const string DelegatedIngressDeferredExceeded = "delegated_ingress_deferred_exceeded";
+    public const string HostTaskSubmissionDeferredExceeded = "host_task_submission_deferred_exceeded";
     public const string IdempotencyConflict = "idempotency_conflict";
     public const string BridgeUnauthorized = "bridge_unauthorized";
     public const string BridgeStaleDiscovery = "bridge_stale_discovery";

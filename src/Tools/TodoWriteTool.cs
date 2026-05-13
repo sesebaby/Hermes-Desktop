@@ -27,7 +27,7 @@ public class TodoTool : ITool, IToolSchemaProvider
 
     public string Description =>
         "管理当前会话的任务列表。适合记录以后要兑现的承诺、3 步以上的复杂任务，或玩家一次给出的多个任务。 " +
-        "如果玩家要求现在就执行会改变外部世界或游戏世界的动作，不要只写 todo；应先使用当前场景提供的执行或委托工具，例如 npc_delegate_action。 " +
+        "如果玩家要求现在就执行会改变外部世界或游戏世界的动作，不要只写 todo；应先使用当前场景提供的执行或委托工具，例如 stardew_submit_host_task。 " +
         "不传参数表示读取当前列表；传 todos 数组表示创建或更新任务。 " +
         "merge=false 表示用新列表替换全部任务；merge=true 表示按 id 更新已有任务并追加新任务。 " +
         "每个任务包含 id、content、status，可选 reason。status 可为 pending、in_progress、completed、cancelled、blocked 或 failed。 " +

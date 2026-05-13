@@ -53,14 +53,14 @@ public sealed class StardewLiveAiSmokeTests
     }
 
     [TestMethod]
-    public async Task PrivateChatParentLiveAi_WhenPlayerAsksHaleyToGoBeachNow_CallsNpcDelegateAction()
+    public async Task PrivateChatParentLiveAi_WhenPlayerAsksHaleyToGoBeachNow_CallsStardewSubmitHostTask()
     {
         var config = RequireLiveConfig();
         using var httpClient = CreateHttpClient();
         var parentClient = new OpenAiClient(config.Parent, httpClient);
         var delegateTool = new CaptureTool(
-            "npc_delegate_action",
-            "仅限私聊父 agent 使用。玩家要求现在就做现实世界动作且你决定答应时，先调用本工具把行动意图委托给宿主执行，再自然回复玩家。只口头答应不会发生动作。action=move 时必须先用 skill_view 读取 stardew-navigation 分层资料，并把已加载 POI 给出的 target(locationName,x,y,source) 原样传入 target；不要使用 destinationId 或编造坐标。",
+            "stardew_submit_host_task",
+            "仅限私聊父 agent 使用。玩家要求现在就做现实世界动作且你决定答应时，先调用本工具把 host task 显式提交给宿主执行，再自然回复玩家。只口头答应不会发生动作。action=move 时必须先用 skill_view 读取 stardew-navigation 分层资料，并把已加载 POI 给出的 target(locationName,x,y,source) 原样传入 target；不要使用 destinationId 或编造坐标。",
             typeof(DelegateActionParameters));
         var skillViewTool = new SkillViewTool(_skillManager);
         var messages = new List<Message>
@@ -70,10 +70,10 @@ public sealed class StardewLiveAiSmokeTests
                 Role = "system",
                 Content =
                     "你是海莉，正在和玩家私聊。所有提示词和回答都用中文。" +
-                    "如果玩家现在就请你做一件会改变游戏世界的事，而你决定答应，必须先调用 npc_delegate_action，再自然回复玩家。" +
+                    "如果玩家现在就请你做一件会改变游戏世界的事，而你决定答应，必须先调用 stardew_submit_host_task，再自然回复玩家。" +
                     "action=move 时，必须先用 skill_view 读取 stardew-navigation、references/index.md、相关 region 和最具体的 POI 文件。" +
-                    "只有已加载 POI/reference 明确给出 target(locationName,x,y,source) 后，才调用 npc_delegate_action；不要使用 destinationId，不要编造坐标。" +
-                    "如果只是以后才兑现的约定，用 todo；如果是现在就执行，必须委托。"
+                    "只有已加载 POI/reference 明确给出 target(locationName,x,y,source) 后，才调用 stardew_submit_host_task；不要使用 destinationId，不要编造坐标。" +
+                    "如果只是以后才兑现的约定，用 todo；如果是现在就执行，必须显式提交 host task。"
             },
             new()
             {
@@ -91,8 +91,8 @@ public sealed class StardewLiveAiSmokeTests
             maxIterations: 5,
             new CancellationTokenSource(TimeSpan.FromSeconds(120)).Token);
 
-        var toolCall = response.ToolCalls?.FirstOrDefault(call => call.Name == "npc_delegate_action");
-        Assert.IsNotNull(toolCall, BuildFailure("真实父层模型没有调用 npc_delegate_action", response));
+        var toolCall = response.ToolCalls?.FirstOrDefault(call => call.Name == "stardew_submit_host_task");
+        Assert.IsNotNull(toolCall, BuildFailure("真实父层模型没有调用 stardew_submit_host_task", response));
         using var args = JsonDocument.Parse(toolCall.Arguments);
         Assert.AreEqual("move", args.RootElement.GetProperty("action").GetString());
         var target = args.RootElement.GetProperty("target");
@@ -104,7 +104,7 @@ public sealed class StardewLiveAiSmokeTests
     }
 
     [TestMethod]
-    public async Task PrivateChatFullRunnerLiveAi_WhenPlayerAsksHaleyToGoBeachNow_QueuesNpcDelegateAction()
+    public async Task PrivateChatFullRunnerLiveAi_WhenPlayerAsksHaleyToGoBeachNow_QueuesHostTaskSubmissionIngress()
     {
         var config = RequireLiveConfig();
         using var httpClient = CreateHttpClient();
@@ -133,8 +133,8 @@ public sealed class StardewLiveAiSmokeTests
         Assert.IsFalse(string.IsNullOrWhiteSpace(reply.Text), "完整私聊 runner 应该给玩家一个自然回复。");
         var snapshot = runtimeSupervisor.Snapshot().Single(item => item.NpcId == "haley");
         var ingress = snapshot.Controller.IngressWorkItems.SingleOrDefault(item =>
-            string.Equals(item.WorkType, "npc_delegated_action", StringComparison.OrdinalIgnoreCase));
-        Assert.IsNotNull(ingress, $"完整私聊 runner 使用真实 AI 时必须把即时移动意图交给 npc_delegate_action。reply={reply.Text}");
+            string.Equals(item.WorkType, "stardew_host_task_submission", StringComparison.OrdinalIgnoreCase));
+        Assert.IsNotNull(ingress, $"完整私聊 runner 使用真实 AI 时必须把即时移动意图交给 stardew_submit_host_task。reply={reply.Text}");
         Assert.AreEqual("move", ingress.Payload?["action"]?.GetValue<string>());
         Assert.IsTrue(
             !ingress.Payload!.TryGetPropertyValue("conversationId", out var conversationNode) ||
@@ -147,49 +147,6 @@ public sealed class StardewLiveAiSmokeTests
         Assert.AreEqual(34, target["y"]?.GetValue<int>());
         Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", target["source"]?.GetValue<string>());
         Assert.IsNull(ingress.Payload?["destinationText"]);
-    }
-
-    [TestMethod]
-    public async Task LocalExecutorLiveAi_WhenMoveIntentSaysBeach_UsesSkillViewThenNavigateToBeachTile()
-    {
-        var config = RequireLiveConfig();
-        using var httpClient = CreateHttpClient();
-        var executorClient = new OpenAiClient(config.Executor, httpClient);
-        var navigateTool = new CaptureTool(
-            "stardew_navigate_to_tile",
-            "移动到已经由 stardew-navigation skill 资料披露的具体星露谷地图 tile；真实移动由宿主和 Stardew bridge 执行。",
-            typeof(NavigateToTileParameters));
-        var runner = new NpcLocalExecutorRunner(
-            executorClient,
-            [
-                new SkillViewTool(_skillManager),
-                navigateTool
-            ]);
-        var descriptor = CreateDescriptor();
-        var intent = new NpcLocalActionIntent(
-            NpcLocalActionKind.Move,
-            "玩家现在邀请海莉去海边",
-            DestinationText: "海边");
-
-        var result = await runner.ExecuteAsync(
-            descriptor,
-            intent,
-            [new NpcObservationFact("haley", "stardew-valley", "save-live-ai-smoke", "default", "sdv_save-live-ai-smoke_haley_default", "private_chat", "conversation-live-ai-smoke", DateTime.UtcNow, "玩家邀请海莉现在去海边", ["intentText=海莉，我们现在去海边吧"])],
-            $"trace_live_{Guid.NewGuid():N}",
-            new CancellationTokenSource(TimeSpan.FromSeconds(120)).Token);
-
-        Assert.AreEqual("completed", result.Stage, $"本地执行层没有完成导航：{result.Result}; {result.Error}; diagnostics={string.Join(" | ", result.Diagnostics)}");
-        Assert.AreEqual("stardew_navigate_to_tile", result.Target);
-        Assert.IsNotNull(navigateTool.LastArguments, "导航工具应该收到参数。");
-        var navigateArgs = navigateTool.LastArguments.RootElement;
-        Assert.AreEqual("Beach", ReadStringProperty(navigateArgs, "locationName"), $"导航参数错误：{navigateArgs.GetRawText()}");
-        Assert.AreEqual(32, ReadIntProperty(navigateArgs, "x"), $"导航参数错误：{navigateArgs.GetRawText()}");
-        Assert.AreEqual(34, ReadIntProperty(navigateArgs, "y"), $"导航参数错误：{navigateArgs.GetRawText()}");
-        Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", ReadStringProperty(navigateArgs, "source"), $"导航参数错误：{navigateArgs.GetRawText()}");
-        CollectionAssert.Contains(result.Diagnostics.ToArray(), "target=skill_view stage=completed result=skill_source:stardew-navigation");
-        Assert.IsTrue(
-            result.Diagnostics.Any(item => item.Contains("stardew-navigation/references/poi/beach-shoreline.md", StringComparison.Ordinal)),
-            $"本地执行层应读取海边 POI 文件。diagnostics={string.Join(" | ", result.Diagnostics)}");
     }
 
     private static LiveConfig RequireLiveConfig()
@@ -345,7 +302,7 @@ public sealed class StardewLiveAiSmokeTests
                 });
             }
 
-            if (response.ToolCalls.Any(call => string.Equals(call.Name, "npc_delegate_action", StringComparison.OrdinalIgnoreCase)))
+            if (response.ToolCalls.Any(call => string.Equals(call.Name, "stardew_submit_host_task", StringComparison.OrdinalIgnoreCase)))
                 return response;
         }
 
@@ -365,7 +322,7 @@ public sealed class StardewLiveAiSmokeTests
             return await skillViewTool.ExecuteAsync(parameters, ct);
         }
 
-        if (string.Equals(toolCall.Name, "npc_delegate_action", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(toolCall.Name, "stardew_submit_host_task", StringComparison.OrdinalIgnoreCase))
         {
             var parameters = JsonSerializer.Deserialize<DelegateActionParameters>(toolCall.Arguments, ToolArgumentJsonOptions)
                 ?? new DelegateActionParameters();
