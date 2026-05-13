@@ -405,6 +405,71 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
+    public async Task TaskStatusTool_WithoutCommandId_UsesCurrentRuntimeTask()
+    {
+        var descriptor = CreateDescriptor("haley");
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-task-status-current-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            await driver.SetPendingWorkItemAsync(
+                new NpcRuntimePendingWorkItemSnapshot(
+                    "work-current",
+                    "move",
+                    "cmd-current",
+                    StardewCommandStatuses.Running,
+                    DateTime.UtcNow),
+                CancellationToken.None);
+            await driver.SetActionSlotAsync(
+                new NpcRuntimeActionSlotSnapshot(
+                    "action",
+                    "work-current",
+                    "cmd-current",
+                    "trace-current",
+                    DateTime.UtcNow,
+                    DateTime.UtcNow.AddMinutes(1)),
+                CancellationToken.None);
+            var commands = new CapturingCommandService(
+                [
+                    new GameCommandStatus("cmd-current", "haley", "move", StardewCommandStatuses.Running, 0.5, null, null)
+                ]);
+            var tools = StardewNpcToolFactory.CreateDefault(
+                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+                descriptor,
+                runtimeDriver: driver);
+            var tool = tools.Single(tool => tool.Name == "stardew_task_status");
+
+            var result = await tool.ExecuteAsync(new StardewTaskStatusToolParameters(), CancellationToken.None);
+
+            Assert.IsTrue(result.Success);
+            Assert.AreEqual(1, commands.StatusCalls);
+            using var document = JsonDocument.Parse(result.Content);
+            Assert.AreEqual("cmd-current", document.RootElement.GetProperty("commandId").GetString());
+            Assert.AreEqual(StardewCommandStatuses.Running, document.RootElement.GetProperty("status").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void TaskStatusTool_SchemaDoesNotRequireCommandId()
+    {
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(new CapturingCommandService(), new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"));
+        var tool = (IToolSchemaProvider)tools.Single(tool => tool.Name == "stardew_task_status");
+
+        using var document = JsonDocument.Parse(tool.GetParameterSchema().GetRawText());
+
+        Assert.AreEqual(0, document.RootElement.GetProperty("required").GetArrayLength());
+        Assert.IsTrue(document.RootElement.GetProperty("properties").TryGetProperty("commandId", out _));
+    }
+
+    [TestMethod]
     public async Task TaskStatusTool_StatusMatrix_ReturnsFactualSummariesAndPreservesReasonCodes()
     {
         var statuses = new[]

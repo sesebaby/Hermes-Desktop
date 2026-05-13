@@ -12,8 +12,8 @@ description: 星露谷 NPC 任务连续性：当 NPC 需要接住玩家承诺、
 - 私聊里答应“现在就做”的现实世界动作，必须用 `stardew_submit_host_task` 提交 host task，不能只口头回复。
 - 动作完成后不能假装忘记承诺；看到 terminal 结果和 active todo 时，必须显式收口：标 completed/blocked/failed、继续新动作，或带短 reason 等待。
 - 玩家打断时先回应玩家，再恢复原来的任务；需要确认旧约定时用 `session_search`。
-- 长动作开始后用 `stardew_task_status` 查进度；失败或阻塞时把 todo 标为 `blocked` 或 `failed` 并写短 reason。
-- `stardew_task_status` 是已知长动作或等待动作的续查工具；窗口、菜单、动画、事件等待是状态事实，不是隐藏执行锁。
+- 长动作开始后用无参 `stardew_task_status` 查当前宿主任务进度；失败或阻塞时把 todo 标为 `blocked` 或 `failed` 并写短 reason。
+- `stardew_task_status` 是当前长动作或等待动作的续查工具；`commandId` 由宿主跟踪，只有历史诊断才需要显式填写。窗口、菜单、动画、事件等待是状态事实，不是隐藏执行锁。
 - 看到 `action_chain`、`action_loop`、`action_slot_timeout` 或 `command_stuck` 时，把它当作历史诊断事实；先查 `stardew_task_status`、观察、换方法，或把 todo 标成 blocked/failed。
 - `memory` 只保存稳定事实、偏好、关系变化和地点线索，不替代 active todo。
 
@@ -39,14 +39,14 @@ description: 星露谷 NPC 任务连续性：当 NPC 需要接住玩家承诺、
 - 玩家找你说话时，先回应玩家，再恢复原来的任务。
 - 如果玩家的新要求比旧任务更重要，可以改任务，但要用 `todo` 留下新状态。
 - 需要确认以前答应过什么时，先用 `session_search` 查旧对话和旧约定。
-- 如果打断发生在长动作中，先用 `stardew_task_status` 看动作是否还在进行、完成、失败或被取消。
+- 如果打断发生在长动作中，先用无参 `stardew_task_status` 看动作是否还在进行、完成、失败或被取消。
 
 ## 推进任务
 
 - 每次自主行动前，先看当前观察事实和 active todo。
 - 需要移动时走 `stardew-navigation`：父层用 `skill_view` 读取地图资料并调用 `stardew_navigate_to_tile`，工具结果作为行动反馈。
-- 长动作开始后，用 `stardew_task_status` 查进度，直到完成、失败、阻塞、取消或需要重新观察。
-- `stardew_task_status` 是已知长动作或等待动作的续查工具；它回答一个已知 command 的状态，不替代观察世界。
+- 长动作开始后，用无参 `stardew_task_status` 查进度，直到完成、失败、阻塞、取消或需要重新观察。
+- `stardew_task_status` 是当前长动作或等待动作的续查工具；它回答宿主当前跟踪任务的状态，不替代观察世界。不要靠记忆填写 `commandId`。
 - 如果状态说明正在等待窗口、菜单、动画、事件或私聊回复生命周期，把它当作可读事实。你可以继续说话、维护 todo 或等待，但不要把这个等待当成宿主替你选好的下一步。
 - 长动作 terminal completed 后，如果它对应 active todo，要自己决定是否把 todo 标成 `completed`、接着做一个新的世界动作，或明确等待并写短 reason。
 - 不要盲等，也不要连续重复同一个已经失败的动作。

@@ -50,7 +50,7 @@ public static class StardewNpcToolFactory
             new StardewSpeakTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
             new StardewOpenPrivateChatTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
             new StardewIdleMicroActionTool(adapter.Commands, descriptor, traceIdFactory, idempotencyKeyFactory, maxStatusPolls, runtimeActions),
-            new StardewTaskStatusTool(adapter.Commands)
+            new StardewTaskStatusTool(adapter.Commands, runtimeDriver)
         ]);
     }
 
@@ -1155,15 +1155,17 @@ public sealed class StardewIdleMicroActionTool : ITool, IToolSchemaProvider
 public sealed class StardewTaskStatusTool : ITool, IToolSchemaProvider
 {
     private readonly IGameCommandService _commands;
+    private readonly NpcRuntimeDriver? _runtimeDriver;
 
-    public StardewTaskStatusTool(IGameCommandService commands)
+    public StardewTaskStatusTool(IGameCommandService commands, NpcRuntimeDriver? runtimeDriver = null)
     {
         _commands = commands;
+        _runtimeDriver = runtimeDriver;
     }
 
     public string Name => "stardew_task_status";
 
-    public string Description => "读取此前 NPC 行动工具返回的 Stardew command 状态。";
+    public string Description => "读取当前宿主任务的 Stardew command 状态。默认查询宿主正在跟踪的当前任务；commandId 只用于少数历史诊断查询，不需要日常填写。";
 
     public Type ParametersType => typeof(StardewTaskStatusToolParameters);
 
@@ -1172,11 +1174,48 @@ public sealed class StardewTaskStatusTool : ITool, IToolSchemaProvider
     public async Task<ToolResult> ExecuteAsync(object parameters, CancellationToken ct)
     {
         var p = (StardewTaskStatusToolParameters)parameters;
-        if (string.IsNullOrWhiteSpace(p.CommandId))
-            return ToolResult.Fail("commandId is required.");
+        if (!TryResolveCommandId(p.CommandId, out var commandId, out var hostStatus))
+            return ToolResult.Ok(StardewNpcToolJson.SerializeWithSummary(
+                hostStatus,
+                StardewNpcToolResultSummaries.ForTaskStatus(hostStatus)));
 
-        var status = await _commands.GetStatusAsync(p.CommandId, ct);
+        var status = await _commands.GetStatusAsync(commandId, ct);
         return ToolResult.Ok(StardewNpcToolJson.SerializeWithSummary(status, StardewNpcToolResultSummaries.ForTaskStatus(status)));
+    }
+
+    private bool TryResolveCommandId(string? requestedCommandId, out string commandId, out GameCommandStatus hostStatus)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedCommandId))
+        {
+            commandId = requestedCommandId.Trim();
+            hostStatus = new GameCommandStatus(commandId, "", "", "unknown", 0, null, null);
+            return true;
+        }
+
+        var snapshot = _runtimeDriver?.Snapshot();
+        commandId = snapshot?.ActionSlot?.CommandId
+            ?? snapshot?.PendingWorkItem?.CommandId
+            ?? snapshot?.LastTerminalCommandStatus?.CommandId
+            ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(commandId))
+        {
+            hostStatus = snapshot?.LastTerminalCommandStatus ?? new GameCommandStatus(commandId, "", snapshot?.PendingWorkItem?.WorkType ?? "action", "unknown", 0, null, null);
+            return true;
+        }
+
+        var workItem = snapshot?.PendingWorkItem;
+        var actionSlot = snapshot?.ActionSlot;
+        if (workItem is not null || actionSlot is not null)
+        {
+            var workItemId = workItem?.WorkItemId ?? actionSlot?.WorkItemId ?? "current";
+            var action = workItem?.WorkType ?? actionSlot?.SlotName ?? "action";
+            var status = string.IsNullOrWhiteSpace(workItem?.Status) ? "submitting" : workItem!.Status;
+            hostStatus = new GameCommandStatus(workItemId, "", action, status, 0, "host_task_has_no_command_id_yet", null);
+            return false;
+        }
+
+        hostStatus = new GameCommandStatus("current", "", "action", "unknown", 0, "no_current_task", "no_current_task");
+        return false;
     }
 }
 
@@ -1752,7 +1791,7 @@ public sealed class StardewSpeakToolParameters
 
 public sealed class StardewTaskStatusToolParameters
 {
-    public required string CommandId { get; init; }
+    public string? CommandId { get; init; }
 }
 
 public sealed class StardewIdleMicroActionToolParameters
@@ -1948,9 +1987,9 @@ internal static class StardewNpcToolSchemas
         => Schema(
             new Dictionary<string, object>
             {
-                ["commandId"] = new { type = "string", description = "长动作工具返回的 command id。" }
+                ["commandId"] = new { type = "string", description = "可选，仅用于历史诊断。默认省略，让宿主查询当前正在跟踪的任务。" }
             },
-            ["commandId"]);
+            []);
 
     public static JsonElement OpenPrivateChat()
         => Schema(

@@ -334,7 +334,7 @@ public sealed class NpcAutonomyLoop
             "如果决定移动，先用 skill_view 读取 stardew-navigation 及其 references/index.md、相关 region/POI 文件；只有资料明确给出 target(locationName,x,y,source) 后，才调用 stardew_navigate_to_tile，并原样填写这些字段。\n" +
             "不要把玩家自然语言地点直接当 locationName，不要编造坐标，不要使用 destinationId。\n" +
             "stardew_navigate_to_tile 只是提交真实动作；真实移动、跨地图行走、等待切图和失败码都由宿主与 Stardew bridge 执行，并通过工具结果返回给你。\n" +
-            "如果只是查长动作进度，调用 stardew_task_status 且 commandId 必须来自已有命令。\n" +
+            "如果只是查长动作进度，调用 stardew_task_status；默认不要填写 commandId，宿主会查询当前任务。\n" +
             "如果你只是想在原地做一个短暂可见的小动作，用 action=idle_micro_action，并提供 idleMicroAction.kind；可选 kind 只有 emote_happy、emote_question、emote_sleepy、emote_music、look_left、look_right、look_up、look_down、look_around、tiny_hop、tiny_shake、idle_pose、idle_animation_once。\n" +
             "idle_micro_action 只能表达原地短动作；不要同时附带 speech 或 target，也不要把它改写成 move 或 speak。\n" +
             "如果任务真的被外部条件阻断，用 taskUpdate 把已有 todo 标成 blocked；如果确定做不成，标成 failed；blocked 或 failed 都要写短 reason。\n" +
@@ -377,7 +377,7 @@ public sealed class NpcAutonomyLoop
             $"上一轮真实动作结果：commandId={commandId}; action={action}; status={lastTerminalCommandStatus?.Status ?? "-"}。\n" +
             $"active todo={todoText}。\n" +
             $"上一轮文本={previousText}\n" +
-            "现在请收口这个连续性状态：调用可见工具，例如 todo/todo_write、stardew_status、stardew_speak、stardew_idle_micro_action 或 stardew_task_status；" +
+            "现在请收口这个连续性状态：调用可见工具，例如 todo/todo_write、stardew_status、stardew_speak、stardew_idle_micro_action 或无参 stardew_task_status；" +
             "如果你决定暂不行动，必须回复 `no-action: <原因>` 或 `wait: <原因>`。不要再把 JSON 文本当工具调用。";
     }
 
@@ -731,6 +731,20 @@ public sealed class NpcAutonomyLoop
         foreach (var call in calls.Where(IsStardewActionTool))
         {
             var evidence = GetToolResultEvidence(toolEvidenceByCallId, call.Id);
+            if (!evidence.HasCommandIdentity)
+            {
+                await WriteTaskContinuityAsync(
+                    descriptor,
+                    traceId,
+                    "action_result_unresolved",
+                    "diagnostic",
+                    "missing_command_id",
+                    null,
+                    call.Name,
+                    ct);
+                continue;
+            }
+
             await WriteTaskContinuityAsync(
                 descriptor,
                 traceId,
@@ -999,7 +1013,12 @@ public sealed class NpcAutonomyLoop
         => string.Equals(status, "blocked", StringComparison.OrdinalIgnoreCase) ||
            string.Equals(status, "failed", StringComparison.OrdinalIgnoreCase);
 
-    private sealed record ToolResultEvidence(string? CommandId, GameCommandStatus? TerminalStatus);
+    private sealed record ToolResultEvidence(string? CommandId, GameCommandStatus? TerminalStatus)
+    {
+        public bool HasCommandIdentity =>
+            !string.IsNullOrWhiteSpace(CommandId) ||
+            !string.IsNullOrWhiteSpace(TerminalStatus?.CommandId);
+    }
 
     private static bool HasToolCall(Session? session, string toolName)
     {

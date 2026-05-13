@@ -51,7 +51,7 @@ description: 星露谷 NPC 社交反馈：当 NPC 需要回应玩家、选择可
 - 想判断游戏阶段、技能、矿井深度、房屋升级用 `stardew_progress_status`。
 - 想看农场背景用 `stardew_farm_status`。
 - 想恢复自己刚才做过什么、避免重复动作、查看 active todo 用 `stardew_recent_activity`。
-- 长动作进度只用 `stardew_task_status`；它不是广泛世界扫描工具。
+- 长动作进度只用无参 `stardew_task_status` 查询当前宿主任务；它不是广泛世界扫描工具。
 
 这些工具会先给一段自然语言摘要，再给少量 key/value facts。缺失或不稳定的字段会标成 `degraded` 或 `unknown`，不要把 unknown 当成事实编故事。
 

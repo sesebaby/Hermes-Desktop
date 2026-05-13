@@ -837,6 +837,75 @@ public class NpcAutonomyLoopTests
     }
 
     [TestMethod]
+    public async Task RunOneTickAsync_WithActionToolResultMissingCommandId_WritesDiagnosticOnly()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-empty-command-continuity-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var descriptor = CreateDescriptor("haley");
+            var ns = new NpcNamespace(tempDir, descriptor.GameId, descriptor.SaveId, descriptor.NpcId, descriptor.ProfileId);
+            ns.EnsureDirectories();
+            var logPath = Path.Combine(ns.ActivityPath, "runtime.jsonl");
+            var agent = new FakeAgent(
+                () => { },
+                "I tried to do a short idle action.",
+                session =>
+                {
+                    session.AddMessage(new Message
+                    {
+                        Role = "assistant",
+                        Content = "",
+                        ToolCalls =
+                        [
+                            new ToolCall
+                            {
+                                Id = "call-idle-empty-command",
+                                Name = "stardew_idle_micro_action",
+                                Arguments = """{"kind":"look_around"}"""
+                            }
+                        ]
+                    });
+                    session.AddMessage(new Message
+                    {
+                        Role = "tool",
+                        ToolCallId = "call-idle-empty-command",
+                        ToolName = "stardew_idle_micro_action",
+                        Content = """{"accepted":true,"commandId":"","status":"completed","traceId":"trace-idle","finalStatus":{"commandId":"","npcId":"haley","action":"idle_micro_action","status":"completed","progress":1}}"""
+                    });
+                });
+            var loop = new NpcAutonomyLoop(
+                new FakeGameAdapter(
+                    new CountingCommandService(),
+                    new FakeQueryService(new GameObservation(
+                        "haley",
+                        "stardew-valley",
+                        DateTime.UtcNow,
+                        "Haley is idle.",
+                        ["location=Town"])),
+                    new FakeEventSource([])),
+                new NpcObservationFactStore(),
+                agent,
+                logWriter: new NpcRuntimeLogWriter(logPath),
+                traceIdFactory: () => "trace-empty-command");
+
+            await loop.RunOneTickAsync(descriptor, new GameEventCursor(null), CancellationToken.None);
+
+            var records = ReadRuntimeLogRecords(logPath);
+            AssertRuntimeRecord(records, "action_result_unresolved", "diagnostic", "missing_command_id");
+            Assert.IsFalse(records.Any(record =>
+                record.GetProperty("actionType").GetString() == "task_continuity" &&
+                (record.GetProperty("target").GetString() == "action_submitted" ||
+                 record.GetProperty("target").GetString() == "command_terminal")),
+                "Action continuity must not record submitted/terminal facts when the tool result has no host-owned command identity.");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task RunOneTickAsync_WhenDecisionHasOnlyNoVisibleSleepText_DoesNotSubmitFallbackSpeak()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), "hermes-npc-loop-no-visible-fallback-tests", Guid.NewGuid().ToString("N"));
