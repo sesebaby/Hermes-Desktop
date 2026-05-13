@@ -358,8 +358,9 @@ public class RawDialogueDisplayRegressionTests
     }
 
     [TestMethod]
-    public void NpcMessagesRouteToNonBlockingBubbleOrPhoneWithoutAutomaticRawDialogue()
+    public void InputMenuPrivateChatRepliesOpenDialogueWhileOtherNpcMessagesStayNonBlocking()
     {
+        var modEntry = ReadRepositoryFile("Mods", "StardewHermesBridge", "ModEntry.cs");
         var commandQueue = ReadRepositoryFile("Mods", "StardewHermesBridge", "Bridge", "BridgeCommandQueue.cs");
         var router = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "StardewMessageDisplayRouter.cs");
         var bubbleOverlay = ReadRepositoryFile("Mods", "StardewHermesBridge", "Ui", "NpcOverheadBubbleOverlay.cs");
@@ -371,21 +372,22 @@ public class RawDialogueDisplayRegressionTests
             commandQueue,
             "_messageRouter.Display",
             "ExecuteSpeak should use the shared message display router.");
-        Assert.IsFalse(
+        Assert.IsTrue(
             router.Contains("NpcRawDialogueRenderer.Display(npc, text)", StringComparison.Ordinal),
-            "AI private-chat replies must not automatically open a Stardew DialogueBox after one player input turn.");
+            "AI private-chat replies submitted from the input menu should automatically open a Stardew DialogueBox once the reply arrives.");
         StringAssert.Contains(
             router,
-            "reply_pending_click",
-            "Input-menu replies should be recorded as pending until the player explicitly clicks the NPC again.");
-        StringAssert.Contains(
-            router,
-            "AddPendingClickReply",
-            "The bridge must store the prepared reply for the next NPC click instead of displaying it immediately.");
-        StringAssert.Contains(
-            bubbleOverlay,
-            "ClearPendingClickReplies",
-            "Pending click replies must be cleared on world teardown so stale replies cannot cross saves or days.");
+            "_preparePrivateChatReplyDialogue?.Invoke",
+            "The bridge must mark the active input-menu reply dialogue before it opens so close facts and move blocking still track the conversation.");
+        Assert.IsFalse(
+            router.Contains("reply_pending_click", StringComparison.Ordinal),
+            "Input-menu replies should no longer wait for a second NPC click before showing the prepared reply.");
+        Assert.IsFalse(
+            router.Contains("AddPendingClickReply", StringComparison.Ordinal),
+            "The bridge must not park input-menu replies behind a pending-click queue.");
+        Assert.IsFalse(
+            modEntry.Contains("TryConsumePendingClickReply", StringComparison.Ordinal),
+            "The click handler should not need a second-click private-chat reply drain path after automatic dialogue display.");
         StringAssert.Contains(
             router,
             "const int NearbyTileRange = 8",

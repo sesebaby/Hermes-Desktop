@@ -19,7 +19,6 @@ public sealed class NpcOverheadBubbleOverlay
     private readonly BridgeEventBuffer _events;
     private readonly SmapiBridgeLogger _logger;
     private readonly Dictionary<string, BubbleEntry> _bubbles = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, PendingClickReply> _pendingClickReplies = new(StringComparer.OrdinalIgnoreCase);
 
     public NpcOverheadBubbleOverlay(BridgeEventBuffer events, SmapiBridgeLogger logger)
     {
@@ -42,30 +41,6 @@ public sealed class NpcOverheadBubbleOverlay
     {
         ShowCore(npc, text, commandId, IdleMicroChannel, kind);
     }
-
-    public void AddPendingClickReply(string npcName, string text, string? conversationId)
-    {
-        if (string.IsNullOrWhiteSpace(npcName))
-            return;
-
-        _pendingClickReplies[npcName] = new PendingClickReply(npcName, text, conversationId);
-        _logger.Write("private_chat_reply_pending_click", npcName, PrivateChatChannel, "reply_pending_click", conversationId, "queued", null);
-    }
-
-    public bool TryConsumePendingClickReply(string npcName, out PendingClickReply reply)
-    {
-        if (_pendingClickReplies.TryGetValue(npcName, out reply!))
-        {
-            _pendingClickReplies.Remove(npcName);
-            return true;
-        }
-
-        reply = default!;
-        return false;
-    }
-
-    public void ClearPendingClickReplies()
-        => _pendingClickReplies.Clear();
 
     public void Draw(SpriteBatch spriteBatch)
     {
@@ -135,9 +110,4 @@ public sealed class NpcOverheadBubbleOverlay
         string Channel,
         string Kind,
         DateTime ExpiresAtUtc);
-
-    public sealed record PendingClickReply(
-        string NpcName,
-        string Text,
-        string? ConversationId);
 }

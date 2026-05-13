@@ -15,19 +15,22 @@ public sealed class StardewMessageDisplayRouter
     private readonly HermesPhoneOverlay _phoneOverlay;
     private readonly BridgeEventBuffer _events;
     private readonly SmapiBridgeLogger _logger;
+    private readonly Action<string, string?>? _preparePrivateChatReplyDialogue;
 
     public StardewMessageDisplayRouter(
         HermesPhoneState phoneState,
         NpcOverheadBubbleOverlay bubbleOverlay,
         HermesPhoneOverlay phoneOverlay,
         BridgeEventBuffer events,
-        SmapiBridgeLogger logger)
+        SmapiBridgeLogger logger,
+        Action<string, string?>? preparePrivateChatReplyDialogue = null)
     {
         _phoneState = phoneState;
         _bubbleOverlay = bubbleOverlay;
         _phoneOverlay = phoneOverlay;
         _events = events;
         _logger = logger;
+        _preparePrivateChatReplyDialogue = preparePrivateChatReplyDialogue;
     }
 
     public StardewMessageDisplayResult Display(NPC npc, string text, string channel, string? conversationId, string? source)
@@ -36,9 +39,10 @@ public sealed class StardewMessageDisplayRouter
         if (privateChat && string.Equals(source, "input_menu", StringComparison.OrdinalIgnoreCase))
         {
             _phoneState.AddIncomingMessage(npc.Name, text, conversationId, openThread: false, recordOnly: true);
-            _bubbleOverlay.AddPendingClickReply(npc.Name, text, conversationId);
-            _logger.Write("private_chat_reply_pending_click", npc.Name, channel, "reply_pending_click", null, "queued", conversationId);
-            return new StardewMessageDisplayResult("reply_pending_click", "input_menu_next_click_dialogue_closed");
+            _preparePrivateChatReplyDialogue?.Invoke(npc.Name, conversationId);
+            NpcRawDialogueRenderer.Display(npc, text);
+            _logger.Write("private_chat_reply_displayed_auto", npc.Name, channel, "dialogue", null, "displayed", conversationId);
+            return new StardewMessageDisplayResult("input_menu_dialogue", "input_menu_dialogue_closed");
         }
 
         var nearby = IsPlayerWithinNearbyRange(npc);

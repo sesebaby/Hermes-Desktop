@@ -189,6 +189,39 @@ public class StardewNpcToolFactoryTests
     }
 
     [TestMethod]
+    public async Task SubmitHostTaskTool_WhenQueued_ReturnsSummaryAndIdentity()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-host-task-summary-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            var tool = new StardewSubmitHostTaskTool(descriptor, driver, defaultConversationId: "conversation-summary");
+
+            var result = await tool.ExecuteAsync(new StardewSubmitHostTaskToolParameters
+            {
+                Action = "craft",
+                Reason = "craft a field snack later"
+            }, CancellationToken.None);
+
+            Assert.IsTrue(result.Success);
+            using var document = JsonDocument.Parse(result.Content);
+            Assert.IsTrue(document.RootElement.GetProperty("queued").GetBoolean());
+            Assert.AreEqual("craft", document.RootElement.GetProperty("action").GetString());
+            Assert.AreEqual("conversation-summary", document.RootElement.GetProperty("conversationId").GetString());
+            var summary = document.RootElement.GetProperty("summary").GetString();
+            StringAssert.Contains(summary, "已加入 host task");
+            StringAssert.Contains(summary, "craft");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public void SubmitHostTaskTool_SchemaExposesFutureWindowActionFamilies()
     {
         var descriptor = CreateDescriptor("haley");
@@ -342,6 +375,74 @@ public class StardewNpcToolFactoryTests
         using var document = JsonDocument.Parse(result.Content);
         Assert.AreEqual("最近有 1 条连续性记录。", document.RootElement.GetProperty("summary").GetString());
         Assert.AreEqual("haley", provider.LastDescriptor?.NpcId);
+    }
+
+    [TestMethod]
+    public async Task TaskStatusTool_WithRunningStatus_ReturnsSummaryAndCommandIdentity()
+    {
+        var commands = new CapturingCommandService(
+            [
+                new GameCommandStatus("cmd-running", "haley", "move", StardewCommandStatuses.Running, 0.5, "private_chat_dialogue_open", null)
+            ]);
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"));
+        var tool = tools.Single(tool => tool.Name == "stardew_task_status");
+
+        var result = await tool.ExecuteAsync(new StardewTaskStatusToolParameters
+        {
+            CommandId = "cmd-running"
+        }, CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        using var document = JsonDocument.Parse(result.Content);
+        Assert.AreEqual("cmd-running", document.RootElement.GetProperty("commandId").GetString());
+        Assert.AreEqual(StardewCommandStatuses.Running, document.RootElement.GetProperty("status").GetString());
+        Assert.AreEqual("private_chat_dialogue_open", document.RootElement.GetProperty("blockedReason").GetString());
+        var summary = document.RootElement.GetProperty("summary").GetString();
+        StringAssert.Contains(summary, "正在等待游戏 UI/窗口生命周期");
+        StringAssert.Contains(summary, "cmd-running");
+    }
+
+    [TestMethod]
+    public async Task TaskStatusTool_StatusMatrix_ReturnsFactualSummariesAndPreservesReasonCodes()
+    {
+        var statuses = new[]
+        {
+            new GameCommandStatus("cmd-ui-wait", "haley", "move", StardewCommandStatuses.Running, 0.5, "private_chat_dialogue_open", null),
+            new GameCommandStatus("cmd-slot-busy", "haley", "move", StardewCommandStatuses.Blocked, 1, StardewBridgeErrorCodes.ActionSlotBusy, StardewBridgeErrorCodes.ActionSlotBusy),
+            new GameCommandStatus("cmd-defer-exhausted", "haley", "move", StardewCommandStatuses.Blocked, 1, StardewBridgeErrorCodes.HostTaskSubmissionDeferredExceeded, StardewBridgeErrorCodes.HostTaskSubmissionDeferredExceeded),
+            new GameCommandStatus("cmd-timeout", "haley", "move", StardewCommandStatuses.Expired, 1, StardewBridgeErrorCodes.ActionSlotTimeout, StardewBridgeErrorCodes.ActionSlotTimeout),
+            new GameCommandStatus("cmd-menu", "haley", "trade", StardewCommandStatuses.Failed, 1, StardewBridgeErrorCodes.MenuBlocked, StardewBridgeErrorCodes.MenuBlocked)
+        };
+        var commands = new CapturingCommandService(statuses);
+        var tools = StardewNpcToolFactory.CreateDefault(
+            new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+            CreateDescriptor("haley"));
+        var tool = tools.Single(tool => tool.Name == "stardew_task_status");
+
+        var summaries = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var status in statuses)
+        {
+            var result = await tool.ExecuteAsync(new StardewTaskStatusToolParameters
+            {
+                CommandId = status.CommandId
+            }, CancellationToken.None);
+
+            Assert.IsTrue(result.Success);
+            using var document = JsonDocument.Parse(result.Content);
+            Assert.AreEqual(status.CommandId, document.RootElement.GetProperty("commandId").GetString());
+            Assert.AreEqual(status.Status, document.RootElement.GetProperty("status").GetString());
+            if (!string.IsNullOrWhiteSpace(status.ErrorCode))
+                Assert.AreEqual(status.ErrorCode, document.RootElement.GetProperty("errorCode").GetString());
+            summaries[status.CommandId] = document.RootElement.GetProperty("summary").GetString() ?? string.Empty;
+        }
+
+        StringAssert.Contains(summaries["cmd-ui-wait"], "等待游戏 UI/窗口生命周期");
+        StringAssert.Contains(summaries["cmd-slot-busy"], StardewBridgeErrorCodes.ActionSlotBusy);
+        StringAssert.Contains(summaries["cmd-defer-exhausted"], StardewBridgeErrorCodes.HostTaskSubmissionDeferredExceeded);
+        StringAssert.Contains(summaries["cmd-timeout"], "已超时");
+        StringAssert.Contains(summaries["cmd-menu"], StardewBridgeErrorCodes.MenuBlocked);
     }
 
     [TestMethod]
@@ -1370,6 +1471,59 @@ public class StardewNpcToolFactoryTests
             Assert.AreEqual("cmd-active", snapshot.ActionSlot?.CommandId);
             Assert.AreEqual("open", snapshot.ActionChainGuard?.GuardStatus);
             Assert.AreEqual(2, snapshot.ActionChainGuard?.ConsecutiveActions);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task NavigateToTileTool_WhenActionSlotBusy_ReturnsBlockedSummaryWithoutQueuedWork()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "hermes-stardew-action-slot-summary-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var supervisor = new NpcRuntimeSupervisor();
+            var descriptor = CreateDescriptor("haley");
+            var driver = await supervisor.GetOrCreateDriverAsync(descriptor, tempDir, CancellationToken.None);
+            await driver.SetActionSlotAsync(
+                new NpcRuntimeActionSlotSnapshot(
+                    "action",
+                    "work-active",
+                    "cmd-active",
+                    "trace-active",
+                    new DateTime(2026, 5, 11, 7, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 5, 11, 7, 1, 0, DateTimeKind.Utc)),
+                CancellationToken.None);
+            var commands = new CapturingCommandService();
+            var tools = StardewNpcToolFactory.CreateDefault(
+                new FakeGameAdapter(commands, new FakeQueryService(), new FakeEventSource()),
+                descriptor,
+                runtimeDriver: driver);
+            var navigateTool = tools.Single(tool => tool.Name == "stardew_navigate_to_tile");
+
+            var result = await navigateTool.ExecuteAsync(new StardewNavigateToTileToolParameters
+            {
+                LocationName = "Beach",
+                X = 32,
+                Y = 34,
+                Reason = "meet the player at the beach"
+            }, CancellationToken.None);
+
+            Assert.IsTrue(result.Success);
+            using var document = JsonDocument.Parse(result.Content);
+            Assert.IsFalse(document.RootElement.GetProperty("accepted").GetBoolean());
+            Assert.AreEqual(StardewCommandStatuses.Blocked, document.RootElement.GetProperty("status").GetString());
+            Assert.AreEqual(StardewBridgeErrorCodes.ActionSlotBusy, document.RootElement.GetProperty("failureReason").GetString());
+            var summary = document.RootElement.GetProperty("summary").GetString();
+            StringAssert.Contains(summary, "已有世界动作");
+            StringAssert.Contains(summary, StardewBridgeErrorCodes.ActionSlotBusy);
+            Assert.IsNull(commands.LastAction, "Blocked action-slot conflicts must not submit another bridge command.");
+            var snapshot = driver.Snapshot();
+            Assert.IsNull(snapshot.PendingWorkItem);
+            Assert.AreEqual("cmd-active", snapshot.ActionSlot?.CommandId);
         }
         finally
         {

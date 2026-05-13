@@ -371,6 +371,24 @@ public sealed class StardewAutonomyTickDebugServiceTests
     }
 
     [TestMethod]
+    public void RepositoryStardewAssets_TeachUiLifecycleAsStatusFactsWithoutHostInferredNextAction()
+    {
+        var core = File.ReadAllText(FindRepositoryPath("skills", "gaming", "stardew-core", "SKILL.md"));
+        var taskContinuity = File.ReadAllText(FindRepositoryPath("skills", "gaming", "stardew-task-continuity", "SKILL.md"));
+        var runtimePrompt = File.ReadAllText(FindRepositoryPath("skills", "system", "stardew-npc-runtime", "SYSTEM.md"));
+        var privateChatOrchestrator = File.ReadAllText(FindRepositoryPath("src", "games", "stardew", "StardewPrivateChatOrchestrator.cs"));
+        var combined = string.Join("\n", core, taskContinuity, runtimePrompt, privateChatOrchestrator);
+
+        StringAssert.Contains(core, "窗口、菜单、动画和事件是游戏状态事实，不是 agent 流程锁。");
+        StringAssert.Contains(taskContinuity, "`stardew_task_status` 是已知长动作或等待动作的续查工具");
+        StringAssert.Contains(runtimePrompt, "宿主只提供事实、状态和工具结果，不替你选择下一步。");
+        StringAssert.Contains(privateChatOrchestrator, "回复显示或关闭都是递送/状态事实，不是 agent 流程锁。");
+        Assert.IsFalse(privateChatOrchestrator.Contains("私聊回复关闭后，宿主会", StringComparison.Ordinal));
+        Assert.IsFalse(combined.Contains("local_executor", StringComparison.Ordinal));
+        Assert.IsFalse(combined.Contains("宿主推断下一步", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public async Task RunOneTickAsync_HaleyPromptInjectsPersonaInclinationsWithoutHardcodedArrivalScript()
     {
         var repositoryGamingRoot = FindRepositoryPath("skills", "gaming");

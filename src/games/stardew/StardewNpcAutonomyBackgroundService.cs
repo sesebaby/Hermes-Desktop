@@ -24,6 +24,10 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
 
     internal static TimeSpan PrivateChatSessionLeaseTtl { get; } = TimeSpan.FromMinutes(5);
 
+    private const string PrivateChatReplyDeliveryWaitReason = "waiting_private_chat_reply_delivery";
+    private const string PrivateChatReplyDeliveryTimeoutReason = "private_chat_reply_delivery_timeout";
+    private const string PrivateChatReplyDeliveredPayloadKey = "privateChatReplyDelivered";
+
     private readonly object _gate = new();
     private readonly IStardewBridgeDiscovery _discovery;
     private readonly Func<StardewBridgeDiscoverySnapshot, IGameAdapter> _adapterFactory;
@@ -517,7 +521,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 controller.ActionSlot?.CommandId ?? "-",
                 controller.IngressWorkItems.Count);
 
-            if (await TryAdvancePendingActionAsync(binding, tracker, hostAdapter.Commands, deliveredCursor, dispatch.BridgeKey, ct))
+            if (await TryAdvancePendingActionAsync(binding, tracker, hostAdapter.Commands, dispatch.SharedEventBatch, deliveredCursor, dispatch.BridgeKey, ct))
                 return;
 
             if (await TryProcessIngressWorkAsync(binding, tracker, hostAdapter, dispatch, deliveredCursor, ct))
@@ -540,6 +544,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 return;
             }
 
+            controller = tracker.Driver.Snapshot();
             if (!dispatch.HasPrivateChatIngress &&
                 !dispatch.HasHostProgress &&
                 !dispatch.WasQueuedBehindActiveWorker &&
@@ -883,6 +888,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         StardewNpcRuntimeBinding binding,
         NpcAutonomyTracker tracker,
         IGameCommandService commandService,
+        GameEventBatch sharedEventBatch,
         GameEventCursor deliveredCursor,
         string bridgeKey,
         CancellationToken ct)
@@ -913,12 +919,12 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 if (StardewRuntimeActionController.IsInFlightStatus(lookupStatus.Status))
                 {
                     await PauseTrackerAsync(tracker, deliveredCursor, $"command_{lookupStatus.Status}", bridgeKey, lookupStatus.RetryAfterUtc, ct);
-                    await DeferQueuedHostTaskSubmissionIngressIfBusyAsync(binding, tracker, deliveredCursor, ct);
+                    await DeferQueuedHostTaskSubmissionIngressIfBusyAsync(binding, tracker, sharedEventBatch, deliveredCursor, ct);
                     return true;
                 }
 
                 if (StardewRuntimeActionController.IsTerminalStatus(lookupStatus.Status))
-                    return true;
+                    return !HasQueuedHostTaskSubmissionIngress(tracker);
             }
 
             if (controller.ActionSlot?.TimeoutAtUtc is { } timeoutAtUtcWithoutCommand && DateTime.UtcNow >= timeoutAtUtcWithoutCommand)
@@ -953,7 +959,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 bridgeKey,
                 controller.ActionSlot?.TimeoutAtUtc ?? DateTime.UtcNow + _budget.Options.EffectiveRestartCooldown,
                 ct);
-            await DeferQueuedHostTaskSubmissionIngressIfBusyAsync(binding, tracker, deliveredCursor, ct);
+            await DeferQueuedHostTaskSubmissionIngressIfBusyAsync(binding, tracker, sharedEventBatch, deliveredCursor, ct);
             return true;
         }
 
@@ -983,12 +989,12 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         if (StardewRuntimeActionController.IsInFlightStatus(status.Status))
         {
             await PauseTrackerAsync(tracker, deliveredCursor, $"command_{status.Status}", bridgeKey, status.RetryAfterUtc, ct);
-            await DeferQueuedHostTaskSubmissionIngressIfBusyAsync(binding, tracker, deliveredCursor, ct);
+            await DeferQueuedHostTaskSubmissionIngressIfBusyAsync(binding, tracker, sharedEventBatch, deliveredCursor, ct);
             return true;
         }
 
         if (StardewRuntimeActionController.IsTerminalStatus(status.Status))
-            return true;
+            return !HasQueuedHostTaskSubmissionIngress(tracker);
 
         return true;
     }
@@ -1227,15 +1233,12 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         var controller = tracker.Driver.Snapshot();
         if (controller.ActionSlot is not null || controller.PendingWorkItem is not null)
         {
-            await DeferHostTaskSubmissionIngressAsync(binding, tracker, workItem, deliveredCursor, ct);
-            return true;
+            return await DeferHostTaskSubmissionIngressAsync(binding, tracker, workItem, dispatch.SharedEventBatch, deliveredCursor, ct);
         }
 
-        if (ShouldBlockDeferredIngress(workItem))
-        {
-            await BlockDeferredIngressAsync(binding, tracker, workItem, deliveredCursor, activeSlotOrPending: false, ct);
-            return true;
-        }
+        workItem = MarkPrivateChatReplyDeliveredIfSeen(workItem, dispatch.SharedEventBatch, binding.Descriptor);
+        if (PayloadFlagIsTrue(workItem.Payload, PrivateChatReplyDeliveredPayloadKey))
+            await ReplaceIngressWorkItemAsync(tracker, workItem, ct);
 
         var payload = workItem.Payload ?? [];
         var action = ReadPayloadString(payload, "action");
@@ -1258,11 +1261,26 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         var conversationId = ReadPayloadString(payload, "conversationId");
         var rootTodoId = ReadPayloadString(payload, "rootTodoId");
         var isMove = string.Equals(action, "move", StringComparison.OrdinalIgnoreCase);
+        var hasPrivateChatConversation = !string.IsNullOrWhiteSpace(conversationId);
+        var privateChatReplyDelivered = hasPrivateChatConversation &&
+            IsPrivateChatReplyDelivered(workItem, dispatch.SharedEventBatch, binding.Descriptor, conversationId!);
 
-        if (!string.IsNullOrWhiteSpace(conversationId) &&
-            !HasPrivateChatReplyClosed(dispatch.SharedEventBatch, binding.Descriptor, conversationId))
+        if (hasPrivateChatConversation && !privateChatReplyDelivered)
         {
-            await DeferPrivateChatReplyClosedIngressAsync(binding, tracker, workItem, deliveredCursor, ct);
+            if (HasPrivateChatReplyDeliveryTimedOut(workItem))
+            {
+                await BlockPrivateChatReplyDeliveryTimeoutAsync(binding, tracker, workItem, deliveredCursor, ct);
+                return true;
+            }
+
+            await DeferPrivateChatReplyDeliveryIngressAsync(binding, tracker, workItem, deliveredCursor, ct);
+            return false;
+        }
+
+        if (ShouldBlockDeferredIngress(workItem) &&
+            (!privateChatReplyDelivered || string.Equals(workItem.Status, "blocked", StringComparison.OrdinalIgnoreCase)))
+        {
+            await BlockDeferredIngressAsync(binding, tracker, workItem, deliveredCursor, activeSlotOrPending: false, ct);
             return true;
         }
 
@@ -1351,6 +1369,10 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         return true;
     }
 
+    private static bool HasQueuedHostTaskSubmissionIngress(NpcAutonomyTracker tracker)
+        => tracker.Driver.Snapshot().IngressWorkItems.Any(item =>
+            string.Equals(item.WorkType, "stardew_host_task_submission", StringComparison.OrdinalIgnoreCase));
+
     private static Task WriteIngressDiagnosticAsync(
         StardewNpcRuntimeBinding binding,
         NpcAutonomyTracker tracker,
@@ -1395,13 +1417,29 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                 UpdatedAtUtc: DateTime.UtcNow),
             ct);
 
-    private async Task DeferHostTaskSubmissionIngressAsync(
+    private async Task<bool> DeferHostTaskSubmissionIngressAsync(
         StardewNpcRuntimeBinding binding,
         NpcAutonomyTracker tracker,
         NpcRuntimeIngressWorkItemSnapshot workItem,
+        GameEventBatch sharedEventBatch,
         GameEventCursor deliveredCursor,
         CancellationToken ct)
     {
+        workItem = MarkPrivateChatReplyDeliveredIfSeen(workItem, sharedEventBatch, binding.Descriptor);
+        var conversationId = ReadPayloadString(workItem.Payload ?? [], "conversationId");
+        if (!string.IsNullOrWhiteSpace(conversationId) &&
+            !IsPrivateChatReplyDelivered(workItem, sharedEventBatch, binding.Descriptor, conversationId))
+        {
+            if (HasPrivateChatReplyDeliveryTimedOut(workItem))
+            {
+                await BlockPrivateChatReplyDeliveryTimeoutAsync(binding, tracker, workItem, deliveredCursor, ct);
+                return true;
+            }
+
+            await DeferPrivateChatReplyDeliveryIngressAsync(binding, tracker, workItem, deliveredCursor, ct);
+            return false;
+        }
+
         var deferred = workItem with
         {
             Status = "deferred",
@@ -1411,7 +1449,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         if (ShouldBlockDeferredIngress(deferred))
         {
             await BlockDeferredIngressAsync(binding, tracker, deferred, deliveredCursor, activeSlotOrPending: true, ct);
-            return;
+            return true;
         }
 
         await ReplaceIngressWorkItemAsync(tracker, deferred, ct);
@@ -1424,11 +1462,13 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             ct);
         await tracker.Driver.SetNextWakeAtUtcAsync(DateTime.UtcNow + TimeSpan.FromSeconds(2), ct);
         await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
+        return true;
     }
 
     private async Task DeferQueuedHostTaskSubmissionIngressIfBusyAsync(
         StardewNpcRuntimeBinding binding,
         NpcAutonomyTracker tracker,
+        GameEventBatch sharedEventBatch,
         GameEventCursor deliveredCursor,
         CancellationToken ct)
     {
@@ -1437,7 +1477,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
         if (workItem is null)
             return;
 
-        await DeferHostTaskSubmissionIngressAsync(binding, tracker, workItem, deliveredCursor, ct);
+        await DeferHostTaskSubmissionIngressAsync(binding, tracker, workItem, sharedEventBatch, deliveredCursor, ct);
     }
 
     private async Task BlockDeferredIngressAsync(
@@ -1566,7 +1606,7 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
                jsonValue.TryGetValue<int>(out value);
     }
 
-    private async Task DeferPrivateChatReplyClosedIngressAsync(
+    private async Task DeferPrivateChatReplyDeliveryIngressAsync(
         StardewNpcRuntimeBinding binding,
         NpcAutonomyTracker tracker,
         NpcRuntimeIngressWorkItemSnapshot workItem,
@@ -1575,15 +1615,8 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
     {
         var deferred = workItem with
         {
-            Status = "deferred",
-            DeferredAttempts = workItem.DeferredAttempts + 1
+            Status = "deferred"
         };
-
-        if (ShouldBlockDeferredIngress(deferred))
-        {
-            await BlockDeferredIngressAsync(binding, tracker, deferred, deliveredCursor, activeSlotOrPending: false, ct);
-            return;
-        }
 
         await ReplaceIngressWorkItemAsync(tracker, deferred, ct);
         await WriteIngressDiagnosticAsync(
@@ -1591,20 +1624,93 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             tracker,
             deferred,
             "deferred",
-            "waiting_private_chat_reply_closed",
+            PrivateChatReplyDeliveryWaitReason,
             ct);
+        await tracker.Driver.SetNextWakeAtUtcAsync(null, ct);
+        await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
+    }
+
+    private async Task BlockPrivateChatReplyDeliveryTimeoutAsync(
+        StardewNpcRuntimeBinding binding,
+        NpcAutonomyTracker tracker,
+        NpcRuntimeIngressWorkItemSnapshot workItem,
+        GameEventCursor deliveredCursor,
+        CancellationToken ct)
+    {
+        var blocked = workItem with
+        {
+            Status = "blocked"
+        };
+        await WriteIngressDiagnosticAsync(
+            binding,
+            tracker,
+            blocked,
+            "blocked",
+            PrivateChatReplyDeliveryTimeoutReason,
+            ct);
+        var payload = blocked.Payload ?? [];
+        await RecordIngressBlockedTerminalAsync(
+            binding,
+            tracker,
+            blocked,
+            ReadPayloadString(payload, "action") ?? blocked.WorkType,
+            PrivateChatReplyDeliveryTimeoutReason,
+            ct);
+        await tracker.Driver.RemoveIngressWorkItemAsync(blocked.WorkItemId, ct);
         await tracker.Driver.SetNextWakeAtUtcAsync(DateTime.UtcNow + TimeSpan.FromSeconds(2), ct);
         await tracker.Driver.AcknowledgeEventCursorAsync(deliveredCursor, ct);
     }
 
-    private static bool HasPrivateChatReplyClosed(
+    private bool HasPrivateChatReplyDeliveryTimedOut(NpcRuntimeIngressWorkItemSnapshot workItem)
+        => DateTime.UtcNow - workItem.CreatedAtUtc >= _budget.Options.EffectiveActionChainGuard.EffectiveChainTtl;
+
+    private static bool IsPrivateChatReplyDelivered(
+        NpcRuntimeIngressWorkItemSnapshot workItem,
+        GameEventBatch batch,
+        NpcRuntimeDescriptor descriptor,
+        string conversationId)
+        => PayloadFlagIsTrue(workItem.Payload, PrivateChatReplyDeliveredPayloadKey) ||
+           HasPrivateChatReplyDelivered(batch, descriptor, conversationId);
+
+    private static NpcRuntimeIngressWorkItemSnapshot MarkPrivateChatReplyDeliveredIfSeen(
+        NpcRuntimeIngressWorkItemSnapshot workItem,
+        GameEventBatch batch,
+        NpcRuntimeDescriptor descriptor)
+    {
+        var payload = workItem.Payload;
+        if (payload is null || PayloadFlagIsTrue(payload, PrivateChatReplyDeliveredPayloadKey))
+            return workItem;
+
+        var conversationId = ReadPayloadString(payload, "conversationId");
+        if (string.IsNullOrWhiteSpace(conversationId) ||
+            !HasPrivateChatReplyDelivered(batch, descriptor, conversationId))
+        {
+            return workItem;
+        }
+
+        var updatedPayload = ClonePayload(payload);
+        updatedPayload[PrivateChatReplyDeliveredPayloadKey] = true;
+        return workItem with
+        {
+            Payload = updatedPayload
+        };
+    }
+
+    private static bool PayloadFlagIsTrue(JsonObject? payload, string propertyName)
+        => payload?.TryGetPropertyValue(propertyName, out var value) == true &&
+           value is JsonValue jsonValue &&
+           jsonValue.TryGetValue<bool>(out var flag) &&
+           flag;
+
+    private static bool HasPrivateChatReplyDelivered(
         GameEventBatch batch,
         NpcRuntimeDescriptor descriptor,
         string conversationId)
     {
         foreach (var record in batch.Records)
         {
-            if (!string.Equals(record.EventType, "private_chat_reply_closed", StringComparison.OrdinalIgnoreCase) ||
+            if ((!string.Equals(record.EventType, "private_chat_reply_displayed", StringComparison.OrdinalIgnoreCase) &&
+                 !string.Equals(record.EventType, "private_chat_reply_closed", StringComparison.OrdinalIgnoreCase)) ||
                 !IsRelevantToRuntime(descriptor, record))
             {
                 continue;
@@ -1613,8 +1719,8 @@ public sealed class StardewNpcAutonomyBackgroundService : IDisposable
             if (record.Payload is null)
                 continue;
 
-            var closedConversationId = ReadPayloadString(record.Payload, "conversationId");
-            if (string.Equals(closedConversationId, conversationId.Trim(), StringComparison.OrdinalIgnoreCase))
+            var deliveredConversationId = ReadPayloadString(record.Payload, "conversationId");
+            if (string.Equals(deliveredConversationId, conversationId.Trim(), StringComparison.OrdinalIgnoreCase))
                 return true;
         }
 

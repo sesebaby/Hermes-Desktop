@@ -267,7 +267,7 @@ public sealed class BridgeCommandQueue
         var conversationId = string.IsNullOrWhiteSpace(envelope.Payload.ConversationId)
             ? envelope.RequestId
             : envelope.Payload.ConversationId;
-        var display = _messageRouter.Display(npc, envelope.Payload.Text, channel, envelope.Payload.ConversationId, envelope.Payload.Source);
+        var display = _messageRouter.Display(npc, envelope.Payload.Text, channel, conversationId, envelope.Payload.Source);
         if (privateChat)
         {
             _events.Record(

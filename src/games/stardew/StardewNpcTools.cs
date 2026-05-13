@@ -231,6 +231,7 @@ public sealed class StardewSubmitHostTaskTool : ITool, IToolSchemaProvider
 
         return ToolResult.Ok(JsonSerializer.Serialize(new
         {
+            summary = StardewNpcToolResultSummaries.ForQueuedHostTask(action, workItemId),
             queued = true,
             workItemId,
             traceId,
@@ -937,14 +938,7 @@ internal sealed class StardewActionStatusPoller
     {
         var statusPolls = await PollUntilTerminalAsync(commandResult, ct);
         var finalStatus = statusPolls.Count > 0 ? statusPolls[^1] : null;
-        return new StardewNpcActionToolResult(
-            commandResult.Accepted,
-            commandResult.CommandId,
-            commandResult.Status,
-            commandResult.FailureReason,
-            commandResult.TraceId,
-            finalStatus,
-            statusPolls);
+        return StardewNpcActionToolResult.From(commandResult, finalStatus, statusPolls);
     }
 }
 
@@ -1013,14 +1007,7 @@ public sealed class StardewNavigateToTileTool : ITool, IToolSchemaProvider
         var preparedAction = await _runtimeActions.TryBeginAsync(action, ct);
         if (preparedAction?.BlockedResult is not null)
         {
-            return ToolResult.Ok(StardewNpcToolJson.Serialize(new StardewNpcActionToolResult(
-                preparedAction.BlockedResult.Accepted,
-                preparedAction.BlockedResult.CommandId,
-                preparedAction.BlockedResult.Status,
-                preparedAction.BlockedResult.FailureReason,
-                preparedAction.BlockedResult.TraceId,
-                FinalStatus: null,
-                StatusPolls: [])));
+            return ToolResult.Ok(StardewNpcToolJson.Serialize(StardewNpcActionToolResult.From(preparedAction.BlockedResult)));
         }
 
         var commandResult = await _commands.SubmitAsync(action, ct);
@@ -1086,7 +1073,7 @@ public sealed class StardewSpeakTool : ITool, IToolSchemaProvider
 
         var preparedAction = await _runtimeActions.TryBeginAsync(action, ct);
         if (preparedAction?.BlockedResult is not null)
-            return ToolResult.Ok(StardewNpcToolJson.Serialize(preparedAction.BlockedResult));
+            return ToolResult.Ok(StardewNpcToolJson.Serialize(StardewNpcActionToolResult.From(preparedAction.BlockedResult)));
 
         var commandResult = await _commands.SubmitAsync(action, ct);
         await _runtimeActions.RecordSubmitResultAsync(preparedAction, commandResult, ct);
@@ -1157,7 +1144,7 @@ public sealed class StardewIdleMicroActionTool : ITool, IToolSchemaProvider
 
         var preparedAction = await _runtimeActions.TryBeginAsync(action, ct);
         if (preparedAction?.BlockedResult is not null)
-            return ToolResult.Ok(StardewNpcToolJson.Serialize(preparedAction.BlockedResult));
+            return ToolResult.Ok(StardewNpcToolJson.Serialize(StardewNpcActionToolResult.From(preparedAction.BlockedResult)));
 
         var commandResult = await _commands.SubmitAsync(action, ct);
         await _runtimeActions.RecordSubmitResultAsync(preparedAction, commandResult, ct);
@@ -1188,7 +1175,8 @@ public sealed class StardewTaskStatusTool : ITool, IToolSchemaProvider
         if (string.IsNullOrWhiteSpace(p.CommandId))
             return ToolResult.Fail("commandId is required.");
 
-        return ToolResult.Ok(StardewNpcToolJson.Serialize(await _commands.GetStatusAsync(p.CommandId, ct)));
+        var status = await _commands.GetStatusAsync(p.CommandId, ct);
+        return ToolResult.Ok(StardewNpcToolJson.SerializeWithSummary(status, StardewNpcToolResultSummaries.ForTaskStatus(status)));
     }
 }
 
@@ -1244,7 +1232,7 @@ public sealed class StardewOpenPrivateChatTool : ITool, IToolSchemaProvider
 
         var preparedAction = await _runtimeActions.TryBeginAsync(action, ct);
         if (preparedAction?.BlockedResult is not null)
-            return ToolResult.Ok(StardewNpcToolJson.Serialize(preparedAction.BlockedResult));
+            return ToolResult.Ok(StardewNpcToolJson.Serialize(StardewNpcActionToolResult.From(preparedAction.BlockedResult)));
 
         var commandResult = await _commands.SubmitAsync(action, ct);
         await _runtimeActions.RecordSubmitResultAsync(preparedAction, commandResult, ct);
@@ -1784,13 +1772,111 @@ public sealed class StardewOpenPrivateChatToolParameters
 }
 
 internal sealed record StardewNpcActionToolResult(
+    string Summary,
     bool Accepted,
     string CommandId,
     string Status,
     string? FailureReason,
     string TraceId,
     GameCommandStatus? FinalStatus,
-    IReadOnlyList<GameCommandStatus> StatusPolls);
+    IReadOnlyList<GameCommandStatus> StatusPolls)
+{
+    public static StardewNpcActionToolResult From(
+        GameCommandResult commandResult,
+        GameCommandStatus? finalStatus = null,
+        IReadOnlyList<GameCommandStatus>? statusPolls = null)
+        => new(
+            StardewNpcToolResultSummaries.ForAction(commandResult, finalStatus),
+            commandResult.Accepted,
+            commandResult.CommandId,
+            commandResult.Status,
+            commandResult.FailureReason,
+            commandResult.TraceId,
+            finalStatus,
+            statusPolls ?? Array.Empty<GameCommandStatus>());
+}
+
+internal static class StardewNpcToolResultSummaries
+{
+    public static string ForQueuedHostTask(string action, string workItemId)
+        => $"已加入 host task：action={action}; workItemId={workItemId}。这是排队事实，宿主会按游戏状态执行并回写状态。";
+
+    public static string ForAction(GameCommandResult result, GameCommandStatus? finalStatus)
+    {
+        if (finalStatus is not null)
+            return ForTaskStatus(finalStatus);
+
+        var commandId = string.IsNullOrWhiteSpace(result.CommandId) ? "-" : result.CommandId;
+        var status = string.IsNullOrWhiteSpace(result.Status) ? "unknown" : result.Status;
+        var reason = string.IsNullOrWhiteSpace(result.FailureReason) ? "none" : result.FailureReason;
+        if (string.Equals(result.FailureReason, StardewBridgeErrorCodes.ActionSlotBusy, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"行动被阻塞：已有世界动作正在执行；reason={StardewBridgeErrorCodes.ActionSlotBusy}; commandId={commandId}。这是事实，不会自动重试。";
+        }
+
+        if (!result.Accepted || IsTerminalProblem(status))
+            return $"行动未进入执行或已结束为 {status}：commandId={commandId}; reason={reason}。这是事实，下一步由 agent 决定。";
+
+        return $"行动已提交：commandId={commandId}; status={status}。这是执行事实，后续用 stardew_task_status 查询进度。";
+    }
+
+    public static string ForTaskStatus(GameCommandStatus status)
+    {
+        var commandId = string.IsNullOrWhiteSpace(status.CommandId) ? "-" : status.CommandId;
+        var action = string.IsNullOrWhiteSpace(status.Action) ? "-" : status.Action;
+        var state = string.IsNullOrWhiteSpace(status.Status) ? "unknown" : status.Status;
+        var reason = status.ErrorCode ?? status.BlockedReason;
+        var reasonPart = string.IsNullOrWhiteSpace(reason) ? string.Empty : $"; reason={reason}";
+
+        if (string.Equals(state, StardewCommandStatuses.Queued, StringComparison.OrdinalIgnoreCase))
+            return $"任务 {commandId} 已排队：action={action}{reasonPart}。这是状态事实。";
+
+        if (string.Equals(state, StardewCommandStatuses.Running, StringComparison.OrdinalIgnoreCase))
+        {
+            return IsRecoverableUiWait(reason)
+                ? $"任务 {commandId} 正在等待游戏 UI/窗口生命周期：action={action}{reasonPart}。这是可恢复状态事实。"
+                : $"任务 {commandId} 正在执行：action={action}{reasonPart}。这是状态事实。";
+        }
+
+        if (string.Equals(state, StardewCommandStatuses.Completed, StringComparison.OrdinalIgnoreCase))
+            return $"任务 {commandId} 已完成：action={action}{reasonPart}。这是终态事实。";
+
+        if (string.Equals(reason, StardewBridgeErrorCodes.ActionSlotTimeout, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(state, StardewCommandStatuses.Expired, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"任务 {commandId} 已超时：action={action}{reasonPart}。这是终态事实。";
+        }
+
+        if (string.Equals(state, StardewCommandStatuses.Blocked, StringComparison.OrdinalIgnoreCase))
+            return $"任务 {commandId} 已阻塞：action={action}{reasonPart}。这是终态事实，下一步由 agent 决定。";
+
+        if (string.Equals(state, StardewCommandStatuses.Failed, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(state, StardewCommandStatuses.Cancelled, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(state, StardewCommandStatuses.Interrupted, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"任务 {commandId} 以 {state} 结束：action={action}{reasonPart}。这是终态事实，下一步由 agent 决定。";
+        }
+
+        return $"任务 {commandId} 当前状态是 {state}：action={action}{reasonPart}。这是状态事实。";
+    }
+
+    private static bool IsTerminalProblem(string status)
+        => string.Equals(status, StardewCommandStatuses.Failed, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Cancelled, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Interrupted, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Blocked, StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(status, StardewCommandStatuses.Expired, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsRecoverableUiWait(string? reason)
+        => reason is not null &&
+           (reason.Contains("private_chat", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("dialogue", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("menu", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("ui", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("window", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("animation", StringComparison.OrdinalIgnoreCase) ||
+            reason.Contains("event", StringComparison.OrdinalIgnoreCase));
+}
 
 internal static class StardewNpcToolJson
 {
@@ -1800,6 +1886,13 @@ internal static class StardewNpcToolJson
     };
 
     public static string Serialize<T>(T value) => JsonSerializer.Serialize(value, JsonOptions);
+
+    public static string SerializeWithSummary<T>(T value, string summary)
+    {
+        var node = JsonSerializer.SerializeToNode(value, JsonOptions) as JsonObject ?? [];
+        node["summary"] = summary;
+        return node.ToJsonString(JsonOptions);
+    }
 }
 
 internal static class StardewNpcToolSchemas

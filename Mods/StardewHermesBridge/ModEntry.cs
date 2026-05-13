@@ -49,7 +49,7 @@ public sealed class ModEntry : Mod
         _phoneState = new HermesPhoneState();
         _phoneOverlay = new HermesPhoneOverlay(_phoneState, _events, _bridgeLogger, Helper, npcName => _overlay.SetPrivateChatThinking(npcName));
         _bubbleOverlay = new NpcOverheadBubbleOverlay(_events, _bridgeLogger);
-        _messageRouter = new StardewMessageDisplayRouter(_phoneState, _bubbleOverlay, _phoneOverlay, _events, _bridgeLogger);
+        _messageRouter = new StardewMessageDisplayRouter(_phoneState, _bubbleOverlay, _phoneOverlay, _events, _bridgeLogger, PreparePrivateChatReplyDialogue);
         _commands = new BridgeCommandQueue(
             _bridgeLogger,
             _events,
@@ -61,8 +61,6 @@ public sealed class ModEntry : Mod
             (npcName, conversationId, route) =>
             {
                 _overlay.ClearPrivateChatPending();
-                if (string.Equals(route, "reply_pending_click", StringComparison.OrdinalIgnoreCase))
-                    _overlay.SetPrivateChatReplyReady(npcName);
             },
             HasHermesPrivateChatReplyDialogueOpen);
         _debugMenu = new BridgeDebugMenu(_overlay);
@@ -160,7 +158,6 @@ public sealed class ModEntry : Mod
         _overlay.SetBlockedReason("day_transition");
         _overlay.ClearPrivateChatPending();
         _phoneOverlay.ClosePhone();
-        _bubbleOverlay.ClearPendingClickReplies();
         ClearPendingDialogueFlow();
         ClearCustomDialogueGuards();
         _dialogueObservationGate.Clear();
@@ -173,7 +170,6 @@ public sealed class ModEntry : Mod
         _overlay.SetBlockedReason("returned_to_title");
         _overlay.ClearPrivateChatPending();
         _phoneOverlay.ClosePhone();
-        _bubbleOverlay.ClearPendingClickReplies();
         ClearPendingDialogueFlow();
         ClearCustomDialogueGuards();
         _dialogueObservationGate.Clear();
@@ -285,21 +281,6 @@ public sealed class ModEntry : Mod
         if (isDialogueBoxOpen)
             _dialogueObservationGate.TryClaim(Game1.activeClickableMenu, activeDialogueNpcName);
 
-        if (!isDialogueBoxOpen &&
-            route.NpcName is { } replyNpcName &&
-            clickedNpc is not null &&
-            _bubbleOverlay.TryConsumePendingClickReply(replyNpcName, out var pendingClickReply))
-        {
-            _pendingPrivateChatReplyDialogue = new PendingPrivateChatReplyDialogue(
-                pendingClickReply.NpcName,
-                pendingClickReply.ConversationId ?? "");
-            _activeHermesPrivateChatDialogueConversationId = pendingClickReply.ConversationId;
-            _overlay.ClearPrivateChatPending();
-            NpcRawDialogueRenderer.Display(clickedNpc, pendingClickReply.Text);
-            _bridgeLogger.Write("private_chat_reply_displayed_on_click", pendingClickReply.NpcName, FormalEntry, "dialogue", null, "displayed", pendingClickReply.ConversationId);
-            return;
-        }
-
         BeginOrObserveOriginalDialogue(route.NpcName!, isDialogueBoxOpen ? "already_open" : "vanilla_pending", isDialogueBoxOpen ? null : e.Button);
         _bridgeLogger.Write(SmapiBridgeLogger.NpcClickObserved, route.NpcName, FormalEntry, FormalEntry, null, "observed", $"{BuildInputAcceptedDetail(e, isActionButton, isUseToolButton, isMouseButton)};original_start={(isDialogueBoxOpen ? "already_open" : "vanilla_pending")}");
     }
@@ -363,6 +344,15 @@ public sealed class ModEntry : Mod
             });
         _bridgeLogger.Write("private_chat_reply_closed_fact", pending.NpcName, FormalEntry, FormalEntry, null, "recorded", "input_menu_dialogue_closed");
         _activeHermesPrivateChatDialogueConversationId = null;
+    }
+
+    private void PreparePrivateChatReplyDialogue(string npcName, string? conversationId)
+    {
+        if (string.IsNullOrWhiteSpace(conversationId))
+            return;
+
+        _pendingPrivateChatReplyDialogue = new PendingPrivateChatReplyDialogue(npcName, conversationId);
+        _activeHermesPrivateChatDialogueConversationId = conversationId;
     }
 
     internal bool HasHermesPrivateChatReplyDialogueOpen()
