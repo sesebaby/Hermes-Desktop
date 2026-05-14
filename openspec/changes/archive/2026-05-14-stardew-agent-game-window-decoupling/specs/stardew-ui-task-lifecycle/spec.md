@@ -1,7 +1,7 @@
-## 新增需求
+## ADDED Requirements
 
 ### Requirement: UI 生命周期等待必须表现为任务事实，而不是通用 ingress 失败
-Stardew 的 UI / 窗口生命周期等待必须表示为所属任务、交互、lease 或状态事实。当等待是可恢复的，并且属于游戏或玩家可见 UI 生命周期时，绝不能把它归类成通用 ingress 重试失败。
+Stardew 的 UI / 窗口生命周期等待 MUST 表示为所属任务、交互、lease 或状态事实。当等待是可恢复的，并且属于游戏或玩家可见 UI 生命周期时，MUST NOT 把它归类成通用 ingress 重试失败。
 
 #### Scenario: 私聊回复生命周期不能消耗 stale 预算
 - **WHEN** 私聊回复对话框、电话回复，或同类回复 UI 生命周期仍然处于打开状态，或还在等待玩家交互
@@ -12,7 +12,7 @@ Stardew 的 UI / 窗口生命周期等待必须表示为所属任务、交互、
 - **THEN** 这类等待必须以可读的 task / status 事实表现出来，例如 waiting、blocked 或 lease conflict，而不是隐藏的 host 锁
 
 ### Requirement: agent 流程继续推进时，UI 安全仍然必须留在游戏侧
-把 agent 流程和 UI 生命周期解耦，不能移除游戏侧的 UI 安全保护。任何会打开、关闭或操作菜单的任务，仍然必须遵守 UI lease、当前激活菜单所有权、玩家自由状态、过场、节日、日切以及清理所有权。违反这些条件时，必须返回可观察的 blocked / failed 事实，并把下一步决策留给 agent。
+把 agent 流程和 UI 生命周期解耦，MUST NOT 移除游戏侧的 UI 安全保护。任何会打开、关闭或操作菜单的任务，仍然 MUST 遵守 UI lease、当前激活菜单所有权、玩家自由状态、过场、节日、日切以及清理所有权。违反这些条件时，MUST 返回可观察的 blocked / failed 事实，并把下一步决策留给 agent。
 
 #### Scenario: 无关的活动菜单阻止窗口操作
 - **WHEN** 未来的交易、制作、采集、任务或私聊任务需要使用某个菜单，但当前存在一个无关的活动菜单
@@ -27,7 +27,7 @@ Stardew 的 UI / 窗口生命周期等待必须表示为所属任务、交互、
 - **THEN** host 必须记录终态 timeout 事实，并使用 `action_slot_timeout` 或现有等价 timeout reason，同时只释放该任务自己拥有的 UI lease 和资源
 
 ### Requirement: 私聊回复投递必须与世界动作执行解耦
-私聊回复的显示和关闭事件必须被视为交互 / 窗口事实。它们不能再被当成通用理由，用来把一个由 agent 明确通过 host task 生命周期提交的世界动作任务直接打成终态 blocked。
+私聊回复的显示和关闭事件 MUST 被视为交互 / 窗口事实。它们 MUST NOT 再被当成通用理由，用来把一个由 agent 明确通过 host task 生命周期提交的世界动作任务直接打成终态 blocked。
 
 #### Scenario: 回复显示期间，世界动作仍保持 pending
 - **WHEN** agent 在私聊中自然回复，并且在同一个 private-chat turn 中提交了一个世界动作
