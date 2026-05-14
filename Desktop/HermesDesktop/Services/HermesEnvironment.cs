@@ -22,7 +22,8 @@ internal static class HermesEnvironment
     internal static string HermesHomePath =>
         Environment.GetEnvironmentVariable("HERMES_HOME") is { Length: > 0 } configuredHome
             ? configuredHome
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "hermes");
+            : ResolveProjectScopedHermesHome() ??
+              Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "hermes");
 
     internal static string HermesConfigPath => Path.Combine(HermesHomePath, "config.yaml");
 
@@ -311,6 +312,49 @@ internal static class HermesEnvironment
         }
 
         return value;
+    }
+
+    private static string? ResolveProjectScopedHermesHome()
+    {
+        foreach (var root in EnumerateCandidateRoots())
+        {
+            var projectHermesHome = Path.Combine(root, ".hermes");
+            if (Directory.Exists(projectHermesHome) || File.Exists(Path.Combine(projectHermesHome, "config.yaml")))
+            {
+                return projectHermesHome;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> EnumerateCandidateRoots()
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var start in new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() })
+        {
+            if (string.IsNullOrWhiteSpace(start) || !Directory.Exists(start))
+            {
+                continue;
+            }
+
+            var current = new DirectoryInfo(Path.GetFullPath(start));
+            while (current is not null)
+            {
+                if (LooksLikeRepoRoot(current.FullName) && seen.Add(current.FullName))
+                {
+                    yield return current.FullName;
+                }
+
+                current = current.Parent;
+            }
+        }
+    }
+
+    private static bool LooksLikeRepoRoot(string path)
+    {
+        return File.Exists(Path.Combine(path, "HermesDesktop.sln")) ||
+               File.Exists(Path.Combine(path, "HermesDesktop.slnx"));
     }
 
     /// <summary>Write model configuration to config.yaml.</summary>

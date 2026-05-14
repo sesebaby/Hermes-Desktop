@@ -723,6 +723,12 @@ public partial class App : Application
         var provider = services.BuildServiceProvider();
         Services = provider;
 
+        provider.GetService<ILogger<App>>()?.LogInformation(
+            "Hermes environment resolved; home={HermesHome}; config={ConfigPath}; workspace={WorkspacePath}",
+            hermesHome,
+            HermesEnvironment.HermesConfigPath,
+            HermesEnvironment.AgentWorkingDirectory);
+
         // ── Post-build: Register all tools and connect MCP ──
         RegisterAllTools(provider);
         InitializeMcpAsync(provider, projectDir);

@@ -80,7 +80,8 @@ static async Task<int> InvokeChatAsync(
         builder.SetMinimumLevel(LogLevel.Information);
     });
 
-    // NOTE: Hermes Desktop loads config from %LOCALAPPDATA%\hermes\config.yaml.
+    // NOTE: Hermes Desktop resolves config from HERMES_HOME when set, otherwise
+    // from a repo-local .hermes during development, else LocalApplicationData.
     // The CLI currently uses inline defaults; unify with desktop config resolution.
     var config = new LlmConfig
     {
