@@ -131,6 +131,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         Assert.AreEqual("我记着，明天见。", reply.Text);
         Assert.IsTrue(client.SawChineseContinuityGuidance, "Private chat prompt must use Chinese plain-language continuity guidance.");
         Assert.IsTrue(client.SawImmediateDelegationGuidance, "Private chat prompt must explain accepted immediate world actions require a skill-grounded stardew_submit_host_task target.");
+        Assert.IsTrue(client.SawNoToolSpeechOnlyGuidance, "Private chat prompt must say no world-action tool call means speech only, not an immediate action promise.");
         Assert.IsTrue(client.SawDirectPlayerReplyGuidance, "Private chat prompt must force a direct reply to the player, not inner monologue.");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
         Assert.IsTrue(runtimeSupervisor.TryGetTaskView(haleySnapshot.SessionId, out var longTermTaskView));
@@ -224,19 +225,25 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         Assert.IsTrue(noWorldActionIndex >= 0, "私聊工具面必须包含 npc_no_world_action。");
         Assert.IsTrue(todoIndex >= 0, "私聊工具面必须包含 todo。");
         Assert.IsTrue(todoIndex < delegateIndex, "立即行动承诺必须先成为 NPC session todo，再委托真实动作。");
-        Assert.IsTrue(noWorldActionIndex < delegateIndex, "无世界动作声明工具必须靠前，保证父层每轮都能明确闭环。");
+        Assert.IsTrue(noWorldActionIndex >= 0, "无世界动作声明工具仍应保留为可选的明确收口/诊断工具。");
         var todoDefinition = client.FirstToolDefinitions.Single(tool => tool.Name == "todo");
         StringAssert.Contains(todoDefinition.Description, "当前会话");
         StringAssert.Contains(todoDefinition.Description, "现在就执行");
         StringAssert.Contains(todoDefinition.Description, "stardew_submit_host_task");
         StringAssert.DoesNotMatch(todoDefinition.Description, new System.Text.RegularExpressions.Regex(@"\bManage your task list\b"));
+        var noWorldActionDefinition = client.FirstToolDefinitions.Single(tool => tool.Name == "npc_no_world_action");
+        StringAssert.Contains(noWorldActionDefinition.Description, "推荐");
+        StringAssert.Contains(noWorldActionDefinition.Description, "诊断");
+        StringAssert.DoesNotMatch(
+            noWorldActionDefinition.Description,
+            new System.Text.RegularExpressions.Regex("不要用纯文本省略|必须声明|必须调用|硬门槛"));
     }
 
     [TestMethod]
-    public async Task ReplyAsync_WhenImmediateMoveAcceptedWithoutDelegation_RetriesAndQueuesHostTaskSubmission()
+    public async Task ReplyAsync_WhenImmediateMoveAcceptedWithoutDelegation_TreatsNaturalReplyAsDialogueOnly()
     {
         var runtimeSupervisor = new NpcRuntimeSupervisor();
-        var client = new FirstAcceptsWithoutDelegatingThenDelegatesChatClient();
+        var client = new PrivateChatNaturalReplyOnlyChatClient();
         var runner = CreateRunner(client, runtimeSupervisor);
 
         var reply = await runner.ReplyAsync(
@@ -244,30 +251,12 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             CancellationToken.None);
 
         Assert.AreEqual("好，我现在过去。", reply.Text);
-        Assert.AreEqual(3, client.CompleteWithToolsCalls, "第一轮没有任何工具调用时，应触发一次父层自检工具轮，自检轮必须同时补 todo 和委托动作。");
-        Assert.IsTrue(
-            client.MessagesByCall.Skip(1).Any(messages => messages.Any(message =>
-                message.Role == "user" &&
-                (message.Content?.Contains("自检：上一轮私聊回复没有调用 stardew_submit_host_task", StringComparison.Ordinal) ?? false) &&
-                (message.Content?.Contains("请你自己判断", StringComparison.Ordinal) ?? false))),
-            "自检重试只能把缺少 stardew_submit_host_task 的结构事实反馈给父层，由父层自己判断是否补工具调用。");
+        Assert.AreEqual(1, client.CompleteWithToolsCalls, "无工具自然回复在私聊中是合法终态，不应追加第二次 LLM 自检。");
+        Assert.IsFalse(client.MessagesByCall.Skip(1).Any(), "私聊自然回复不应追加自检消息。");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
-        var ingress = haleySnapshot.Controller.IngressWorkItems.Single();
-        Assert.AreEqual("stardew_host_task_submission", ingress.WorkType);
-        Assert.AreEqual("move", ingress.Payload?["action"]?.GetValue<string>());
-        var target = ingress.Payload?["target"]?.AsObject();
-        Assert.IsNotNull(target, "Corrective retry must delegate the resolved mechanical target, not natural-language destinationText.");
-        Assert.AreEqual("Beach", target["locationName"]?.GetValue<string>());
-        Assert.AreEqual(32, target["x"]?.GetValue<int>());
-        Assert.AreEqual(34, target["y"]?.GetValue<int>());
-        Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", target["source"]?.GetValue<string>());
-        Assert.IsNull(ingress.Payload?["destinationText"]);
-        Assert.IsNull(ingress.Payload?["intentText"]);
-        Assert.IsTrue(runtimeSupervisor.TryGetTaskView(haleySnapshot.SessionId, out var taskView));
-        Assert.IsNotNull(taskView);
-        Assert.AreEqual(1, taskView.ActiveSnapshot.Todos.Count);
-        Assert.AreEqual("Meet player at the beach now", taskView.ActiveSnapshot.Todos[0].Content);
-        Assert.AreEqual("in_progress", taskView.ActiveSnapshot.Todos[0].Status);
+        Assert.IsFalse(haleySnapshot.Controller.IngressWorkItems.Any(), "没有成功 stardew_submit_host_task 时，宿主不能从回复文本创建 host task。");
+        var hasTaskView = runtimeSupervisor.TryGetTaskView(haleySnapshot.SessionId, out var taskView);
+        Assert.IsFalse(hasTaskView && taskView is not null && taskView.ActiveSnapshot.Todos.Any(), "没有工具调用时，宿主不能替 agent 写入 todo。");
     }
 
     [TestMethod]
@@ -283,7 +272,6 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
 
         Assert.AreEqual("好，我现在过去。", reply.Text);
         Assert.AreEqual(3, client.CompleteWithToolsCalls, "失败的 stardew_submit_host_task 应先作为工具结果回到同一 agent-native tool loop，由父层自己重试。");
-        Assert.IsFalse(client.SawDelegationSelfCheck, "同一 tool loop 已经成功重试时，runner 不应再追加第二次自检。");
         Assert.IsFalse(client.SawMissingTodoSelfCheck, "参数校验失败时不能进入“只补 todo”路径，因为没有成功 host task submission。");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
         var ingress = haleySnapshot.Controller.IngressWorkItems.Single();
@@ -298,10 +286,10 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     }
 
     [TestMethod]
-    public async Task ReplyAsync_WhenSubmitHostTaskFailsValidationAndModelStops_RunsDelegationSelfCheckAndQueuesRetry()
+    public async Task ReplyAsync_WhenSubmitHostTaskFailsValidationAndModelStops_TreatsFinalReplyAsDialogueOnly()
     {
         var runtimeSupervisor = new NpcRuntimeSupervisor();
-        var client = new FirstMalformedSubmitThenStopsThenSelfCheckRetryChatClient();
+        var client = new FirstMalformedSubmitThenStopsChatClient();
         var runner = CreateRunner(client, runtimeSupervisor);
 
         var reply = await runner.ReplyAsync(
@@ -309,19 +297,10 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             CancellationToken.None);
 
         Assert.AreEqual("好，我现在过去。", reply.Text);
-        Assert.AreEqual(4, client.CompleteWithToolsCalls, "失败提交后若模型直接 final，runner 必须把“未成功提交”作为结构事实反馈给父层自检。");
-        Assert.IsTrue(client.SawDelegationSelfCheck);
+        Assert.AreEqual(2, client.CompleteWithToolsCalls, "失败提交后的自然回复不能触发 runner 追加第二轮意图自检。");
         Assert.IsFalse(client.SawMissingTodoSelfCheck, "失败提交不能进入只补 todo 的成功提交修复路径。");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
-        var ingress = haleySnapshot.Controller.IngressWorkItems.Single();
-        Assert.AreEqual("stardew_host_task_submission", ingress.WorkType);
-        Assert.AreEqual("move", ingress.Payload?["action"]?.GetValue<string>());
-        var target = ingress.Payload?["target"]?.AsObject();
-        Assert.IsNotNull(target);
-        Assert.AreEqual("Beach", target["locationName"]?.GetValue<string>());
-        Assert.AreEqual(32, target["x"]?.GetValue<int>());
-        Assert.AreEqual(34, target["y"]?.GetValue<int>());
-        Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", target["source"]?.GetValue<string>());
+        Assert.IsFalse(haleySnapshot.Controller.IngressWorkItems.Any(), "失败的 stardew_submit_host_task 不能被当成成功提交，也不能由自然语言补执行。");
     }
 
     [TestMethod]
@@ -387,41 +366,29 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     }
 
     [TestMethod]
-    public async Task ReplyAsync_WhenCasualImmediateMoveAcceptedWithoutDelegation_RetriesAndQueuesHostTaskSubmission()
+    public async Task ReplyAsync_WhenCasualImmediateMoveAcceptedWithoutDelegation_TreatsNaturalReplyAsDialogueOnly()
     {
         var runtimeSupervisor = new NpcRuntimeSupervisor();
-        var client = new FirstCasualAcceptsWithoutDelegatingThenDelegatesChatClient();
+        var client = new CasualNaturalReplyOnlyChatClient();
         var runner = CreateRunner(client, runtimeSupervisor);
 
         var reply = await runner.ReplyAsync(
             new NpcPrivateChatRequest("haley", "save-1", "conversation-casual-corrective", "走吧,我们去海边"),
             CancellationToken.None);
 
-        Assert.AreEqual("好啦，我们走。", reply.Text);
-        Assert.AreEqual(3, client.CompleteWithToolsCalls, "第一轮没有任何工具调用时，应触发一次通用父层自检；自检轮必须同时补 todo 和委托动作，宿主不能靠短语或地点判断移动意图。");
+        Assert.AreEqual("这不已经走着呢嘛，海水应该蓝得发亮。", reply.Text);
+        Assert.AreEqual(1, client.CompleteWithToolsCalls, "带移动意味的自然回复也只能当作私聊文本，不应追加第二次 LLM。");
         var haleySnapshot = runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley");
-        var ingress = haleySnapshot.Controller.IngressWorkItems.Single();
-        Assert.AreEqual("stardew_host_task_submission", ingress.WorkType);
-        Assert.AreEqual("move", ingress.Payload?["action"]?.GetValue<string>());
-        var target = ingress.Payload?["target"]?.AsObject();
-        Assert.IsNotNull(target);
-        Assert.AreEqual("Beach", target["locationName"]?.GetValue<string>());
-        Assert.AreEqual(32, target["x"]?.GetValue<int>());
-        Assert.AreEqual(34, target["y"]?.GetValue<int>());
-        Assert.AreEqual("map-skill:stardew.navigation.poi.beach-shoreline", target["source"]?.GetValue<string>());
-        Assert.IsNull(ingress.Payload?["destinationText"]);
-        Assert.IsTrue(runtimeSupervisor.TryGetTaskView(haleySnapshot.SessionId, out var taskView));
-        Assert.IsNotNull(taskView);
-        Assert.AreEqual(1, taskView.ActiveSnapshot.Todos.Count);
-        Assert.AreEqual("Meet player at the beach now", taskView.ActiveSnapshot.Todos[0].Content);
-        Assert.AreEqual("in_progress", taskView.ActiveSnapshot.Todos[0].Status);
+        Assert.IsFalse(haleySnapshot.Controller.IngressWorkItems.Any(), "宿主不能靠回复里的地点或动作短语补交 host task。");
+        var hasTaskView = runtimeSupervisor.TryGetTaskView(haleySnapshot.SessionId, out var taskView);
+        Assert.IsFalse(hasTaskView && taskView is not null && taskView.ActiveSnapshot.Todos.Any(), "宿主不能靠回复文本补写 todo。");
     }
 
     [TestMethod]
-    public async Task ReplyAsync_WhenFirstTurnUsesNonDelegationToolWithoutMarker_RunsDelegationSelfCheck()
+    public async Task ReplyAsync_WhenFirstTurnUsesNonDelegationToolWithoutMarker_ReturnsNaturalReply()
     {
         var runtimeSupervisor = new NpcRuntimeSupervisor();
-        var client = new FirstUsesSessionSearchThenSelfCheckChatClient();
+        var client = new SessionSearchThenNaturalReplyChatClient();
         var runner = CreateRunner(client, runtimeSupervisor);
 
         var reply = await runner.ReplyAsync(
@@ -429,7 +396,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             CancellationToken.None);
 
         Assert.AreEqual("我记得，我们聊过花。", reply.Text);
-        Assert.AreEqual(4, client.CompleteWithToolsCalls, "非 stardew_submit_host_task 工具不能替代世界动作提交；没有 npc_no_world_action 工具调用时仍要自检。");
+        Assert.AreEqual(2, client.CompleteWithToolsCalls, "非世界动作工具后的自然回复仍是合法私聊终态，不应因为缺少 npc_no_world_action 追加自检。");
     }
 
     [TestMethod]
@@ -448,10 +415,10 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     }
 
     [TestMethod]
-    public async Task ReplyAsync_WhenNoWorldActionFailsValidation_RunsDelegationSelfCheck()
+    public async Task ReplyAsync_WhenNoWorldActionFailsValidation_ReturnsNaturalReplyWithoutSelfCheck()
     {
         var runtimeSupervisor = new NpcRuntimeSupervisor();
-        var client = new FailedNoWorldActionThenSelfCheckChatClient();
+        var client = new FailedNoWorldActionThenNaturalReplyChatClient();
         var runner = CreateRunner(client, runtimeSupervisor);
 
         var reply = await runner.ReplyAsync(
@@ -459,8 +426,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             CancellationToken.None);
 
         Assert.AreEqual("今天还不错。", reply.Text);
-        Assert.AreEqual(4, client.CompleteWithToolsCalls, "失败的 npc_no_world_action 不能压制 bounded self-check。");
-        Assert.IsTrue(client.SawDelegationSelfCheck);
+        Assert.AreEqual(2, client.CompleteWithToolsCalls, "失败的 npc_no_world_action 不能算明确无动作，但也不应触发第二次 LLM。");
         Assert.IsFalse(runtimeSupervisor.Snapshot().Single(snapshot => snapshot.NpcId == "haley").Controller.IngressWorkItems.Any());
     }
 
@@ -832,6 +798,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
 
         public bool SawChineseContinuityGuidance { get; private set; }
         public bool SawImmediateDelegationGuidance { get; private set; }
+        public bool SawNoToolSpeechOnlyGuidance { get; private set; }
         public bool SawDirectPlayerReplyGuidance { get; private set; }
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
@@ -855,6 +822,10 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                 message.Content.Contains("只口头答应不会让动作发生", StringComparison.Ordinal) &&
                 message.Content.Contains("skill_view", StringComparison.Ordinal) &&
                 message.Content.Contains("target(locationName,x,y,source)", StringComparison.Ordinal));
+            SawNoToolSpeechOnlyGuidance |= snapshot.Any(message =>
+                string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase) &&
+                message.Content.Contains("不调用世界动作工具", StringComparison.Ordinal) &&
+                message.Content.Contains("不能承诺即时", StringComparison.Ordinal));
             SawDirectPlayerReplyGuidance |= snapshot.Any(message =>
                 string.Equals(message.Role, "system", StringComparison.OrdinalIgnoreCase) &&
                 message.Content.Contains("最终回复会显示在玩家手机私聊里", StringComparison.Ordinal) &&
@@ -1068,7 +1039,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         }
     }
 
-    private sealed class FirstAcceptsWithoutDelegatingThenDelegatesChatClient : IChatClient
+    private sealed class PrivateChatNaturalReplyOnlyChatClient : IChatClient
     {
         public int CompleteWithToolsCalls { get; private set; }
         public List<IReadOnlyList<Message>> MessagesByCall { get; } = [];
@@ -1092,42 +1063,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                 });
             }
 
-            if (CompleteWithToolsCalls == 2)
-            {
-                return Task.FromResult(new ChatResponse
-                {
-                    FinishReason = "tool_calls",
-                    ToolCalls =
-                    [
-                        new ToolCall
-                        {
-                            Id = "todo-after-correction",
-                            Name = "todo",
-                            Arguments = "{\"todos\":[{\"id\":\"meet-beach-now\",\"content\":\"Meet player at the beach now\",\"status\":\"in_progress\"}]}"
-                        },
-                        new ToolCall
-                        {
-                            Id = "delegate-after-correction",
-                            Name = "stardew_submit_host_task",
-                            Arguments = """
-                            {
-                              "action": "move",
-                              "reason": "现在陪玩家去海边",
-                              "target": {
-                                "locationName": "Beach",
-                                "x": 32,
-                                "y": 34,
-                                "source": "map-skill:stardew.navigation.poi.beach-shoreline"
-                              },
-                              "conversationId": "conversation-corrective"
-                            }
-                            """
-                        }
-                    ]
-                });
-            }
-
-            return Task.FromResult(new ChatResponse { Content = "好，我现在过去。", FinishReason = "stop" });
+            throw new InvalidOperationException("Natural private-chat replies must not trigger a second parent LLM call.");
         }
 
         public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
@@ -1150,7 +1086,6 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
     private sealed class FirstMalformedSubmitThenNativeRetryChatClient : IChatClient
     {
         public int CompleteWithToolsCalls { get; private set; }
-        public bool SawDelegationSelfCheck { get; private set; }
         public bool SawMissingTodoSelfCheck { get; private set; }
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
@@ -1163,9 +1098,6 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         {
             CompleteWithToolsCalls++;
             var snapshot = messages.ToArray();
-            SawDelegationSelfCheck |= snapshot.Any(message =>
-                string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase) &&
-                (message.Content?.Contains("自检：上一轮私聊回复没有调用 stardew_submit_host_task", StringComparison.Ordinal) ?? false));
             SawMissingTodoSelfCheck |= snapshot.Any(message =>
                 string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase) &&
                 (message.Content?.Contains("缺少 todo", StringComparison.Ordinal) ?? false));
@@ -1215,10 +1147,9 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         }
     }
 
-    private sealed class FirstMalformedSubmitThenStopsThenSelfCheckRetryChatClient : IChatClient
+    private sealed class FirstMalformedSubmitThenStopsChatClient : IChatClient
     {
         public int CompleteWithToolsCalls { get; private set; }
-        public bool SawDelegationSelfCheck { get; private set; }
         public bool SawMissingTodoSelfCheck { get; private set; }
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
@@ -1231,9 +1162,6 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         {
             CompleteWithToolsCalls++;
             var snapshot = messages.ToArray();
-            SawDelegationSelfCheck |= snapshot.Any(message =>
-                string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase) &&
-                (message.Content?.Contains("自检：上一轮私聊回复没有调用 stardew_submit_host_task", StringComparison.Ordinal) ?? false));
             SawMissingTodoSelfCheck |= snapshot.Any(message =>
                 string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase) &&
                 (message.Content?.Contains("缺少 todo", StringComparison.Ordinal) ?? false));
@@ -1253,20 +1181,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             if (CompleteWithToolsCalls == 2)
                 return Task.FromResult(new ChatResponse { Content = "好，我现在过去。", FinishReason = "stop" });
 
-            if (CompleteWithToolsCalls == 3)
-            {
-                return Task.FromResult(new ChatResponse
-                {
-                    FinishReason = "tool_calls",
-                    ToolCalls =
-                    [
-                        TodoAfterValidationFailureToolCall("todo-after-self-check"),
-                        ValidSubmitHostTaskToolCall("submit-after-self-check")
-                    ]
-                });
-            }
-
-            return Task.FromResult(new ChatResponse { Content = "好，我现在过去。", FinishReason = "stop" });
+            throw new InvalidOperationException("Failed host-task submission followed by final text must not trigger a second parent LLM call.");
         }
 
         public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
@@ -1526,7 +1441,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         }
     }
 
-    private sealed class FirstCasualAcceptsWithoutDelegatingThenDelegatesChatClient : IChatClient
+    private sealed class CasualNaturalReplyOnlyChatClient : IChatClient
     {
         public int CompleteWithToolsCalls { get; private set; }
 
@@ -1548,42 +1463,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                 });
             }
 
-            if (CompleteWithToolsCalls == 2)
-            {
-                return Task.FromResult(new ChatResponse
-                {
-                    FinishReason = "tool_calls",
-                    ToolCalls =
-                    [
-                        new ToolCall
-                        {
-                            Id = "todo-after-casual-correction",
-                            Name = "todo",
-                            Arguments = "{\"todos\":[{\"id\":\"meet-beach-now\",\"content\":\"Meet player at the beach now\",\"status\":\"in_progress\"}]}"
-                        },
-                        new ToolCall
-                        {
-                            Id = "delegate-after-casual-correction",
-                            Name = "stardew_submit_host_task",
-                            Arguments = """
-                            {
-                              "action": "move",
-                              "reason": "陪玩家去海边",
-                              "target": {
-                                "locationName": "Beach",
-                                "x": 32,
-                                "y": 34,
-                                "source": "map-skill:stardew.navigation.poi.beach-shoreline"
-                              },
-                              "conversationId": "conversation-casual-corrective"
-                            }
-                            """
-                        }
-                    ]
-                });
-            }
-
-            return Task.FromResult(new ChatResponse { Content = "好啦，我们走。", FinishReason = "stop" });
+            throw new InvalidOperationException("Natural private-chat replies must not be repaired into host-task submissions.");
         }
 
         public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
@@ -1603,7 +1483,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         }
     }
 
-    private sealed class FirstUsesSessionSearchThenSelfCheckChatClient : IChatClient
+    private sealed class SessionSearchThenNaturalReplyChatClient : IChatClient
     {
         public int CompleteWithToolsCalls { get; private set; }
 
@@ -1638,24 +1518,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
                 return Task.FromResult(new ChatResponse { Content = "我记得，我们聊过花。", FinishReason = "stop" });
             }
 
-            if (CompleteWithToolsCalls == 3)
-            {
-                return Task.FromResult(new ChatResponse
-                {
-                    FinishReason = "tool_calls",
-                    ToolCalls =
-                    [
-                        new ToolCall
-                        {
-                            Id = "no-world-after-self-check",
-                            Name = "npc_no_world_action",
-                            Arguments = "{\"reason\":\"只是回答记忆问题，不需要立即改变游戏世界\"}"
-                        }
-                    ]
-                });
-            }
-
-            return Task.FromResult(new ChatResponse { Content = "我记得，我们聊过花。", FinishReason = "stop" });
+            throw new InvalidOperationException("Non-world tool usage followed by final text must not trigger a second parent LLM call.");
         }
 
         public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)
@@ -1729,10 +1592,9 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
         }
     }
 
-    private sealed class FailedNoWorldActionThenSelfCheckChatClient : IChatClient
+    private sealed class FailedNoWorldActionThenNaturalReplyChatClient : IChatClient
     {
         public int CompleteWithToolsCalls { get; private set; }
-        public bool SawDelegationSelfCheck { get; private set; }
 
         public Task<string> CompleteAsync(IEnumerable<Message> messages, CancellationToken ct)
             => Task.FromResult("ok");
@@ -1743,11 +1605,6 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             CancellationToken ct)
         {
             CompleteWithToolsCalls++;
-            var snapshot = messages.ToArray();
-            SawDelegationSelfCheck |= snapshot.Any(message =>
-                string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase) &&
-                (message.Content?.Contains("自检：上一轮私聊回复没有调用 stardew_submit_host_task", StringComparison.Ordinal) ?? false));
-
             if (CompleteWithToolsCalls == 1)
             {
                 return Task.FromResult(new ChatResponse
@@ -1768,24 +1625,7 @@ public sealed class StardewNpcPrivateChatAgentRunnerTests
             if (CompleteWithToolsCalls == 2)
                 return Task.FromResult(new ChatResponse { Content = "今天还不错。", FinishReason = "stop" });
 
-            if (CompleteWithToolsCalls == 3)
-            {
-                return Task.FromResult(new ChatResponse
-                {
-                    FinishReason = "tool_calls",
-                    ToolCalls =
-                    [
-                        new ToolCall
-                        {
-                            Id = "valid-no-world-action-after-self-check",
-                            Name = "npc_no_world_action",
-                            Arguments = "{\"reason\":\"只是闲聊，不需要立即改变游戏世界\"}"
-                        }
-                    ]
-                });
-            }
-
-            return Task.FromResult(new ChatResponse { Content = "今天还不错。", FinishReason = "stop" });
+            throw new InvalidOperationException("Failed no-world declarations must not trigger a second parent LLM call.");
         }
 
         public async IAsyncEnumerable<string> StreamAsync(IEnumerable<Message> messages, [EnumeratorCancellation] CancellationToken ct)

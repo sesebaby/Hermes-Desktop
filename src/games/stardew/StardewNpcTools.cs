@@ -383,7 +383,7 @@ public sealed class NpcNoWorldActionTool : ITool, IToolSchemaProvider
 
     public string Name => "npc_no_world_action";
 
-    public string Description => "仅限私聊父 agent 使用。当前私聊轮次不需要立即改变游戏世界时，调用本工具声明无世界动作，然后自然回复玩家。不要用纯文本省略这个声明。";
+    public string Description => "仅限私聊父 agent 使用。推荐在当前私聊轮次不需要立即改变游戏世界时调用，用于明确记录本轮无世界动作并提供诊断原因，然后自然回复玩家；未调用世界动作工具的自然回复仍只按说话处理。";
 
     public Type ParametersType => typeof(NpcNoWorldActionToolParameters);
 

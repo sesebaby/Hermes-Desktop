@@ -313,19 +313,6 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
                 BuildPrivateChatMessage(descriptor.DisplayName, request.PlayerText),
                 chatSession,
                 ct);
-            if (ShouldRunDelegationSelfCheck(response, chatSession))
-            {
-                logger.LogInformation(
-                    "Stardew private-chat completed without host task submission; running parent self-check once; npc={NpcId}; saveId={SaveId}; conversationId={ConversationId}; sessionId={SessionId}",
-                    descriptor.NpcId,
-                    saveId,
-                    request.ConversationId,
-                    sessionId);
-                response = await handle.Agent.ChatAsync(
-                    BuildPrivateChatDelegationSelfCheckMessage(request.PlayerText, response),
-                    chatSession,
-                    ct);
-            }
             if (ShouldRunCommitmentTodoSelfCheck(chatSession))
             {
                 logger.LogInformation(
@@ -418,7 +405,8 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
     private static string BuildPrivateChatSystemPrompt(string displayName)
         =>
             "如果玩家现在就请你做一件会改变游戏世界的事，而你决定答应，必须先按承诺类型写入 todo，再调用 stardew_submit_host_task，最后自然回复玩家。只口头答应不会让动作发生。\n" +
-            "如果你决定这轮没有当前就要发生的游戏世界动作，必须先调用 npc_no_world_action，再自然回复玩家。\n" +
+            "不调用世界动作工具就只能自然说话，不能承诺即时移动、即时执行或其它当前会改变游戏世界的动作。\n" +
+            "npc_no_world_action 是推荐的明确无世界动作收口/诊断工具；如果你想明确说明本轮没有当前就要发生的游戏世界动作，可以调用它再自然回复玩家，但它不是宿主触发第二轮判断的硬门槛。\n" +
             "如果你接受了当前就要发生的玩家承诺，先用 todo 把承诺记成 in_progress 短句，再调用 stardew_submit_host_task；动作完成后下一轮再由你自己收口 todo。\n" +
             "action=move 时，你必须先用 skill_view 读取 stardew-navigation、references/index.md、相关 region 和最具体的 POI 文件；只有已加载 POI/reference 明确给出 target(locationName,x,y,source) 后，才调用 stardew_submit_host_task。\n" +
             "stardew_submit_host_task 是延迟执行入口：私聊回复递送后，宿主会按你传入的 mechanical target 进入 host task submission lifecycle 执行真实移动，并由 Stardew bridge 返回结果；回复显示或关闭都是递送/状态事实，不是 agent 流程锁。不要使用 destinationId，不要编造坐标，不要把自然语言地点直接当 locationName。\n" +
@@ -432,15 +420,6 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
             "如果任务做不了或被卡住，要把 todo 标成 blocked 或 failed，并写清短 reason；能告诉玩家时，要直接告诉玩家卡在哪里。\n" +
             "最终回复会显示在玩家手机私聊里，必须直接对玩家说话；不要写内心独白、旁白、动作描写或只给自己看的想法。\n" +
             "不要把工具过程讲给玩家听，不要输出标签、markdown 或系统说明。";
-
-    private static string BuildPrivateChatDelegationSelfCheckMessage(string playerText, string previousReply)
-        =>
-            "自检：上一轮私聊回复没有调用 stardew_submit_host_task。\n" +
-            "请你自己判断：如果上一轮已经接受了玩家当前就要发生、且会改变游戏世界的行动请求，不能只口头答应；现在必须先用 todo 写入一条 in_progress 承诺短任务，再用 skill_view 读取 stardew-navigation 的分层地图资料，拿到 target(locationName,x,y,source) 后调用 stardew_submit_host_task，action 填 move，target 原样填写已加载 POI/reference 的机械目标；工具调用后再给玩家一句自然回复。\n" +
-            "如果上一轮没有接受当前就要发生的游戏世界行动请求，不要调用 stardew_submit_host_task；必须先调用 npc_no_world_action，再直接原样回复上一轮给玩家的话。\n" +
-            "不要使用 destinationId，不要编造坐标，不要只说“我现在过去”。\n\n" +
-            $"Player: {playerText}\n" +
-            $"Previous reply: {previousReply}";
 
     private static string BuildPrivateChatCommitmentTodoSelfCheckMessage(string playerText, string previousReply)
         =>
@@ -458,10 +437,6 @@ public sealed class StardewNpcPrivateChatAgentRunner : INpcPrivateChatAgentRunne
             "如果上一轮回复是空白、只剩格式噪音或不适合展示，就直接给出这次最终要显示给玩家的一句简短自然回复。\n\n" +
             $"Player: {playerText}\n" +
             $"Previous reply: {previousReply}";
-
-    private static bool ShouldRunDelegationSelfCheck(string response, Session session)
-        => !SessionHasSuccessfulToolCall(session, "stardew_submit_host_task") &&
-           !SessionHasSuccessfulToolCall(session, "npc_no_world_action");
 
     private static bool ShouldRunCommitmentTodoSelfCheck(Session session)
         => SessionHasSuccessfulToolCall(session, "stardew_submit_host_task") &&
