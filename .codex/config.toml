@@ -1,7 +1,0 @@
-# Project-scoped Codex defaults for Hermes-Desktop.
-# This file overrides the user-level ~/.codex/config.toml only inside this trusted repo.
-
-model = "qwen3.5-2b-gpt-5.1-highiq-instruct-i1"
-model_provider = "lmstudio"
-oss_provider = "lmstudio"
-model_reasoning_effort = "none"

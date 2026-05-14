@@ -3,11 +3,11 @@
   Synchronize the local Stardew NPC config and default local LLM lanes in Hermes config.yaml.
 
 .DESCRIPTION
-  Updates the Stardew NPC autonomy allowlist and the delegation lane used by
-  NPC child-agent work. The root model and other non-delegation lanes are left
-  unchanged so player-visible dialogue can stay on the existing cloud model.
+  Updates the root model, the Stardew NPC autonomy allowlist, and the
+  delegation lane used by NPC child-agent work so this project can run against
+  a local OpenAI-compatible LM Studio model instead of the previous cloud model.
   The Stardew autonomy lane is configured to request JSON-object output from
-  OpenAI-compatible providers that support response_format, such as DeepSeek.
+  OpenAI-compatible providers that support response_format.
   delegation.max_spawn_depth is emitted only as a reserved flat-only v1 marker;
   current Hermes does not enforce nested delegation depth.
 
@@ -19,22 +19,24 @@
   Comma-separated NPC ids to enable. Defaults to haley,penny.
 
 .PARAMETER Provider
-  Provider for the delegation lane. Defaults to openai for OpenAI-compatible
-  local endpoints such as LM Studio.
+  Provider for the root model and delegation lane. Defaults to openai for
+  OpenAI-compatible local endpoints such as LM Studio.
 
 .PARAMETER BaseUrl
-  Base URL for the delegation lane. Defaults to http://127.0.0.1:1234/v1.
+  Base URL for the root model and delegation lane. Defaults to
+  http://127.0.0.1:1234/v1.
 
 .PARAMETER Model
-  Model id for the delegation lane. Defaults to
+  Model id for the root model and delegation lane. Defaults to
   qwen3.5-2b-gpt-5.1-highiq-instruct-i1.
 
 .PARAMETER ApiKey
-  API key/token placeholder for the local OpenAI-compatible delegation lane.
+  API key/token placeholder for the local OpenAI-compatible model endpoint.
   Defaults to lm-studio.
 
 .PARAMETER AuthMode
-  Auth mode written into the delegation section. Defaults to api_key.
+  Auth mode written into the model and delegation sections. Defaults to
+  api_key.
 
 .PARAMETER AutonomyResponseFormat
   Response format written into the stardew_autonomy section. Defaults to
@@ -177,6 +179,14 @@ Set-TopLevelSection -Lines $lines -SectionName "delegation" -Entries @(
     "max_concurrent_children: 1"
 )
 
+Set-TopLevelSection -Lines $lines -SectionName "model" -Entries @(
+    "provider: $Provider",
+    "base_url: $BaseUrl",
+    "default: $Model",
+    "auth_mode: $AuthMode",
+    "api_key: $ApiKey"
+)
+
 Set-TopLevelSection -Lines $lines -SectionName "stardew_autonomy" -Entries @(
     "response_format: $AutonomyResponseFormat"
 )
@@ -186,11 +196,11 @@ Set-TopLevelSection -Lines $lines -SectionName "stardew" -Entries @(
 )
 
 [System.IO.File]::WriteAllLines($ConfigPath, $lines)
-Write-Host "Stardew NPC config synced with delegation-only local LLM lane." -ForegroundColor Green
+Write-Host "Stardew NPC config synced with local root and delegation LLM lanes." -ForegroundColor Green
 Write-Host "NPCs: $EnabledNpcIds" -ForegroundColor DarkGray
 Write-Host "Provider: $Provider" -ForegroundColor DarkGray
 Write-Host "Base URL: $BaseUrl" -ForegroundColor DarkGray
-Write-Host "Delegation Model: $Model" -ForegroundColor DarkGray
+Write-Host "Model: $Model" -ForegroundColor DarkGray
 Write-Host "Delegation depth: max_spawn_depth is reserved and ignored by flat-only v1." -ForegroundColor DarkGray
 Write-Host "Autonomy Response Format: $AutonomyResponseFormat" -ForegroundColor DarkGray
 Write-Host "Config: $ConfigPath" -ForegroundColor DarkGray
