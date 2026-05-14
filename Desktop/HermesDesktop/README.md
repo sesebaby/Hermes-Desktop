@@ -52,9 +52,10 @@ If the build succeeds but the app window never appears:
 
 ## Stardew NPC Autonomy Config
 
-NPC autonomy and model routing read from `%LOCALAPPDATA%\hermes\config.yaml`
-unless `HERMES_HOME` points at a project-specific home. For the current Stardew
-test pair, sync the Hermes configuration with:
+The repo launch scripts default `HERMES_HOME` to the project-local `.hermes`
+directory unless you already set `HERMES_HOME` yourself. NPC autonomy and model
+routing therefore read from `.hermes\config.yaml` for this checkout. For the
+current Stardew test pair, sync the Hermes configuration with:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ..\..\scripts\sync-stardew-npc-config.ps1
@@ -62,7 +63,8 @@ powershell -ExecutionPolicy Bypass -File ..\..\scripts\sync-stardew-npc-config.p
 
 This sets the NPC allowlist, the root `model` lane, and the local LM Studio
 `delegation` lane used for child-agent work. The committed reference file is
-`config.stardew-lmstudio.example.yaml`.
+`.hermes\config.yaml`; `config.stardew-lmstudio.example.yaml` mirrors the same
+profile for copying into another Hermes home if needed.
 
 The sync script writes:
 
@@ -72,22 +74,29 @@ model:
   base_url: http://127.0.0.1:1234/v1
   default: qwen3.5-2b-gpt-5.1-highiq-instruct-i1
   auth_mode: api_key
+  # LM Studio accepts this placeholder; do not commit a real token here.
   api_key: lm-studio
 
 delegation:
   provider: openai
   base_url: http://127.0.0.1:1234/v1
   model: qwen3.5-2b-gpt-5.1-highiq-instruct-i1
+  auth_mode: api_key
+  # LM Studio accepts this placeholder; do not commit a real token here.
+  api_key: lm-studio
   max_spawn_depth: 1
   max_concurrent_children: 1
+
+stardew_autonomy:
+  response_format: json_object
 
 stardew:
   npc_autonomy_enabled_ids: haley,penny
 ```
 
 The script preserves the rest of `config.yaml` and writes a timestamped backup by
-default. Run it on each machine used for Stardew/Hermes testing because the local
-config file is intentionally not committed.
+default. Runtime logs and state under `.hermes` stay ignored; only the project
+`config.yaml` is committed for this local-model test profile.
 
 ## Project Layout
 

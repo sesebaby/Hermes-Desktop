@@ -30,6 +30,12 @@ Thumbs.db
 
 # Config (optional - keep template)
 # config.yaml
+
+# Project-scoped Hermes runtime home; keep the chosen project config, not local runtime state.
+.hermes/*
+!.hermes/
+!.hermes/config.yaml
+
 .aider*
 
 # Local dotnet SDK / tool payloads (not repo source)

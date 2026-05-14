@@ -6,6 +6,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
+if (-not $env:HERMES_HOME) {
+    $env:HERMES_HOME = Join-Path $PSScriptRoot ".hermes"
+}
+
+New-Item -ItemType Directory -Path $env:HERMES_HOME -Force | Out-Null
 . (Join-Path $PSScriptRoot "scripts\Use-RepoTemp.ps1") -RepoRoot $PSScriptRoot
 
 if ($Rebuild) {

@@ -8,6 +8,11 @@ param(
 
 $dotnet = "C:\Program Files\dotnet\dotnet.exe"
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+if (-not $env:HERMES_HOME) {
+    $env:HERMES_HOME = Join-Path $repoRoot ".hermes"
+}
+
+New-Item -ItemType Directory -Path $env:HERMES_HOME -Force | Out-Null
 . (Join-Path $repoRoot "scripts\Use-RepoTemp.ps1") -RepoRoot $repoRoot
 $projectFile = Join-Path $PSScriptRoot "HermesDesktop.csproj"
 [xml]$projectXml = Get-Content -Path $projectFile

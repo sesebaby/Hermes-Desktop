@@ -13,7 +13,7 @@
 
 .PARAMETER ConfigPath
   Path to config.yaml. Defaults to %HERMES_HOME%\config.yaml when HERMES_HOME
-  is set, otherwise %LOCALAPPDATA%\hermes\config.yaml.
+  is set, otherwise the repository-local .hermes\config.yaml.
 
 .PARAMETER EnabledNpcIds
   Comma-separated NPC ids to enable. Defaults to haley,penny.
@@ -143,7 +143,7 @@ if (-not $ConfigPath) {
     $hermesHome = if ($env:HERMES_HOME) {
         $env:HERMES_HOME
     } else {
-        Join-Path $env:LOCALAPPDATA "hermes"
+        Join-Path (Split-Path -Parent $PSScriptRoot) ".hermes"
     }
 
     $ConfigPath = Join-Path $hermesHome "config.yaml"
@@ -172,6 +172,7 @@ Set-TopLevelSection -Lines $lines -SectionName "delegation" -Entries @(
     "base_url: $BaseUrl",
     "model: $Model",
     "auth_mode: $AuthMode",
+    "# LM Studio accepts this placeholder; do not commit a real token here.",
     "api_key: $ApiKey",
     "# max_spawn_depth is reserved for future nested delegation; flat-only v1 ignores it.",
     "max_spawn_depth: 1",
@@ -184,6 +185,7 @@ Set-TopLevelSection -Lines $lines -SectionName "model" -Entries @(
     "base_url: $BaseUrl",
     "default: $Model",
     "auth_mode: $AuthMode",
+    "# LM Studio accepts this placeholder; do not commit a real token here.",
     "api_key: $ApiKey"
 )
 

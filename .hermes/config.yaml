@@ -16,8 +16,11 @@ delegation:
   auth_mode: api_key
   # LM Studio accepts this placeholder; do not commit a real token here.
   api_key: lm-studio
+  # max_spawn_depth is reserved for future nested delegation; flat-only v1 ignores it.
   max_spawn_depth: 1
+  # max_concurrent_children is reserved for future fan-out policy; flat-only v1 ignores it.
   max_concurrent_children: 1
 
 stardew:
   npc_autonomy_enabled_ids: haley,penny
+
