@@ -1,6 +1,6 @@
 {
-  "last_turn_at": "2026-05-07T01:27:11.334Z",
-  "turn_count": 93,
-  "last_progress_at": "2026-05-07T01:27:11.334Z",
-  "last_agent_output": "已处理停止钩子：全局和所有 session 级 `ralplan` 状态现在都是 `active=false / complete / finished`。\n\n当前 Git 状态干净，最新提交是 `a"
+  "last_turn_at": "2026-05-14T07:54:44.716Z",
+  "turn_count": 129,
+  "last_progress_at": "2026-05-14T07:54:44.716Z",
+  "last_agent_output": "已提交。\n\nCommit: `1a3a7a3f`  \n标题: `让私聊自然回复不再触发宿主二次判断`\n\n提交前验证：\n- `StardewNpcPrivateChatAgentRunnerTests`"
 }

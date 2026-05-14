@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Hermes.Agent.Core;
 using Hermes.Agent.LLM;
 using Hermes.Agent.Memory;
@@ -138,22 +139,49 @@ public sealed class ContextManager
                 "Context budget: {Total}/{Max} tokens ({Pressure}), {Recent} recent, {Evicted} evicted",
                 totalTokens, _budget.MaxTokens, pressure, recentTurns.Count, evictedMessages.Count);
 
-            // Summarize evicted messages if we have any and need to
+            // Match the reference compressor's pressure-gated behavior:
+            // fixed-window eviction alone must not add a pre-answer LLM summary call.
+            var summaryIsEmpty = string.IsNullOrEmpty(state.Summary.Content);
+            var summaryIsStale = IsSummaryStaleBeyond(state, turnsStalenessThreshold: 10);
             var shouldSummarizeEvicted =
                 evictedMessages.Count > 0 &&
-                (pressure >= BudgetPressure.High ||
-                 string.IsNullOrEmpty(state.Summary.Content) ||
-                 IsSummaryStaleBeyond(state, turnsStalenessThreshold: 10));
+                pressure >= BudgetPressure.High &&
+                (summaryIsEmpty || summaryIsStale);
 
             if (shouldSummarizeEvicted)
             {
+                var preCompressStopwatch = Stopwatch.StartNew();
                 if (_memoryOrchestrator is not null)
                     await _memoryOrchestrator.PreCompressAllAsync(evictedMessages, sessionId, ct);
 
                 if (_pluginManager is not null)
                     await _pluginManager.OnPreCompressAsync(evictedMessages, ct);
+                preCompressStopwatch.Stop();
 
+                _logger.LogInformation(
+                    "Context pre-compress hooks completed; sessionId={SessionId}; evicted={Evicted}; pressure={Pressure}; totalTokens={Total}; threshold={Threshold}; durationMs={DurationMs}",
+                    sessionId,
+                    evictedMessages.Count,
+                    pressure,
+                    totalTokens,
+                    _budget.SummaryThreshold,
+                    preCompressStopwatch.ElapsedMilliseconds);
                 await SummarizeEvictedAsync(state, evictedMessages, ct);
+            }
+            else if (evictedMessages.Count > 0)
+            {
+                _logger.LogDebug(
+                    "Skipped evicted-message summarization; sessionId={SessionId}; reason={Reason}; evicted={Evicted}; pressure={Pressure}; totalTokens={Total}; threshold={Threshold}; summaryEmpty={SummaryEmpty}; summaryStale={SummaryStale}; turnCount={TurnCount}; summaryCoveredThroughTurn={CoveredThroughTurn}",
+                    sessionId,
+                    pressure < BudgetPressure.High ? "below_summary_threshold" : "summary_fresh",
+                    evictedMessages.Count,
+                    pressure,
+                    totalTokens,
+                    _budget.SummaryThreshold,
+                    summaryIsEmpty,
+                    summaryIsStale,
+                    state.TurnCount,
+                    state.Summary.CoveredThroughTurn);
             }
 
             // Recompute pressure after summarization may have grown state.Summary
@@ -397,10 +425,6 @@ public sealed class ContextManager
 
     /// <summary>
     /// Uses the LLM to compress evicted messages into a summary paragraph.
-    /// This summary becomes part of SessionState and survives across turns.
-    /// </summary>
-    /// <summary>
-    /// Uses the LLM to compress evicted messages into a summary paragraph.
     /// INV-002: When a previous summary exists, instructs the LLM to UPDATE it
     /// rather than regenerate from scratch, using a structured template.
     /// </summary>
@@ -451,15 +475,18 @@ public sealed class ContextManager
 
         try
         {
+            var summaryStopwatch = Stopwatch.StartNew();
             var summary = await _chatClient.CompleteAsync(summarizePrompt, ct);
+            summaryStopwatch.Stop();
             state.Summary.Content = summary.Trim();
             state.Summary.CoveredThroughTurn = state.TurnCount;
 
             _logger.LogInformation(
-                "Summarized {Count} evicted messages into {Tokens} est. tokens (iterative={Iterative})",
+                "Summarized {Count} evicted messages into {Tokens} est. tokens (iterative={Iterative}, durationMs={DurationMs})",
                 evictedMessages.Count,
                 _budget.EstimateTokens(summary),
-                hasPreviousSummary);
+                hasPreviousSummary,
+                summaryStopwatch.ElapsedMilliseconds);
         }
         catch (OperationCanceledException)
         {

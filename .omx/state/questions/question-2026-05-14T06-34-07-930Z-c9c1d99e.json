@@ -1,0 +1,36 @@
+{
+  "kind": "omx.question/v1",
+  "question_id": "question-2026-05-14T06-34-07-930Z-c9c1d99e",
+  "created_at": "2026-05-14T06:34:07.930Z",
+  "updated_at": "2026-05-14T06:34:07.938Z",
+  "status": "error",
+  "header": "Deep Interview",
+  "question": "Round 1 | Target: Decision Boundaries | Ambiguity: 34%\n\n我已确认当前慢点来自私聊无成功 stardew_submit_host_task / npc_no_world_action 后追加 parent self-check。你更想把第一版边界定成哪一种？",
+  "options": [
+    {
+      "label": "推荐：无工具即只说话",
+      "value": "natural-reply-terminal",
+      "description": "普通自然回复只展示给玩家；不再为了缺少 npc_no_world_action 追加第二次 LLM。保留成功提交 host task 但空回复时的补回复 self-check。"
+    },
+    {
+      "label": "保守：仍强制 no_world_action",
+      "value": "require-no-world-action",
+      "description": "模型没调用 npc_no_world_action 仍追加 self-check；纪律更强，但普通私聊继续可能双调用、延迟更高。"
+    },
+    {
+      "label": "折中：只记诊断",
+      "value": "diagnostic-only",
+      "description": "无工具自然回复照常展示，同时记录诊断日志/事实，方便后续评估模型是否经常口头承诺却没调用工具。"
+    }
+  ],
+  "allow_other": true,
+  "other_label": "其他边界",
+  "multi_select": false,
+  "type": "single-answerable",
+  "source": "deep-interview",
+  "error": {
+    "code": "question_runtime_failed",
+    "message": "omx question cannot open a visible renderer because this process is not running inside an attached tmux pane. Run omx question from inside tmux.",
+    "at": "2026-05-14T06:34:07.938Z"
+  }
+}

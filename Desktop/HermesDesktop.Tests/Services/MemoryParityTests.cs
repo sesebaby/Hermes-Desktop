@@ -915,6 +915,43 @@ public sealed class MemoryParityTests
     }
 
     [TestMethod]
+    public async Task ContextManager_PrepareContext_WithEvictedMessagesUnderSummaryThreshold_DoesNotSummarize()
+    {
+        var calls = new List<string>();
+        var transcripts = new TranscriptStore(_tempDir);
+        await transcripts.SaveMessageAsync("low-pressure-compress-session", new Message { Role = "user", Content = "old turn should remain archived" }, CancellationToken.None);
+        await transcripts.SaveMessageAsync("low-pressure-compress-session", new Message { Role = "assistant", Content = "old response should remain archived" }, CancellationToken.None);
+        await transcripts.SaveMessageAsync("low-pressure-compress-session", new Message { Role = "user", Content = "recent turn stays" }, CancellationToken.None);
+
+        var pluginManager = new PluginManager(NullLogger<PluginManager>.Instance);
+        pluginManager.Register(new RecordingPreCompressPlugin(calls));
+        var orchestrator = new HermesMemoryOrchestrator(
+            Array.Empty<IMemoryProvider>(),
+            NullLogger<HermesMemoryOrchestrator>.Instance,
+            new IMemoryCompressionParticipant[] { new RecordingCompressionParticipant("memory", calls) });
+        var client = new RecordingChatClient { CompleteResponse = "summary should not be called" };
+        var contextManager = new ContextManager(
+            transcripts,
+            client,
+            new TokenBudget(maxTokens: 8000, recentTurnWindow: 1),
+            new PromptBuilder("stable system"),
+            NullLogger<ContextManager>.Instance,
+            pluginManager: pluginManager,
+            memoryOrchestrator: orchestrator);
+
+        await contextManager.PrepareContextAsync(
+            "low-pressure-compress-session",
+            "current question",
+            retrievedContext: null,
+            CancellationToken.None);
+
+        Assert.AreEqual(0, client.CompleteCalls.Count,
+            "Low-pressure context prep must not spend an extra LLM call summarizing fixed-window evicted messages.");
+        CollectionAssert.AreEqual(Array.Empty<string>(), calls,
+            "Memory/plugin pre-compress hooks should only run when real compression is triggered.");
+    }
+
+    [TestMethod]
     public async Task ContextManager_PrepareContext_CallsPluginPreCompressBeforeSummarizingEvictedMessages()
     {
         var transcripts = new TranscriptStore(_tempDir);
@@ -929,7 +966,7 @@ public sealed class MemoryParityTests
         var contextManager = new ContextManager(
             transcripts,
             client,
-            new TokenBudget(maxTokens: 8000, recentTurnWindow: 1),
+            new TokenBudget(maxTokens: 16, recentTurnWindow: 1),
             new PromptBuilder("stable system"),
             NullLogger<ContextManager>.Instance,
             pluginManager: pluginManager);
@@ -964,7 +1001,7 @@ public sealed class MemoryParityTests
         var contextManager = new ContextManager(
             transcripts,
             client,
-            new TokenBudget(maxTokens: 8000, recentTurnWindow: 1),
+            new TokenBudget(maxTokens: 16, recentTurnWindow: 1),
             new PromptBuilder("stable system"),
             NullLogger<ContextManager>.Instance,
             pluginManager: pluginManager,
@@ -1043,7 +1080,7 @@ public sealed class MemoryParityTests
             Content = "Initial memory before session."
         }, CancellationToken.None);
 
-        var agent = CreateAgentWithBuiltinMemory(client, transcripts, memoryManager, recentTurnWindow: 1);
+        var agent = CreateAgentWithBuiltinMemory(client, transcripts, memoryManager, recentTurnWindow: 1, maxTokens: 16);
         var session = new Session { Id = "compression-refresh-session" };
         await agent.ChatAsync("first question", session, CancellationToken.None);
 
@@ -1079,7 +1116,7 @@ public sealed class MemoryParityTests
             Content = "Initial streaming memory before session."
         }, CancellationToken.None);
 
-        var agent = CreateAgentWithBuiltinMemory(client, transcripts, memoryManager, recentTurnWindow: 1);
+        var agent = CreateAgentWithBuiltinMemory(client, transcripts, memoryManager, recentTurnWindow: 1, maxTokens: 16);
         agent.RegisterTool(new NoopTool());
         var session = new Session { Id = "stream-compression-refresh-session" };
         client.ToolResponses.Enqueue(new ChatResponse { Content = "first stream done", FinishReason = "stop" });
@@ -1128,7 +1165,7 @@ public sealed class MemoryParityTests
             Content = "Temporary memory marker maple-stale."
         }, CancellationToken.None);
 
-        var agent = CreateAgentWithBuiltinMemory(client, transcripts, memoryManager, recentTurnWindow: 1);
+        var agent = CreateAgentWithBuiltinMemory(client, transcripts, memoryManager, recentTurnWindow: 1, maxTokens: 16);
         agent.RegisterTool(new NoopTool());
         var session = new Session { Id = "empty-compression-refresh-session" };
         client.ToolResponses.Enqueue(new ChatResponse { Content = "first done", FinishReason = "stop" });
@@ -1201,14 +1238,15 @@ public sealed class MemoryParityTests
         RecordingChatClient client,
         TranscriptStore transcripts,
         MemoryManager memoryManager,
-        int recentTurnWindow)
+        int recentTurnWindow,
+        int maxTokens = 8000)
     {
         var pluginManager = new PluginManager(NullLogger<PluginManager>.Instance);
         pluginManager.Register(new BuiltinMemoryPlugin(memoryManager));
         var contextManager = new ContextManager(
             transcripts,
             client,
-            new TokenBudget(maxTokens: 8000, recentTurnWindow: recentTurnWindow),
+            new TokenBudget(maxTokens: maxTokens, recentTurnWindow: recentTurnWindow),
             new PromptBuilder("stable system"),
             NullLogger<ContextManager>.Instance,
             pluginManager: pluginManager);

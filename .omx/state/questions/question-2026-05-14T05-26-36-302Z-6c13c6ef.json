@@ -1,0 +1,35 @@
+{
+  "kind": "omx.question/v1",
+  "question_id": "question-2026-05-14T05-26-36-302Z-6c13c6ef",
+  "created_at": "2026-05-14T05:26:36.302Z",
+  "updated_at": "2026-05-14T05:26:36.406Z",
+  "status": "error",
+  "question": "Round 1 | Target: Decision Boundaries | Ambiguity: 62%\n\n我已经读到参考项目的压缩链：ContextEngine 负责触发判断，ContextCompressor 只在 token 压力/预检溢出时压缩，先 cheap pruning，再保护 head/tail，中段通过 auxiliary compression lane 生成结构化 handoff summary。当前项目则会因固定窗口 evicted messages + 空/过期 summary，在回复前用主 IChatClient 做总结。\n\n这次第一版修复应以哪个边界为准？",
+  "options": [
+    {
+      "label": "Source-faithful chain",
+      "value": "source-faithful-compression",
+      "description": "最大限度复刻参考项目压缩链，包括 context-engine trigger、head/tail protection、auxiliary compression lane、summary prefix 与 writeback 顺序。"
+    },
+    {
+      "label": "Minimal parity patch",
+      "value": "minimal-parity-patch",
+      "description": "只修当前最慢点，但每个改动必须能映射到参考实现的一层；不做完整 ContextEngine 重构。"
+    },
+    {
+      "label": "Diagnostics first",
+      "value": "diagnostics-first",
+      "description": "先只补分段耗时/路由诊断和 reference matrix，不改行为，等证据更硬后再决定修复。"
+    }
+  ],
+  "allow_other": true,
+  "other_label": "Other",
+  "multi_select": false,
+  "type": "single-answerable",
+  "source": "deep-interview",
+  "error": {
+    "code": "question_runtime_failed",
+    "message": "omx question cannot open a visible renderer because this process is not running inside an attached tmux pane. Run omx question from inside tmux.",
+    "at": "2026-05-14T05:26:36.406Z"
+  }
+}

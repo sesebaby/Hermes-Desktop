@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "active": false,
-  "skill": "autopilot",
+  "active": true,
+  "skill": "deep-interview",
   "keyword": "$ralplan",
-  "phase": "code-review",
-  "activated_at": "2026-05-11T23:29:33.961Z",
-  "updated_at": "2026-05-11T23:43:48.485Z",
+  "phase": "reviewing",
+  "activated_at": "2026-05-14T05:26:07.232Z",
+  "updated_at": "2026-05-14T07:54:44.724Z",
   "source": "keyword-detector",
   "input_lock": {
     "active": false,
@@ -24,6 +24,5 @@
     ],
     "message": "Deep interview is active; auto-approval shortcuts are blocked until the interview finishes.",
     "exit_reason": "handoff"
-  },
-  "active_skills": []
+  }
 }
